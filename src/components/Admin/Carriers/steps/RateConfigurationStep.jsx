@@ -1459,7 +1459,7 @@ const RateConfigurationStep = ({ data, onUpdate, errors, setErrors, isEdit = fal
                                 </Grid>
 
                                 <Grid item xs={12} sm={4}>
-                                    <FormControl fullSize size="small">
+                                    <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>Currency</InputLabel>
                                         <Select
                                             value={data.rateConfiguration?.currency || 'CAD'}

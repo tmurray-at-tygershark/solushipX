@@ -117,108 +117,14 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
     }, [handleFieldChange]);
 
     return (
-        <Box sx={{ maxWidth: 600, mx: 'auto' }}>
+        <Box sx={{ width: '100%' }}>
             <Typography variant="h6" sx={{ mb: 3, fontSize: '16px', fontWeight: 600 }}>
                 Basic Carrier Information
             </Typography>
 
-            <Grid container spacing={3}>
-                {/* Carrier Name */}
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Carrier Name"
-                        value={data.name || ''}
-                        onChange={(e) => handleFieldChange('name', e.target.value)}
-                        error={!!errors.name}
-                        helperText={errors.name}
-                        sx={{
-                            '& .MuiInputBase-input': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                        required
-                    />
-                </Grid>
-
-                {/* Carrier ID */}
-                <Grid item xs={12} sm={6}>
-                    <TextField
-                        fullWidth
-                        label="Carrier ID"
-                        value={data.carrierID || ''}
-                        onChange={(e) => handleFieldChange('carrierID', e.target.value.toUpperCase())}
-                        error={!!errors.carrierID}
-                        helperText={errors.carrierID || 'Unique identifier (automatically converted to uppercase)'}
-                        sx={{
-                            '& .MuiInputBase-input': { fontSize: '12px', textTransform: 'uppercase' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                        required
-                    />
-                </Grid>
-
-                {/* Account Number */}
-                <Grid item xs={12} sm={6}>
-                    <TextField
-                        fullWidth
-                        label="Account Number"
-                        value={data.accountNumber || ''}
-                        onChange={(e) => handleFieldChange('accountNumber', e.target.value)}
-                        error={!!errors.accountNumber}
-                        helperText={errors.accountNumber}
-                        sx={{
-                            '& .MuiInputBase-input': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-
-                {/* Carrier Type */}
-                <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth error={!!errors.type}>
-                        <InputLabel sx={{ fontSize: '12px' }}>Carrier Type</InputLabel>
-                        <Select
-                            value={data.type || 'courier'}
-                            onChange={(e) => handleFieldChange('type', e.target.value)}
-                            label="Carrier Type"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            {carrierTypes.map((type) => (
-                                <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                    {type.label}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                        {errors.type && (
-                            <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5 }}>
-                                {errors.type}
-                            </Typography>
-                        )}
-                    </FormControl>
-                </Grid>
-
-                {/* Enabled Toggle */}
-                <Grid item xs={12} sm={6}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', height: '56px' }}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={data.enabled || false}
-                                    onChange={(e) => handleFieldChange('enabled', e.target.checked)}
-                                    color="primary"
-                                />
-                            }
-                            label={
-                                <Typography sx={{ fontSize: '12px' }}>
-                                    {data.enabled ? 'Enabled' : 'Disabled'}
-                                </Typography>
-                            }
-                        />
-                    </Box>
-                </Grid>
-
-                {/* Logo Upload Section */}
-                <Grid item xs={12}>
+            <Grid container spacing={4}>
+                {/* Left Column - Logo Upload */}
+                <Grid item xs={12} md={4}>
                     <Typography variant="subtitle2" sx={{ mb: 2, fontSize: '14px', fontWeight: 600 }}>
                         Carrier Logo
                     </Typography>
@@ -232,6 +138,10 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
                             backgroundColor: dragOver ? '#f3f8ff' : '#fafafa',
                             cursor: 'pointer',
                             transition: 'all 0.3s ease',
+                            minHeight: '280px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
                             '&:hover': {
                                 borderColor: '#1976d2',
                                 backgroundColor: '#f8fafc'
@@ -246,14 +156,14 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                                 <Avatar
                                     src={logoPreview}
-                                    sx={{ width: 80, height: 80 }}
+                                    sx={{ width: 120, height: 120 }}
                                 >
-                                    <CarrierIcon />
+                                    <CarrierIcon sx={{ fontSize: 60 }} />
                                 </Avatar>
-                                <Typography sx={{ fontSize: '12px', color: '#666' }}>
+                                <Typography sx={{ fontSize: '12px', color: '#666', textAlign: 'center' }}>
                                     {data.logoFileName || 'Logo uploaded'}
                                 </Typography>
-                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'center' }}>
                                     <Button
                                         size="small"
                                         variant="outlined"
@@ -275,8 +185,8 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
                                 </Box>
                             </Box>
                         ) : (
-                            <Box sx={{ py: 2 }}>
-                                <CloudUploadIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
+                            <Box>
+                                <CloudUploadIcon sx={{ fontSize: 64, color: '#ccc', mb: 2 }} />
                                 <Typography sx={{ fontSize: '14px', mb: 1 }}>
                                     Drag and drop a logo here, or click to select
                                 </Typography>
@@ -301,14 +211,113 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
                         style={{ display: 'none' }}
                     />
                 </Grid>
+
+                {/* Right Column - Form Fields */}
+                <Grid item xs={12} md={8}>
+                    <Grid container spacing={3}>
+                        {/* Carrier Name */}
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Carrier Name"
+                                value={data.name || ''}
+                                onChange={(e) => handleFieldChange('name', e.target.value)}
+                                error={!!errors.name}
+                                helperText={errors.name}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                required
+                            />
+                        </Grid>
+
+                        {/* Carrier ID */}
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Carrier ID"
+                                value={data.carrierID || ''}
+                                onChange={(e) => handleFieldChange('carrierID', e.target.value.toUpperCase())}
+                                error={!!errors.carrierID}
+                                helperText={errors.carrierID || 'Unique identifier (automatically converted to uppercase)'}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px', textTransform: 'uppercase' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                required
+                            />
+                        </Grid>
+
+                        {/* Account Number */}
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Account Number"
+                                value={data.accountNumber || ''}
+                                onChange={(e) => handleFieldChange('accountNumber', e.target.value)}
+                                error={!!errors.accountNumber}
+                                helperText={errors.accountNumber}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Carrier Type */}
+                        <Grid item xs={12} sm={6}>
+                            <FormControl fullWidth error={!!errors.type}>
+                                <InputLabel sx={{ fontSize: '12px' }}>Carrier Type</InputLabel>
+                                <Select
+                                    value={data.type || 'courier'}
+                                    onChange={(e) => handleFieldChange('type', e.target.value)}
+                                    label="Carrier Type"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    {carrierTypes.map((type) => (
+                                        <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
+                                            {type.label}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                {errors.type && (
+                                    <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5 }}>
+                                        {errors.type}
+                                    </Typography>
+                                )}
+                            </FormControl>
+                        </Grid>
+
+                        {/* Enabled Toggle */}
+                        <Grid item xs={12} sm={6}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', height: '56px' }}>
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={data.enabled || false}
+                                            onChange={(e) => handleFieldChange('enabled', e.target.checked)}
+                                            color="primary"
+                                        />
+                                    }
+                                    label={
+                                        <Typography sx={{ fontSize: '12px' }}>
+                                            {data.enabled ? 'Enabled' : 'Disabled'}
+                                        </Typography>
+                                    }
+                                />
+                            </Box>
+                        </Grid>
+                    </Grid>
+                </Grid>
             </Grid>
 
             {/* Step Description */}
             <Box sx={{ mt: 4, p: 2, backgroundColor: '#f8fafc', borderRadius: 1 }}>
                 <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                    <strong>Step 1:</strong> Enter the basic information for your carrier.
+                    <strong>Carrier Information:</strong> Enter the basic information for your carrier.
                     The Carrier ID must be unique and will be used as the primary identifier.
-                    You can upload a logo to help identify the carrier in your system.
+                    Upload a logo to help identify the carrier in your system.
                 </Typography>
             </Box>
         </Box>

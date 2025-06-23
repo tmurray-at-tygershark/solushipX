@@ -135,49 +135,120 @@ const AddEditCarrierMarkupDialog = ({ open, onClose, onSave, initialData, carrie
                             />
                         </Grid>
                         <Grid item xs={12} sm={6} md={4}>
-                            <FormControl fullWidth required>
-                                <InputLabel>Markup Type</InputLabel>
-                                <Select name="type" value={formData.type} label="Markup Type" onChange={handleChange}>
-                                    <MenuItem value="PERCENTAGE">Percentage (%)</MenuItem>
-                                    <MenuItem value="FLAT_PER_SHIPMENT">Flat per Shipment</MenuItem>
-                                    <MenuItem value="FLAT_PER_PACKAGE">Flat per Package</MenuItem>
-                                    <MenuItem value="FLAT_PER_POUND">Flat per Pound/Kg</MenuItem>
+                            <FormControl fullWidth required size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Markup Type</InputLabel>
+                                <Select
+                                    name="type"
+                                    value={formData.type}
+                                    label="Markup Type"
+                                    onChange={handleChange}
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
+                                    <MenuItem value="PERCENTAGE" sx={{ fontSize: '12px' }}>Percentage (%)</MenuItem>
+                                    <MenuItem value="FLAT_PER_SHIPMENT" sx={{ fontSize: '12px' }}>Flat per Shipment</MenuItem>
+                                    <MenuItem value="FLAT_PER_PACKAGE" sx={{ fontSize: '12px' }}>Flat per Package</MenuItem>
+                                    <MenuItem value="FLAT_PER_POUND" sx={{ fontSize: '12px' }}>Flat per Pound/Kg</MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
                         <Grid item xs={12} sm={6} md={4}>
-                            <TextField label="Value (e.g., 10 for 10% or 5 for $5)" name="value" type="number" value={formData.value} onChange={handleChange} fullWidth required />
+                            <TextField
+                                label="Value (e.g., 10 for 10% or 5 for $5)"
+                                name="value"
+                                type="number"
+                                value={formData.value}
+                                onChange={handleChange}
+                                fullWidth
+                                required
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6} md={4}>
-                            <FormControl fullWidth>
-                                <InputLabel>Variable (Basis for Markup)</InputLabel>
-                                <Select name="variable" value={formData.variable} label="Variable" onChange={handleChange}>
-                                    <MenuItem value="WEIGHT/SKID">Weight/Skid</MenuItem>
-                                    <MenuItem value="SHIPMENT">Shipment</MenuItem>
-                                    <MenuItem value="PACKAGE">Package</MenuItem>
-                                    <MenuItem value="POUND">Pound/Kg</MenuItem>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Variable (Basis for Markup)</InputLabel>
+                                <Select
+                                    name="variable"
+                                    value={formData.variable}
+                                    label="Variable"
+                                    onChange={handleChange}
+                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                >
+                                    <MenuItem value="WEIGHT/SKID" sx={{ fontSize: '12px' }}>Weight/Skid</MenuItem>
+                                    <MenuItem value="SHIPMENT" sx={{ fontSize: '12px' }}>Shipment</MenuItem>
+                                    <MenuItem value="PACKAGE" sx={{ fontSize: '12px' }}>Package</MenuItem>
+                                    <MenuItem value="POUND" sx={{ fontSize: '12px' }}>Pound/Kg</MenuItem>
                                     {/* Add other relevant variables */}
                                 </Select>
                             </FormControl>
                         </Grid>
                         <Grid item xs={12} sm={6} md={3}>
-                            <TextField label="From Country (e.g., CA, US, ANY)" name="fromCountry" value={formData.fromCountry} onChange={handleChange} fullWidth defaultValue="ANY" />
+                            <TextField
+                                label="From Country (e.g., CA, US, ANY)"
+                                name="fromCountry"
+                                value={formData.fromCountry}
+                                onChange={handleChange}
+                                fullWidth
+                                defaultValue="ANY"
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6} md={3}>
-                            <TextField label="To Country (e.g., CA, US, ANY)" name="toCountry" value={formData.toCountry} onChange={handleChange} fullWidth defaultValue="ANY" />
+                            <TextField
+                                label="To Country (e.g., CA, US, ANY)"
+                                name="toCountry"
+                                value={formData.toCountry}
+                                onChange={handleChange}
+                                fullWidth
+                                defaultValue="ANY"
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6} md={3}>
-                            <TextField label="From Weight (0 for ANY)" name="fromWeight" type="number" value={formData.fromWeight} onChange={handleChange} fullWidth />
+                            <TextField
+                                label="From Weight (0 for ANY)"
+                                name="fromWeight"
+                                type="number"
+                                value={formData.fromWeight}
+                                onChange={handleChange}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6} md={3}>
-                            <TextField label="To Weight (0 for ANY)" name="toWeight" type="number" value={formData.toWeight} onChange={handleChange} fullWidth />
+                            <TextField
+                                label="To Weight (0 for ANY)"
+                                name="toWeight"
+                                type="number"
+                                value={formData.toWeight}
+                                onChange={handleChange}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
                         </Grid>
                         <Grid item xs={12} sm={6}>
                             <DatePicker
                                 label="Effective Date"
                                 value={formData.effectiveDate}
                                 onChange={(newValue) => handleDateChange('effectiveDate', newValue)}
-                                renderInput={(params) => <TextField {...params} fullWidth required />}
+                                slotProps={{
+                                    textField: {
+                                        fullWidth: true,
+                                        required: true,
+                                        size: "small",
+                                        InputLabelProps: { sx: { fontSize: '12px' } },
+                                        InputProps: { sx: { fontSize: '12px' } }
+                                    }
+                                }}
                             />
                         </Grid>
                         <Grid item xs={12} sm={6}>
@@ -185,7 +256,14 @@ const AddEditCarrierMarkupDialog = ({ open, onClose, onSave, initialData, carrie
                                 label="Expiry Date (Optional)"
                                 value={formData.expiryDate}
                                 onChange={(newValue) => handleDateChange('expiryDate', newValue)}
-                                renderInput={(params) => <TextField {...params} fullWidth />}
+                                slotProps={{
+                                    textField: {
+                                        fullWidth: true,
+                                        size: "small",
+                                        InputLabelProps: { sx: { fontSize: '12px' } },
+                                        InputProps: { sx: { fontSize: '12px' } }
+                                    }
+                                }}
                             />
                         </Grid>
                     </Grid>

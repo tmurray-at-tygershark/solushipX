@@ -162,47 +162,55 @@ const CarrierMarkupsTab = () => {
 
     return (
         <Box>
-            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>Carrier Markups</Typography>
-
-            <Paper sx={{ p: 2, mb: 3, border: '1px solid #e5e7eb' }} elevation={0}>
-                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>Filters</Typography>
-                <Grid container spacing={2} alignItems="flex-end">
-                    <Grid item xs={12} sm={6} md={3}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
-                            <Select
-                                defaultValue="ANY"
-                                label="Carrier"
-                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                            >
-                                <MenuItem value="ANY" sx={{ fontSize: '12px' }}>Any</MenuItem>
-                                {carriers.map(c => <MenuItem key={c.id} value={c.id} sx={{ fontSize: '12px' }}>{c.name}</MenuItem>)}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <Button
-                            variant="contained"
-                            startIcon={<SearchIcon />}
-                            onClick={fetchMarkups}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
+            {/* Compact Header with Filters and Actions */}
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                mb: 3,
+                gap: 2,
+                flexWrap: 'wrap'
+            }}>
+                {/* Left Side - Title and Filters */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', flex: 1 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', minWidth: 'max-content' }}>
+                        Carrier Markups
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                        <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                        <Select
+                            defaultValue="ANY"
+                            label="Carrier"
+                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                         >
-                            Search
-                        </Button>
-                    </Grid>
-                </Grid>
-            </Paper>
+                            <MenuItem value="ANY" sx={{ fontSize: '12px' }}>Any</MenuItem>
+                            {carriers.map(c => <MenuItem key={c.id} value={c.id} sx={{ fontSize: '12px' }}>{c.name}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                </Box>
 
-            <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleAddMarkupOpen}
-                size="small"
-                sx={{ mb: 2, fontSize: '12px' }}
-            >
-                Add New Carrier Markup
-            </Button>
+                {/* Right Side - Action Buttons */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<SearchIcon />}
+                        onClick={fetchMarkups}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Search
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddMarkupOpen}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Add New
+                    </Button>
+                </Box>
+            </Box>
 
             {loadingMarkups ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>

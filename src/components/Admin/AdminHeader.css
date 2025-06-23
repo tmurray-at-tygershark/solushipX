@@ -1,7 +1,8 @@
 .navbar {
     background-color: #ffffff;
     border-bottom: 1px solid #e2e8f0;
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1rem;
+    min-height: 60px;
 }
 
 .navbar-brand {
@@ -106,7 +107,8 @@
 /* Mobile and tablet responsive styles */
 @media (max-width: 1199px) {
     .navbar {
-        padding: 0.75rem 1rem;
+        padding: 1rem 1rem;
+        min-height: 65px;
     }
     
     .navbar-collapse {
@@ -165,11 +167,12 @@
 /* Extra small mobile devices */
 @media (max-width: 576px) {
     .navbar {
-        padding: 0.5rem 0.75rem;
+        padding: 0.75rem 0.75rem;
+        min-height: 55px;
     }
     
     .navbar-brand img {
-        height: 26px !important;
+        height: 32px !important;
     }
     
     .navbar-collapse {
@@ -186,5 +189,9 @@
 @media (min-width: 1200px) {
     .nav-link {
         font-size: 12px !important;
+    }
+    
+    .navbar-brand img {
+        height: 39px !important;
     }
 } 

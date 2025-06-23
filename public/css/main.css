@@ -776,3 +776,18 @@ body {
 [data-bs-theme="dark"] .analysis-header {
     border-color: var(--bs-border-color);
 }
+
+/* Remove underlines from all links globally - SolushipX Admin */
+a, a:hover, a:focus, a:active, a:visited {
+  text-decoration: none !important;
+}
+
+/* Remove underlines from Material-UI Link components */
+.MuiLink-root, .MuiLink-root:hover, .MuiLink-root:focus {
+  text-decoration: none !important;
+}
+
+/* Remove underlines from any clickable text elements */
+[role="button"], .clickable-text {
+  text-decoration: none !important;
+}

@@ -1,27 +1,28 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     Box,
     Paper,
     Typography,
     Button,
-    Stepper,
-    Step,
-    StepLabel,
     CircularProgress,
     Alert,
-    LinearProgress
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    Chip
 } from '@mui/material';
 import {
-    ArrowBack as ArrowBackIcon,
-    ArrowForward as ArrowForwardIcon,
-    Save as SaveIcon
+    Save as SaveIcon,
+    ExpandMore as ExpandMoreIcon,
+    Check as CheckIcon,
+    Warning as WarningIcon
 } from '@mui/icons-material';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useSnackbar } from 'notistack';
 
-// Import step components (to be created)
+// Import step components (now used as sections)
 import CarrierInfoStep from './steps/CarrierInfoStep';
 import ConnectionConfigStep from './steps/ConnectionConfigStep';
 import ServicesEligibilityStep from './steps/ServicesEligibilityStep';
@@ -29,16 +30,41 @@ import RateConfigurationStep from './steps/RateConfigurationStep';
 
 // Import common components
 import ModalHeader from '../../common/ModalHeader';
+import AdminBreadcrumb from '../AdminBreadcrumb';
 
-const STEPS = [
-    { id: 1, label: 'Carrier Info', component: CarrierInfoStep },
-    { id: 2, label: 'Connection Config', component: ConnectionConfigStep },
-    { id: 3, label: 'Services & Eligibility', component: ServicesEligibilityStep },
-    { id: 4, label: 'Rate Configuration', component: RateConfigurationStep }
+const SECTIONS = [
+    {
+        id: 'carrierInfo',
+        label: 'Carrier Information',
+        component: CarrierInfoStep,
+        icon: '📋',
+        description: 'Basic carrier details and logo'
+    },
+    {
+        id: 'connectionConfig',
+        label: 'Connection Configuration',
+        component: ConnectionConfigStep,
+        icon: '🔌',
+        description: 'API credentials and email settings'
+    },
+    {
+        id: 'servicesEligibility',
+        label: 'Services & Eligibility',
+        component: ServicesEligibilityStep,
+        icon: '⚙️',
+        description: 'Geographic routing and service options'
+    },
+    {
+        id: 'rateConfiguration',
+        label: 'Rate Configuration',
+        component: RateConfigurationStep,
+        icon: '💰',
+        description: 'Pricing structure and rate matrix'
+    }
 ];
 
 const initialFormData = {
-    // Step 1: Carrier Info
+    // Carrier Info
     name: '',
     carrierID: '',
     accountNumber: '',
@@ -47,7 +73,7 @@ const initialFormData = {
     logoURL: '',
     enabled: true,
 
-    // Step 2: Connection Configuration
+    // Connection Configuration
     connectionType: 'manual',
     apiCredentials: {
         hostURL: '',
@@ -71,7 +97,7 @@ const initialFormData = {
         billingEmails: ['']
     },
 
-    // Step 3: Services & Eligibility
+    // Services & Eligibility
     supportedServices: {
         courier: [],
         freight: []
@@ -79,27 +105,30 @@ const initialFormData = {
     eligibilityRules: {
         domesticCountry: 'CA',
         weightRanges: [],
-        dimensionRestrictions: [], // [{ maxLength: 100, maxWidth: 100, maxHeight: 100, unit: 'in' }]
+        dimensionRestrictions: [],
         geographicRouting: {
+            domesticCanada: false,
+            domesticUS: false,
             provinceToProvince: false,
             stateToState: false,
             provinceToState: false,
+            countryToCountry: false,
             cityToCity: false,
-            provinceProvinceRouting: [], // [{ from: 'ON', to: 'BC' }, { from: 'AB', to: 'QC' }]
-            stateStateRouting: [], // [{ from: 'NY', to: 'CA' }, { from: 'TX', to: 'FL' }]
-            provinceStateRouting: [], // [{ from: 'ON', to: 'NY' }, { from: 'BC', to: 'CA' }]
-            cityPairRouting: [] // [{ from: 'Toronto, ON', to: 'New York, NY' }]
+            provinceProvinceRouting: [],
+            stateStateRouting: [],
+            provinceStateRouting: [],
+            countryCountryRouting: [],
+            cityPairRouting: []
         }
     },
 
-    // Step 4: Rate Configuration
+    // Rate Configuration
     rateConfiguration: {
         enabled: false,
         currency: 'CAD',
-        rateType: 'pound', // 'pound' or 'skid'
-        rateStructure: 'flat', // 'flat' or 'freight_lanes'
+        rateType: 'pound',
+        rateStructure: 'flat',
 
-        // Flat Rates
         flatRates: {
             poundRate: {
                 perPoundRate: 0,
@@ -113,10 +142,7 @@ const initialFormData = {
             }
         },
 
-        // Freight Lanes (Multiple Route Types)
-        freightLanes: [], // Array of { routeType, origin, destination, country, rateType, poundRate, skidRate }
-
-        // Legacy fields for backward compatibility
+        freightLanes: [],
         rateMatrix: [],
         rmpBase: '',
         ltlThreshold: 15
@@ -124,12 +150,16 @@ const initialFormData = {
 };
 
 const AddCarrier = ({ isModal = false, onClose = null, onCarrierCreated = null }) => {
-    const [currentStep, setCurrentStep] = useState(1);
     const [formData, setFormData] = useState(initialFormData);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
-    const scrollContainerRef = useRef(null);
+    const [expandedSections, setExpandedSections] = useState({
+        carrierInfo: true, // Start with first section expanded
+        connectionConfig: false,
+        servicesEligibility: false,
+        rateConfiguration: false
+    });
 
     const { currentUser } = useAuth();
     const { enqueueSnackbar } = useSnackbar();
@@ -161,95 +191,92 @@ const AddCarrier = ({ isModal = false, onClose = null, onCarrierCreated = null }
         });
     }, []);
 
-    // Step validation
-    const validateStep = useCallback((step) => {
-        const stepErrors = {};
+    // Section validation
+    const validateSection = useCallback((sectionId) => {
+        const sectionErrors = {};
 
-        switch (step) {
-            case 1:
-                if (!formData.name.trim()) stepErrors.name = 'Carrier name is required';
-                if (!formData.carrierID.trim()) stepErrors.carrierID = 'Carrier ID is required';
-                if (!formData.type) stepErrors.type = 'Carrier type is required';
+        switch (sectionId) {
+            case 'carrierInfo':
+                if (!formData.name.trim()) sectionErrors.name = 'Carrier name is required';
+                if (!formData.carrierID.trim()) sectionErrors.carrierID = 'Carrier ID is required';
+                if (!formData.type) sectionErrors.type = 'Carrier type is required';
                 break;
-            case 2:
+            case 'connectionConfig':
+                const requiredEmails = formData.emailConfiguration.carrierConfirmationEmails.filter(email => email.trim());
+                if (requiredEmails.length === 0) {
+                    sectionErrors.carrierConfirmationEmails = 'At least one carrier confirmation email is required';
+                }
                 if (formData.connectionType === 'api') {
                     if (!formData.apiCredentials.hostURL.trim()) {
-                        stepErrors.hostURL = 'Host URL is required for API connections';
-                    }
-                } else if (formData.connectionType === 'manual') {
-                    const requiredEmails = formData.emailConfiguration.carrierConfirmationEmails.filter(email => email.trim());
-                    if (requiredEmails.length === 0) {
-                        stepErrors.carrierConfirmationEmails = 'At least one carrier confirmation email is required';
+                        sectionErrors.hostURL = 'Host URL is required for API connections';
                     }
                 }
                 break;
-            case 3:
-                // Services validation based on carrier type
+            case 'servicesEligibility':
                 const carrierType = formData.type;
                 const courierServices = formData.supportedServices.courier.length > 0;
                 const freightServices = formData.supportedServices.freight.length > 0;
 
                 if (carrierType === 'courier' && !courierServices) {
-                    stepErrors.services = 'At least one courier service must be selected for courier carriers';
+                    sectionErrors.services = 'At least one courier service must be selected for courier carriers';
                 } else if (carrierType === 'freight' && !freightServices) {
-                    stepErrors.services = 'At least one freight service must be selected for freight carriers';
+                    sectionErrors.services = 'At least one freight service must be selected for freight carriers';
                 } else if (carrierType === 'hybrid' && !courierServices && !freightServices) {
-                    stepErrors.services = 'At least one service type must be selected for hybrid carriers';
+                    sectionErrors.services = 'At least one service type must be selected for hybrid carriers';
                 }
                 break;
-            case 4:
-                // Rate configuration validation (only for manual carriers)
+            case 'rateConfiguration':
                 if (formData.connectionType === 'manual' && formData.rateConfiguration?.enabled) {
                     if (!formData.rateConfiguration.rateMatrix || formData.rateConfiguration.rateMatrix.length === 0) {
-                        stepErrors.rateMatrix = 'Rate matrix is required when rate configuration is enabled';
+                        sectionErrors.rateMatrix = 'Rate matrix is required when rate configuration is enabled';
                     }
-                    // Validate Rate Per Mile
                     const rmpBase = parseFloat(formData.rateConfiguration.rmpBase);
                     if (!formData.rateConfiguration.rmpBase || isNaN(rmpBase) || rmpBase <= 0) {
-                        stepErrors.rmpBase = 'Rate Per Mile must be greater than 0';
+                        sectionErrors.rmpBase = 'Rate Per Mile must be greater than 0';
                     }
                 }
-                // No validation needed for API carriers - they get rates from API
                 break;
         }
 
-        setErrors(stepErrors);
-        return Object.keys(stepErrors).length === 0;
+        return {
+            isValid: Object.keys(sectionErrors).length === 0,
+            errors: sectionErrors
+        };
     }, [formData]);
 
-    // Navigation handlers
-    const handleNext = useCallback(() => {
-        if (validateStep(currentStep)) {
-            setCurrentStep(prev => Math.min(prev + 1, STEPS.length));
-            // Scroll to top of the modal content
-            if (scrollContainerRef.current) {
-                scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
-    }, [currentStep, validateStep]);
+    // Get section status for visual indicators
+    const getSectionStatus = useCallback((sectionId) => {
+        const validation = validateSection(sectionId);
+        return validation.isValid ? 'valid' : 'invalid';
+    }, [validateSection]);
 
-    const handlePrevious = useCallback(() => {
-        setCurrentStep(prev => Math.max(prev - 1, 1));
-        // Scroll to top of the modal content
-        if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    }, []);
-
-    const handleStepClick = useCallback((step) => {
-        // Allow navigation to completed steps or next step
-        if (step <= currentStep || validateStep(currentStep)) {
-            setCurrentStep(step);
-            // Scroll to top of the modal content
-            if (scrollContainerRef.current) {
-                scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
-    }, [currentStep, validateStep]);
+    // Handle section toggle
+    const handleSectionToggle = (sectionId) => {
+        setExpandedSections(prev => ({
+            ...prev,
+            [sectionId]: !prev[sectionId]
+        }));
+    };
 
     // Save carrier
     const handleSave = useCallback(async () => {
-        if (!validateStep(currentStep)) return;
+        // Validate all sections
+        const allSectionErrors = {};
+        let hasErrors = false;
+
+        SECTIONS.forEach(section => {
+            const validation = validateSection(section.id);
+            if (!validation.isValid) {
+                Object.assign(allSectionErrors, validation.errors);
+                hasErrors = true;
+            }
+        });
+
+        if (hasErrors) {
+            setErrors(allSectionErrors);
+            enqueueSnackbar('Please fix the errors before saving', { variant: 'error' });
+            return;
+        }
 
         setSaving(true);
         try {
@@ -279,120 +306,144 @@ const AddCarrier = ({ isModal = false, onClose = null, onCarrierCreated = null }
         } finally {
             setSaving(false);
         }
-    }, [currentStep, validateStep, formData, currentUser, onCarrierCreated, onClose, enqueueSnackbar]);
-
-    // Render current step
-    const renderCurrentStep = () => {
-        const StepComponent = STEPS[currentStep - 1].component;
-        return (
-            <StepComponent
-                data={formData}
-                onUpdate={updateFormData}
-                errors={errors}
-                setErrors={setErrors}
-            />
-        );
-    };
-
-    const progress = (currentStep / STEPS.length) * 100;
+    }, [formData, validateSection, currentUser, onCarrierCreated, onClose, enqueueSnackbar]);
 
     return (
         <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {isModal && (
+            {isModal ? (
                 <ModalHeader
                     title="Add New Carrier"
                     onClose={onClose}
                     showCloseButton={true}
                 />
-            )}
-
-            <Box ref={scrollContainerRef} sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-                <Paper sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
-                    {/* Progress bar */}
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="h6" sx={{ mb: 2, fontSize: '18px' }}>
-                            Step {currentStep} of {STEPS.length}: {STEPS[currentStep - 1].label}
+            ) : (
+                // Admin page header for standalone mode
+                <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                    <AdminBreadcrumb currentPage="Add Carrier" />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, mt: 3 }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827' }}>
+                            Add New Carrier
                         </Typography>
-                        <LinearProgress
-                            variant="determinate"
-                            value={progress}
-                            sx={{ height: 6, borderRadius: 3, mb: 2 }}
-                        />
-                    </Box>
-
-                    {/* Stepper */}
-                    <Stepper activeStep={currentStep - 1} sx={{ mb: 4 }}>
-                        {STEPS.map((step, index) => (
-                            <Step
-                                key={step.id}
-                                onClick={() => handleStepClick(step.id)}
-                                sx={{ cursor: 'pointer' }}
-                            >
-                                <StepLabel>
-                                    <Typography sx={{ fontSize: '12px' }}>
-                                        {step.label}
-                                    </Typography>
-                                </StepLabel>
-                            </Step>
-                        ))}
-                    </Stepper>
-
-                    {/* Current step content */}
-                    <Box sx={{ minHeight: 400 }}>
-                        {loading ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                                <CircularProgress />
-                            </Box>
-                        ) : (
-                            renderCurrentStep()
-                        )}
-                    </Box>
-
-                    {/* Navigation buttons */}
-                    <Box sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        mt: 4,
-                        pt: 2,
-                        borderTop: '1px solid #e5e7eb'
-                    }}>
-                        <Button
-                            startIcon={<ArrowBackIcon />}
-                            onClick={handlePrevious}
-                            disabled={currentStep === 1 || saving}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Previous
-                        </Button>
-
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Step {currentStep} of {STEPS.length}
-                        </Typography>
-
-                        {currentStep < STEPS.length ? (
+                        <Box sx={{ display: 'flex', gap: 1 }}>
                             <Button
-                                endIcon={<ArrowForwardIcon />}
-                                variant="contained"
-                                onClick={handleNext}
+                                variant="outlined"
+                                onClick={onClose}
                                 disabled={saving}
+                                size="small"
                                 sx={{ fontSize: '12px' }}
                             >
-                                Next
+                                Cancel
                             </Button>
-                        ) : (
                             <Button
-                                startIcon={<SaveIcon />}
                                 variant="contained"
                                 onClick={handleSave}
                                 disabled={saving}
+                                startIcon={saving ? <CircularProgress size={16} /> : <SaveIcon />}
+                                size="small"
                                 sx={{ fontSize: '12px' }}
                             >
                                 {saving ? 'Creating...' : 'Create Carrier'}
                             </Button>
-                        )}
+                        </Box>
                     </Box>
-                </Paper>
+                </Box>
+            )}
+
+            {/* Content Area - Full Width Layout */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 4, bgcolor: '#fafafa' }}>
+                <Box sx={{ width: '100%' }}>
+                    {/* Section Accordions */}
+                    {SECTIONS.map((section) => {
+                        const SectionComponent = section.component;
+                        const sectionStatus = getSectionStatus(section.id);
+
+                        return (
+                            <Accordion
+                                key={section.id}
+                                expanded={expandedSections[section.id]}
+                                onChange={() => handleSectionToggle(section.id)}
+                                sx={{
+                                    mb: 2,
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '8px !important',
+                                    '&:before': {
+                                        display: 'none',
+                                    },
+                                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+                                }}
+                            >
+                                <AccordionSummary
+                                    expandIcon={<ExpandMoreIcon />}
+                                    sx={{
+                                        bgcolor: '#f8fafc',
+                                        borderRadius: '8px 8px 0 0',
+                                        '&.Mui-expanded': {
+                                            borderRadius: expandedSections[section.id] ? '8px 8px 0 0' : '8px',
+                                        },
+                                        minHeight: 64,
+                                        '& .MuiAccordionSummary-content': {
+                                            alignItems: 'center',
+                                            gap: 2
+                                        }
+                                    }}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                                        <Typography sx={{ fontSize: '20px' }}>
+                                            {section.icon}
+                                        </Typography>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                                                {section.label}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                {section.description}
+                                            </Typography>
+                                        </Box>
+                                        <Chip
+                                            icon={sectionStatus === 'valid' ? <CheckIcon /> : <WarningIcon />}
+                                            label={sectionStatus === 'valid' ? 'Valid' : 'Needs Attention'}
+                                            size="small"
+                                            color={sectionStatus === 'valid' ? 'success' : 'warning'}
+                                            sx={{ fontSize: '11px' }}
+                                        />
+                                    </Box>
+                                </AccordionSummary>
+                                <AccordionDetails sx={{ p: 3, bgcolor: 'white' }}>
+                                    <SectionComponent
+                                        data={formData}
+                                        onUpdate={updateFormData}
+                                        errors={errors}
+                                        setErrors={setErrors}
+                                        isEdit={false}
+                                    />
+                                </AccordionDetails>
+                            </Accordion>
+                        );
+                    })}
+
+                    {/* Action Buttons for Modal Mode */}
+                    {isModal && (
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3, pt: 3, borderTop: '1px solid #e5e7eb' }}>
+                            <Button
+                                variant="outlined"
+                                onClick={onClose}
+                                disabled={saving}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="contained"
+                                onClick={handleSave}
+                                disabled={saving}
+                                startIcon={saving ? <CircularProgress size={16} /> : <SaveIcon />}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                {saving ? 'Creating...' : 'Create Carrier'}
+                            </Button>
+                        </Box>
+                    )}
+                </Box>
             </Box>
         </Box>
     );

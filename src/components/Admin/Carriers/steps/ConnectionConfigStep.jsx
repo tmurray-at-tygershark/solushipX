@@ -207,7 +207,7 @@ const ConnectionConfigStep = ({ data, onUpdate, errors, setErrors }) => {
     }, [data.apiCredentials, onUpdate]);
 
     return (
-        <Box sx={{ maxWidth: 700, mx: 'auto' }}>
+        <Box sx={{ width: '100%' }}>
             <Typography variant="h6" sx={{ mb: 3, fontSize: '16px', fontWeight: 600 }}>
                 Connection Configuration
             </Typography>
@@ -367,23 +367,34 @@ const ConnectionConfigStep = ({ data, onUpdate, errors, setErrors }) => {
                 </Paper>
             )}
 
-            {/* Manual Configuration */}
+            {/* Carrier Confirmation Emails - Show for ALL connection types */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography sx={{ fontSize: '14px', fontWeight: 500, mb: 3, color: '#2e7d32' }}>
+                    Dispatch & Confirmation Emails
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                    These emails will receive booking confirmations and dispatch notifications for shipments.
+                </Typography>
+
+                {/* Required Email Field - Always shown */}
+                <EmailArrayField
+                    section={requiredEmailSection}
+                    data={data}
+                    onUpdate={onUpdate}
+                    errors={errors}
+                    required={true}
+                />
+            </Paper>
+
+            {/* Additional Email Configuration - Manual carriers only */}
             {data.connectionType === 'manual' && (
                 <Paper sx={{ p: 3, mb: 3 }}>
                     <Typography sx={{ fontSize: '14px', fontWeight: 500, mb: 3, color: '#9c27b0' }}>
-                        Email Configuration
+                        Additional Email Configuration
                     </Typography>
-
-                    {/* Required Email Field */}
-                    <EmailArrayField
-                        section={requiredEmailSection}
-                        data={data}
-                        onUpdate={onUpdate}
-                        errors={errors}
-                        required={true}
-                    />
-
-                    <Divider sx={{ my: 3 }} />
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                        Configure additional email triggers for manual carrier communications.
+                    </Typography>
 
                     {/* Optional Email Fields - Collapsed by default */}
                     <Accordion

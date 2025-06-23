@@ -253,12 +253,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         {
             id: 1,
             itemDescription: '',
-            packagingType: 262, // SKID(S) - QuickShip default
+            packagingType: 244, // BOX(ES) - default for courier
             packagingQuantity: 1,
             weight: '',
-            length: '48', // Standard skid length
-            width: '40', // Standard skid width
-            height: '',
+            length: '12', // Default box dimensions
+            width: '12', // Default box dimensions
+            height: '12', // Default box dimensions
             unitSystem: 'imperial',
             freightClass: ''
         },
@@ -619,7 +619,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                     // Initialize with default values
                     shipmentInfo: {
-                        shipmentType: 'freight',
+                        shipmentType: 'courier', // Default to courier
                         serviceLevel: 'Any',
                         shipmentDate: new Date().toISOString().split('T')[0],
                         shipperReferenceNumber: newShipmentID,
@@ -628,12 +628,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     packages: [{
                         id: 1,
                         itemDescription: '',
-                        packagingType: 262, // SKID(S)
+                        packagingType: 244, // BOX(ES) - default for courier
                         packagingQuantity: 1,
                         weight: '',
-                        length: '48', // Standard skid length
-                        width: '40', // Standard skid width
-                        height: '',
+                        length: '12', // Default box dimensions
+                        width: '12', // Default box dimensions
+                        height: '12', // Default box dimensions
                         freightClass: '',
                         unitSystem: 'imperial'
                     }],
@@ -656,6 +656,21 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
         initializeShipment();
     }, [companyData?.companyID, user?.uid, shipmentID, isEditingDraft, draftIdToLoad]);
+
+    // Update package defaults when shipment type changes
+    useEffect(() => {
+        if (shipmentInfo.shipmentType) {
+            const isCourier = shipmentInfo.shipmentType === 'courier';
+
+            setPackages(prev => prev.map(pkg => ({
+                ...pkg,
+                packagingType: isCourier ? 244 : 262, // BOX(ES) for courier, SKID(S) for freight
+                length: isCourier ? '12' : '48',
+                width: isCourier ? '12' : '40',
+                height: isCourier ? '12' : ''
+            })));
+        }
+    }, [shipmentInfo.shipmentType]);
 
     // Rate filtering and sorting effect
     useEffect(() => {
@@ -849,18 +864,23 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     // Package management functions (QuickShip style)
     const addPackage = () => {
         const newId = Math.max(...packages.map(p => p.id), 0) + 1;
-        setPackages(prev => [...prev, {
+
+        // Set defaults based on shipment type
+        const isCourier = shipmentInfo.shipmentType === 'courier';
+        const defaultPackage = {
             id: newId,
             itemDescription: '',
-            packagingType: 262, // SKID(S)
+            packagingType: isCourier ? 244 : 262, // BOX(ES) for courier, SKID(S) for freight
             packagingQuantity: 1,
             weight: '',
-            length: '48', // Standard skid length
-            width: '40', // Standard skid width
-            height: '',
+            length: isCourier ? '12' : '48', // 12" for courier box, 48" for freight skid
+            width: isCourier ? '12' : '40',  // 12" for courier box, 40" for freight skid
+            height: isCourier ? '12' : '',   // 12" for courier box, empty for freight skid
             unitSystem: 'imperial',
             freightClass: ''
-        }]);
+        };
+
+        setPackages(prev => [...prev, defaultPackage]);
     };
 
     const removePackage = (id) => {
@@ -2343,40 +2363,42 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             </Box>
                                         </Grid>
 
-                                        {/* Freight Class - Optional field */}
-                                        <Grid item xs={12}>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
-                                                <Select
-                                                    value={pkg.freightClass || ''}
-                                                    onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
-                                                    label="Freight Class (Optional)"
-                                                    sx={{
-                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    renderValue={(value) => {
-                                                        if (!value) return '';
-                                                        const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
-                                                        return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
-                                                    }}
-                                                >
-                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                        <em>No freight class selected</em>
-                                                    </MenuItem>
-                                                    {FREIGHT_CLASSES.map((fc) => (
-                                                        <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
-                                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                                                Class {fc.class} - {fc.description}
-                                                            </Typography>
+                                        {/* Freight Class - Only show for freight shipments */}
+                                        {shipmentInfo.shipmentType === 'freight' && (
+                                            <Grid item xs={12}>
+                                                <FormControl fullWidth size="small">
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
+                                                    <Select
+                                                        value={pkg.freightClass || ''}
+                                                        onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
+                                                        label="Freight Class (Optional)"
+                                                        sx={{
+                                                            '& .MuiSelect-select': { fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                        renderValue={(value) => {
+                                                            if (!value) return '';
+                                                            const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
+                                                            return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                                        }}
+                                                    >
+                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                            <em>No freight class selected</em>
                                                         </MenuItem>
-                                                    ))}
-                                                </Select>
-                                                <FormHelperText sx={{ fontSize: '11px' }}>
-                                                    Optional: Select freight class if applicable for your shipment
-                                                </FormHelperText>
-                                            </FormControl>
-                                        </Grid>
+                                                        {FREIGHT_CLASSES.map((fc) => (
+                                                            <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
+                                                                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
+                                                                    Class {fc.class} - {fc.description}
+                                                                </Typography>
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                    <FormHelperText sx={{ fontSize: '11px' }}>
+                                                        Optional: Select freight class if applicable for your shipment
+                                                    </FormHelperText>
+                                                </FormControl>
+                                            </Grid>
+                                        )}
                                     </Grid>
                                 </Box>
                             ))}

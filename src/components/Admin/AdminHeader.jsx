@@ -82,7 +82,7 @@ const AdminHeader = () => {
                     <img
                         src="/images/integratedcarrriers_logo_white.png"
                         alt="SolushipX Logo"
-                        style={{ height: '30px' }}
+                        style={{ height: '39px' }}
                     />
                 </Link>
                 <IconButton

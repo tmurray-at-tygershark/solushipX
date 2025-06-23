@@ -151,82 +151,84 @@ const FixedRatesTab = () => {
 
     return (
         <Box>
-            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 2 }}>Fixed Rate Management</Typography>
+            {/* Compact Header with Filters and Actions */}
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                mb: 3,
+                gap: 2,
+                flexWrap: 'wrap'
+            }}>
+                {/* Left Side - Title and Filters */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', flex: 1 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', minWidth: 'max-content' }}>
+                        Fixed Rate Management
+                    </Typography>
+                    <TextField
+                        label="From Country"
+                        name="fromCountry"
+                        value={filters.fromCountry}
+                        onChange={handleFilterChange}
+                        size="small"
+                        sx={{ minWidth: 120 }}
+                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                        InputProps={{ sx: { fontSize: '12px' } }}
+                    />
+                    <TextField
+                        label="From State/Prov"
+                        name="fromStateProv"
+                        value={filters.fromStateProv}
+                        onChange={handleFilterChange}
+                        size="small"
+                        sx={{ minWidth: 130 }}
+                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                        InputProps={{ sx: { fontSize: '12px' } }}
+                    />
+                    <TextField
+                        label="To Country"
+                        name="toCountry"
+                        value={filters.toCountry}
+                        onChange={handleFilterChange}
+                        size="small"
+                        sx={{ minWidth: 120 }}
+                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                        InputProps={{ sx: { fontSize: '12px' } }}
+                    />
+                    <TextField
+                        label="To State/Prov"
+                        name="toStateProv"
+                        value={filters.toStateProv}
+                        onChange={handleFilterChange}
+                        size="small"
+                        sx={{ minWidth: 130 }}
+                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                        InputProps={{ sx: { fontSize: '12px' } }}
+                    />
+                </Box>
 
-            <Paper sx={{ p: 2, mb: 3, border: '1px solid #e5e7eb' }} elevation={0}>
-                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>Filters</Typography>
-                <Grid container spacing={2} alignItems="flex-end">
-                    <Grid item xs={12} sm={4} md={2}>
-                        <TextField
-                            fullWidth
-                            label="From Country"
-                            name="fromCountry"
-                            value={filters.fromCountry}
-                            onChange={handleFilterChange}
-                            size="small"
-                            InputLabelProps={{ sx: { fontSize: '12px' } }}
-                            InputProps={{ sx: { fontSize: '12px' } }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={4} md={2}>
-                        <TextField
-                            fullWidth
-                            label="From State/Prov"
-                            name="fromStateProv"
-                            value={filters.fromStateProv}
-                            onChange={handleFilterChange}
-                            size="small"
-                            InputLabelProps={{ sx: { fontSize: '12px' } }}
-                            InputProps={{ sx: { fontSize: '12px' } }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={4} md={2}>
-                        <TextField
-                            fullWidth
-                            label="To Country"
-                            name="toCountry"
-                            value={filters.toCountry}
-                            onChange={handleFilterChange}
-                            size="small"
-                            InputLabelProps={{ sx: { fontSize: '12px' } }}
-                            InputProps={{ sx: { fontSize: '12px' } }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={4} md={2}>
-                        <TextField
-                            fullWidth
-                            label="To State/Prov"
-                            name="toStateProv"
-                            value={filters.toStateProv}
-                            onChange={handleFilterChange}
-                            size="small"
-                            InputLabelProps={{ sx: { fontSize: '12px' } }}
-                            InputProps={{ sx: { fontSize: '12px' } }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                        <Button
-                            variant="contained"
-                            startIcon={<SearchIcon />}
-                            onClick={fetchFixedRates}
-                            size="small"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Search Rates
-                        </Button>
-                    </Grid>
-                </Grid>
-            </Paper>
-
-            <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleAddRateOpen}
-                size="small"
-                sx={{ mb: 2, fontSize: '12px' }}
-            >
-                Add New Fixed Rate
-            </Button>
+                {/* Right Side - Action Buttons */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<SearchIcon />}
+                        onClick={fetchFixedRates}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Search
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddRateOpen}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Add New
+                    </Button>
+                </Box>
+            </Box>
 
             <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                 <Table size="small">

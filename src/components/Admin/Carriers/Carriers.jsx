@@ -52,7 +52,8 @@ import {
     Block as BlockIcon,
     CloudUpload as CloudUploadIcon,
     Save as SaveIcon,
-    Remove as RemoveIcon
+    Remove as RemoveIcon,
+    Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -308,7 +309,6 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const [isEditMode, setIsEditMode] = useState(false);
 
     // Modular dialog states
-    const [showAddCarrier, setShowAddCarrier] = useState(false);
     const [showEditCarrier, setShowEditCarrier] = useState(false);
     const [editCarrierId, setEditCarrierId] = useState(null);
 
@@ -410,12 +410,10 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
     // Modular dialog handlers
     const handleOpenAddCarrier = useCallback(() => {
-        setShowAddCarrier(true);
-    }, []);
+        navigate('/admin/carriers/new');
+    }, [navigate]);
 
-    const handleCloseAddCarrier = useCallback(() => {
-        setShowAddCarrier(false);
-    }, []);
+
 
     const handleOpenEditCarrier = useCallback((carrierId) => {
         setEditCarrierId(carrierId);
@@ -430,7 +428,6 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
     const handleCarrierCreated = useCallback((carrierId, carrierData) => {
         fetchCarriers(); // Refresh the carriers list
-        setShowAddCarrier(false);
         showSnackbar('Carrier created successfully', 'success');
     }, [fetchCarriers, showSnackbar]);
 
@@ -440,6 +437,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         setEditCarrierId(null);
         showSnackbar('Carrier updated successfully', 'success');
     }, [fetchCarriers, showSnackbar]);
+
+    const handleViewCarrier = useCallback((carrierId) => {
+        navigate(`/admin/carriers/${carrierId}`);
+        handleActionMenuClose();
+    }, [navigate, handleActionMenuClose]);
 
     // Calculate stats
     const stats = useMemo(() => {
@@ -1167,7 +1169,20 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                                     <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
                                                 </Avatar>
                                                 <Box>
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#1f2937' }}>
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            fontWeight: 500,
+                                                            color: '#1976d2',
+                                                            cursor: 'pointer',
+                                                            textDecoration: 'none',
+                                                            '&:hover': {
+                                                                color: '#1565c0',
+                                                                textDecoration: 'none'
+                                                            }
+                                                        }}
+                                                        onClick={() => handleViewCarrier(carrier.id)}
+                                                    >
                                                         {carrier.name}
                                                     </Typography>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
@@ -1298,6 +1313,14 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 open={Boolean(actionMenuAnchorEl)}
                 onClose={handleActionMenuClose}
             >
+                <MenuItem onClick={() => handleViewCarrier(selectedCarrier?.id)}>
+                    <ListItemIcon>
+                        <VisibilityIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>View Details</Typography>
+                    </ListItemText>
+                </MenuItem>
                 <MenuItem onClick={() => handleOpenEditCarrier(selectedCarrier?.id)}>
                     <ListItemIcon>
                         <EditIcon fontSize="small" />
@@ -2077,27 +2100,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 </DialogActions>
             </Dialog>
 
-            {/* Modular Add Carrier Dialog */}
-            {showAddCarrier && (
-                <Dialog
-                    open={showAddCarrier}
-                    onClose={handleCloseAddCarrier}
-                    maxWidth={false}
-                    fullScreen
-                    PaperProps={{
-                        sx: {
-                            m: 0,
-                            borderRadius: 0
-                        }
-                    }}
-                >
-                    <AddCarrier
-                        isModal={true}
-                        onClose={handleCloseAddCarrier}
-                        onCarrierCreated={handleCarrierCreated}
-                    />
-                </Dialog>
-            )}
+
 
             {/* Modular Edit Carrier Dialog */}
             {showEditCarrier && editCarrierId && (

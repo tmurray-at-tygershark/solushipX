@@ -63,6 +63,9 @@ const OrganizationDetail = lazy(() => import('./components/Admin/Organizations/O
 
 // New Admin Carriers component
 const AdminCarriers = lazy(() => import('./components/Admin/Carriers/Carriers'));
+const AddCarrier = lazy(() => import('./components/Admin/Carriers/AddCarrier'));
+const CarrierDetail = lazy(() => import('./components/Admin/Carriers/CarrierDetail'));
+const EditCarrier = lazy(() => import('./components/Admin/Carriers/EditCarrier'));
 
 // Markups Page (New)
 const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));
@@ -276,6 +279,9 @@ function AppRoutes() {
                     <Route path="billing/edi-mapping/edit/:carrierId" element={<Navigate to="details" replace />} />
                     <Route path="billing/edi-mapping/new" element={<Navigate to="details" replace />} />
                     <Route path="carriers" element={<AdminCarriers />} />
+                    <Route path="carriers/new" element={<AddCarrier />} />
+                    <Route path="carriers/:carrierId" element={<CarrierDetail />} />
+                    <Route path="carriers/:carrierId/edit" element={<EditCarrier />} />
                     <Route path="markups" element={<MarkupsPage />} />
                     <Route path="addresses" element={<GlobalAddressList />} />
                 </Route>
