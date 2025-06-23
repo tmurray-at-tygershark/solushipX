@@ -53,6 +53,14 @@ export const PERMISSIONS = {
   DELETE_CUSTOMERS: 'delete_customers',
   VIEW_ALL_CUSTOMERS: 'view_all_customers',
   
+  // Address Book Management
+  VIEW_ADDRESSES: 'view_addresses',
+  CREATE_ADDRESSES: 'create_addresses',
+  EDIT_ADDRESSES: 'edit_addresses',
+  DELETE_ADDRESSES: 'delete_addresses',
+  VIEW_ALL_ADDRESSES: 'view_all_addresses',
+  EXPORT_ADDRESSES: 'export_addresses',
+  
   // Billing & Invoicing
   VIEW_BILLING: 'view_billing',
   CREATE_INVOICES: 'create_invoices',
@@ -153,6 +161,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.DELETE_CUSTOMERS]: true,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
     
+    // Address Book Management
+    [PERMISSIONS.VIEW_ADDRESSES]: true,
+    [PERMISSIONS.CREATE_ADDRESSES]: true,
+    [PERMISSIONS.EDIT_ADDRESSES]: true,
+    [PERMISSIONS.DELETE_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: true,
+    [PERMISSIONS.EXPORT_ADDRESSES]: true,
+    
     // Billing & Invoicing
     [PERMISSIONS.VIEW_BILLING]: true,
     [PERMISSIONS.CREATE_INVOICES]: true,
@@ -245,6 +261,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: true,
     [PERMISSIONS.DELETE_CUSTOMERS]: true,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    
+    // Address Book Management - Only their company's addresses
+    [PERMISSIONS.VIEW_ADDRESSES]: true,
+    [PERMISSIONS.CREATE_ADDRESSES]: true,
+    [PERMISSIONS.EDIT_ADDRESSES]: true,
+    [PERMISSIONS.DELETE_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: false,
+    [PERMISSIONS.EXPORT_ADDRESSES]: true,
     
     // Billing & Invoicing - Only their company's billing
     [PERMISSIONS.VIEW_BILLING]: true,
@@ -339,6 +363,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
     
+    // Address Book Management - View only for billing context
+    [PERMISSIONS.VIEW_ADDRESSES]: true,
+    [PERMISSIONS.CREATE_ADDRESSES]: false,
+    [PERMISSIONS.EDIT_ADDRESSES]: false,
+    [PERMISSIONS.DELETE_ADDRESSES]: false,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: true,
+    [PERMISSIONS.EXPORT_ADDRESSES]: true,
+    
     // Billing & Invoicing - Full access
     [PERMISSIONS.VIEW_BILLING]: true,
     [PERMISSIONS.CREATE_INVOICES]: true,
@@ -431,6 +463,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: false,
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    
+    // Address Book Management - View and create only
+    [PERMISSIONS.VIEW_ADDRESSES]: true,
+    [PERMISSIONS.CREATE_ADDRESSES]: true,
+    [PERMISSIONS.EDIT_ADDRESSES]: false,
+    [PERMISSIONS.DELETE_ADDRESSES]: false,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: false,
+    [PERMISSIONS.EXPORT_ADDRESSES]: true,
     
     // Billing & Invoicing - View only
     [PERMISSIONS.VIEW_BILLING]: true,
@@ -557,6 +597,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/carrier-keys': [PERMISSIONS.MANAGE_CARRIER_KEYS],
   '/admin/edi-mapping': [PERMISSIONS.MANAGE_EDI_MAPPING],
   '/admin/shipments': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
+  '/admin/addresses': [PERMISSIONS.VIEW_ADDRESSES, PERMISSIONS.VIEW_ALL_ADDRESSES],
 };
 
 // Helper function to check if user can access a route
@@ -700,6 +741,14 @@ export const getAdminSubmenu = (userRole) => {
       label: 'Shipments',
       path: '/admin/shipments',
       icon: 'LocalShipping',
+    });
+  }
+  
+  if (hasPermission(userRole, PERMISSIONS.VIEW_ALL_ADDRESSES)) {
+    submenu.push({
+      label: 'Addresses',
+      path: '/admin/addresses',
+      icon: 'ContactMail',
     });
   }
   

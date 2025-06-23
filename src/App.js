@@ -73,6 +73,9 @@ const GenerateInvoicesPage = lazy(() => import('./components/Admin/Billing/Gener
 // New Edit Carrier Mapping component
 const EditCarrierMapping = lazy(() => import('./components/Admin/Billing/EditCarrierMapping'));
 
+// Admin Addresses component
+const GlobalAddressList = lazy(() => import('./components/Admin/Addresses/GlobalAddressList'));
+
 // Email Notification Preferences component
 const NotificationPreferences = lazy(() => import('./components/NotificationPreferences/NotificationPreferences'));
 
@@ -274,6 +277,7 @@ function AppRoutes() {
                     <Route path="billing/edi-mapping/new" element={<Navigate to="details" replace />} />
                     <Route path="carriers" element={<AdminCarriers />} />
                     <Route path="markups" element={<MarkupsPage />} />
+                    <Route path="addresses" element={<GlobalAddressList />} />
                 </Route>
 
                 {/* Fallback Route */}

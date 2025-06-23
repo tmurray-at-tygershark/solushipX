@@ -49,6 +49,7 @@ import {
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon,
     Close as CloseIcon,
+    ArrowBack,
     Attachment as AttachmentIcon,
     Download as DownloadIcon,
     Image as ImageIcon,
@@ -1089,10 +1090,26 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
         }}>
             {/* Header */}
             <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-                        {address.companyName}
-                    </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    {isModal && onBack && (
+                        <Button
+                            variant="outlined"
+                            startIcon={<ArrowBack />}
+                            onClick={onBack}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Back
+                        </Button>
+                    )}
+                    <Box>
+                        <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
+                            {address.companyName}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                            Address Details
+                        </Typography>
+                    </Box>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
@@ -1256,6 +1273,29 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                                         <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                             {address.country === 'US' ? 'United States' : address.country === 'CA' ? 'Canada' : address.country || 'N/A'}
                                         </Typography>
+                                    </Box>
+                                </Grid>
+
+                                {/* Residential Address Indicator */}
+                                <Grid item xs={12}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px' }}>
+                                            Address Type:
+                                        </Typography>
+                                        <Chip
+                                            label={address.isResidential ? 'Residential' : 'Commercial'}
+                                            size="small"
+                                            color={address.isResidential ? 'warning' : 'primary'}
+                                            variant="outlined"
+                                            icon={address.isResidential ?
+                                                <PersonIcon sx={{ fontSize: '14px' }} /> :
+                                                <BusinessIcon sx={{ fontSize: '14px' }} />
+                                            }
+                                            sx={{
+                                                fontSize: '11px',
+                                                height: '24px'
+                                            }}
+                                        />
                                     </Box>
                                 </Grid>
                             </Grid>

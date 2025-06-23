@@ -35,6 +35,7 @@ const AdminBreadcrumb = ({
             'companies': 'Companies',
             'users': 'Users',
             'shipments': 'Shipments',
+            'addresses': 'Addresses',
             'billing': 'Billing',
             'carriers': 'Carriers',
             'organizations': 'Organizations',

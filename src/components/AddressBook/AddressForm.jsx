@@ -60,6 +60,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
         country: 'US',
         specialInstructions: '',
         status: 'active',
+        isResidential: false,
         // Enhanced hours structure
         useCustomHours: false,
         defaultHours: {
@@ -208,6 +209,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                     country: data.country || 'US',
                     specialInstructions: data.specialInstructions || '',
                     status: data.status || 'active',
+                    isResidential: data.isResidential || false,
                     ...hoursData
                 });
 
@@ -432,6 +434,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                 country: formData.country,
                 specialInstructions: formData.specialInstructions,
                 status: formData.status,
+                isResidential: formData.isResidential,
                 businessHours: businessHours,
                 // Keep legacy fields for backward compatibility
                 openHours: formData.defaultHours.open,
@@ -892,6 +895,31 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                         />
                         <CardContent sx={{ pt: 1 }}>
                             <Grid container spacing={2}>
+                                {/* Residential Address Toggle */}
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={formData.isResidential}
+                                                onChange={(e) => handleInputChange('isResidential', e.target.checked)}
+                                                size="small"
+                                                color="primary"
+                                            />
+                                        }
+                                        label={
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    Residential Address
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    (Check if this is a home/residential delivery location)
+                                                </Typography>
+                                            </Box>
+                                        }
+                                        sx={{ mb: 1 }}
+                                    />
+                                </Grid>
+
                                 <Grid item xs={12}>
                                     <TextField
                                         label="Special Instructions"

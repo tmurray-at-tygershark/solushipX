@@ -1317,6 +1317,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                     <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Email</TableCell>
                                                     <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Phone</TableCell>
                                                     <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Address</TableCell>
+                                                    <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Type</TableCell>
                                                     <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Status</TableCell>
                                                     <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                                                 </TableRow>
@@ -1324,7 +1325,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                             <TableBody>
                                                 {paginatedAddresses.length === 0 && filteredAddresses.length === 0 && hasActiveFilters ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                                        <TableCell colSpan={9} sx={{ textAlign: 'center', py: 4 }}>
                                                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                                                 <SearchOffIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                                                 <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -1346,7 +1347,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                     </TableRow>
                                                 ) : paginatedAddresses.length === 0 && filteredAddresses.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                                        <TableCell colSpan={9} sx={{ textAlign: 'center', py: 4 }}>
                                                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                                                 <BusinessIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                                                 <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -1408,6 +1409,15 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                                     <br />
                                                                     {`${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`}
                                                                 </Typography>
+                                                            </TableCell>
+                                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                                <Chip
+                                                                    label={address.isResidential ? 'Residential' : 'Commercial'}
+                                                                    size="small"
+                                                                    color={address.isResidential ? 'warning' : 'primary'}
+                                                                    variant="outlined"
+                                                                    sx={{ fontSize: '11px' }}
+                                                                />
                                                             </TableCell>
                                                             <TableCell sx={{ fontSize: '12px' }}>
                                                                 <Chip
@@ -2001,6 +2011,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                 <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Email</TableCell>
                                 <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Phone</TableCell>
                                 <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Address</TableCell>
+                                <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Type</TableCell>
                                 <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Status</TableCell>
                                 <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                             </TableRow>
@@ -2008,7 +2019,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                         <TableBody>
                             {paginatedAddresses.length === 0 && filteredAddresses.length === 0 && hasActiveFilters ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                    <TableCell colSpan={9} sx={{ textAlign: 'center', py: 4 }}>
                                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                             <SearchOffIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                             <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -2030,7 +2041,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                 </TableRow>
                             ) : paginatedAddresses.length === 0 && filteredAddresses.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                    <TableCell colSpan={9} sx={{ textAlign: 'center', py: 4 }}>
                                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                             <BusinessIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                             <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -2092,6 +2103,15 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                 <br />
                                                 {`${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`}
                                             </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={address.isResidential ? 'Residential' : 'Commercial'}
+                                                size="small"
+                                                color={address.isResidential ? 'warning' : 'primary'}
+                                                variant="outlined"
+                                                sx={{ fontSize: '11px' }}
+                                            />
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             <Chip
