@@ -26,6 +26,7 @@ const ShipmentActionMenu = ({
     onPrintBOL,
     onViewShipmentDetail,
     onRepeatShipment,
+    onEditDraftShipment,
     documentAvailability,
     checkingDocuments
 }) => {
@@ -44,7 +45,13 @@ const ShipmentActionMenu = ({
 
     const handleEditDraft = () => {
         onClose();
-        navigate(`/create-shipment/shipment-info/${selectedShipment.id}`);
+        if (onEditDraftShipment) {
+            // Use the modern edit draft callback
+            onEditDraftShipment(selectedShipment.id);
+        } else {
+            console.error('❌ No onEditDraftShipment callback available');
+            // Never navigate to the old form - this should not happen
+        }
     };
 
     const handleRepeatShipment = () => {

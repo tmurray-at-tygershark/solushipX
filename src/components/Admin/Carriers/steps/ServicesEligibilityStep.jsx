@@ -16,7 +16,10 @@ import {
     IconButton,
     Chip,
     Alert,
-    Divider
+    Divider,
+    InputLabel,
+    Select,
+    MenuItem
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -879,6 +882,26 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                             <FormControlLabel
                                                 control={
                                                     <Checkbox
+                                                        checked={data.eligibilityRules?.geographicRouting?.provinceStateToCity || false}
+                                                        onChange={(e) => handleEligibilityChange('geographicRouting', 'provinceStateToCity', e.target.checked)}
+                                                    />
+                                                }
+                                                label={
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            Province/State-to-City
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                            From province/state to specific cities
+                                                        </Typography>
+                                                    </Box>
+                                                }
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
                                                         checked={data.eligibilityRules?.geographicRouting?.cityToCity || false}
                                                         onChange={(e) => handleEligibilityChange('geographicRouting', 'cityToCity', e.target.checked)}
                                                     />
@@ -910,41 +933,51 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                             {(data.eligibilityRules?.geographicRouting?.provinceProvinceRouting || []).map((routePair, index) => (
                                                 <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <TextField
-                                                            size="small"
-                                                            label="From Province"
-                                                            value={routePair.from || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.provinceProvinceRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], from: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'provinceProvinceRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., ON, BC, AB, QC"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>From Province</InputLabel>
+                                                            <Select
+                                                                value={routePair.from || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.provinceProvinceRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], from: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'provinceProvinceRouting', updated);
+                                                                }}
+                                                                label="From Province"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                {canadianProvinces.map((province) => (
+                                                                    <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                        {province.code} - {province.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
-                                                        <TextField
-                                                            size="small"
-                                                            label="To Province"
-                                                            value={routePair.to || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.provinceProvinceRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], to: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'provinceProvinceRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., ON, BC, AB, QC"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>To Province</InputLabel>
+                                                            <Select
+                                                                value={routePair.to || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.provinceProvinceRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], to: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'provinceProvinceRouting', updated);
+                                                                }}
+                                                                label="To Province"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                {canadianProvinces.map((province) => (
+                                                                    <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                        {province.code} - {province.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => {
@@ -992,41 +1025,51 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                             {(data.eligibilityRules?.geographicRouting?.stateStateRouting || []).map((routePair, index) => (
                                                 <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <TextField
-                                                            size="small"
-                                                            label="From State"
-                                                            value={routePair.from || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.stateStateRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], from: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'stateStateRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., NY, CA, TX, FL"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>From State</InputLabel>
+                                                            <Select
+                                                                value={routePair.from || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.stateStateRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], from: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'stateStateRouting', updated);
+                                                                }}
+                                                                label="From State"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                {usStates.map((state) => (
+                                                                    <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                        {state.code} - {state.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
-                                                        <TextField
-                                                            size="small"
-                                                            label="To State"
-                                                            value={routePair.to || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.stateStateRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], to: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'stateStateRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., NY, CA, TX, FL"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>To State</InputLabel>
+                                                            <Select
+                                                                value={routePair.to || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.stateStateRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], to: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'stateStateRouting', updated);
+                                                                }}
+                                                                label="To State"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                {usStates.map((state) => (
+                                                                    <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                        {state.code} - {state.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => {
@@ -1074,41 +1117,73 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                             {(data.eligibilityRules?.geographicRouting?.provinceStateRouting || []).map((routePair, index) => (
                                                 <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <TextField
-                                                            size="small"
-                                                            label="From Location"
-                                                            value={routePair.from || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.provinceStateRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], from: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'provinceStateRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., ON, BC, NY, CA"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>From Location</InputLabel>
+                                                            <Select
+                                                                value={routePair.from || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.provinceStateRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], from: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'provinceStateRouting', updated);
+                                                                }}
+                                                                label="From Location"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                    Canadian Provinces
+                                                                </MenuItem>
+                                                                {canadianProvinces.map((province) => (
+                                                                    <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                        {province.code} - {province.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                                <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                    US States
+                                                                </MenuItem>
+                                                                {usStates.map((state) => (
+                                                                    <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                        {state.code} - {state.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>↔</Typography>
-                                                        <TextField
-                                                            size="small"
-                                                            label="To Location"
-                                                            value={routePair.to || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.provinceStateRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], to: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'provinceStateRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., NY, CA, ON, BC"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>To Location</InputLabel>
+                                                            <Select
+                                                                value={routePair.to || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.provinceStateRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], to: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'provinceStateRouting', updated);
+                                                                }}
+                                                                label="To Location"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                    Canadian Provinces
+                                                                </MenuItem>
+                                                                {canadianProvinces.map((province) => (
+                                                                    <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                        {province.code} - {province.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                                <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                    US States
+                                                                </MenuItem>
+                                                                {usStates.map((state) => (
+                                                                    <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                        {state.code} - {state.name}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => {
@@ -1156,41 +1231,89 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                             {(data.eligibilityRules?.geographicRouting?.countryCountryRouting || []).map((routePair, index) => (
                                                 <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: 'white', border: '1px solid #e5e7eb' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <TextField
-                                                            size="small"
-                                                            label="From Country"
-                                                            value={routePair.from || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.countryCountryRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], from: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'countryCountryRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., CA, US, MX, GB"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>From Country</InputLabel>
+                                                            <Select
+                                                                value={routePair.from || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.countryCountryRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], from: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'countryCountryRouting', updated);
+                                                                }}
+                                                                label="From Country"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="CA" sx={{ fontSize: '12px' }}>
+                                                                    CA - Canada
+                                                                </MenuItem>
+                                                                <MenuItem value="US" sx={{ fontSize: '12px' }}>
+                                                                    US - United States
+                                                                </MenuItem>
+                                                                <MenuItem value="MX" sx={{ fontSize: '12px' }}>
+                                                                    MX - Mexico
+                                                                </MenuItem>
+                                                                <MenuItem value="GB" sx={{ fontSize: '12px' }}>
+                                                                    GB - United Kingdom
+                                                                </MenuItem>
+                                                                <MenuItem value="DE" sx={{ fontSize: '12px' }}>
+                                                                    DE - Germany
+                                                                </MenuItem>
+                                                                <MenuItem value="FR" sx={{ fontSize: '12px' }}>
+                                                                    FR - France
+                                                                </MenuItem>
+                                                                <MenuItem value="AU" sx={{ fontSize: '12px' }}>
+                                                                    AU - Australia
+                                                                </MenuItem>
+                                                                <MenuItem value="CN" sx={{ fontSize: '12px' }}>
+                                                                    CN - China
+                                                                </MenuItem>
+                                                            </Select>
+                                                        </FormControl>
                                                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
-                                                        <TextField
-                                                            size="small"
-                                                            label="To Country"
-                                                            value={routePair.to || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.countryCountryRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], to: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'countryCountryRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., US, CA, MX, GB"
-                                                            sx={{
-                                                                width: 150,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
+                                                        <FormControl size="small" sx={{ width: 150 }}>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>To Country</InputLabel>
+                                                            <Select
+                                                                value={routePair.to || ''}
+                                                                onChange={(e) => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.countryCountryRouting || [];
+                                                                    const updated = [...current];
+                                                                    updated[index] = { ...updated[index], to: e.target.value };
+                                                                    handleEligibilityChange('geographicRouting', 'countryCountryRouting', updated);
+                                                                }}
+                                                                label="To Country"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="CA" sx={{ fontSize: '12px' }}>
+                                                                    CA - Canada
+                                                                </MenuItem>
+                                                                <MenuItem value="US" sx={{ fontSize: '12px' }}>
+                                                                    US - United States
+                                                                </MenuItem>
+                                                                <MenuItem value="MX" sx={{ fontSize: '12px' }}>
+                                                                    MX - Mexico
+                                                                </MenuItem>
+                                                                <MenuItem value="GB" sx={{ fontSize: '12px' }}>
+                                                                    GB - United Kingdom
+                                                                </MenuItem>
+                                                                <MenuItem value="DE" sx={{ fontSize: '12px' }}>
+                                                                    DE - Germany
+                                                                </MenuItem>
+                                                                <MenuItem value="FR" sx={{ fontSize: '12px' }}>
+                                                                    FR - France
+                                                                </MenuItem>
+                                                                <MenuItem value="AU" sx={{ fontSize: '12px' }}>
+                                                                    AU - Australia
+                                                                </MenuItem>
+                                                                <MenuItem value="CN" sx={{ fontSize: '12px' }}>
+                                                                    CN - China
+                                                                </MenuItem>
+                                                            </Select>
+                                                        </FormControl>
                                                         <IconButton
                                                             size="small"
                                                             onClick={() => {
@@ -1225,6 +1348,170 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                         </Box>
                                     )}
 
+                                    {/* Province/State-to-City Pair Routing */}
+                                    {data.eligibilityRules?.geographicRouting?.provinceStateToCity && (
+                                        <Box sx={{ mt: 3, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bfdbfe' }}>
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 2, color: '#1e40af' }}>
+                                                Province/State-to-City Pair Routing
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#1e40af', mb: 3 }}>
+                                                Define specific province/state to city routes this carrier supports
+                                            </Typography>
+
+                                            {(data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || []).map((routePair, index) => (
+                                                <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                                                    <Grid container spacing={2} alignItems="center">
+                                                        <Grid item xs={12} sm={5}>
+                                                            <FormControl size="small" fullWidth>
+                                                                <InputLabel sx={{ fontSize: '12px' }}>From Province/State</InputLabel>
+                                                                <Select
+                                                                    value={routePair.from || ''}
+                                                                    onChange={(e) => {
+                                                                        const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                                        const updated = [...current];
+                                                                        updated[index] = { ...updated[index], from: e.target.value };
+                                                                        handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                                    }}
+                                                                    label="From Province/State"
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '12px' }
+                                                                    }}
+                                                                >
+                                                                    <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                        Canadian Provinces
+                                                                    </MenuItem>
+                                                                    {canadianProvinces.map((province) => (
+                                                                        <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                            {province.code} - {province.name}
+                                                                        </MenuItem>
+                                                                    ))}
+                                                                    <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                        US States
+                                                                    </MenuItem>
+                                                                    {usStates.map((state) => (
+                                                                        <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                            {state.code} - {state.name}
+                                                                        </MenuItem>
+                                                                    ))}
+                                                                </Select>
+                                                            </FormControl>
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={1} sx={{ textAlign: 'center' }}>
+                                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={5}>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <TextField
+                                                                    size="small"
+                                                                    label="To City"
+                                                                    value={routePair.toCity || ''}
+                                                                    onChange={(e) => {
+                                                                        const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                                        const updated = [...current];
+                                                                        updated[index] = { ...updated[index], toCity: e.target.value };
+                                                                        handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                                    }}
+                                                                    placeholder="e.g., Toronto"
+                                                                    sx={{
+                                                                        flex: 1,
+                                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                                <FormControl size="small" sx={{ minWidth: 80 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Prov/State</InputLabel>
+                                                                    <Select
+                                                                        value={routePair.toProvState || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], toProvState: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                                        }}
+                                                                        label="Prov/State"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            CA Prov
+                                                                        </MenuItem>
+                                                                        {canadianProvinces.map((province) => (
+                                                                            <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                                {province.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            US States
+                                                                        </MenuItem>
+                                                                        {usStates.map((state) => (
+                                                                            <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                                {state.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                    </Select>
+                                                                </FormControl>
+                                                                <FormControl size="small" sx={{ minWidth: 60 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                                                    <Select
+                                                                        value={routePair.toCountry || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], toCountry: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                                        }}
+                                                                        label="Country"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>
+                                                                            CA
+                                                                        </MenuItem>
+                                                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>
+                                                                            US
+                                                                        </MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+                                                        <Grid item xs={12} sm={1} sx={{ textAlign: 'center' }}>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                                    const updated = current.filter((_, i) => i !== index);
+                                                                    handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                                }}
+                                                                sx={{ color: '#d32f2f' }}
+                                                            >
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Grid>
+                                                    </Grid>
+                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280', mt: 1 }}>
+                                                        Route {index + 1}: {routePair.from || 'From province/state'} → {routePair.toCity || 'To city'}, {routePair.toProvState || 'Province/State'}, {routePair.toCountry || 'Country'}
+                                                    </Typography>
+                                                </Paper>
+                                            ))}
+
+                                            <Button
+                                                size="small"
+                                                startIcon={<AddIcon />}
+                                                onClick={() => {
+                                                    const current = data.eligibilityRules?.geographicRouting?.provinceStateCityRouting || [];
+                                                    const updated = [...current, { from: '', toCity: '', toProvState: '', toCountry: '' }];
+                                                    handleEligibilityChange('geographicRouting', 'provinceStateCityRouting', updated);
+                                                }}
+                                                variant="outlined"
+                                                sx={{ fontSize: '11px' }}
+                                            >
+                                                Add Province/State to City Route
+                                            </Button>
+                                        </Box>
+                                    )}
+
                                     {/* City-to-City Routing */}
                                     {data.eligibilityRules?.geographicRouting?.cityToCity && (
                                         <Box sx={{ mt: 3, p: 2, bgcolor: '#fff7ed', borderRadius: 1, border: '1px solid #fed7aa' }}>
@@ -1232,61 +1519,204 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                                 City Pair Routing
                                             </Typography>
                                             <Typography sx={{ fontSize: '11px', color: '#c2410c', mb: 3 }}>
-                                                Define specific city-to-city routes this carrier supports
+                                                Define specific city-to-city routes this carrier supports with complete address information
                                             </Typography>
 
                                             {(data.eligibilityRules?.geographicRouting?.cityPairRouting || []).map((cityPair, index) => (
                                                 <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <TextField
-                                                            size="small"
-                                                            label="From City"
-                                                            value={cityPair.from || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], from: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., Toronto, ON"
-                                                            sx={{
-                                                                width: 200,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
-                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
-                                                        <TextField
-                                                            size="small"
-                                                            label="To City"
-                                                            value={cityPair.to || ''}
-                                                            onChange={(e) => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
-                                                                const updated = [...current];
-                                                                updated[index] = { ...updated[index], to: e.target.value };
-                                                                handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
-                                                            }}
-                                                            placeholder="e.g., New York, NY"
-                                                            sx={{
-                                                                width: 200,
-                                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => {
-                                                                const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
-                                                                const updated = current.filter((_, i) => i !== index);
-                                                                handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
-                                                            }}
-                                                            sx={{ color: '#d32f2f' }}
-                                                        >
-                                                            <DeleteIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Box>
-                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                        Route {index + 1}: {cityPair.from || 'From city'} → {cityPair.to || 'To city'}
+                                                    <Grid container spacing={2} alignItems="center">
+                                                        {/* From City Section */}
+                                                        <Grid item xs={12} sm={5}>
+                                                            <Typography sx={{ fontSize: '11px', fontWeight: 500, mb: 1, color: '#6b7280' }}>
+                                                                Origin
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <TextField
+                                                                    size="small"
+                                                                    label="From City"
+                                                                    value={cityPair.fromCity || ''}
+                                                                    onChange={(e) => {
+                                                                        const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                        const updated = [...current];
+                                                                        updated[index] = { ...updated[index], fromCity: e.target.value };
+                                                                        handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                    }}
+                                                                    placeholder="e.g., Toronto"
+                                                                    sx={{
+                                                                        flex: 1,
+                                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                                <FormControl size="small" sx={{ minWidth: 80 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Prov/State</InputLabel>
+                                                                    <Select
+                                                                        value={cityPair.fromProvState || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], fromProvState: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                        }}
+                                                                        label="Prov/State"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            CA Prov
+                                                                        </MenuItem>
+                                                                        {canadianProvinces.map((province) => (
+                                                                            <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                                {province.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            US States
+                                                                        </MenuItem>
+                                                                        {usStates.map((state) => (
+                                                                            <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                                {state.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                    </Select>
+                                                                </FormControl>
+                                                                <FormControl size="small" sx={{ minWidth: 60 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                                                    <Select
+                                                                        value={cityPair.fromCountry || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], fromCountry: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                        }}
+                                                                        label="Country"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>
+                                                                            CA
+                                                                        </MenuItem>
+                                                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>
+                                                                            US
+                                                                        </MenuItem>
+                                                                        <MenuItem value="MX" sx={{ fontSize: '12px' }}>
+                                                                            MX
+                                                                        </MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Arrow */}
+                                                        <Grid item xs={12} sm={1} sx={{ textAlign: 'center' }}>
+                                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>→</Typography>
+                                                        </Grid>
+
+                                                        {/* To City Section */}
+                                                        <Grid item xs={12} sm={5}>
+                                                            <Typography sx={{ fontSize: '11px', fontWeight: 500, mb: 1, color: '#6b7280' }}>
+                                                                Destination
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <TextField
+                                                                    size="small"
+                                                                    label="To City"
+                                                                    value={cityPair.toCity || ''}
+                                                                    onChange={(e) => {
+                                                                        const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                        const updated = [...current];
+                                                                        updated[index] = { ...updated[index], toCity: e.target.value };
+                                                                        handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                    }}
+                                                                    placeholder="e.g., New York"
+                                                                    sx={{
+                                                                        flex: 1,
+                                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                                <FormControl size="small" sx={{ minWidth: 80 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Prov/State</InputLabel>
+                                                                    <Select
+                                                                        value={cityPair.toProvState || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], toProvState: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                        }}
+                                                                        label="Prov/State"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            CA Prov
+                                                                        </MenuItem>
+                                                                        {canadianProvinces.map((province) => (
+                                                                            <MenuItem key={province.code} value={province.code} sx={{ fontSize: '12px' }}>
+                                                                                {province.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                        <MenuItem disabled sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                            US States
+                                                                        </MenuItem>
+                                                                        {usStates.map((state) => (
+                                                                            <MenuItem key={state.code} value={state.code} sx={{ fontSize: '12px' }}>
+                                                                                {state.code}
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                    </Select>
+                                                                </FormControl>
+                                                                <FormControl size="small" sx={{ minWidth: 60 }}>
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                                                    <Select
+                                                                        value={cityPair.toCountry || ''}
+                                                                        onChange={(e) => {
+                                                                            const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                            const updated = [...current];
+                                                                            updated[index] = { ...updated[index], toCountry: e.target.value };
+                                                                            handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                        }}
+                                                                        label="Country"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>
+                                                                            CA
+                                                                        </MenuItem>
+                                                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>
+                                                                            US
+                                                                        </MenuItem>
+                                                                        <MenuItem value="MX" sx={{ fontSize: '12px' }}>
+                                                                            MX
+                                                                        </MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Delete Button */}
+                                                        <Grid item xs={12} sm={1} sx={{ textAlign: 'center' }}>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
+                                                                    const updated = current.filter((_, i) => i !== index);
+                                                                    handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
+                                                                }}
+                                                                sx={{ color: '#d32f2f' }}
+                                                            >
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Grid>
+                                                    </Grid>
+                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280', mt: 1 }}>
+                                                        Route {index + 1}: {cityPair.fromCity || 'From city'}, {cityPair.fromProvState || 'Province/State'}, {cityPair.fromCountry || 'Country'} → {cityPair.toCity || 'To city'}, {cityPair.toProvState || 'Province/State'}, {cityPair.toCountry || 'Country'}
                                                     </Typography>
                                                 </Paper>
                                             ))}
@@ -1296,13 +1726,13 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                                 startIcon={<AddIcon />}
                                                 onClick={() => {
                                                     const current = data.eligibilityRules?.geographicRouting?.cityPairRouting || [];
-                                                    const updated = [...current, { from: '', to: '' }];
+                                                    const updated = [...current, { fromCity: '', fromProvState: '', fromCountry: '', toCity: '', toProvState: '', toCountry: '' }];
                                                     handleEligibilityChange('geographicRouting', 'cityPairRouting', updated);
                                                 }}
                                                 variant="outlined"
                                                 sx={{ fontSize: '11px' }}
                                             >
-                                                Add City Pair
+                                                Add City to City Route
                                             </Button>
                                         </Box>
                                     )}

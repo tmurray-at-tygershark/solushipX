@@ -285,16 +285,12 @@ const ShipmentTableRow = ({
                                     )}</span>
                                 </span>
                             ) : (
-                                <Link
-                                    to={`/create-shipment/shipment-info/${shipment.id}`}
-                                    className="shipment-link"
-                                    style={{ fontSize: '11px' }}
-                                >
+                                <span className="shipment-link" style={{ fontSize: '11px', color: '#64748b' }}>
                                     <span>{highlightSearchTerm(
                                         shipment.shipmentID || shipment.id,
                                         searchFields.shipmentId
                                     )}</span>
-                                </Link>
+                                </span>
                             )
                         ) : (
                             <span

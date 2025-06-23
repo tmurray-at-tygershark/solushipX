@@ -1811,20 +1811,24 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (creationMethod === 'quickship') {
                 console.log('🚀 Opening QuickShip for quickship draft');
                 // For QuickShip drafts, open in QuickShip mode
-                if (isModal && onOpenCreateShipment) {
-                    // Use special callback for QuickShip drafts
+                if (onOpenCreateShipment) {
+                    // Always use the callback for modern modal flow
                     onOpenCreateShipment(null, null, draftId, 'quickship');
                 } else {
-                    // Fallback to navigation (you might want to create a QuickShip route)
-                    navigate(`/quickship/${draftId}`);
+                    console.error('❌ No onOpenCreateShipment callback available for QuickShip draft editing');
+                    showSnackbar('Cannot edit QuickShip draft - feature not available in this context', 'error');
+                    return;
                 }
             } else {
                 console.log('🔧 Opening advanced CreateShipment for advanced/legacy draft');
                 // For advanced drafts or legacy drafts without creationMethod, use the advanced flow
-                if (isModal && onOpenCreateShipment) {
+                if (onOpenCreateShipment) {
+                    // Always use the callback for modern modal flow
                     onOpenCreateShipment(null, draftId); // null for prePopulatedData, draftId for editing existing draft
                 } else {
-                    navigate(`/create-shipment/shipment-info/${draftId}`);
+                    console.error('❌ No onOpenCreateShipment callback available for advanced draft editing');
+                    showSnackbar('Cannot edit draft - feature not available in this context', 'error');
+                    return;
                 }
             }
         } catch (error) {
@@ -2042,6 +2046,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 selectedShipment={selectedShipment}
                 onViewShipmentDetail={handleViewShipmentDetail}
                 onRepeatShipment={handleRepeatShipment}
+                onEditDraftShipment={handleEditDraftShipment}
                 onPrintLabel={async (shipment) => {
                     try {
                         // Get document availability using the same logic as the menu
