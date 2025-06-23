@@ -53,7 +53,8 @@ import {
     DeleteSweep as DeleteSweepIcon,
     Archive as ArchiveIcon,
     Restore as RestoreIcon,
-    FilterAlt as FilterAltIcon
+    FilterAlt as FilterAltIcon,
+    CloudUpload as UploadIcon
 } from '@mui/icons-material';
 import { collection, getDocs, query, where, orderBy, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -73,6 +74,7 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Lazy load components
 const AddressForm = React.lazy(() => import('./AddressForm'));
 const AddressDetail = React.lazy(() => import('./AddressDetail'));
+const AddressImport = React.lazy(() => import('./AddressImport'));
 
 const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null }) => {
     const { companyIdForAddress } = useCompany();
@@ -142,6 +144,9 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
     // Bulk actions state
     const [bulkActionMenuAnchor, setBulkActionMenuAnchor] = useState(null);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    // Import state
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
     useEffect(() => {
         fetchAddresses();
@@ -482,6 +487,20 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
     const handleAddressUpdated = () => {
         fetchAddresses();
         setCurrentView('detail');
+    };
+
+    // Import handlers
+    const handleImportOpen = () => {
+        setIsImportDialogOpen(true);
+    };
+
+    const handleImportClose = () => {
+        setIsImportDialogOpen(false);
+    };
+
+    const handleImportComplete = () => {
+        fetchAddresses(); // Refresh the address list
+        setIsImportDialogOpen(false);
     };
 
     // Action menu handlers
@@ -957,6 +976,15 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                     Export
                                                 </Button>
                                                 <Button
+                                                    variant="outlined"
+                                                    startIcon={<UploadIcon />}
+                                                    onClick={handleImportOpen}
+                                                    size="small"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    Import
+                                                </Button>
+                                                <Button
                                                     variant="contained"
                                                     startIcon={<AddIcon />}
                                                     onClick={handleAddAddress}
@@ -1304,7 +1332,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                         <Table stickyHeader>
                                             <TableHead>
                                                 <TableRow>
-                                                    <TableCell padding="checkbox">
+                                                    <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
                                                         <Checkbox
                                                             checked={selectedAddresses.size === filteredAddresses.length && filteredAddresses.length > 0}
                                                             indeterminate={selectedAddresses.size > 0 && selectedAddresses.size < filteredAddresses.length}
@@ -1373,10 +1401,8 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                             key={address.id}
                                                             hover
                                                             selected={isSelected(address.id)}
-                                                            sx={{ cursor: 'pointer' }}
-                                                            onClick={() => handleViewAddress(address.id)}
                                                         >
-                                                            <TableCell padding="checkbox">
+                                                            <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
                                                                 <Checkbox
                                                                     checked={isSelected(address.id)}
                                                                     onChange={(e) => handleSelectAddress(address.id, e)}
@@ -1384,7 +1410,20 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                                 />
                                                             </TableCell>
                                                             <TableCell sx={{ fontSize: '12px' }}>
-                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        fontWeight: 500,
+                                                                        color: '#1976d2',
+                                                                        cursor: 'pointer',
+                                                                        textDecoration: 'underline',
+                                                                        '&:hover': {
+                                                                            color: '#1565c0'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleViewAddress(address.id)}
+                                                                >
                                                                     {address.companyName || 'N/A'}
                                                                 </Typography>
                                                             </TableCell>
@@ -1590,6 +1629,16 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                             </Button>
                         </DialogActions>
                     </Dialog>
+
+                    {/* Import Dialog */}
+                    {isImportDialogOpen && (
+                        <Suspense fallback={<CircularProgress />}>
+                            <AddressImport
+                                onClose={handleImportClose}
+                                onImportComplete={handleImportComplete}
+                            />
+                        </Suspense>
+                    )}
                 </Box>
             </Box>
         );
@@ -1649,6 +1698,15 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                 size="small"
                             >
                                 Export
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                startIcon={<UploadIcon />}
+                                onClick={handleImportOpen}
+                                size="small"
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Import
                             </Button>
                             <Button
                                 variant="contained"
@@ -1998,7 +2056,7 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                     <Table stickyHeader>
                         <TableHead>
                             <TableRow>
-                                <TableCell padding="checkbox">
+                                <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
                                     <Checkbox
                                         checked={selectedAddresses.size === filteredAddresses.length && filteredAddresses.length > 0}
                                         indeterminate={selectedAddresses.size > 0 && selectedAddresses.size < filteredAddresses.length}
@@ -2067,10 +2125,8 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                         key={address.id}
                                         hover
                                         selected={isSelected(address.id)}
-                                        sx={{ cursor: 'pointer' }}
-                                        onClick={() => handleViewAddress(address.id)}
                                     >
-                                        <TableCell padding="checkbox">
+                                        <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
                                             <Checkbox
                                                 checked={isSelected(address.id)}
                                                 onChange={(e) => handleSelectAddress(address.id, e)}
@@ -2078,7 +2134,20 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                             />
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    fontSize: '12px',
+                                                    fontWeight: 500,
+                                                    color: '#1976d2',
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline',
+                                                    '&:hover': {
+                                                        color: '#1565c0'
+                                                    }
+                                                }}
+                                                onClick={() => handleViewAddress(address.id)}
+                                            >
                                                 {address.companyName || 'N/A'}
                                             </Typography>
                                         </TableCell>
@@ -2205,6 +2274,16 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Import Dialog */}
+            {isImportDialogOpen && (
+                <Suspense fallback={<CircularProgress />}>
+                    <AddressImport
+                        onClose={handleImportClose}
+                        onImportComplete={handleImportComplete}
+                    />
+                </Suspense>
+            )}
 
             {/* Export Dialog */}
             <Dialog

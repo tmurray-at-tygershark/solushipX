@@ -84,9 +84,20 @@ const CompaniesTableSkeleton = () => {
                         <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Checkbox disabled />
-                                <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
-                                    <BusinessIcon sx={{ fontSize: '14px' }} />
-                                </Avatar>
+                                <Box
+                                    sx={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: '50%',
+                                        bgcolor: '#e5e7eb',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0
+                                    }}
+                                >
+                                    <BusinessIcon sx={{ fontSize: '16px', color: '#9ca3af' }} />
+                                </Box>
                                 <Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
                             </Box>
                         </TableCell>
@@ -635,9 +646,49 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                     onChange={() => handleSelect(company.id)}
                                                     size="small"
                                                 />
-                                                <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
-                                                    <BusinessIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
-                                                </Avatar>
+                                                <Box
+                                                    sx={{
+                                                        width: 32,
+                                                        height: 32,
+                                                        borderRadius: '50%',
+                                                        border: '1px solid #e5e7eb',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        bgcolor: '#f8fafc',
+                                                        overflow: 'hidden',
+                                                        flexShrink: 0
+                                                    }}
+                                                >
+                                                    {company.logoUrl ? (
+                                                        <Box
+                                                            component="img"
+                                                            src={company.logoUrl}
+                                                            alt={`${company.name} logo`}
+                                                            sx={{
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                objectFit: 'cover'
+                                                            }}
+                                                            onError={(e) => {
+                                                                e.target.style.display = 'none';
+                                                                e.target.nextSibling.style.display = 'flex';
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                    <Box
+                                                        sx={{
+                                                            display: company.logoUrl ? 'none' : 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            color: '#6b7280'
+                                                        }}
+                                                    >
+                                                        <BusinessIcon sx={{ fontSize: '16px' }} />
+                                                    </Box>
+                                                </Box>
                                                 <Box>
                                                     <MuiLink
                                                         component={RouterLink}

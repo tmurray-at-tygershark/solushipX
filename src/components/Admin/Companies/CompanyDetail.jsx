@@ -27,7 +27,8 @@ import {
 } from '@mui/material';
 import {
     Edit as EditIcon,
-    LocalShipping as LocalShippingIcon
+    LocalShipping as LocalShippingIcon,
+    Business as BusinessIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -290,13 +291,60 @@ const CompanyDetail = () => {
             <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
-                            {company.name}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                            Company details and configuration
-                        </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {/* Company Logo */}
+                        <Box
+                            sx={{
+                                width: 64,
+                                height: 64,
+                                borderRadius: '50%',
+                                border: '2px solid #e5e7eb',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                bgcolor: '#f8fafc',
+                                overflow: 'hidden'
+                            }}
+                        >
+                            {company.logoUrl ? (
+                                <Box
+                                    component="img"
+                                    src={company.logoUrl}
+                                    alt={`${company.name} logo`}
+                                    sx={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover'
+                                    }}
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.nextSibling.style.display = 'flex';
+                                    }}
+                                />
+                            ) : null}
+                            <Box
+                                sx={{
+                                    display: company.logoUrl ? 'none' : 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '100%',
+                                    height: '100%',
+                                    color: '#6b7280'
+                                }}
+                            >
+                                <BusinessIcon sx={{ fontSize: '28px' }} />
+                            </Box>
+                        </Box>
+
+                        {/* Company Name and Description */}
+                        <Box>
+                            <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                                {company.name}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                Company details and configuration
+                            </Typography>
+                        </Box>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button

@@ -42,7 +42,8 @@ import {
     FilterAlt as FilterAltIcon,
     Add,
     ArrowBack,
-    Edit as EditIcon
+    Edit as EditIcon,
+    CloudUpload as UploadIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
@@ -54,6 +55,7 @@ import AdminBreadcrumb from '../AdminBreadcrumb';
 import AddressBook from '../../AddressBook/AddressBook';
 import AddressDetail from '../../AddressBook/AddressDetail';
 import AddressForm from '../../AddressBook/AddressForm';
+import AddressImport from '../../AddressBook/AddressImport';
 import ShipmentsPagination from '../../Shipments/components/ShipmentsPagination';
 
 const GlobalAddressList = () => {
@@ -335,16 +337,7 @@ const GlobalAddressList = () => {
                     </FormControl>
                 </Box>
 
-                {/* Company Details */}
-                {selectedCompanyData && viewMode === 'single' && (
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px' }}>
-                            Company ID: {selectedCompanyData.companyID} |
-                            Owner: {selectedCompanyData.ownerName || 'N/A'} |
-                            Created: {selectedCompanyData.createdAt?.toDate?.()?.toLocaleDateString() || 'N/A'}
-                        </Typography>
-                    </Box>
-                )}
+
             </Box>
 
             {/* Main Content Area - Use consistent sliding navigation for both views */}
@@ -405,6 +398,9 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     const [selectedAddress, setSelectedAddress] = useState(null);
     const [selectedAddressId, setSelectedAddressId] = useState(null);
     const [isSliding, setIsSliding] = useState(false);
+
+    // Import state
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
     useEffect(() => {
         const fetchAllAddresses = async () => {
@@ -773,6 +769,20 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
         }, 150);
     };
 
+    // Import handlers
+    const handleImportOpen = () => {
+        setIsImportDialogOpen(true);
+    };
+
+    const handleImportClose = () => {
+        setIsImportDialogOpen(false);
+    };
+
+    const handleImportComplete = () => {
+        fetchAllAddresses(); // Refresh the address list
+        setIsImportDialogOpen(false);
+    };
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
@@ -859,6 +869,17 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                     >
                                         Export
                                     </Button>
+                                    {viewMode !== 'all' && (
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<UploadIcon />}
+                                            onClick={handleImportOpen}
+                                            size="small"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Import
+                                        </Button>
+                                    )}
                                 </Stack>
                             </Grid>
                         </Grid>
@@ -1381,6 +1402,14 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     )}
                 </Box>
             </Box>
+
+            {/* Import Dialog */}
+            {isImportDialogOpen && (
+                <AddressImport
+                    onClose={handleImportClose}
+                    onImportComplete={handleImportComplete}
+                />
+            )}
         </Box>
     );
 };

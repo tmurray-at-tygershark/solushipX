@@ -11,6 +11,7 @@ import {
     Select,
     MenuItem,
     Stack,
+    Avatar,
     IconButton,
     Tooltip,
     Alert,
@@ -37,10 +38,15 @@ import {
     Add as AddIcon,
     Save as SaveIcon,
     Edit as EditIcon,
-    DeleteOutline as DeleteOutlineIcon
+    DeleteOutline as DeleteOutlineIcon,
+    CloudUpload as CloudUploadIcon,
+    Delete as DeleteIcon,
+    Business as BusinessIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion, arrayRemove, FieldValue } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject, getStorage } from 'firebase/storage';
+import { getApp } from 'firebase/app';
 import { db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import AdminBreadcrumb from '../AdminBreadcrumb';
@@ -59,6 +65,7 @@ const CompanyForm = () => {
         name: '',
         companyID: '',
         website: '',
+        logoUrl: '',
         status: 'active',
         ownerID: '',
         adminUserIdsForForm: [],
@@ -84,6 +91,12 @@ const CompanyForm = () => {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const [sameAsMainContact, setSameAsMainContact] = useState(false);
+
+    // Logo upload state
+    const [selectedLogo, setSelectedLogo] = useState(null);
+    const [logoPreview, setLogoPreview] = useState(null);
+    const [logoUploading, setLogoUploading] = useState(false);
+    const [logoError, setLogoError] = useState('');
 
     const fetchData = useCallback(async () => {
         setPageLoading(true);
@@ -153,12 +166,18 @@ const CompanyForm = () => {
                     name: companyDataFromDb.name || '',
                     companyID: companyDataFromDb.companyID || '',
                     website: companyDataFromDb.website || '',
+                    logoUrl: companyDataFromDb.logoUrl || '',
                     status: companyDataFromDb.status || 'active',
                     ownerID: companyDataFromDb.ownerID || '',
                     adminUserIdsForForm: currentCompanyAdminIds, // Set directly
                     mainContact: fetchedMainContact, // Set directly
                     billingAddress: fetchedBillingAddress,
                 }));
+
+                // Set logo preview if exists
+                if (companyDataFromDb.logoUrl) {
+                    setLogoPreview(companyDataFromDb.logoUrl);
+                }
                 setOriginalAdminUserIds(currentCompanyAdminIds); // Keep this separate as it's for comparison on save
 
             } else {
@@ -167,6 +186,7 @@ const CompanyForm = () => {
                     name: '',
                     companyID: '',
                     website: '',
+                    logoUrl: '',
                     status: 'active',
                     ownerID: '',
                     adminUserIdsForForm: [],
@@ -241,6 +261,99 @@ const CompanyForm = () => {
         }));
     };
 
+    // Logo upload handlers
+    const handleLogoSelect = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            setLogoError('Please select a valid image file (JPEG, PNG, GIF, or WebP)');
+            return;
+        }
+
+        // Validate file size (max 5MB)
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            setLogoError('Logo file size must be less than 5MB');
+            return;
+        }
+
+        setLogoError('');
+        setSelectedLogo(file);
+
+        // Create preview URL
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setLogoPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleLogoUpload = async () => {
+        if (!selectedLogo || !formData.companyID) {
+            setLogoError('Please ensure company ID is set before uploading logo');
+            return;
+        }
+
+        setLogoUploading(true);
+        setLogoError('');
+
+        try {
+            // Upload image to Firebase Storage using the same pattern as Profile
+            const firebaseApp = getApp();
+            const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+            const fileExtension = selectedLogo.name.split('.').pop();
+            const fileName = `${formData.companyID}-${Date.now()}.${fileExtension}`;
+            const logoRef = ref(customStorage, `company-logos/${fileName}`);
+
+            // Upload file
+            const snapshot = await uploadBytes(logoRef, selectedLogo);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+
+            // Update form data with logo URL
+            setFormData(prev => ({ ...prev, logoUrl: downloadURL }));
+            setLogoPreview(downloadURL);
+            setSelectedLogo(null);
+
+            enqueueSnackbar('Logo uploaded successfully!', { variant: 'success' });
+        } catch (error) {
+            console.error('Error uploading logo:', error);
+            setLogoError('Failed to upload logo. Please try again.');
+            enqueueSnackbar('Error uploading logo: ' + error.message, { variant: 'error' });
+        } finally {
+            setLogoUploading(false);
+        }
+    };
+
+    const handleLogoDelete = async () => {
+        if (!formData.logoUrl) return;
+
+        setLogoUploading(true);
+        try {
+            // Delete from Firebase Storage if it's a Firebase URL
+            if (formData.logoUrl.includes('firebase')) {
+                const firebaseApp = getApp();
+                const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                const logoRef = ref(customStorage, formData.logoUrl);
+                await deleteObject(logoRef);
+            }
+
+            // Update form data
+            setFormData(prev => ({ ...prev, logoUrl: '' }));
+            setLogoPreview(null);
+            setSelectedLogo(null);
+
+            enqueueSnackbar('Logo removed successfully!', { variant: 'success' });
+        } catch (error) {
+            console.error('Error deleting logo:', error);
+            enqueueSnackbar('Error removing logo: ' + error.message, { variant: 'error' });
+        } finally {
+            setLogoUploading(false);
+        }
+    };
+
     const validateForm = () => {
         if (!formData.name.trim() || !formData.companyID.trim() || !formData.ownerID) {
             enqueueSnackbar('Company Name, Company ID, and Owner are required.', { variant: 'warning' });
@@ -293,6 +406,7 @@ const CompanyForm = () => {
                 name: formData.name.trim(),
                 companyID: humanReadableCompanyID,
                 website: formData.website.trim(),
+                logoUrl: formData.logoUrl || '',
                 status: formData.status,
                 ownerID: formData.ownerID,
                 updatedAt: now,
@@ -608,6 +722,164 @@ const CompanyForm = () => {
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
                                     Company Information
                                 </Typography>
+                            </Grid>
+
+                            {/* Company Logo Section */}
+                            <Grid item xs={12}>
+                                <Box sx={{
+                                    border: '2px dashed #e5e7eb',
+                                    borderRadius: '8px',
+                                    p: 3,
+                                    backgroundColor: '#f9fafb',
+                                    display: 'flex',
+                                    flexDirection: { xs: 'column', md: 'row' },
+                                    gap: 3,
+                                    alignItems: 'center'
+                                }}>
+                                    {/* Logo Preview Section */}
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        minWidth: 200
+                                    }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                            Company Logo
+                                        </Typography>
+
+                                        {/* Logo Display */}
+                                        <Box sx={{
+                                            width: 120,
+                                            height: 120,
+                                            border: '1px solid #e5e7eb',
+                                            borderRadius: '8px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            backgroundColor: '#ffffff',
+                                            mb: 2,
+                                            overflow: 'hidden'
+                                        }}>
+                                            {logoPreview ? (
+                                                <img
+                                                    src={logoPreview}
+                                                    alt="Company Logo"
+                                                    style={{
+                                                        maxWidth: '100%',
+                                                        maxHeight: '100%',
+                                                        objectFit: 'contain'
+                                                    }}
+                                                />
+                                            ) : (
+                                                <BusinessIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
+                                            )}
+                                        </Box>
+
+                                        {/* Logo Actions */}
+                                        <Stack direction="row" spacing={1}>
+                                            {!logoPreview && (
+                                                <>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        onChange={handleLogoSelect}
+                                                        style={{ display: 'none' }}
+                                                        id="logo-file-input"
+                                                    />
+                                                    <label htmlFor="logo-file-input">
+                                                        <Button
+                                                            component="span"
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<CloudUploadIcon />}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Select Logo
+                                                        </Button>
+                                                    </label>
+                                                </>
+                                            )}
+
+                                            {selectedLogo && !formData.logoUrl && (
+                                                <Button
+                                                    variant="contained"
+                                                    size="small"
+                                                    onClick={handleLogoUpload}
+                                                    disabled={logoUploading || !formData.companyID}
+                                                    startIcon={logoUploading ? <CircularProgress size={16} /> : <CloudUploadIcon />}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    {logoUploading ? 'Uploading...' : 'Upload'}
+                                                </Button>
+                                            )}
+
+                                            {logoPreview && (
+                                                <>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        onChange={handleLogoSelect}
+                                                        style={{ display: 'none' }}
+                                                        id="logo-change-input"
+                                                    />
+                                                    <label htmlFor="logo-change-input">
+                                                        <Button
+                                                            component="span"
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<EditIcon />}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Change
+                                                        </Button>
+                                                    </label>
+                                                    <Button
+                                                        variant="outlined"
+                                                        color="error"
+                                                        size="small"
+                                                        onClick={handleLogoDelete}
+                                                        disabled={logoUploading}
+                                                        startIcon={<DeleteIcon />}
+                                                        sx={{ fontSize: '12px' }}
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </Stack>
+                                    </Box>
+
+                                    {/* Logo Instructions */}
+                                    <Box sx={{ flex: 1 }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151', mb: 1, fontWeight: 600 }}>
+                                            Logo Guidelines
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                            • Recommended size: 400x400 pixels or larger
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                            • Supported formats: JPEG, PNG, GIF, WebP
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                            • Maximum file size: 5MB
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                            • Square logos work best for consistent display
+                                        </Typography>
+
+                                        {logoError && (
+                                            <Alert severity="error" sx={{ mt: 2, fontSize: '11px' }}>
+                                                {logoError}
+                                            </Alert>
+                                        )}
+
+                                        {!formData.companyID && (
+                                            <Alert severity="info" sx={{ mt: 2, fontSize: '11px' }}>
+                                                Company ID must be set before uploading logo
+                                            </Alert>
+                                        )}
+                                    </Box>
+                                </Box>
                             </Grid>
                             <Grid item xs={12} md={6}>
                                 <TextField
