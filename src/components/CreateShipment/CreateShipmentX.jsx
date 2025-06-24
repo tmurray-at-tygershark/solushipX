@@ -565,7 +565,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 clearTimeout(debounceTimeoutRef.current);
             }
         };
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, isBooking, showBookingDialog]);
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, isBooking, showBookingDialog]); // REMOVED canFetchRates and fetchRates
 
     // Load draft data if draftId is provided
     useEffect(() => {
@@ -720,36 +720,21 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Only set defaults for completely new packages via addPackage()
             })));
 
-            // Clear rates and reset rate fetching state when shipment type changes
-            // This ensures rate fetching will work again once form is properly filled
+            // Clear rates when shipment type changes to prevent showing stale rates
             setRates([]);
             setFilteredRates([]);
             setSelectedRate(null);
             setRatesError(null);
-            setShowRates(false);
-            setIsLoadingRates(false);
-            setCompletedCarriers([]);
-            setFailedCarriers([]);
-            setLoadingCarriers([]);
 
             // Clear any pending timeouts
             if (debounceTimeoutRef.current) {
                 clearTimeout(debounceTimeoutRef.current);
             }
 
-            // Trigger rate fetching if all required data is available
-            // This ensures automatic rate fetching resumes after shipment type change
-            setTimeout(() => {
-                if (canFetchRates() && shipFromAddress && shipToAddress && packages.length > 0) {
-                    console.log('🔄 Triggering automatic rate fetch after shipment type change');
-                    if (debounceTimeoutRef.current) {
-                        clearTimeout(debounceTimeoutRef.current);
-                    }
-                    debounceTimeoutRef.current = setTimeout(() => fetchRates(), 1500);
-                }
-            }, 100); // Small delay to ensure state updates are complete
+            // Note: The main auto-fetch effect will automatically trigger rate fetching
+            // when the form is complete, so no need for manual triggering here
         }
-    }, [shipmentInfo.shipmentType]); // REMOVED packages, canFetchRates, addresses from dependencies
+    }, [shipmentInfo.shipmentType]);
 
     // Rate filtering and sorting effect
     useEffect(() => {
