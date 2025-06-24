@@ -540,11 +540,7 @@ const OrganizationList = ({ isModal = false, onClose = null, showCloseButton = f
                         }}
                     >
                         <Tab label={`All (${stats.total})`} value="all" />
-                        <Tab label={
-                            <Badge badgeContent={stats.active} color="success" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Active
-                            </Badge>
-                        } value="active" />
+                        <Tab label={`Active (${stats.active})`} value="active" />
                         <Tab label={
                             <Badge badgeContent={stats.inactive} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
                                 Inactive
