@@ -467,6 +467,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 timeout: 45000,
                 retryAttempts: 1,
                 retryDelay: 2000,
+                companyId: companyData?.companyID, // Add company ID for markup application
                 onProgress: (progressData) => {
                     if (progressData.completed) {
                         setCompletedCarriers(prev => [...prev, {
@@ -511,7 +512,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         } finally {
             setIsLoadingRates(false);
         }
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers]);
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers, companyData]);
 
     // Auto-fetch rates when data changes with improved debouncing
     useEffect(() => {
@@ -1389,6 +1390,38 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 carrier: selectedRate?.carrier?.name || selectedRate?.sourceCarrierName || 'Unknown',
                 totalCharges: selectedRate?.pricing?.total || selectedRate?.totalCharges || 0,
                 currency: selectedRate?.pricing?.currency || 'USD',
+
+                // DUAL RATE STORAGE: Store both actual and markup rates
+                actualRates: selectedRate?.markupMetadata ? {
+                    totalCharges: selectedRate.markupMetadata.originalTotal,
+                    freightCharges: selectedRate.pricing?.freight || 0,
+                    fuelCharges: selectedRate.pricing?.fuel || 0,
+                    serviceCharges: selectedRate.pricing?.service || 0,
+                    accessorialCharges: selectedRate.pricing?.accessorial || 0,
+                    currency: selectedRate.pricing?.currency || 'USD',
+                    appliedMarkups: selectedRate.markupMetadata.appliedMarkups || []
+                } : {
+                    // If no markup metadata, rates are actual rates
+                    totalCharges: selectedRate?.pricing?.total || selectedRate?.totalCharges || 0,
+                    freightCharges: selectedRate?.pricing?.freight || 0,
+                    fuelCharges: selectedRate?.pricing?.fuel || 0,
+                    serviceCharges: selectedRate?.pricing?.service || 0,
+                    accessorialCharges: selectedRate?.pricing?.accessorial || 0,
+                    currency: selectedRate?.pricing?.currency || 'USD',
+                    appliedMarkups: []
+                },
+                markupRates: {
+                    totalCharges: selectedRate?.pricing?.total || selectedRate?.totalCharges || 0,
+                    freightCharges: selectedRate?.pricing?.freight || 0,
+                    fuelCharges: selectedRate?.pricing?.fuel || 0,
+                    serviceCharges: selectedRate?.pricing?.service || 0,
+                    accessorialCharges: selectedRate?.pricing?.accessorial || 0,
+                    currency: selectedRate?.pricing?.currency || 'USD',
+                    markupAmount: selectedRate?.markupMetadata?.totalMarkupAmount || 0,
+                    markupPercentage: selectedRate?.markupMetadata ?
+                        (selectedRate.markupMetadata.totalMarkupAmount / selectedRate.markupMetadata.originalTotal) * 100 : 0,
+                    appliedMarkups: selectedRate?.markupMetadata?.appliedMarkups || []
+                },
 
                 // Advanced shipment specific flags
                 isAdvanced: true,

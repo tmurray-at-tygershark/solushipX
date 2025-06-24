@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import CarrierMarkupsTab from './CarrierMarkupsTab';
-import BusinessMarkupsTab from './BusinessMarkupsTab';
+import CompanyMarkupsTab from './CompanyMarkupsTab';
 import FixedRatesTab from './FixedRatesTab';
 
 function TabPanel(props) {
@@ -85,7 +85,7 @@ const MarkupsPage = () => {
                                 }}
                             >
                                 <Tab label="Carrier Markups" id="markups-tab-0" aria-controls="markups-tabpanel-0" />
-                                <Tab label="Business Markups" id="markups-tab-1" aria-controls="markups-tabpanel-1" />
+                                <Tab label="Company Markups" id="markups-tab-1" aria-controls="markups-tabpanel-1" />
                                 <Tab label="Fixed Rates" id="markups-tab-2" aria-controls="markups-tabpanel-2" />
                             </Tabs>
                         </Box>
@@ -93,7 +93,7 @@ const MarkupsPage = () => {
                             <CarrierMarkupsTab />
                         </TabPanel>
                         <TabPanel value={activeTab} index={1}>
-                            <BusinessMarkupsTab />
+                            <CompanyMarkupsTab />
                         </TabPanel>
                         <TabPanel value={activeTab} index={2}>
                             <FixedRatesTab />

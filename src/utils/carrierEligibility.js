@@ -1431,7 +1431,52 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
         });
     }
 
-    const isSuccess = allRates.length > 0;
+    // 🎯 MARKUP APPLICATION INTEGRATION
+    // Apply markups to rates if a companyId is provided in options
+    let finalRates = allRates;
+    let markupApplicationResults = null;
+    
+    if (otherOptions.companyId && allRates.length > 0) {
+        try {
+            console.log(`\n💰 Applying markups for company: ${otherOptions.companyId}`);
+            
+            // Import markup engine (dynamic import to avoid circular dependencies)
+            const { applyMarkupsToRates } = await import('./markupEngine');
+            
+            // Apply markups to all rates
+            markupApplicationResults = await applyMarkupsToRates(
+                allRates, 
+                otherOptions.companyId, 
+                shipmentData
+            );
+            
+            // Replace rates with marked-up versions for customer-facing display
+            finalRates = markupApplicationResults.markupRates;
+            
+            console.log(`✅ Markup application completed. ${markupApplicationResults.markupApplicationLog.length} rate processing logs`);
+            
+            // Log markup summary
+            const totalMarkupAmount = markupApplicationResults.markupRates.reduce((sum, rate) => {
+                return sum + (rate.markupMetadata?.totalMarkupAmount || 0);
+            }, 0);
+            
+            console.log(`💰 Total markup applied: $${totalMarkupAmount.toFixed(2)} across ${finalRates.length} rates`);
+            
+        } catch (markupError) {
+            console.error('❌ Error applying markups, using original rates:', markupError);
+            // Continue with original rates if markup application fails
+            finalRates = allRates;
+        }
+    }
+
+    // Sort final rates by price (lowest first) after markup application
+    finalRates.sort((a, b) => {
+        const priceA = a.pricing?.total || a.totalCharges || a.price || 0;
+        const priceB = b.pricing?.total || b.totalCharges || b.price || 0;
+        return priceA - priceB;
+    });
+
+    const isSuccess = finalRates.length > 0;
     const errorMessage = !isSuccess ? 
         (failedResults.length > 0 ? 
             `No rates available. Errors: ${failedResults.map(r => `${r.carrier}: ${r.error}`).join('; ')}` : 
@@ -1440,11 +1485,20 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
 
     return {
         success: isSuccess,
-        rates: allRates,
+        rates: finalRates, // Return marked-up rates for customer display
         results: includeFailures ? results : successfulResults,
         summary,
         eligibleCarriers: eligibleCarriers.map(c => ({ key: c.key, name: c.name })),
         error: errorMessage,
+        // Add markup metadata to response
+        markupMetadata: markupApplicationResults ? {
+            actualRates: markupApplicationResults.actualRates,
+            markupApplicationLog: markupApplicationResults.markupApplicationLog,
+            totalMarkupAmount: markupApplicationResults.markupRates.reduce((sum, rate) => {
+                return sum + (rate.markupMetadata?.totalMarkupAmount || 0);
+            }, 0),
+            markupRulesApplied: markupApplicationResults.markupApplicationLog.length
+        } : null,
         performance: {
             parallelProcessing: true,
             progressiveResults: progressiveResults,
@@ -1452,7 +1506,8 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
             carrierTimeouts: eligibleCarriers.map(c => `${c.name}: ${c.timeout}ms`).join(', '),
             maxWaitTime: `${maxWaitTime}ms total`,
             avgCarrierTimeout: `${Math.round(avgCarrierTimeout)}ms average`,
-            slowestCarrierTimeout: `${maxCarrierTimeout}ms (${eligibleCarriers.find(c => c.timeout === maxCarrierTimeout)?.name})`
+            slowestCarrierTimeout: `${maxCarrierTimeout}ms (${eligibleCarriers.find(c => c.timeout === maxCarrierTimeout)?.name})`,
+            markupProcessingEnabled: !!otherOptions.companyId
         }
     };
 }
