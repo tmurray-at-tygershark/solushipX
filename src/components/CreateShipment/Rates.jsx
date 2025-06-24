@@ -21,6 +21,7 @@ import { validateUniversalRate } from '../../utils/universalDataModel';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 import { toCanparRequest } from '../../translators/canpar/translator';
 import { mapEShipPlusToUniversal, mapCanparToUniversal } from '../../utils/universalDataModel';
+import markupEngine from '../../utils/markupEngine';
 
 // Function to recursively remove undefined values from objects
 const removeUndefinedValues = (obj) => {
@@ -893,17 +894,35 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
             updateFormSection('selectedRate', null);
         } else {
             console.log('New universal rate selected:', rate);
-            setSelectedRate(rate); // Update local UI state
-            updateFormSection('selectedRate', rate); // Update context with the full rate object for immediate use
 
             try {
-                const newRateDocId = await saveRateToShipmentRatesCollection(rate, contextFormData.originalRateRequestData, rawRateApiResponseData);
+                // Apply markup to the rate BEFORE storing it
+                console.log('🔧 Applying markup to selected rate...');
+                const rateWithMarkup = await markupEngine.applyMarkupToRate(rate, companyData?.companyID);
+                console.log('✅ Markup applied to selected rate:', rateWithMarkup);
+
+                setSelectedRate(rateWithMarkup); // Update local UI state with markup-processed rate
+                updateFormSection('selectedRate', rateWithMarkup); // Update context with the markup-processed rate
+
+                // Save the markup-processed rate to database
+                const newRateDocId = await saveRateToShipmentRatesCollection(rateWithMarkup, contextFormData.originalRateRequestData, rawRateApiResponseData);
                 updateFormSection('selectedRateDocumentId', newRateDocId);
-                console.log('Rate selection completed. Document ID:', newRateDocId);
+                console.log('Rate selection completed with markup. Document ID:', newRateDocId);
             } catch (error) {
-                console.error('Error saving rate to shipmentRates collection:', error);
-                // Optionally, you could show an error message to the user here
-                // For now, we'll just log the error and continue
+                console.error('Error applying markup or saving rate:', error);
+
+                // Fallback: Use original rate if markup fails
+                console.warn('Falling back to original rate without markup');
+                setSelectedRate(rate);
+                updateFormSection('selectedRate', rate);
+
+                try {
+                    const newRateDocId = await saveRateToShipmentRatesCollection(rate, contextFormData.originalRateRequestData, rawRateApiResponseData);
+                    updateFormSection('selectedRateDocumentId', newRateDocId);
+                    console.log('Rate selection completed without markup. Document ID:', newRateDocId);
+                } catch (saveError) {
+                    console.error('Error saving rate to shipmentRates collection:', saveError);
+                }
             }
         }
     };

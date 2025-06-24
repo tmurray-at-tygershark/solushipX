@@ -361,25 +361,134 @@ function calculateMarkupAmount(rate, markup, shipmentData) {
 function applyMarkupToRatePricing(rate, markupResult) {
     if (markupResult.amount <= 0) return;
 
-    // Update total charges
-    if (rate.pricing?.total !== undefined) {
-        rate.pricing.total += markupResult.amount;
-    } else if (rate.totalCharges !== undefined) {
-        rate.totalCharges += markupResult.amount;
+    // Enhanced freight-only markup application
+    const freightChargeNames = ['freight', 'base', 'linehaul', 'transportation', 'shipping'];
+    let freightChargeFound = false;
+    let freightBaseAmount = 0;
+
+    // If billingDetails doesn't exist, create it from existing pricing structure
+    if (!rate.billingDetails || !Array.isArray(rate.billingDetails)) {
+        console.log('📋 Creating billingDetails structure from existing pricing');
+        rate.billingDetails = [];
+        
+        // Create billing details from the pricing structure
+        if (rate.pricing) {
+            // Standard breakdown from pricing object
+            if (rate.pricing.freight || rate.pricing.freightCharge) {
+                rate.billingDetails.push({
+                    name: 'Freight Charges',
+                    amount: rate.pricing.freight || rate.pricing.freightCharge || 0,
+                    category: 'freight'
+                });
+            }
+            
+            if (rate.pricing.fuel || rate.pricing.fuelSurcharge) {
+                rate.billingDetails.push({
+                    name: 'Fuel Surcharge', 
+                    amount: rate.pricing.fuel || rate.pricing.fuelSurcharge || 0,
+                    category: 'fuel'
+                });
+            }
+            
+            if (rate.pricing.service || rate.pricing.serviceCharge) {
+                rate.billingDetails.push({
+                    name: 'Service Charges',
+                    amount: rate.pricing.service || rate.pricing.serviceCharge || 0,
+                    category: 'service'
+                });
+            }
+            
+            // Add other common charges if they exist
+            if (rate.pricing.accessorial) {
+                rate.billingDetails.push({
+                    name: 'Accessorial Charges',
+                    amount: rate.pricing.accessorial || 0,
+                    category: 'accessorial'
+                });
+            }
+            
+            if (rate.pricing.insurance) {
+                rate.billingDetails.push({
+                    name: 'Insurance',
+                    amount: rate.pricing.insurance || 0,
+                    category: 'insurance'
+                });
+            }
+        }
+        
+        console.log(`📋 Created ${rate.billingDetails.length} billing detail entries from pricing structure`);
     }
 
-    // Add markup as a separate line item in pricing breakdown
-    if (!rate.pricing) rate.pricing = {};
-    if (!rate.pricing.breakdown) rate.pricing.breakdown = [];
-    
-    rate.pricing.breakdown.push({
-        name: 'Platform Markup',
-        amount: markupResult.amount,
-        type: markupResult.type,
-        value: markupResult.value
-    });
+    // Find and apply markup to freight charges only
+    if (rate.billingDetails && Array.isArray(rate.billingDetails)) {
+        for (let detail of rate.billingDetails) {
+            const chargeName = (detail.name || '').toLowerCase();
+            const chargeCategory = (detail.category || '').toLowerCase();
+            const isFreightCharge = freightChargeNames.some(freightName => 
+                chargeName.includes(freightName)
+            ) || chargeCategory === 'freight';
+
+            if (isFreightCharge) {
+                freightBaseAmount = detail.amount || 0;
+                const markupAmount = freightBaseAmount * (markupResult.value / 100); // Apply percentage to freight only
+                
+                // Store original amount as actualAmount
+                detail.actualAmount = detail.amount;
+                
+                // Update the charge amount with markup
+                detail.amount = detail.actualAmount + markupAmount;
+                
+                // Mark this charge as having markup applied
+                detail.hasMarkup = true;
+                detail.markupPercentage = markupResult.value;
+                detail.markupAmount = markupAmount;
+                
+                freightChargeFound = true;
+                console.log(`✅ Applied ${markupResult.value}% markup to ${detail.name}: $${detail.actualAmount} → $${detail.amount}`);
+                break; // Only apply to first freight charge found
+            }
+        }
+    }
+
+    // If no freight charge found in billingDetails, apply to total (fallback)
+    if (!freightChargeFound) {
+        console.log('⚠️ No freight charge found in billingDetails, applying markup to total');
+        
+        // Store original total
+        const originalTotal = rate.pricing?.total || rate.totalCharges || 0;
+        
+        // Apply markup to total
+        if (rate.pricing?.total !== undefined) {
+            rate.pricing.total += markupResult.amount;
+        } else if (rate.totalCharges !== undefined) {
+            rate.totalCharges += markupResult.amount;
+        }
+        
+        // Add markup line item to breakdown
+        if (!rate.pricing) rate.pricing = {};
+        if (!rate.pricing.breakdown) rate.pricing.breakdown = [];
+        
+        rate.pricing.breakdown.push({
+            name: 'Platform Markup',
+            amount: markupResult.amount,
+            type: markupResult.type,
+            value: markupResult.value,
+            actualAmount: 0, // No actual amount for platform markup
+            hasMarkup: true
+        });
+    } else {
+        // Recalculate total from billingDetails
+        const newTotal = rate.billingDetails.reduce((sum, detail) => sum + (detail.amount || 0), 0);
+        
+        if (rate.pricing?.total !== undefined) {
+            rate.pricing.total = newTotal;
+        } else if (rate.totalCharges !== undefined) {
+            rate.totalCharges = newTotal;
+        }
+    }
 
     // Update markup-specific fields
+    if (!rate.pricing) rate.pricing = {};
     if (!rate.pricing.markup) rate.pricing.markup = 0;
     rate.pricing.markup += markupResult.amount;
 }
@@ -446,9 +555,41 @@ export function filterRatesByUserRole(rateResults, user) {
     }
 }
 
+/**
+ * Apply markups to a single rate (convenience wrapper)
+ * @param {Object} rate - Single rate object
+ * @param {string} companyId - Company ID for company-specific markups
+ * @param {Object} shipmentData - Optional shipment data for context matching
+ * @returns {Promise<Object>} Single marked up rate
+ */
+export async function applyMarkupToRate(rate, companyId, shipmentData = null) {
+    try {
+        // Create minimal shipment data if not provided
+        const defaultShipmentData = {
+            shipmentInfo: { shipmentType: 'freight' },
+            packages: [{ weight: 100, packagingQuantity: 1 }],
+            shipFrom: { country: 'CA' },
+            shipTo: { country: 'CA' }
+        };
+        
+        const dataToUse = shipmentData || defaultShipmentData;
+        
+        // Call the main function with array of one rate
+        const result = await applyMarkupsToRates([rate], companyId, dataToUse);
+        
+        // Return the single processed rate
+        return result.markupRates[0] || rate; // Fallback to original rate if processing fails
+        
+    } catch (error) {
+        console.error('❌ Error in applyMarkupToRate wrapper:', error);
+        return rate; // Return original rate on error
+    }
+}
+
 export default {
     applyMarkupsToRates,
     getMarkupSummary,
     canSeeActualRates,
-    filterRatesByUserRole
+    filterRatesByUserRole,
+    applyMarkupToRate
 }; 

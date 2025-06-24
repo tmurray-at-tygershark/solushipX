@@ -42,14 +42,36 @@ const RateDetails = ({
     carrierData,
     shipment
 }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const isAdmin = canSeeActualRates(currentUser);
+
+    // Debug logging to see role and admin status
+    console.log('🔍 RateDetails Debug:', {
+        currentUser: currentUser,
+        userRole: userRole,
+        userRoleFromCurrentUser: currentUser?.role,
+        userObject: JSON.stringify(currentUser, null, 2),
+        isAdmin: isAdmin,
+        canSeeActualRates: canSeeActualRates(currentUser)
+    });
+
+    // Enhanced admin check using the userRole from AuthContext
+    const enhancedIsAdmin = userRole && (
+        ['admin', 'superadmin', 'super_admin'].includes(userRole.toLowerCase())
+    );
+
+    console.log('🔍 Enhanced Admin Check:', {
+        originalIsAdmin: isAdmin,
+        enhancedIsAdmin: enhancedIsAdmin,
+        userRole: userRole,
+        roleCheck: ['admin', 'superadmin', 'super_admin'].includes(userRole?.toLowerCase())
+    });
 
     // Check if this is a QuickShip shipment
     const isQuickShip = shipment?.creationMethod === 'quickship';
 
     // Get markup information for admin users
-    const markupSummary = isAdmin && getBestRateInfo ? getMarkupSummary(getBestRateInfo) : null;
+    const markupSummary = enhancedIsAdmin && getBestRateInfo ? getMarkupSummary(getBestRateInfo) : null;
 
     const safeNumber = (value) => {
         return isNaN(parseFloat(value)) ? 0 : parseFloat(value);
@@ -84,6 +106,40 @@ const RateDetails = ({
 
     const quickShipData = isQuickShip ? getQuickShipRateData() : null;
 
+    if (!getBestRateInfo && !quickShipData) {
+        return null;
+    }
+
+    // Calculate total cost and charge for admin display
+    const calculateTotals = () => {
+        if (quickShipData) {
+            return {
+                totalCost: quickShipData.total,
+                totalCharge: quickShipData.total
+            };
+        }
+
+        // Use dual rate storage system if available
+        if (shipment?.actualRates?.totalCharges && shipment?.markupRates?.totalCharges) {
+            return {
+                totalCost: shipment.actualRates.totalCharges,
+                totalCharge: shipment.markupRates.totalCharges
+            };
+        }
+
+        // Fallback calculation
+        const baseTotal = getBestRateInfo?.pricing?.total ||
+            getBestRateInfo?.totalCharges ||
+            getBestRateInfo?.total || 0;
+
+        return {
+            totalCost: markupSummary?.originalAmount || baseTotal,
+            totalCharge: markupSummary?.finalAmount || baseTotal
+        };
+    };
+
+    const { totalCost, totalCharge } = calculateTotals();
+
     return (
         <Grid item xs={12} sx={{ mb: 1 }}>
             <Paper>
@@ -99,7 +155,7 @@ const RateDetails = ({
                 </Box>
                 <Box sx={{ p: 2 }}>
                     {/* Admin Markup Summary */}
-                    {isAdmin && markupSummary?.hasMarkup && (
+                    {enhancedIsAdmin && markupSummary?.hasMarkup && (
                         <Box sx={{
                             mb: 3,
                             p: 2,
@@ -198,20 +254,16 @@ const RateDetails = ({
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                         {charge.name}
                                                     </Typography>
-                                                    {isAdmin ? (
-                                                        <Box>
-                                                            <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                Cost: ${charge.amount.toFixed(2)}
-                                                            </Typography>
-                                                            <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                                Charge: ${charge.amount.toFixed(2)}
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                        <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                             ${charge.amount.toFixed(2)}
                                                         </Typography>
-                                                    )}
+                                                        {enhancedIsAdmin && (
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                                (Cost: ${charge.amount.toFixed(2)})
+                                                            </Typography>
+                                                        )}
+                                                    </Box>
                                                 </Box>
                                             ))}
                                         </Box>
@@ -233,19 +285,18 @@ const RateDetails = ({
                                                     <Box key={index}>
                                                         <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                             {detail.name}
+                                                            {detail.hasMarkup && (
+                                                                <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
+                                                                    (plus {detail.markupPercentage}%)
+                                                                </Typography>
+                                                            )}
                                                         </Typography>
-                                                        {isAdmin ? (
-                                                            <Box>
-                                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                    Cost: ${safeNumber(detail.amount).toFixed(2)}
-                                                                </Typography>
-                                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                                    Charge: ${safeNumber(detail.amount).toFixed(2)}
-                                                                </Typography>
-                                                            </Box>
-                                                        ) : (
-                                                            <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                                ${safeNumber(detail.amount).toFixed(2)}
+                                                        <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                                            ${safeNumber(detail.amount).toFixed(2)}
+                                                        </Typography>
+                                                        {enhancedIsAdmin && (
+                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                                (Cost: ${safeNumber(detail.actualAmount || detail.amount).toFixed(2)})
                                                             </Typography>
                                                         )}
                                                     </Box>
@@ -255,31 +306,63 @@ const RateDetails = ({
                                     }
                                 }
 
+                                // Get actual vs markup rates for breakdown calculation
+                                const getActualVsMarkupAmount = (field) => {
+                                    if (shipment?.actualRates?.billingDetails && shipment?.markupRates?.billingDetails) {
+                                        const actualDetail = shipment.actualRates.billingDetails.find(detail =>
+                                            detail.name && (
+                                                detail.name.toLowerCase().includes(field.toLowerCase()) ||
+                                                detail.category === field
+                                            )
+                                        );
+                                        const markupDetail = shipment.markupRates.billingDetails.find(detail =>
+                                            detail.name && (
+                                                detail.name.toLowerCase().includes(field.toLowerCase()) ||
+                                                detail.category === field
+                                            )
+                                        );
+
+                                        if (actualDetail && markupDetail) {
+                                            return {
+                                                actual: actualDetail.amount,
+                                                markup: markupDetail.amount
+                                            };
+                                        }
+                                    }
+
+                                    // Fallback to same amount for both
+                                    const fallbackAmount = safeNumber(getBestRateInfo?.pricing?.[field] || getBestRateInfo?.[field + 'Charge'] || getBestRateInfo?.[field + 'Charges']);
+                                    return {
+                                        actual: fallbackAmount,
+                                        markup: fallbackAmount
+                                    };
+                                };
+
                                 const breakdownItems = [];
-                                const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
-                                if (freight > 0) {
-                                    breakdownItems.push({ name: 'Freight Charges', amount: freight });
+                                const freight = getActualVsMarkupAmount('freight');
+                                if (freight.markup > 0) {
+                                    breakdownItems.push({ name: 'Freight Charges', amount: freight.markup, actualAmount: freight.actual });
                                 }
 
-                                const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
-                                if (fuel > 0) {
-                                    breakdownItems.push({ name: 'Fuel Charges', amount: fuel });
+                                const fuel = getActualVsMarkupAmount('fuel');
+                                if (fuel.markup > 0) {
+                                    breakdownItems.push({ name: 'Fuel Charges', amount: fuel.markup, actualAmount: fuel.actual });
                                 }
 
-                                const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
-                                if (service > 0) {
-                                    breakdownItems.push({ name: 'Service Charges', amount: service });
+                                const service = getActualVsMarkupAmount('service');
+                                if (service.markup > 0) {
+                                    breakdownItems.push({ name: 'Service Charges', amount: service.markup, actualAmount: service.actual });
                                 }
 
-                                const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
-                                if (accessorial > 0) {
-                                    breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial });
+                                const accessorial = getActualVsMarkupAmount('accessorial');
+                                if (accessorial.markup > 0) {
+                                    breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial.markup, actualAmount: accessorial.actual });
                                 }
 
                                 if (getBestRateInfo?.guaranteed) {
-                                    const guarantee = safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge);
-                                    if (guarantee > 0) {
-                                        breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee });
+                                    const guarantee = getActualVsMarkupAmount('guarantee');
+                                    if (guarantee.markup > 0) {
+                                        breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee.markup, actualAmount: guarantee.actual });
                                     }
                                 }
 
@@ -298,19 +381,18 @@ const RateDetails = ({
                                                 <Box key={index}>
                                                     <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                         {item.name}
+                                                        {item.hasMarkup && (
+                                                            <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
+                                                                (plus {item.markupPercentage || item.value}%)
+                                                            </Typography>
+                                                        )}
                                                     </Typography>
-                                                    {isAdmin && !item.isMarkup ? (
-                                                        <Box>
-                                                            <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                Cost: ${item.amount.toFixed(2)}
-                                                            </Typography>
-                                                            <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                                Charge: ${item.amount.toFixed(2)}
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body1" sx={{ fontSize: '12px', color: item.isMarkup ? '#059669' : 'inherit' }}>
-                                                            ${item.amount.toFixed(2)}
+                                                    <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                                        ${safeNumber(item.amount).toFixed(2)}
+                                                    </Typography>
+                                                    {enhancedIsAdmin && !item.isMarkup && (
+                                                        <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                            (Cost: ${(item.actualAmount || item.amount).toFixed(2)})
                                                         </Typography>
                                                     )}
                                                 </Box>
@@ -325,73 +407,56 @@ const RateDetails = ({
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Freight Charges
                                             </Typography>
-                                            {isAdmin ? (
-                                                <Box>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        Cost: ${(getBestRateInfo?.pricing?.freight ||
-                                                            getBestRateInfo?.freightCharge ||
-                                                            getBestRateInfo?.freightCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                        Charge: ${(getBestRateInfo?.pricing?.freight ||
-                                                            getBestRateInfo?.freightCharge ||
-                                                            getBestRateInfo?.freightCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                            ) : (
-                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                     ${(getBestRateInfo?.pricing?.freight ||
                                                         getBestRateInfo?.freightCharge ||
                                                         getBestRateInfo?.freightCharges || 0).toFixed(2)}
                                                 </Typography>
-                                            )}
+                                                {enhancedIsAdmin && (
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                        (Cost: ${(getBestRateInfo?.pricing?.freight ||
+                                                            getBestRateInfo?.freightCharge ||
+                                                            getBestRateInfo?.freightCharges || 0).toFixed(2)})
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </Box>
                                         <Box>
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Fuel Charges
                                             </Typography>
-                                            {isAdmin ? (
-                                                <Box>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        Cost: ${(getBestRateInfo?.pricing?.fuel ||
-                                                            getBestRateInfo?.fuelCharge ||
-                                                            getBestRateInfo?.fuelCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                        Charge: ${(getBestRateInfo?.pricing?.fuel ||
-                                                            getBestRateInfo?.fuelCharge ||
-                                                            getBestRateInfo?.fuelCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                            ) : (
-                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                     ${(getBestRateInfo?.pricing?.fuel ||
                                                         getBestRateInfo?.fuelCharge ||
                                                         getBestRateInfo?.fuelCharges || 0).toFixed(2)}
                                                 </Typography>
-                                            )}
+                                                {enhancedIsAdmin && (
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                        (Cost: ${(getBestRateInfo?.pricing?.fuel ||
+                                                            getBestRateInfo?.fuelCharge ||
+                                                            getBestRateInfo?.fuelCharges || 0).toFixed(2)})
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </Box>
                                         <Box>
                                             <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                 Service Charges
                                             </Typography>
-                                            {isAdmin ? (
-                                                <Box>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        Cost: ${(getBestRateInfo?.pricing?.service ||
-                                                            getBestRateInfo?.serviceCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                                                        Charge: ${(getBestRateInfo?.pricing?.service ||
-                                                            getBestRateInfo?.serviceCharges || 0).toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                            ) : (
-                                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                     ${(getBestRateInfo?.pricing?.service ||
                                                         getBestRateInfo?.serviceCharges || 0).toFixed(2)}
                                                 </Typography>
-                                            )}
+                                                {enhancedIsAdmin && (
+                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
+                                                        (Cost: ${(getBestRateInfo?.pricing?.service ||
+                                                            getBestRateInfo?.serviceCharges || 0).toFixed(2)})
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </Box>
                                     </Box>
                                 );
@@ -400,99 +465,26 @@ const RateDetails = ({
 
                         {/* Right Column - Total */}
                         <Grid item xs={12} md={4}>
-                            <Paper
-                                elevation={0}
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 2,
-                                    border: '1px solid #e0e0e0',
-                                    bgcolor: 'background.default',
-                                    height: '100%',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                {isAdmin ? (
-                                    // Admin view: Show both cost and charge
-                                    <>
-                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
-                                            Total Amount Summary
+                            <Paper elevation={1} sx={{ p: 2, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                                <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
+                                    Total
+                                </Typography>
+                                {enhancedIsAdmin ? (
+                                    <Box>
+                                        <Typography variant="body1" sx={{ fontSize: '14px', color: '#059669', fontWeight: 500, mb: 1 }}>
+                                            Cost: ${safeNumber(totalCost).toFixed(2)}
                                         </Typography>
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                            <Box sx={{ textAlign: 'center', p: 1, backgroundColor: '#f3f4f6', borderRadius: 1 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
-                                                    Cost (Actual)
-                                                </Typography>
-                                                <Typography variant="h5" sx={{ fontWeight: 700, color: '#374151' }}>
-                                                    ${(() => {
-                                                        if (quickShipData) {
-                                                            return quickShipData.total.toFixed(2);
-                                                        }
-                                                        // Use dual rate storage system if available
-                                                        if (shipment?.actualRates?.totalCharges) {
-                                                            return shipment.actualRates.totalCharges.toFixed(2);
-                                                        }
-                                                        // Fallback to markup summary or rate info
-                                                        return (markupSummary?.originalAmount || getBestRateInfo?.pricing?.total || getBestRateInfo?.totalCharges || 0).toFixed(2);
-                                                    })()}
-                                                </Typography>
-                                            </Box>
-                                            <Box sx={{ textAlign: 'center', p: 1, backgroundColor: '#dcfce7', borderRadius: 1 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#059669', mb: 0.5 }}>
-                                                    Charge (Customer)
-                                                </Typography>
-                                                <Typography variant="h5" sx={{ fontWeight: 700, color: '#059669' }}>
-                                                    ${(() => {
-                                                        if (quickShipData) {
-                                                            return quickShipData.total.toFixed(2);
-                                                        }
-                                                        // Use dual rate storage system if available
-                                                        if (shipment?.markupRates?.totalCharges) {
-                                                            return shipment.markupRates.totalCharges.toFixed(2);
-                                                        }
-                                                        // Fallback to markup summary or rate info
-                                                        return (markupSummary?.finalAmount || getBestRateInfo?.pricing?.total || getBestRateInfo?.totalCharges || 0).toFixed(2);
-                                                    })()}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    </>
+                                        <Typography variant="h6" sx={{ fontSize: '20px', fontWeight: 'bold', mb: 0.5 }}>
+                                            ${safeNumber(totalCharge).toFixed(2)}
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '14px', color: 'text.secondary' }}>
+                                            Customer Charge
+                                        </Typography>
+                                    </Box>
                                 ) : (
-                                    // Customer view: Show only charge
-                                    <>
-                                        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, textAlign: 'center' }}>
-                                            Total Charges
-                                        </Typography>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, color: '#000', textAlign: 'center' }}>
-                                            ${(() => {
-                                                // For QuickShip, use the calculated total from manual rates
-                                                if (isQuickShip && quickShipData) {
-                                                    return quickShipData.total.toFixed(2);
-                                                }
-
-                                                // Regular shipment logic
-                                                if (getBestRateInfo?.pricing?.total !== undefined) {
-                                                    return safeNumber(getBestRateInfo.pricing.total).toFixed(2);
-                                                }
-                                                if (getBestRateInfo?.totalCharges !== undefined) {
-                                                    return safeNumber(getBestRateInfo.totalCharges).toFixed(2);
-                                                }
-                                                if (getBestRateInfo?.total !== undefined) {
-                                                    return safeNumber(getBestRateInfo.total).toFixed(2);
-                                                }
-                                                const freight = safeNumber(getBestRateInfo?.pricing?.freight || getBestRateInfo?.freightCharge || getBestRateInfo?.freightCharges);
-                                                const fuel = safeNumber(getBestRateInfo?.pricing?.fuel || getBestRateInfo?.fuelCharge || getBestRateInfo?.fuelCharges);
-                                                const service = safeNumber(getBestRateInfo?.pricing?.service || getBestRateInfo?.serviceCharges);
-                                                const accessorial = safeNumber(getBestRateInfo?.pricing?.accessorial || getBestRateInfo?.accessorialCharges);
-                                                const guarantee = getBestRateInfo?.guaranteed ? safeNumber(getBestRateInfo?.pricing?.guarantee || getBestRateInfo?.guaranteeCharge) : 0;
-                                                return (freight + fuel + service + accessorial + guarantee).toFixed(2);
-                                            })()}
-                                        </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '12px' }}>
-                                            {quickShipData?.currency || getBestRateInfo?.currency || 'USD'}
-                                        </Typography>
-                                    </>
+                                    <Typography variant="h6" sx={{ fontSize: '20px', fontWeight: 'bold' }}>
+                                        ${safeNumber(totalCharge).toFixed(2)}
+                                    </Typography>
                                 )}
                             </Paper>
                         </Grid>

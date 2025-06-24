@@ -287,99 +287,215 @@ const EnhancedRateCard = ({
                         {expanded ? 'Hide Details' : 'Show Details'}
                     </Button>
 
-                    <Collapse in={expanded}>
-                        <Box sx={{ pt: 1 }}>
-                            <Divider sx={{ mb: 2 }} />
+                    <Collapse in={expanded} timeout={300}>
+                        {expanded && (
+                            <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
+                                <Divider sx={{ mb: 2 }} />
 
-                            {/* Service Details */}
-                            <Grid container spacing={2} sx={{ mb: 2 }}>
-                                <Grid item xs={6}>
-                                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, fontSize: '10px' }}>
-                                        SOURCE SYSTEM
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                        {rate.sourceCarrier?.name || 'Unknown'}
-                                    </Typography>
+                                {/* Enhanced debug logging to see actual rate structure */}
+                                {console.log('🔍 EnhancedRateCard Rate Structure:', {
+                                    hasBillingDetails: !!(rate.billingDetails || rate.pricing?.billingDetails),
+                                    billingDetailsLength: (rate.billingDetails || rate.pricing?.billingDetails)?.length,
+                                    billingDetailsContent: rate.billingDetails || rate.pricing?.billingDetails,
+                                    hasMarkupMetadata: !!rate.markupMetadata,
+                                    markupMetadata: rate.markupMetadata,
+                                    pricingKeys: Object.keys(rate.pricing || {}),
+                                    ratePricingTotal: rate.pricing?.total,
+                                    carrierName: rate.sourceCarrier?.name || rate.carrier?.name,
+                                    topLevelBillingDetails: rate.billingDetails,
+                                    pricingBillingDetails: rate.pricing?.billingDetails
+                                })}
+
+                                <Grid container spacing={2}>
+                                    <Grid item xs={6}>
+                                        <Typography variant="caption" sx={{ fontSize: '10px', textTransform: 'uppercase', color: 'text.secondary', fontWeight: 500 }}>
+                                            Source System
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                            {(() => {
+                                                // Smart source system detection
+                                                if (rate.sourceSystem) {
+                                                    return rate.sourceSystem;
+                                                }
+
+                                                // Check if this is a direct carrier (not through eShip Plus)
+                                                const carrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName;
+                                                const sourceCarrierKey = rate.sourceCarrier?.key || rate.sourceCarrier?.name;
+                                                const sourceCarrierSystem = rate.sourceCarrier?.system;
+
+                                                // If it's explicitly from eShip Plus
+                                                if (sourceCarrierKey === 'ESHIPPLUS' ||
+                                                    sourceCarrierSystem === 'eshipplus' ||
+                                                    rate.sourceCarrierName === 'eShip Plus') {
+                                                    return 'EShip Plus';
+                                                }
+
+                                                // For direct carriers, show the carrier name
+                                                if (carrierName && carrierName !== 'Unknown Carrier') {
+                                                    return carrierName;
+                                                }
+
+                                                // Fallback
+                                                return 'Direct Carrier';
+                                            })()}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={6}>
+                                        <Typography variant="caption" sx={{ fontSize: '10px', textTransform: 'uppercase', color: 'text.secondary', fontWeight: 500 }}>
+                                            Service Mode
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                            {rate.service?.name || rate.displayCarrier?.name || 'Standard'}
+                                        </Typography>
+                                    </Grid>
                                 </Grid>
-                                <Grid item xs={6}>
-                                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, fontSize: '10px' }}>
-                                        SERVICE MODE
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                        {rate.serviceMode || serviceName}
-                                    </Typography>
-                                </Grid>
-                            </Grid>
 
-                            {/* Billing Breakdown */}
-                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>
-                                Cost Breakdown
-                            </Typography>
-
-                            {rate.pricing?.billingDetails && rate.pricing.billingDetails.length > 0 ? (
-                                // Detailed billing breakdown (Canpar style)
-                                rate.pricing.billingDetails.map((detail, index) => (
-                                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                                            {detail.name}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                            {formatPrice(detail.amount)}
-                                        </Typography>
-                                    </Box>
-                                ))
-                            ) : (
-                                // Standard breakdown
-                                <>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                                            Freight Charges
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                            {formatPrice(rate.pricing?.baseRate || rate.pricing?.freight || rate.freightCharges || 0)}
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                                            Fuel Surcharge
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                            {formatPrice(rate.pricing?.fuelSurcharge || rate.pricing?.fuel || rate.fuelCharges || 0)}
-                                        </Typography>
-                                    </Box>
-                                    {(rate.pricing?.serviceCharges || rate.pricing?.service || rate.serviceCharges || 0) > 0 && (
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                                                Service Charges
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                {formatPrice(rate.pricing?.serviceCharges || rate.pricing?.service || rate.serviceCharges || 0)}
-                                            </Typography>
-                                        </Box>
-                                    )}
-                                    {(rate.pricing?.taxes?.total || rate.pricing?.tax || rate.taxCharges || 0) > 0 && (
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
-                                                Taxes
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                {formatPrice(rate.pricing?.taxes?.total || rate.pricing?.tax || rate.taxCharges || 0)}
-                                            </Typography>
-                                        </Box>
-                                    )}
-                                </>
-                            )}
-
-                            <Divider sx={{ my: 1 }} />
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700 }}>
-                                    Total
+                                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontSize: '12px', fontWeight: 600 }}>
+                                    Cost Breakdown
                                 </Typography>
-                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700, color: 'success.main' }}>
-                                    {formatPrice(totalPrice)}
-                                </Typography>
+
+                                {(() => {
+                                    // Check for billingDetails in both locations (top-level and pricing)
+                                    const billingDetails = rate.billingDetails || rate.pricing?.billingDetails;
+
+                                    if (billingDetails && billingDetails.length > 0) {
+                                        // Detailed billing breakdown (includes markup if applied)
+                                        return billingDetails.map((detail, index) => (
+                                            <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                    {detail.name || 'Charge'}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                    {formatPrice(detail.amount)}
+                                                </Typography>
+                                            </Box>
+                                        ));
+                                    } else {
+                                        // Standard breakdown - use marked-up amounts if available
+                                        // Helper function to get charge amount (marked-up if available)
+                                        const getChargeAmount = (chargeName, fallbackAmount) => {
+                                            // Check if we have billing details with markup applied
+                                            const billingDetailsToCheck = rate.billingDetails || rate.pricing?.billingDetails;
+                                            if (billingDetailsToCheck && Array.isArray(billingDetailsToCheck)) {
+                                                const detail = billingDetailsToCheck.find(detail => {
+                                                    const detailName = (detail.name || '').toLowerCase();
+                                                    return detailName.includes(chargeName.toLowerCase());
+                                                });
+                                                if (detail && detail.amount !== undefined) {
+                                                    return {
+                                                        amount: detail.amount,
+                                                        hasMarkup: detail.hasMarkup,
+                                                        markupPercentage: detail.markupPercentage
+                                                    };
+                                                }
+                                            }
+                                            // Fallback to raw pricing
+                                            return {
+                                                amount: fallbackAmount,
+                                                hasMarkup: false,
+                                                markupPercentage: null
+                                            };
+                                        };
+
+                                        // Enhanced fallback logic for different carriers and rate structures
+                                        const getStandardCharges = () => {
+                                            const pricing = rate.pricing || {};
+
+                                            // Enhanced freight charge detection
+                                            const freightAmount = pricing.baseRate || pricing.freight || pricing.freightCharges ||
+                                                rate.freightCharges || pricing.base || pricing.linehaul || 0;
+
+                                            // Enhanced fuel charge detection
+                                            const fuelAmount = pricing.fuelSurcharge || pricing.fuel || pricing.fuelCharges ||
+                                                rate.fuelCharges || pricing.surcharge || 0;
+
+                                            // Enhanced service charge detection
+                                            const serviceAmount = pricing.serviceCharges || pricing.service || pricing.accessorial ||
+                                                rate.serviceCharges || pricing.handling || 0;
+
+                                            // Enhanced tax detection
+                                            const taxAmount = pricing.taxes?.total || pricing.tax || pricing.taxCharges ||
+                                                rate.taxCharges || pricing.gst || pricing.hst || 0;
+
+                                            return { freightAmount, fuelAmount, serviceAmount, taxAmount };
+                                        };
+
+                                        const { freightAmount, fuelAmount, serviceAmount, taxAmount } = getStandardCharges();
+
+                                        const freightCharge = getChargeAmount('freight', freightAmount);
+                                        const fuelCharge = getChargeAmount('fuel', fuelAmount);
+                                        const serviceCharge = getChargeAmount('service', serviceAmount);
+                                        const taxCharge = getChargeAmount('tax', taxAmount);
+
+                                        return (
+                                            <>
+                                                {freightCharge.amount > 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                            Freight Charges
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                            {formatPrice(freightCharge.amount)}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                                {fuelCharge.amount > 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                            Fuel Surcharge
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                            {formatPrice(fuelCharge.amount)}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                                {serviceCharge.amount > 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                            Service Charges
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                            {formatPrice(serviceCharge.amount)}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                                {taxCharge.amount > 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                            Taxes
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                            {formatPrice(taxCharge.amount)}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                                {/* Fallback: If no individual charges found, show at least the total */}
+                                                {freightCharge.amount === 0 && fuelCharge.amount === 0 && serviceCharge.amount === 0 && taxCharge.amount === 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                            Total Rate
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                            {formatPrice(totalPrice)}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                            </>
+                                        );
+                                    }
+                                })()}
+
+                                <Divider sx={{ my: 1 }} />
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700 }}>
+                                        Total
+                                    </Typography>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700, color: 'success.main' }}>
+                                        {formatPrice(totalPrice)}
+                                    </Typography>
+                                </Box>
                             </Box>
-                        </Box>
+                        )}
                     </Collapse>
                 </Box>
 

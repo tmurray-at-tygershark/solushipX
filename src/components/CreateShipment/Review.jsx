@@ -1957,30 +1957,103 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                             }
 
                                             const breakdownItems = [];
-                                            const freight = safeNumber(fullRateDetails?.pricing?.freight || fullRateDetails?.freightCharge || fullRateDetails?.freightCharges);
-                                            if (freight > 0) {
-                                                breakdownItems.push({ name: 'Freight Charges', amount: freight });
+
+                                            // Get freight charges - use marked-up amount if available
+                                            const getChargeAmount = (chargeName, fallbackAmount) => {
+                                                // Check if we have billing details with markup applied
+                                                if (fullRateDetails?.billingDetails && Array.isArray(fullRateDetails.billingDetails)) {
+                                                    const detail = fullRateDetails.billingDetails.find(detail => {
+                                                        const detailName = (detail.name || '').toLowerCase();
+                                                        return detailName.includes(chargeName.toLowerCase());
+                                                    });
+                                                    if (detail && detail.amount !== undefined) {
+                                                        return {
+                                                            amount: detail.amount,
+                                                            hasMarkup: detail.hasMarkup,
+                                                            markupPercentage: detail.markupPercentage,
+                                                            actualAmount: detail.actualAmount
+                                                        };
+                                                    }
+                                                }
+                                                // Fallback to raw pricing
+                                                return {
+                                                    amount: fallbackAmount,
+                                                    hasMarkup: false,
+                                                    markupPercentage: null,
+                                                    actualAmount: fallbackAmount
+                                                };
+                                            };
+
+                                            // Freight charges
+                                            const freightFallback = safeNumber(fullRateDetails?.pricing?.freight || fullRateDetails?.freightCharge || fullRateDetails?.freightCharges);
+                                            if (freightFallback > 0) {
+                                                const freightCharge = getChargeAmount('freight', freightFallback);
+                                                if (freightCharge.amount > 0) {
+                                                    breakdownItems.push({
+                                                        name: 'Freight Charges',
+                                                        amount: freightCharge.amount, // Use marked-up amount
+                                                        hasMarkup: freightCharge.hasMarkup,
+                                                        markupPercentage: freightCharge.markupPercentage,
+                                                        actualAmount: freightCharge.actualAmount
+                                                    });
+                                                }
                                             }
 
-                                            const fuel = safeNumber(fullRateDetails?.pricing?.fuel || fullRateDetails?.fuelCharge || fullRateDetails?.fuelCharges);
-                                            if (fuel > 0) {
-                                                breakdownItems.push({ name: 'Fuel Charges', amount: fuel });
+                                            // Fuel charges (no markup applied)
+                                            const fuelFallback = safeNumber(fullRateDetails?.pricing?.fuel || fullRateDetails?.fuelCharge || fullRateDetails?.fuelCharges);
+                                            if (fuelFallback > 0) {
+                                                const fuelCharge = getChargeAmount('fuel', fuelFallback);
+                                                if (fuelCharge.amount > 0) {
+                                                    breakdownItems.push({
+                                                        name: 'Fuel Charges',
+                                                        amount: fuelCharge.amount,
+                                                        hasMarkup: fuelCharge.hasMarkup,
+                                                        markupPercentage: fuelCharge.markupPercentage
+                                                    });
+                                                }
                                             }
 
-                                            const service = safeNumber(fullRateDetails?.pricing?.service || fullRateDetails?.serviceCharges);
-                                            if (service > 0) {
-                                                breakdownItems.push({ name: 'Service Charges', amount: service });
+                                            // Service charges (no markup applied)
+                                            const serviceFallback = safeNumber(fullRateDetails?.pricing?.service || fullRateDetails?.serviceCharges);
+                                            if (serviceFallback > 0) {
+                                                const serviceCharge = getChargeAmount('service', serviceFallback);
+                                                if (serviceCharge.amount > 0) {
+                                                    breakdownItems.push({
+                                                        name: 'Service Charges',
+                                                        amount: serviceCharge.amount,
+                                                        hasMarkup: serviceCharge.hasMarkup,
+                                                        markupPercentage: serviceCharge.markupPercentage
+                                                    });
+                                                }
                                             }
 
-                                            const accessorial = safeNumber(fullRateDetails?.pricing?.accessorial || fullRateDetails?.accessorialCharges);
-                                            if (accessorial > 0) {
-                                                breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial });
+                                            // Accessorial charges (no markup applied)
+                                            const accessorialFallback = safeNumber(fullRateDetails?.pricing?.accessorial || fullRateDetails?.accessorialCharges);
+                                            if (accessorialFallback > 0) {
+                                                const accessorialCharge = getChargeAmount('accessorial', accessorialFallback);
+                                                if (accessorialCharge.amount > 0) {
+                                                    breakdownItems.push({
+                                                        name: 'Accessorial Charges',
+                                                        amount: accessorialCharge.amount,
+                                                        hasMarkup: accessorialCharge.hasMarkup,
+                                                        markupPercentage: accessorialCharge.markupPercentage
+                                                    });
+                                                }
                                             }
 
+                                            // Guarantee charge (no markup applied)
                                             if (fullRateDetails?.guaranteed || formData.selectedRate?.guaranteed) {
-                                                const guarantee = safeNumber(fullRateDetails?.pricing?.guarantee || fullRateDetails?.guaranteeCharge);
-                                                if (guarantee > 0) {
-                                                    breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee });
+                                                const guaranteeFallback = safeNumber(fullRateDetails?.pricing?.guarantee || fullRateDetails?.guaranteeCharge);
+                                                if (guaranteeFallback > 0) {
+                                                    const guaranteeCharge = getChargeAmount('guarantee', guaranteeFallback);
+                                                    if (guaranteeCharge.amount > 0) {
+                                                        breakdownItems.push({
+                                                            name: 'Guarantee Charge',
+                                                            amount: guaranteeCharge.amount,
+                                                            hasMarkup: guaranteeCharge.hasMarkup,
+                                                            markupPercentage: guaranteeCharge.markupPercentage
+                                                        });
+                                                    }
                                                 }
                                             }
 
@@ -1991,6 +2064,11 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                                             <Box key={index}>
                                                                 <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                                     {item.name}
+                                                                    {item.hasMarkup && (
+                                                                        <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
+                                                                            (plus {item.markupPercentage}%)
+                                                                        </Typography>
+                                                                    )}
                                                                 </Typography>
                                                                 <Typography variant="body1" sx={{ fontSize: '12px' }}>
                                                                     ${item.amount.toFixed(2)}
@@ -2006,11 +2084,24 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                                     <Box>
                                                         <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
                                                             Freight Charges
+                                                            {(() => {
+                                                                // Check if freight charge has markup applied using the same logic as above
+                                                                const freightFallback = safeNumber(fullRateDetails?.pricing?.freight || fullRateDetails?.freightCharge || fullRateDetails?.freightCharges);
+                                                                const freightCharge = getChargeAmount('freight', freightFallback);
+                                                                return freightCharge.hasMarkup ? (
+                                                                    <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
+                                                                        (plus {freightCharge.markupPercentage}%)
+                                                                    </Typography>
+                                                                ) : null;
+                                                            })()}
                                                         </Typography>
                                                         <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                                            ${(fullRateDetails?.pricing?.freight ||
-                                                                fullRateDetails?.freightCharge ||
-                                                                fullRateDetails?.freightCharges || 0).toFixed(2)}
+                                                            ${(() => {
+                                                                // Use marked-up amount if available, otherwise fallback to raw pricing
+                                                                const freightFallback = safeNumber(fullRateDetails?.pricing?.freight || fullRateDetails?.freightCharge || fullRateDetails?.freightCharges);
+                                                                const freightCharge = getChargeAmount('freight', freightFallback);
+                                                                return freightCharge.amount.toFixed(2);
+                                                            })()}
                                                         </Typography>
                                                     </Box>
                                                     <Box>

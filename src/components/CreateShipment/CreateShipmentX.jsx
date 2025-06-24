@@ -51,6 +51,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fetchMultiCarrierRates, getAllCarriers, getEligibleCarriers } from '../../utils/carrierEligibility';
 import { validateUniversalRate } from '../../utils/universalDataModel';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
+import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
 
@@ -227,7 +228,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     // State variables
     const [shipmentInfo, setShipmentInfo] = useState({
         shipmentType: 'freight',
-        serviceLevel: 'Any',
+        serviceLevel: 'any',
         shipmentDate: new Date().toISOString().split('T')[0],
         shipperReferenceNumber: '',
         billType: 'third_party'
@@ -278,7 +279,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
     // Rate filtering and sorting state
     const [sortBy, setSortBy] = useState('price');
-    const [serviceFilter, setServiceFilter] = useState('all');
+    const [serviceFilter, setServiceFilter] = useState('any');
     const [showRateDetails, setShowRateDetails] = useState(false);
 
     // Additional state for improved UX
@@ -491,7 +492,37 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 });
 
                 if (validRates.length > 0) {
-                    setRates(validRates);
+                    try {
+                        // Apply markup to all rates before setting them
+                        console.log('🔧 Applying markup to', validRates.length, 'rates...');
+
+                        // Prepare shipment data for markup context
+                        const shipmentDataForMarkup = {
+                            shipmentInfo,
+                            packages: packages.filter(p => p.weight && p.length && p.width && p.height),
+                            shipFrom: shipFromAddress,
+                            shipTo: shipToAddress
+                        };
+
+                        const ratesWithMarkup = await Promise.all(
+                            validRates.map(async (rate) => {
+                                try {
+                                    const rateWithMarkup = await markupEngine.applyMarkupToRate(rate, companyData?.companyID, shipmentDataForMarkup);
+                                    console.log('✅ Markup applied to rate:', rate.id || rate.quoteId, rateWithMarkup);
+                                    return rateWithMarkup;
+                                } catch (markupError) {
+                                    console.warn('⚠️ Failed to apply markup to rate, using original:', rate.id || rate.quoteId, markupError);
+                                    return rate; // Fallback to original rate if markup fails
+                                }
+                            })
+                        );
+
+                        console.log('🎉 All rates processed with markup:', ratesWithMarkup.length);
+                        setRates(ratesWithMarkup);
+                    } catch (error) {
+                        console.error('❌ Error applying markup to rates, using original rates:', error);
+                        setRates(validRates); // Fallback to original rates
+                    }
                     setRawRateApiResponseData(multiCarrierResult);
                 } else {
                     setRatesError('No rates available for this shipment configuration');
@@ -563,7 +594,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         if (draftData.shipmentInfo) {
                             setShipmentInfo({
                                 shipmentType: draftData.shipmentInfo.shipmentType || 'freight',
-                                serviceLevel: draftData.shipmentInfo.serviceLevel || 'Any',
+                                serviceLevel: draftData.shipmentInfo.serviceLevel || 'any',
                                 shipmentDate: draftData.shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
                                 shipperReferenceNumber: draftData.shipmentInfo.shipperReferenceNumber || '',
                                 billType: draftData.shipmentInfo.billType || 'third_party'
@@ -639,7 +670,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     // Initialize with default values
                     shipmentInfo: {
                         shipmentType: 'courier', // Default to courier
-                        serviceLevel: 'Any',
+                        serviceLevel: 'any',
                         shipmentDate: new Date().toISOString().split('T')[0],
                         shipperReferenceNumber: newShipmentID,
                         billType: 'third_party'
@@ -681,12 +712,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         if (shipmentInfo.shipmentType) {
             const isCourier = shipmentInfo.shipmentType === 'courier';
 
+            // Only update packaging type when shipment type changes, preserve user's dimension inputs
             setPackages(prev => prev.map(pkg => ({
                 ...pkg,
                 packagingType: isCourier ? 244 : 262, // BOX(ES) for courier, SKID(S) for freight
-                length: isCourier ? '12' : '48',
-                width: isCourier ? '12' : '40',
-                height: isCourier ? '12' : ''
+                // Don't override dimensions - let users keep their values
+                // Only set defaults for completely new packages via addPackage()
             })));
 
             // Clear rates and reset rate fetching state when shipment type changes
@@ -705,15 +736,27 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             if (debounceTimeoutRef.current) {
                 clearTimeout(debounceTimeoutRef.current);
             }
+
+            // Trigger rate fetching if all required data is available
+            // This ensures automatic rate fetching resumes after shipment type change
+            setTimeout(() => {
+                if (canFetchRates() && shipFromAddress && shipToAddress && packages.length > 0) {
+                    console.log('🔄 Triggering automatic rate fetch after shipment type change');
+                    if (debounceTimeoutRef.current) {
+                        clearTimeout(debounceTimeoutRef.current);
+                    }
+                    debounceTimeoutRef.current = setTimeout(() => fetchRates(), 1500);
+                }
+            }, 100); // Small delay to ensure state updates are complete
         }
-    }, [shipmentInfo.shipmentType]);
+    }, [shipmentInfo.shipmentType]); // REMOVED packages, canFetchRates, addresses from dependencies
 
     // Rate filtering and sorting effect
     useEffect(() => {
         let filtered = [...rates];
 
         // Apply service filter
-        if (serviceFilter !== 'all') {
+        if (serviceFilter !== 'all' && serviceFilter !== 'any') {
             filtered = filtered.filter(rate => {
                 switch (serviceFilter) {
                     case 'guaranteed':
@@ -911,7 +954,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             weight: '',
             length: isCourier ? '12' : '48', // 12" for courier box, 48" for freight skid
             width: isCourier ? '12' : '40',  // 12" for courier box, 40" for freight skid
-            height: isCourier ? '12' : '',   // 12" for courier box, empty for freight skid
+            height: isCourier ? '12' : '48', // 12" for courier box, 48" for freight skid (fixed)
             unitSystem: 'imperial',
             freightClass: ''
         };
@@ -1109,7 +1152,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Shipment information - save whatever is entered
                 shipmentInfo: {
                     shipmentType: shipmentInfo.shipmentType || 'freight',
-                    serviceLevel: shipmentInfo.serviceLevel || 'Any',
+                    serviceLevel: shipmentInfo.serviceLevel || 'any',
                     shipmentDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
                     shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || currentShipmentID,
                     billType: shipmentInfo.billType || 'third_party'
@@ -2826,7 +2869,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                 color: '#374151'
                                                             }}
                                                         >
-                                                            <option value="all">All Services</option>
+                                                            <option value="any">ANY</option>
                                                             <option value="guaranteed">Guaranteed Only</option>
                                                             <option value="economy">Economy</option>
                                                             <option value="express">Express</option>

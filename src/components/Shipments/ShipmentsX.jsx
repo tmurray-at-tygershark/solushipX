@@ -979,7 +979,56 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             setTotalCount(filteredData.length);
 
-            // Apply pagination to filtered data
+            // CRITICAL FIX: Apply date sorting after all filters to ensure latest shipments appear at the top
+            // This handles both regular shipments (createdAt) and QuickShip (bookedAt) properly
+            filteredData.sort((a, b) => {
+                // Get the appropriate date for each shipment - MUST match CREATED column display logic
+                const getShipmentDate = (shipment) => {
+                    // Match the CREATED column logic from ShipmentTableRow.jsx exactly
+                    if (shipment.creationMethod === 'quickship') {
+                        // For QuickShip: bookingTimestamp (primary) > bookedAt > createdAt (fallback)
+                        if (shipment.bookingTimestamp) {
+                            return shipment.bookingTimestamp?.toDate ?
+                                shipment.bookingTimestamp.toDate() :
+                                new Date(shipment.bookingTimestamp);
+                        }
+                        if (shipment.bookedAt) {
+                            return shipment.bookedAt?.toDate ?
+                                shipment.bookedAt.toDate() :
+                                new Date(shipment.bookedAt);
+                        }
+                        if (shipment.createdAt) {
+                            return shipment.createdAt?.toDate ?
+                                shipment.createdAt.toDate() :
+                                new Date(shipment.createdAt);
+                        }
+                    } else {
+                        // For regular shipments: createdAt (primary) > bookingTimestamp (fallback)
+                        if (shipment.createdAt) {
+                            return shipment.createdAt?.toDate ?
+                                shipment.createdAt.toDate() :
+                                new Date(shipment.createdAt);
+                        }
+                        if (shipment.bookingTimestamp) {
+                            return shipment.bookingTimestamp?.toDate ?
+                                shipment.bookingTimestamp.toDate() :
+                                new Date(shipment.bookingTimestamp);
+                        }
+                    }
+                    // Fallback to epoch if no date available
+                    return new Date(0);
+                };
+
+                const dateA = getShipmentDate(a);
+                const dateB = getShipmentDate(b);
+
+                // Sort descending (newest first)
+                return dateB - dateA;
+            });
+
+            console.log(`📅 Applied CREATED date sorting - matches table display column`);
+
+            // Apply pagination to filtered and sorted data
             const paginatedData = rowsPerPage === -1
                 ? filteredData // Show all if rowsPerPage is -1
                 : filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
