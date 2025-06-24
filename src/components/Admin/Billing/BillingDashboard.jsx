@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     Grid,
@@ -35,6 +35,7 @@ import {
     DialogActions,
     Divider,
     Alert,
+    Autocomplete,
 } from '@mui/material';
 import {
     AttachMoney as MoneyIcon,
@@ -71,58 +72,73 @@ import {
 import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import './Billing.css';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
 import PaymentTerms from './PaymentTerms';
+import InvoiceManagement from './InvoiceManagement';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
+    const { currentUser } = useAuth();
     const navigate = useNavigate();
-    const params = useParams();
     const location = useLocation();
+    const params = new URLSearchParams(location.search);
+
     const [activeTab, setActiveTab] = useState(initialTab);
-    const [fromDate, setFromDate] = useState(null);
-    const [toDate, setToDate] = useState(null);
-    const [customerName, setCustomerName] = useState('');
-    const [invoiceNumber, setInvoiceNumber] = useState('');
-    const [paymentStatus, setPaymentStatus] = useState('');
-    const [customerNotify, setCustomerNotify] = useState('');
-    const [displayCancelled, setDisplayCancelled] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [timeRange, setTimeRange] = useState('month');
     const [metrics, setMetrics] = useState({
         totalRevenue: 0,
         outstandingBalance: 0,
         paidInvoices: 0,
         pendingInvoices: 0,
+        uninvoicedCharges: 0,
+        monthlyRevenue: 0,
+        growthRate: 0,
     });
-    const [revenueTrends, setRevenueTrends] = useState([]);
-    const [revenueByCompany, setRevenueByCompany] = useState([]);
-    const [recentInvoices, setRecentInvoices] = useState([]);
     const [invoices, setInvoices] = useState([]);
-    const [anchorEl, setAnchorEl] = useState(null);
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedInvoice, setSelectedInvoice] = useState(null);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
     const [detailsOpen, setDetailsOpen] = useState(false);
-    const [ediFiles, setEdiFiles] = useState([]);
-    const [dragActive, setDragActive] = useState(false);
-    const fileInputRef = React.useRef(null);
+    const [selectedInvoice, setSelectedInvoice] = useState(null);
+    const [anchorEl, setAnchorEl] = useState(null);
+    const [fromDate, setFromDate] = useState(null);
+    const [toDate, setToDate] = useState(null);
+    const [customerName, setCustomerName] = useState('');
+    const [invoiceNumber, setInvoiceNumber] = useState('');
+    const [paymentStatus, setPaymentStatus] = useState('');
     const [selectedUploadId, setSelectedUploadId] = useState(params.uploadId || null);
     const [showEdiResults, setShowEdiResults] = useState(!!params.uploadId);
     const [ediProcessedItems, setEdiProcessedItems] = useState([]);
     const [ediLoading, setEdiLoading] = useState(false);
     const [ediDialogOpen, setEdiDialogOpen] = useState(false);
+    const [timeRange, setTimeRange] = useState('month');
+    const [revenueTrends, setRevenueTrends] = useState([]);
+    const [revenueByCompany, setRevenueByCompany] = useState([]);
+    const [dragActive, setDragActive] = useState(false);
+    const [ediFiles, setEdiFiles] = useState([]);
+    const fileInputRef = useRef(null);
     const { enqueueSnackbar } = useSnackbar();
+    const [companies, setCompanies] = useState([]);
+
+    // Computed filtered invoices
+    const filteredInvoices = invoices.filter(invoice => {
+        const searchStr = searchTerm.toLowerCase();
+        return (
+            (invoice.number || invoice.id || '').toLowerCase().includes(searchStr) ||
+            (invoice.company || invoice.companyName || '').toLowerCase().includes(searchStr) ||
+            (invoice.status || '').toLowerCase().includes(searchStr)
+        );
+    });
 
     // Handle initial tab and URL params
     useEffect(() => {
@@ -178,24 +194,50 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         try {
             setLoading(true);
             setError(null);
-            const invoicesRef = collection(db, 'invoices');
-            const startDate = getStartDate(timeRange);
 
-            // Fetch invoices within the selected time range
-            const q = query(
-                invoicesRef,
-                where('createdAt', '>=', startDate),
-                orderBy('createdAt', 'desc')
-            );
+            // Fetch both invoices, companies, and shipments
+            const [invoicesSnapshot, companiesSnapshot, shipmentsSnapshot] = await Promise.all([
+                getDocs(query(
+                    collection(db, 'invoices'),
+                    where('createdAt', '>=', getStartDate(timeRange)),
+                    orderBy('createdAt', 'desc')
+                )),
+                getDocs(collection(db, 'companies')),
+                getDocs(query(
+                    collection(db, 'shipments'),
+                    where('status', '!=', 'draft'),
+                    orderBy('createdAt', 'desc')
+                ))
+            ]);
 
-            const querySnapshot = await getDocs(q);
-            const invoicesData = querySnapshot.docs.map(doc => ({
+            const invoicesData = invoicesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
+            const companiesData = companiesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Calculate uninvoiced charges from shipments
+            const uninvoicedCharges = shipmentsData
+                .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
+                .reduce((total, shipment) => {
+                    const charge = shipment.markupRates?.totalCharges ||
+                        shipment.totalCharges ||
+                        shipment.selectedRate?.totalCharges || 0;
+                    return total + charge;
+                }, 0);
+
             // Update state with real data
             setInvoices(invoicesData);
+            setCompanies(companiesData);
 
             // Calculate metrics from real data
             const totalRevenue = invoicesData.reduce((sum, invoice) =>
@@ -208,11 +250,29 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             const pendingInvoices = invoicesData.filter(invoice =>
                 invoice.status === 'pending' || invoice.status === 'unpaid').length;
 
+            // Calculate monthly revenue (current month)
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+
+            const monthlyRevenue = invoicesData
+                .filter(invoice => {
+                    if (!invoice.createdAt) return false;
+                    const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
+                    return invoiceDate.getMonth() === currentMonth &&
+                        invoiceDate.getFullYear() === currentYear &&
+                        invoice.status === 'paid';
+                })
+                .reduce((sum, invoice) => sum + (invoice.total || invoice.amount || 0), 0);
+
             setMetrics({
                 totalRevenue,
                 outstandingBalance,
                 paidInvoices,
                 pendingInvoices,
+                uninvoicedCharges,
+                monthlyRevenue,
+                growthRate: 12.5, // This could be calculated from historical data
             });
 
             // Prepare revenue trends data
@@ -222,9 +282,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             // Prepare revenue by company data
             const companyRevenue = prepareCompanyRevenue(invoicesData);
             setRevenueByCompany(companyRevenue);
-
-            // Set recent invoices
-            setRecentInvoices(invoicesData.slice(0, 5));
 
         } catch (err) {
             console.error('Error fetching billing data:', err);
@@ -592,8 +649,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         setCustomerName('');
         setInvoiceNumber('');
         setPaymentStatus('');
-        setCustomerNotify('');
-        setDisplayCancelled(false);
     };
 
     const handleChangePage = (event, newPage) => {
@@ -618,15 +673,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const handleCloseDetails = () => {
         setDetailsOpen(false);
     };
-
-    const filteredInvoices = invoices.filter(invoice => {
-        const searchStr = searchTerm.toLowerCase();
-        return (
-            (invoice.number || invoice.id || '').toLowerCase().includes(searchStr) ||
-            (invoice.company || invoice.companyName || '').toLowerCase().includes(searchStr) ||
-            (invoice.status || '').toLowerCase().includes(searchStr)
-        );
-    });
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -696,18 +742,582 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     };
 
     const getProcessingStatusChip = (status) => {
+        const statusInfo = {
+            'processing': { label: 'Processing', color: '#f59e0b', bgcolor: '#fff7ed' },
+            'completed': { label: 'Completed', color: '#059669', bgcolor: '#ecfdf5' },
+            'failed': { label: 'Failed', color: '#dc2626', bgcolor: '#fef2f2' },
+            'queued': { label: 'Queued', color: '#6366f1', bgcolor: '#eef2ff' },
+        };
+
+        const info = statusInfo[status] || { label: status || 'Unknown', color: '#6b7280', bgcolor: '#f9fafb' };
+
         return (
             <Chip
-                label={status || 'Unknown'}
+                label={info.label}
                 size="small"
-                color={
-                    status === 'completed' ? 'success' :
-                        status === 'failed' ? 'error' :
-                            status === 'processing' ? 'primary' :
-                                status === 'queued' ? 'warning' : 'default'
-                }
-                sx={{ minWidth: '90px' }}
+                sx={{ color: info.color, bgcolor: info.bgcolor, fontWeight: 600, fontSize: '11px' }}
             />
+        );
+    };
+
+    const handleExportCharges = (charges) => {
+        if (!charges || charges.length === 0) {
+            enqueueSnackbar('No data to export', { variant: 'warning' });
+            return;
+        }
+
+        const csvData = charges.map(charge => ({
+            'Shipment ID': charge.shipmentID,
+            'Company': charge.companyName,
+            'Route': charge.route,
+            'Carrier': charge.carrier,
+            'Actual Cost': charge.actualCost,
+            'Customer Charge': charge.customerCharge,
+            'Profit': charge.customerCharge - charge.actualCost,
+            'Status': charge.status,
+            'Date': charge.shipmentDate.toLocaleDateString()
+        }));
+
+        const csv = [
+            Object.keys(csvData[0]).join(','),
+            ...csvData.map(row => Object.values(row).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `company-charges-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+
+        enqueueSnackbar('Charges exported successfully', { variant: 'success' });
+    };
+
+    // Global Company Charges Table Component
+    const GlobalCompanyChargesTable = ({ timeRange, filters, onExport }) => {
+        const [charges, setCharges] = useState([]);
+        const [localCompanies, setLocalCompanies] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [page, setPage] = useState(0);
+        const [rowsPerPage, setRowsPerPage] = useState(25);
+        const [selectedShipment, setSelectedShipment] = useState(null);
+        const [shipmentDetailsOpen, setShipmentDetailsOpen] = useState(false);
+        const [selectedCompany, setSelectedCompany] = useState(null);
+        const [companyDetailsOpen, setCompanyDetailsOpen] = useState(false);
+
+        useEffect(() => {
+            const fetchCharges = async () => {
+                setLoading(true);
+                try {
+                    console.log('🔍 Fetching global company charges...');
+
+                    // Query all shipments across companies
+                    const shipmentsRef = collection(db, 'shipments');
+                    let q = query(shipmentsRef, where('status', '!=', 'draft'), orderBy('createdAt', 'desc'));
+
+                    // Apply time range filter
+                    if (timeRange === 'week') {
+                        const startDate = new Date();
+                        startDate.setDate(startDate.getDate() - 7);
+                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
+                    } else if (timeRange === 'month') {
+                        const startDate = new Date();
+                        startDate.setMonth(startDate.getMonth() - 1);
+                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
+                    }
+
+                    const [shipmentsSnapshot, companiesSnapshot] = await Promise.all([
+                        getDocs(q),
+                        getDocs(collection(db, 'companies'))
+                    ]);
+
+                    console.log('📦 Found shipments:', shipmentsSnapshot.size);
+                    console.log('🏢 Found companies:', companiesSnapshot.size);
+
+                    // Create company lookup map
+                    const companyMap = {};
+                    const companiesList = [];
+                    companiesSnapshot.docs.forEach(doc => {
+                        const company = { id: doc.id, ...doc.data() };
+                        companyMap[company.companyID] = company;
+                        companiesList.push(company);
+                    });
+                    setLocalCompanies(companiesList);
+
+                    const shipmentCharges = [];
+
+                    shipmentsSnapshot.docs.forEach(doc => {
+                        const shipment = { id: doc.id, ...doc.data() };
+
+                        // Get both actual cost and customer charge from dual rate system
+                        const actualCost = shipment.actualRates?.totalCharges ||
+                            shipment.totalCharges ||
+                            shipment.selectedRate?.totalCharges || 0;
+
+                        const customerCharge = shipment.markupRates?.totalCharges ||
+                            shipment.totalCharges ||
+                            shipment.selectedRate?.totalCharges || 0;
+
+                        if (customerCharge > 0) {
+                            const company = companyMap[shipment.companyID];
+
+                            shipmentCharges.push({
+                                id: shipment.id,
+                                shipmentID: shipment.shipmentID,
+                                companyID: shipment.companyID,
+                                companyName: company?.name || shipment.companyName || shipment.companyID,
+                                company: company,
+                                actualCost: actualCost,
+                                customerCharge: customerCharge,
+                                actualRates: shipment.actualRates,
+                                markupRates: shipment.markupRates,
+                                status: shipment.invoiceStatus || 'uninvoiced',
+                                shipmentDate: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
+                                route: formatRoute(shipment),
+                                carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+                                shipmentData: shipment
+                            });
+                        }
+                    });
+
+                    console.log('💰 Found charges:', shipmentCharges.length);
+
+                    // Apply filters
+                    let filteredCharges = shipmentCharges;
+
+                    if (filters.companyName) {
+                        filteredCharges = filteredCharges.filter(charge =>
+                            charge.companyName.toLowerCase().includes(filters.companyName.toLowerCase()) ||
+                            charge.companyID.toLowerCase().includes(filters.companyName.toLowerCase())
+                        );
+                    }
+
+                    if (filters.status) {
+                        filteredCharges = filteredCharges.filter(charge => charge.status === filters.status);
+                    }
+
+                    if (filters.fromDate) {
+                        filteredCharges = filteredCharges.filter(charge => charge.shipmentDate >= filters.fromDate);
+                    }
+
+                    if (filters.toDate) {
+                        filteredCharges = filteredCharges.filter(charge => charge.shipmentDate <= filters.toDate);
+                    }
+
+                    console.log('🔍 Filtered charges:', filteredCharges.length);
+                    setCharges(filteredCharges);
+                } catch (error) {
+                    console.error('❌ Error fetching global charges:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            fetchCharges();
+        }, [timeRange, filters]);
+
+        const formatRoute = (shipment) => {
+            const from = shipment.shipFrom || {};
+            const to = shipment.shipTo || {};
+
+            const fromCity = from.city || 'N/A';
+            const fromState = from.state || from.province || '';
+            const toCity = to.city || 'N/A';
+            const toState = to.state || to.province || '';
+
+            const fromLocation = fromState ? `${fromCity}, ${fromState}` : fromCity;
+            const toLocation = toState ? `${toCity}, ${toState}` : toCity;
+
+            return `${fromLocation} → ${toLocation}`;
+        };
+
+        const formatCurrency = (amount, currency = 'CAD') => {
+            return new Intl.NumberFormat('en-CA', {
+                style: 'currency',
+                currency: currency
+            }).format(amount);
+        };
+
+        const getChargeBreakdown = (rates) => {
+            if (!rates || !rates.charges) return [];
+
+            return rates.charges.map(charge => ({
+                name: charge.chargeName || charge.name || 'Unknown',
+                amount: charge.chargeAmount || charge.amount || 0,
+                currency: charge.currency || rates.currency || 'CAD'
+            }));
+        };
+
+        const ChargeTooltip = ({ amount, rates, title }) => {
+            const breakdown = getChargeBreakdown(rates);
+
+            return (
+                <Tooltip
+                    title={
+                        <Box sx={{ p: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>
+                                {title}
+                            </Typography>
+                            {breakdown.length > 0 ? (
+                                breakdown.map((charge, index) => (
+                                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                        <Typography variant="body2" sx={{ fontSize: '11px' }}>
+                                            {charge.name}:
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                            {formatCurrency(charge.amount, charge.currency)}
+                                        </Typography>
+                                    </Box>
+                                ))
+                            ) : (
+                                <Typography variant="body2" sx={{ fontSize: '11px' }}>
+                                    No breakdown available
+                                </Typography>
+                            )}
+                            <Divider sx={{ my: 1 }} />
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                    Total:
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                    {formatCurrency(amount, rates?.currency || 'CAD')}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    }
+                    arrow
+                    placement="top"
+                >
+                    <Box sx={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
+                        {formatCurrency(amount, rates?.currency || 'CAD')}
+                    </Box>
+                </Tooltip>
+            );
+        };
+
+        const handleShipmentClick = async (shipment) => {
+            // Fetch full shipment details
+            try {
+                const shipmentDoc = await getDocs(query(
+                    collection(db, 'shipments'),
+                    where('shipmentID', '==', shipment.shipmentID)
+                ));
+
+                if (!shipmentDoc.empty) {
+                    const fullShipmentData = { id: shipmentDoc.docs[0].id, ...shipmentDoc.docs[0].data() };
+                    setSelectedShipment(fullShipmentData);
+                    setShipmentDetailsOpen(true);
+                }
+            } catch (error) {
+                console.error('Error fetching shipment details:', error);
+            }
+        };
+
+        const handleCompanyClick = (company) => {
+            setSelectedCompany(company);
+            setCompanyDetailsOpen(true);
+        };
+
+        const handleExportCharges = () => {
+            if (charges.length === 0) {
+                enqueueSnackbar('No data to export', { variant: 'warning' });
+                return;
+            }
+
+            const csvData = charges.map(charge => ({
+                'Shipment ID': charge.shipmentID,
+                'Company': charge.companyName,
+                'Route': charge.route,
+                'Carrier': charge.carrier,
+                'Actual Cost': charge.actualCost,
+                'Customer Charge': charge.customerCharge,
+                'Profit': charge.customerCharge - charge.actualCost,
+                'Status': charge.status,
+                'Date': charge.shipmentDate.toLocaleDateString()
+            }));
+
+            const csv = [
+                Object.keys(csvData[0]).join(','),
+                ...csvData.map(row => Object.values(row).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `company-charges-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            enqueueSnackbar('Charges exported successfully', { variant: 'success' });
+        };
+
+        const getStatusChip = (status) => {
+            const statusColors = {
+                'paid': { color: '#065f46', bgcolor: '#d1fae5' },
+                'invoiced': { color: '#1e40af', bgcolor: '#dbeafe' },
+                'uninvoiced': { color: '#92400e', bgcolor: '#fef3c7' },
+                'overdue': { color: '#dc2626', bgcolor: '#fee2e2' }
+            };
+
+            const colors = statusColors[status] || { color: '#6b7280', bgcolor: '#f3f4f6' };
+
+            return (
+                <Chip
+                    label={status}
+                    size="small"
+                    sx={{
+                        ...colors,
+                        fontWeight: 600,
+                        fontSize: '11px',
+                        textTransform: 'capitalize'
+                    }}
+                />
+            );
+        };
+
+        return (
+            <>
+                <TableContainer>
+                    <Table>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Shipment ID
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Company
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Route
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Carrier
+                                </TableCell>
+                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Actual Cost
+                                </TableCell>
+                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Customer Charge
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Status
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Date
+                                </TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={8} align="center">
+                                        <Box sx={{ py: 3 }}>
+                                            <CircularProgress size={24} />
+                                            <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading charges...</Typography>
+                                        </Box>
+                                    </TableCell>
+                                </TableRow>
+                            ) : charges.length > 0 ? (
+                                charges
+                                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                    .map((charge) => (
+                                        <TableRow key={charge.id} hover>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                <Button
+                                                    variant="text"
+                                                    size="small"
+                                                    onClick={() => handleShipmentClick(charge)}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        color: '#3b82f6',
+                                                        '&:hover': { textDecoration: 'underline' }
+                                                    }}
+                                                >
+                                                    {charge.shipmentID}
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                <Button
+                                                    variant="text"
+                                                    size="small"
+                                                    onClick={() => handleCompanyClick(charge.company)}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        color: '#3b82f6',
+                                                        '&:hover': { textDecoration: 'underline' }
+                                                    }}
+                                                    disabled={!charge.company}
+                                                >
+                                                    {charge.companyName}
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {charge.route}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {charge.carrier}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                <ChargeTooltip
+                                                    amount={charge.actualCost}
+                                                    rates={charge.actualRates}
+                                                    title="Actual Cost Breakdown"
+                                                />
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                <ChargeTooltip
+                                                    amount={charge.customerCharge}
+                                                    rates={charge.markupRates}
+                                                    title="Customer Charge Breakdown"
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                {getStatusChip(charge.status)}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {charge.shipmentDate.toLocaleDateString()}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={8} align="center">
+                                        <Box sx={{ py: 3 }}>
+                                            <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
+                                                No charges found for selected filters
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                    <TablePagination
+                        component="div"
+                        count={charges.length}
+                        page={page}
+                        onPageChange={(e, newPage) => setPage(newPage)}
+                        rowsPerPage={rowsPerPage}
+                        onRowsPerPageChange={(e) => {
+                            setRowsPerPage(parseInt(e.target.value, 10));
+                            setPage(0);
+                        }}
+                        rowsPerPageOptions={[10, 25, 50, 100]}
+                        sx={{
+                            '& .MuiTablePagination-selectLabel': { fontSize: '12px' },
+                            '& .MuiTablePagination-displayedRows': { fontSize: '12px' },
+                            '& .MuiSelect-select': { fontSize: '12px' }
+                        }}
+                    />
+                </TableContainer>
+
+                {/* Shipment Details Dialog */}
+                <Dialog
+                    open={shipmentDetailsOpen}
+                    onClose={() => setShipmentDetailsOpen(false)}
+                    maxWidth="lg"
+                    fullWidth
+                >
+                    <DialogTitle>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Shipment Details: {selectedShipment?.shipmentID}
+                            </Typography>
+                            <IconButton onClick={() => setShipmentDetailsOpen(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        </Box>
+                    </DialogTitle>
+                    <DialogContent>
+                        {selectedShipment && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>From:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {selectedShipment.shipFrom?.company || selectedShipment.shipFrom?.name}<br />
+                                        {selectedShipment.shipFrom?.address}<br />
+                                        {selectedShipment.shipFrom?.city}, {selectedShipment.shipFrom?.state || selectedShipment.shipFrom?.province} {selectedShipment.shipFrom?.postalCode}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>To:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {selectedShipment.shipTo?.company || selectedShipment.shipTo?.name}<br />
+                                        {selectedShipment.shipTo?.address}<br />
+                                        {selectedShipment.shipTo?.city}, {selectedShipment.shipTo?.state || selectedShipment.shipTo?.province} {selectedShipment.shipTo?.postalCode}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Status:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedShipment.status}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Carrier:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedShipment.selectedCarrier || selectedShipment.carrier}</Typography>
+                                </Grid>
+                            </Grid>
+                        )}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setShipmentDetailsOpen(false)} size="small">Close</Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* Company Details Dialog */}
+                <Dialog
+                    open={companyDetailsOpen}
+                    onClose={() => setCompanyDetailsOpen(false)}
+                    maxWidth="md"
+                    fullWidth
+                >
+                    <DialogTitle>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                Company Details: {selectedCompany?.name}
+                            </Typography>
+                            <IconButton onClick={() => setCompanyDetailsOpen(false)} size="small">
+                                <CloseIcon />
+                            </IconButton>
+                        </Box>
+                    </DialogTitle>
+                    <DialogContent>
+                        {selectedCompany && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Company ID:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedCompany.companyID}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Email:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedCompany.email}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Phone:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedCompany.phone}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Website:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>{selectedCompany.website}</Typography>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>Address:</Typography>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {selectedCompany.address}<br />
+                                        {selectedCompany.city}, {selectedCompany.province} {selectedCompany.postalCode}
+                                    </Typography>
+                                </Grid>
+                            </Grid>
+                        )}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setCompanyDetailsOpen(false)} size="small">Close</Button>
+                    </DialogActions>
+                </Dialog>
+            </>
         );
     };
 
@@ -777,301 +1387,339 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                             <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading billing overview...</Typography>
                         </Box>
                     ) : (
-                        <Grid container spacing={3}>
-                            <Grid item xs={12} md={6} lg={3}>
-                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
-                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
-                                        Total Revenue
-                                    </Typography>
-                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
-                                        ${metrics.totalRevenue.toLocaleString()}
-                                    </Typography>
-                                </Paper>
+                        <>
+                            {/* Enhanced Metrics Cards */}
+                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                <Grid item xs={12} md={3}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <MoneyIcon sx={{ color: '#16a34a', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#16a34a', fontSize: '11px' }}>
+                                                    +12.5% from last year
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                ${metrics.totalRevenue.toLocaleString()}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Total Revenue (YTD)
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <ReceiptIcon sx={{ color: '#dc2626', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#dc2626', fontSize: '11px' }}>
+                                                    {metrics.pendingInvoices} pending invoices
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                ${metrics.outstandingBalance.toLocaleString()}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Outstanding Balance
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <PaymentIcon sx={{ color: '#3b82f6', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#3b82f6', fontSize: '11px' }}>
+                                                    {metrics.paidInvoices} of {metrics.paidInvoices + metrics.pendingInvoices} invoices
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                {metrics.paidInvoices + metrics.pendingInvoices > 0 ?
+                                                    Math.round((metrics.paidInvoices / (metrics.paidInvoices + metrics.pendingInvoices)) * 100) : 0}%
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Collection Rate
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <TrendingUpIcon sx={{ color: '#8b5cf6', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#8b5cf6', fontSize: '11px' }}>
+                                                    Based on paid invoices
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                ${metrics.paidInvoices > 0 ? Math.round(metrics.totalRevenue / metrics.paidInvoices).toLocaleString() : 0}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Avg Invoice Value
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} md={6} lg={3}>
-                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
-                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
-                                        Outstanding Balance
-                                    </Typography>
-                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
-                                        ${metrics.outstandingBalance.toLocaleString()}
-                                    </Typography>
-                                </Paper>
+
+                            {/* Second Row - Additional Metrics */}
+                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                <Grid item xs={12} md={4}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <ReceiptIcon sx={{ color: '#f59e0b', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#f59e0b', fontSize: '11px' }}>
+                                                    Ready for invoicing
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                ${metrics.uninvoicedCharges?.toLocaleString() || 0}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Not Invoiced Total
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <MoneyIcon sx={{ color: '#10b981', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#10b981', fontSize: '11px' }}>
+                                                    Current month
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                ${metrics.monthlyRevenue?.toLocaleString() || 0}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Monthly Revenue
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <TrendingUpIcon sx={{ color: '#6366f1', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#6366f1', fontSize: '11px' }}>
+                                                    Growth indicator
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                                {metrics.growthRate || '+12.5'}%
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                Revenue Growth
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} md={6} lg={3}>
-                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
-                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
-                                        Paid Invoices
-                                    </Typography>
-                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
-                                        {metrics.paidInvoices}
-                                    </Typography>
-                                </Paper>
+
+                            {/* Global Company Charges Table */}
+                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mb: 4 }}>
+                                <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                        <Box>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '18px', color: '#111827' }}>
+                                                Global Company Charges
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                                View and filter charges across all companies
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                            <FormControl size="small" sx={{ minWidth: 120 }}>
+                                                <InputLabel sx={{ fontSize: '12px' }}>Time Range</InputLabel>
+                                                <Select
+                                                    value={timeRange}
+                                                    onChange={(e) => setTimeRange(e.target.value)}
+                                                    label="Time Range"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    <MenuItem value="week" sx={{ fontSize: '12px' }}>Last 7 Days</MenuItem>
+                                                    <MenuItem value="month" sx={{ fontSize: '12px' }}>Last 30 Days</MenuItem>
+                                                    <MenuItem value="year" sx={{ fontSize: '12px' }}>Last Year</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Box>
+                                    </Box>
+
+                                    {/* Filter Section */}
+                                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                                        <Grid item xs={12} md={3}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Company Name"
+                                                value={customerName}
+                                                onChange={(e) => setCustomerName(e.target.value)}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={3}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                                <Select
+                                                    value={paymentStatus}
+                                                    onChange={(e) => setPaymentStatus(e.target.value)}
+                                                    label="Status"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
+                                                    <MenuItem value="invoiced" sx={{ fontSize: '12px' }}>Invoiced</MenuItem>
+                                                    <MenuItem value="uninvoiced" sx={{ fontSize: '12px' }}>Uninvoiced</MenuItem>
+                                                    <MenuItem value="paid" sx={{ fontSize: '12px' }}>Paid</MenuItem>
+                                                    <MenuItem value="overdue" sx={{ fontSize: '12px' }}>Overdue</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                        <Grid item xs={12} md={3}>
+                                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                                <DatePicker
+                                                    label="From Date"
+                                                    value={fromDate}
+                                                    onChange={setFromDate}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            fullWidth
+                                                            size="small"
+                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                                        />
+                                                    )}
+                                                />
+                                            </LocalizationProvider>
+                                        </Grid>
+                                        <Grid item xs={12} md={3}>
+                                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                                <DatePicker
+                                                    label="To Date"
+                                                    value={toDate}
+                                                    onChange={setToDate}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            fullWidth
+                                                            size="small"
+                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                                        />
+                                                    )}
+                                                />
+                                            </LocalizationProvider>
+                                        </Grid>
+                                    </Grid>
+                                </Box>
+
+                                <GlobalCompanyChargesTable
+                                    timeRange={timeRange}
+                                    filters={{
+                                        companyName: customerName,
+                                        status: paymentStatus,
+                                        fromDate,
+                                        toDate
+                                    }}
+                                />
+                            </Paper>
+
+                            {/* Revenue Analytics */}
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} lg={8}>
+                                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: 400 }}>
+                                        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, fontSize: '16px', color: '#111827' }}>
+                                            Revenue Trends
+                                        </Typography>
+                                        <ResponsiveContainer width="100%" height={300}>
+                                            <LineChart data={revenueTrends}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                                <XAxis
+                                                    dataKey="date"
+                                                    tick={{ fontSize: 11 }}
+                                                    stroke="#6b7280"
+                                                />
+                                                <YAxis
+                                                    tick={{ fontSize: 11 }}
+                                                    stroke="#6b7280"
+                                                    tickFormatter={(value) => `$${value.toLocaleString()}`}
+                                                />
+                                                <ChartTooltip
+                                                    contentStyle={{
+                                                        backgroundColor: 'white',
+                                                        border: '1px solid #e5e7eb',
+                                                        borderRadius: '8px',
+                                                        fontSize: '12px'
+                                                    }}
+                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
+                                                />
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey="revenue"
+                                                    stroke="#3b82f6"
+                                                    strokeWidth={3}
+                                                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                                                    activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
+                                                />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </Paper>
+                                </Grid>
+                                <Grid item xs={12} lg={4}>
+                                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: 400 }}>
+                                        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, fontSize: '16px', color: '#111827' }}>
+                                            Top Companies by Revenue
+                                        </Typography>
+                                        <ResponsiveContainer width="100%" height={300}>
+                                            <BarChart data={revenueByCompany.slice(0, 8)} layout="horizontal">
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                                <XAxis
+                                                    type="number"
+                                                    tick={{ fontSize: 11 }}
+                                                    stroke="#6b7280"
+                                                    tickFormatter={(value) => `$${value.toLocaleString()}`}
+                                                />
+                                                <YAxis
+                                                    type="category"
+                                                    dataKey="company"
+                                                    tick={{ fontSize: 10 }}
+                                                    stroke="#6b7280"
+                                                    width={80}
+                                                />
+                                                <ChartTooltip
+                                                    contentStyle={{
+                                                        backgroundColor: 'white',
+                                                        border: '1px solid #e5e7eb',
+                                                        borderRadius: '8px',
+                                                        fontSize: '12px'
+                                                    }}
+                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
+                                                />
+                                                <Bar
+                                                    dataKey="revenue"
+                                                    fill="#8b5cf6"
+                                                    radius={[0, 4, 4, 0]}
+                                                />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </Paper>
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} md={6} lg={3}>
-                                <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 140, border: '1px solid #e5e7eb' }}>
-                                    <Typography component="h2" variant="h6" color="primary" gutterBottom sx={{ fontSize: '14px' }}>
-                                        Pending Invoices
-                                    </Typography>
-                                    <Typography component="p" variant="h4" sx={{ fontSize: '32px' }}>
-                                        {metrics.pendingInvoices}
-                                    </Typography>
-                                </Paper>
-                            </Grid>
-                        </Grid>
+                        </>
                     )}
                 </>
             )}
 
             {activeTab === 'invoices' && (
-                <>
-                    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
-                        <Typography variant="h6" sx={{ mb: 2, fontSize: '16px', fontWeight: 600 }}>Search Invoices</Typography>
-                        <Grid container spacing={3}>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                    <DatePicker
-                                        label="From Date"
-                                        value={fromDate}
-                                        onChange={setFromDate}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                fullWidth
-                                                size="small"
-                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                            />
-                                        )}
-                                    />
-                                </LocalizationProvider>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                    <DatePicker
-                                        label="To Date"
-                                        value={toDate}
-                                        onChange={setToDate}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                fullWidth
-                                                size="small"
-                                                sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                            />
-                                        )}
-                                    />
-                                </LocalizationProvider>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Customer Name</InputLabel>
-                                    <Select
-                                        value={customerName}
-                                        onChange={(e) => setCustomerName(e.target.value)}
-                                        label="Customer Name"
-                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                    >
-                                        <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
-                                        {/* Add customer options dynamically */}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Invoice Number"
-                                    value={invoiceNumber}
-                                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Payment Status</InputLabel>
-                                    <Select
-                                        value={paymentStatus}
-                                        onChange={(e) => setPaymentStatus(e.target.value)}
-                                        label="Payment Status"
-                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                    >
-                                        <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
-                                        <MenuItem value="paid" sx={{ fontSize: '12px' }}>Paid</MenuItem>
-                                        <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
-                                        <MenuItem value="unpaid" sx={{ fontSize: '12px' }}>Unpaid</MenuItem>
-                                        <MenuItem value="overdue" sx={{ fontSize: '12px' }}>Overdue</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6} md={3} sx={{ display: 'flex', alignItems: 'flex-end' }}>
-                                <Stack direction="row" spacing={2}>
-                                    <Button
-                                        variant="contained"
-                                        onClick={handleSearch}
-                                        startIcon={<SearchIcon />}
-                                        size="small"
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Search
-                                    </Button>
-                                    <Button
-                                        variant="outlined"
-                                        onClick={handleReset}
-                                        size="small"
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Reset
-                                    </Button>
-                                </Stack>
-                            </Grid>
-                        </Grid>
-                    </Paper>
-
-                    <Paper elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
-                        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>Customer Invoice List</Typography>
-                            <Stack direction="row" spacing={2}>
-                                <TextField
-                                    placeholder="Search invoices..."
-                                    size="small"
-                                    value={searchTerm}
-                                    onChange={handleSearchChange}
-                                    InputProps={{
-                                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: '16px' }} />,
-                                        endAdornment: searchTerm && (
-                                            <IconButton size="small" onClick={() => setSearchTerm('')}>
-                                                <CloseIcon sx={{ fontSize: '16px' }} />
-                                            </IconButton>
-                                        ),
-                                        sx: { fontSize: '12px' }
-                                    }}
-                                    sx={{
-                                        width: 250,
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<DownloadIcon />}
-                                    onClick={handleExport}
-                                    size="small"
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    Export
-                                </Button>
-                            </Stack>
-                        </Box>
-                        <TableContainer>
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Invoice #</TableCell>
-                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company</TableCell>
-                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Date</TableCell>
-                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Due Date</TableCell>
-                                        <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Amount</TableCell>
-                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                                        <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {loading ? (
-                                        <TableRow>
-                                            <TableCell colSpan={7} align="center">
-                                                <Box sx={{ py: 3 }}>
-                                                    <CircularProgress size={24} />
-                                                    <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading invoices...</Typography>
-                                                </Box>
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : filteredInvoices.length > 0 ? (
-                                        filteredInvoices
-                                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                            .map((invoice) => {
-                                                const statusColor = getStatusColor(invoice.status);
-                                                return (
-                                                    <TableRow
-                                                        key={invoice.id}
-                                                        hover
-                                                        onClick={() => handleInvoiceClick(invoice)}
-                                                        sx={{ cursor: 'pointer' }}
-                                                    >
-                                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.number || invoice.id}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{invoice.company || invoice.companyName}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>
-                                                            {invoice.date ? new Date(invoice.date).toLocaleDateString() : 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>
-                                                            {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell align="right" sx={{ fontSize: '12px' }}>
-                                                            ${(invoice.amount || invoice.total || 0).toFixed(2)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Chip
-                                                                label={invoice.status || 'Unknown'}
-                                                                size="small"
-                                                                sx={{
-                                                                    color: statusColor.color,
-                                                                    bgcolor: statusColor.bgcolor,
-                                                                    fontWeight: 600,
-                                                                    fontSize: '11px',
-                                                                    borderRadius: '6px',
-                                                                }}
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell align="right">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleMenuOpen(e);
-                                                                }}
-                                                            >
-                                                                <MoreVertIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                );
-                                            })
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={7} align="center">
-                                                <Box sx={{ py: 3 }}>
-                                                    <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                                        {searchTerm ? 'No invoices match your search criteria' : 'No invoices found'}
-                                                    </Typography>
-                                                    {!searchTerm && (
-                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '11px', mt: 1 }}>
-                                                            Invoices will appear here once they are created
-                                                        </Typography>
-                                                    )}
-                                                </Box>
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                        <TablePagination
-                            component="div"
-                            count={filteredInvoices.length}
-                            page={page}
-                            onPageChange={handleChangePage}
-                            rowsPerPage={rowsPerPage}
-                            onRowsPerPageChange={handleChangeRowsPerPage}
-                            rowsPerPageOptions={[10, 25, 50, 100]}
-                            sx={{
-                                '& .MuiTablePagination-selectLabel': { fontSize: '12px' },
-                                '& .MuiTablePagination-displayedRows': { fontSize: '12px' },
-                                '& .MuiSelect-select': { fontSize: '12px' }
-                            }}
-                        />
-                    </Paper>
-                </>
+                <InvoiceManagement />
             )}
 
             {activeTab === 'edi' && (

@@ -76,6 +76,9 @@ const {
 // Add test email function
 const { sendTestReportNotification } = require('./sendTestReportNotification');
 
+// Import invoice generation function
+const { generateInvoicePDFAndEmail } = require('./generateInvoicePDFAndEmail');
+
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
@@ -325,5 +328,9 @@ console.log('LOG-MAIN-INDEX: exports.triggerScheduledReport defined.');
 
 exports.sendTestReportNotification = sendTestReportNotification;
 console.log('LOG-MAIN-INDEX: exports.sendTestReportNotification defined.');
+
+// Export invoice generation function
+exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
+console.log('LOG-MAIN-INDEX: exports.generateInvoicePDFAndEmail defined.');
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

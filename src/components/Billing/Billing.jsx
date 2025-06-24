@@ -8,6 +8,7 @@ import {
     Tab
 } from '@mui/material';
 import { motion } from 'framer-motion';
+import BillingDashboard from './BillingDashboard';
 import BillingProfiles from './BillingProfiles';
 import Invoices from './Invoices';
 import PaymentMethods from './PaymentMethods';
@@ -71,7 +72,7 @@ const Billing = ({ isModal = false, onClose, showCloseButton = false }) => {
                                     color: '#6b7280'
                                 }}
                             >
-                                Manage your billing profiles, view invoices, and update payment methods
+                                Manage your billing, view charges, and track credit status
                             </Typography>
                         </Box>
                     )}
@@ -108,15 +109,17 @@ const Billing = ({ isModal = false, onClose, showCloseButton = false }) => {
                                 }
                             }}
                         >
+                            <Tab label="Dashboard & Charges" />
                             <Tab label="Invoices" />
                             <Tab label="Billing Profiles" />
                             <Tab label="Payment Methods" />
                         </Tabs>
 
                         <Box sx={{ p: 3 }}>
-                            {activeTab === 0 && <Invoices />}
-                            {activeTab === 1 && <BillingProfiles />}
-                            {activeTab === 2 && <PaymentMethods />}
+                            {activeTab === 0 && <BillingDashboard />}
+                            {activeTab === 1 && <Invoices />}
+                            {activeTab === 2 && <BillingProfiles />}
+                            {activeTab === 3 && <PaymentMethods />}
                         </Box>
                     </Paper>
                 </motion.div>

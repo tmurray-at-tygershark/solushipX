@@ -844,6 +844,130 @@ ACTION REQUIRED: Please confirm receipt of this pickup assignment and provide ex
         `
     },
 
+    invoice_generated: {
+        subject: (data) => `Invoice ${data.invoiceNumber} from Integrated Carriers`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">New Invoice Available</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your monthly shipping charges invoice is ready</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Invoice Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Invoice Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Invoice #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.invoiceNumber}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Company:</strong></td><td style="padding: 8px 0;">${data.companyName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Due Date:</strong></td><td style="padding: 8px 0;">${data.dueDate}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Payment Terms:</strong></td><td style="padding: 8px 0;">${data.paymentTerms}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Shipments:</strong></td><td style="padding: 8px 0;">${data.shipmentCount}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Amount Due -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Amount Due</h3>
+                        <p style="margin: 0; font-size: 32px; font-weight: bold; color: #1c277d;">${data.currency} $${data.totalAmount}</p>
+                    </div>
+
+                    <!-- Payment Instructions -->
+                    <div style="background: #e8f4fd; padding: 20px; border-radius: 0; border-left: 4px solid #1c277d; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Payment Instructions</h3>
+                        <p style="margin: 0; color: #000;">Please remit payment within the specified terms. The detailed invoice is attached as a PDF. For questions, contact our billing department.</p>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Questions? Contact us at <a href="mailto:billing@integratedcarriers.com" style="color: #1c277d;">billing@integratedcarriers.com</a></p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 Integrated Carriers. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+New Invoice Available
+
+INVOICE SUMMARY
+- Invoice #: ${data.invoiceNumber}
+- Company: ${data.companyName}
+- Due Date: ${data.dueDate}
+- Payment Terms: ${data.paymentTerms}
+- Shipments: ${data.shipmentCount}
+
+AMOUNT DUE: ${data.currency} $${data.totalAmount}
+
+PAYMENT INSTRUCTIONS
+Please remit payment within the specified terms. The detailed invoice is attached as a PDF. For questions, contact our billing department.
+
+Questions? Contact billing@integratedcarriers.com
+© 2024 Integrated Carriers. All rights reserved.
+        `
+    },
+
+    invoice_generated: {
+        subject: (data) => `Invoice ${data.invoiceNumber} from Integrated Carriers`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">New Invoice Available</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your monthly shipping charges invoice is ready</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Invoice Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Invoice Summary</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Invoice #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.invoiceNumber}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Company:</strong></td><td style="padding: 8px 0;">${data.companyName}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Due Date:</strong></td><td style="padding: 8px 0;">${data.dueDate}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Payment Terms:</strong></td><td style="padding: 8px 0;">${data.paymentTerms}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Shipments:</strong></td><td style="padding: 8px 0;">${data.shipmentCount}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Amount Due -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Amount Due</h3>
+                        <p style="margin: 0; font-size: 32px; font-weight: bold; color: #1c277d;">${data.currency} $${data.totalAmount}</p>
+                    </div>
+
+                    <!-- Payment Instructions -->
+                    <div style="background: #e8f4fd; padding: 20px; border-radius: 0; border-left: 4px solid #1c277d; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Payment Instructions</h3>
+                        <p style="margin: 0; color: #000;">Please remit payment within the specified terms. The detailed invoice is attached as a PDF. For questions, contact our billing department.</p>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Questions? Contact us at <a href="mailto:billing@integratedcarriers.com" style="color: #1c277d;">billing@integratedcarriers.com</a></p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 Integrated Carriers. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+New Invoice Available
+
+INVOICE SUMMARY
+- Invoice #: ${data.invoiceNumber}
+- Company: ${data.companyName}
+- Due Date: ${data.dueDate}
+- Payment Terms: ${data.paymentTerms}
+- Shipments: ${data.shipmentCount}
+
+AMOUNT DUE: ${data.currency} $${data.totalAmount}
+
+PAYMENT INSTRUCTIONS
+Please remit payment within the specified terms. The detailed invoice is attached as a PDF. For questions, contact our billing department.
+
+Questions? Contact billing@integratedcarriers.com
+© 2024 Integrated Carriers. All rights reserved.
+        `
+    },
+
     quickship_internal_notification: {
         subject: (data) => `QuickShip Booked - ${data.shipmentId}`,
         html: (data) => `
@@ -1950,8 +2074,40 @@ async function sendEmail(emailData) {
     }
 }
 
+/**
+ * Send email with attachment
+ * @param {Object} emailData - Email configuration with attachment
+ */
+async function sendEmailWithAttachment(emailData) {
+    try {
+        const msg = {
+            to: emailData.to,
+            from: 'noreply@integratedcarriers.com',
+            subject: emailData.subject,
+            html: emailData.html || '',
+            text: emailData.text || '',
+            attachments: emailData.attachments || []
+        };
+
+        if (emailData.templateId && EMAIL_TEMPLATES[emailData.templateId]) {
+            const template = EMAIL_TEMPLATES[emailData.templateId];
+            msg.subject = template.subject(emailData.dynamicTemplateData || {});
+            msg.html = template.html(emailData.dynamicTemplateData || {});
+            msg.text = template.text(emailData.dynamicTemplateData || {});
+        }
+
+        await sgMail.send(msg);
+        console.log(`Email with attachment sent successfully to ${emailData.to}`);
+        
+    } catch (error) {
+        console.error('Error sending email with attachment:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     sendEmail, // Add the missing sendEmail function
+    sendEmailWithAttachment, // Add attachment support function
     sendNotificationEmail, // Main function for shipment notifications
     sendReportNotificationEmail, // Function for report notifications
     getEmailTemplate,
