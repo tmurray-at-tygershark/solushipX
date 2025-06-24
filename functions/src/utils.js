@@ -190,6 +190,7 @@ async function getCarrierCredentials(carrierID) {
       ...carrierData.apiCredentials,
       endpoints: endpoints, // Include endpoints in the credentials (may be null)
       hostURL: carrierData.apiCredentials.hostURL || carrierData.hostURL, // Check both locations for hostURL
+      accountNumber: carrierData.apiCredentials.accountNumber || carrierData.accountNumber, // Check both locations for accountNumber
       carrierName: carrierData.name,
       carrierType: carrierData.type,
       carrierID: carrierData.carrierID

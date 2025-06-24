@@ -55,7 +55,7 @@ async function bookCanparShipment(rateRequestData, draftFirestoreDocId, selected
         console.log('bookCanparShipment: Parsed booking result:', JSON.stringify(bookingResult, null, 2));
 
         // Update the shipment document with booking confirmation
-        await updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate);
+        await updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate, rateRequestData);
 
         // Record the status change event from draft to booked
         try {
@@ -80,6 +80,50 @@ async function bookCanparShipment(rateRequestData, draftFirestoreDocId, selected
             bookedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
+
+        // DEBUG: Confirm new code is deployed
+        console.log('bookCanparShipment: DEBUG - New label generation code is deployed and running');
+
+        // CRITICAL: Generate shipping labels for courier shipments
+        const shipmentType = rateRequestData.shipmentInfo?.shipmentType || 'freight';
+        console.log('bookCanparShipment: Shipment type:', shipmentType);
+        
+        if (shipmentType === 'courier') {
+            console.log('bookCanparShipment: Generating shipping labels for courier shipment...');
+            
+            try {
+                // Import the internal label generation function
+                const { generateCanparLabelInternal } = require('./generateLabel');
+                
+                // Call the internal label generation function directly
+                const labelResult = await generateCanparLabelInternal(
+                    bookingResult.shipmentId, // Use Canpar's shipment ID
+                    draftFirestoreDocId,
+                    false // Standard format (not thermal)
+                );
+                
+                console.log('bookCanparShipment: Label generation result:', JSON.stringify(labelResult, null, 2));
+                
+                if (labelResult.success && labelResult.data) {
+                    // Add shipping documents to booking result
+                    bookingResult.shippingDocuments = [{
+                        type: 'shipping_label',
+                        documentId: labelResult.data.documentId,
+                        downloadUrl: labelResult.data.downloadUrl,
+                        fileName: labelResult.data.fileName,
+                        storagePath: labelResult.data.storagePath
+                    }];
+                    console.log('bookCanparShipment: Successfully generated shipping label');
+                } else {
+                    console.error('bookCanparShipment: Failed to generate label:', labelResult.error);
+                    // Don't fail the booking - just log the error
+                }
+            } catch (labelError) {
+                console.error('bookCanparShipment: Error generating shipping labels:', labelError);
+                // Don't fail the booking process for label generation errors
+                // The booking itself was successful
+            }
+        }
 
         console.log('bookCanparShipment: Successfully completed booking process');
         return {
@@ -122,9 +166,48 @@ function buildCanparBookingRequest(rateRequestData, selectedRate, canparConfig) 
 
     // Extract shipment data from the correct structure
     const shipmentData = rateRequestData.shipment || rateRequestData;
-    // Support both shipFrom/shipTo and pickup_address/delivery_address
-    const shipFrom = shipmentData.pickup_address || rateRequestData.pickup_address || shipmentData.shipFrom || rateRequestData.shipFrom;
-    const shipTo = shipmentData.delivery_address || rateRequestData.delivery_address || shipmentData.shipTo || rateRequestData.shipTo;
+    
+    // Support multiple data formats: Origin/Destination (eShipPlus), shipFrom/shipTo (standard), pickup_address/delivery_address (legacy)
+    const shipFrom = shipmentData.pickup_address || 
+                    rateRequestData.pickup_address || 
+                    shipmentData.shipFrom || 
+                    rateRequestData.shipFrom ||
+                    // NEW: Support Origin format from CreateShipmentX
+                    (rateRequestData.Origin ? {
+                        name: rateRequestData.Origin.Description || '',
+                        street: rateRequestData.Origin.Street || '',
+                        street2: rateRequestData.Origin.StreetExtra || '',
+                        city: rateRequestData.Origin.City || '',
+                        state: rateRequestData.Origin.State || '',
+                        province: rateRequestData.Origin.State || '',
+                        postalCode: rateRequestData.Origin.PostalCode || '',
+                        postal_code: rateRequestData.Origin.PostalCode || '',
+                        country: rateRequestData.Origin.Country?.Code || 'CA',
+                        phone: rateRequestData.Origin.Phone || '',
+                        email: rateRequestData.Origin.Email || '',
+                        contactName: rateRequestData.Origin.Contact || ''
+                    } : null);
+                    
+    const shipTo = shipmentData.delivery_address || 
+                  rateRequestData.delivery_address || 
+                  shipmentData.shipTo || 
+                  rateRequestData.shipTo ||
+                  // NEW: Support Destination format from CreateShipmentX
+                  (rateRequestData.Destination ? {
+                      name: rateRequestData.Destination.Description || '',
+                      street: rateRequestData.Destination.Street || '',
+                      street2: rateRequestData.Destination.StreetExtra || '',
+                      city: rateRequestData.Destination.City || '',
+                      state: rateRequestData.Destination.State || '',
+                      province: rateRequestData.Destination.State || '',
+                      postalCode: rateRequestData.Destination.PostalCode || '',
+                      postal_code: rateRequestData.Destination.PostalCode || '',
+                      country: rateRequestData.Destination.Country?.Code || 'CA',
+                      phone: rateRequestData.Destination.Phone || '',
+                      email: rateRequestData.Destination.Email || '',
+                      contactName: rateRequestData.Destination.Contact || ''
+                  } : null);
+                  
     const packages = shipmentData.packages || rateRequestData.packages;
     
     console.log('buildCanparBookingRequest: Extracted shipFrom:', shipFrom);
@@ -385,11 +468,36 @@ async function parseCanparBookingResponse(responseXml) {
             pickupAddress: normalizeCanparAddress(shipment.pickup_address),
             deliveryAddress: normalizeCanparAddress(shipment.delivery_address),
             
+            // Check if label data is included in packages
+            shippingDocuments: [],
+            
             // Raw response for debugging
             rawResponse: shipment
         };
 
+        // Check if packages contain label data
+        if (bookingData.packages && bookingData.packages.length > 0) {
+            console.log('parseCanparBookingResponse: Checking packages for label data...');
+            
+            bookingData.packages.forEach((pkg, index) => {
+                console.log(`parseCanparBookingResponse: Package ${index + 1}:`, JSON.stringify(pkg, null, 2));
+                
+                // Check for label data in various possible fields
+                if (pkg.label || pkg.labelData || pkg.pdf || pkg.pdfData || pkg.document) {
+                    console.log(`parseCanparBookingResponse: Found label data in package ${index + 1}`);
+                    bookingData.shippingDocuments.push({
+                        type: 'shipping_label',
+                        packageIndex: index,
+                        data: pkg.label || pkg.labelData || pkg.pdf || pkg.pdfData || pkg.document,
+                        barcode: pkg.barcode
+                    });
+                }
+            });
+        }
+
         console.log('parseCanparBookingResponse: Extracted booking data:', JSON.stringify(bookingData, null, 2));
+        console.log('parseCanparBookingResponse: Found shipping documents:', bookingData.shippingDocuments.length);
+        
         return bookingData;
 
     } catch (error) {
@@ -421,11 +529,51 @@ function normalizeCanparAddress(address) {
 /**
  * Updates the shipment document with booking confirmation data
  */
-async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate) {
+async function updateShipmentWithBookingData(draftFirestoreDocId, bookingResult, selectedRate, rateRequestData) {
     console.log('updateShipmentWithBookingData: Updating shipment document');
+
+    // Extract address information from the rate request data
+    const shipFromAddress = {
+        company: rateRequestData.shipFrom?.name || rateRequestData.Origin?.Description || '',
+        street: rateRequestData.shipFrom?.street || rateRequestData.Origin?.Street || '',
+        street2: rateRequestData.shipFrom?.street2 || rateRequestData.Origin?.StreetExtra || '',
+        city: rateRequestData.shipFrom?.city || rateRequestData.Origin?.City || '',
+        state: rateRequestData.shipFrom?.state || rateRequestData.Origin?.State || '',
+        postalCode: rateRequestData.shipFrom?.postalCode || rateRequestData.Origin?.PostalCode || '',
+        country: rateRequestData.shipFrom?.country || rateRequestData.Origin?.Country?.Code || 'CA',
+        phone: rateRequestData.shipFrom?.phone || rateRequestData.Origin?.Phone || '',
+        email: rateRequestData.shipFrom?.email || rateRequestData.Origin?.Email || '',
+        contactName: rateRequestData.shipFrom?.contactName || rateRequestData.Origin?.Contact || '',
+        specialInstructions: rateRequestData.shipFrom?.specialInstructions || rateRequestData.Origin?.SpecialInstructions || ''
+    };
+
+    const shipToAddress = {
+        company: rateRequestData.shipTo?.name || rateRequestData.Destination?.Description || '',
+        street: rateRequestData.shipTo?.street || rateRequestData.Destination?.Street || '',
+        street2: rateRequestData.shipTo?.street2 || rateRequestData.Destination?.StreetExtra || '',
+        city: rateRequestData.shipTo?.city || rateRequestData.Destination?.City || '',
+        state: rateRequestData.shipTo?.state || rateRequestData.Destination?.State || '',
+        postalCode: rateRequestData.shipTo?.postalCode || rateRequestData.Destination?.PostalCode || '',
+        country: rateRequestData.shipTo?.country || rateRequestData.Destination?.Country?.Code || 'CA',
+        phone: rateRequestData.shipTo?.phone || rateRequestData.Destination?.Phone || '',
+        email: rateRequestData.shipTo?.email || rateRequestData.Destination?.Email || '',
+        contactName: rateRequestData.shipTo?.contactName || rateRequestData.Destination?.Contact || '',
+        specialInstructions: rateRequestData.shipTo?.specialInstructions || rateRequestData.Destination?.SpecialInstructions || ''
+    };
+
+    console.log('updateShipmentWithBookingData: Ship from address:', shipFromAddress);
+    console.log('updateShipmentWithBookingData: Ship to address:', shipToAddress);
 
     const updateData = {
         status: 'pending',
+        
+        // CRITICAL: Add ship from and ship to address information
+        shipFrom: shipFromAddress,
+        shipTo: shipToAddress,
+        
+        // Add carrier information
+        carrier: bookingResult.carrier || 'Canpar Express',
+        trackingNumber: bookingResult.trackingNumber,
         
         carrierBookingConfirmation: {
             confirmationNumber: bookingResult.confirmationNumber,

@@ -254,9 +254,19 @@ async function processRateRequest(data) {
     
     // Add detailed logging for debugging transformation issues
     logger.info('eShipPlus API Raw Response Keys:', Object.keys(response.data || {}));
+    logger.info('eShipPlus API Raw Response (FULL):', JSON.stringify(response.data, null, 2));
     logger.info('eShipPlus Transformed Data:', transformedData ? 'Not null' : 'NULL');
     logger.info('eShipPlus Available Rates:', transformedData?.availableRates ? `${transformedData.availableRates.length} rates` : 'No rates or null');
-    logger.info('eShipPlus Raw Response Sample:', JSON.stringify(response.data).substring(0, 500) + '...');
+    
+    // Check for common rate field names that eShip Plus might use
+    if (response.data) {
+        const possibleRateFields = ['AvailableRates', 'rates', 'Rates', 'RateOptions', 'RateQuotes', 'Quotes', 'Results', 'RateResults'];
+        possibleRateFields.forEach(field => {
+            if (response.data[field]) {
+                logger.info(`FOUND RATES FIELD: ${field}`, JSON.stringify(response.data[field], null, 2));
+            }
+        });
+    }
     
     if (!transformedData || !transformedData.availableRates) {
         logger.error('Failed to transform eShipPlus response or no rates available:', {

@@ -395,7 +395,7 @@ function transformToPolarisRateFormat(data) {
             To_PC_ZIP: data.Destination?.PostalCode || '',
             Class: "", // Empty as per API example
             Total_Weight_lbs: (data.Items || []).reduce((total, item) => 
-                total + parseFloat(item.Weight || 0), 0).toString(),
+                total + (parseFloat(item.Weight || 0) * parseInt(item.PackagingQuantity || 1)), 0).toString(),
             Number_of_Pieces: (data.Items || []).reduce((total, item) => 
                 total + parseInt(item.PackagingQuantity || 1), 0).toString(),
             Description: data.Items?.[0]?.Description || "TEST",
@@ -414,7 +414,8 @@ function transformToPolarisRateFormat(data) {
                 Limited_Access_Pickup: "N",
                 Limited_Access_Delivery: "N"
             },
-            Number_of_Skids: (data.Items || []).length.toString(),
+            Number_of_Skids: (data.Items || []).reduce((total, item) => 
+                total + parseInt(item.PackagingQuantity || 1), 0).toString(),
             SkidDimensions: (data.Items || []).map((item, index) => ({
                 Skid: (index + 1).toString(),
                 Length: (item.Length || 48).toString(),

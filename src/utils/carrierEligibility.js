@@ -9,6 +9,8 @@ import { toCanparRequest } from '../translators/canpar/translator';
 import { toPolarisTransportationRequest } from '../translators/polaristransportation/translator';
 import { mapEShipPlusToUniversal, mapCanparToUniversal } from './universalDataModel';
 import { mapPolarisTransportationToUniversal } from '../translators/polaristransportation/translator';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 /**
  * Simple mapping function to normalize shipment types
@@ -101,24 +103,732 @@ const CARRIER_CONFIG = {
 };
 
 /**
- * Determine eligible carriers for a shipment
+ * Enhanced carrier service that combines database carriers with static config
+ */
+class CarrierEligibilityService {
+    constructor() {
+        this.databaseCarriers = new Map();
+        this.lastFetch = null;
+        this.cacheTimeout = 30 * 1000; // 30 seconds cache for faster admin updates
+    }
+
+    /**
+     * Fetch and cache carriers from database
+     */
+    async fetchDatabaseCarriers() {
+        const now = Date.now();
+        if (this.lastFetch && (now - this.lastFetch) < this.cacheTimeout) {
+            return; // Use cached data
+        }
+
+        try {
+            console.log('🔄 Fetching carriers from database...');
+            const carriersRef = collection(db, 'carriers');
+            const q = query(carriersRef, where('enabled', '==', true));
+            const querySnapshot = await getDocs(q);
+
+            this.databaseCarriers.clear();
+            querySnapshot.forEach((doc) => {
+                const carrierData = { id: doc.id, ...doc.data() };
+                this.databaseCarriers.set(carrierData.carrierID, carrierData);
+            });
+
+            this.lastFetch = now;
+            console.log(`✅ Loaded ${this.databaseCarriers.size} carriers from database`);
+        } catch (error) {
+            console.error('❌ Failed to fetch carriers from database:', error);
+            // Continue with static carriers if database fetch fails
+        }
+    }
+
+    /**
+     * Get all carriers (database + static) with proper eligibility structure
+     */
+    async getAllCarriers() {
+        await this.fetchDatabaseCarriers();
+
+        const allCarriers = [];
+
+        // Add database carriers with enhanced eligibility rules
+        for (const [carrierID, carrierData] of this.databaseCarriers) {
+            const enhancedCarrier = this.convertDatabaseCarrierToEligibilityFormat(carrierData);
+            allCarriers.push(enhancedCarrier);
+        }
+
+        // Add static carriers (for backward compatibility)
+        const staticCarriers = Object.values(CARRIER_CONFIG);
+        for (const staticCarrier of staticCarriers) {
+            // Only add if not already in database carriers
+            if (!this.databaseCarriers.has(staticCarrier.key)) {
+                allCarriers.push(staticCarrier);
+            }
+        }
+
+        return allCarriers;
+    }
+
+    /**
+     * Convert database carrier to eligibility format
+     */
+    convertDatabaseCarrierToEligibilityFormat(carrierData) {
+        const { 
+            carrierID, 
+            name, 
+            type, 
+            connectionType, 
+            supportedServices, 
+            eligibilityRules,
+            apiCredentials 
+        } = carrierData;
+
+        // Build eligibility object from database structure
+        const eligibility = this.buildEligibilityFromRules(carrierData);
+
+        // Determine function name and system based on connection type
+        let functionName = null;
+        let system = null;
+        let translator = null;
+
+        if (connectionType === 'api' && apiCredentials) {
+            // Map known API carriers to their functions
+            const apiMappings = {
+                'ESHIPPLUS': {
+                    functionName: 'getRatesEShipPlus',
+                    system: 'eshipplus',
+                    translator: CARRIER_CONFIG.ESHIPPLUS?.translator
+                },
+                'CANPAR': {
+                    functionName: 'getRatesCanpar',
+                    system: 'canpar',
+                    translator: CARRIER_CONFIG.CANPAR?.translator
+                },
+                'POLARISTRANSPORTATION': {
+                    functionName: 'getRatesPolarisTransportation',
+                    system: 'polaristransportation',
+                    translator: CARRIER_CONFIG.POLARISTRANSPORTATION?.translator
+                }
+            };
+
+            const mapping = apiMappings[carrierID];
+            if (mapping) {
+                functionName = mapping.functionName;
+                system = mapping.system;
+                translator = mapping.translator;
+            }
+        }
+
+        return {
+            key: carrierID,
+            name: name,
+            system: system,
+            functionName: functionName,
+            timeout: this.calculateTimeout(type, connectionType),
+            translator: translator,
+            eligibility: eligibility,
+            priority: this.calculatePriority(carrierData),
+            connectionType: connectionType,
+            carrierType: type,
+            databaseId: carrierData.id,
+            isCustomCarrier: true
+        };
+    }
+
+    /**
+     * Build eligibility rules from database carrier configuration
+     */
+    buildEligibilityFromRules(carrierData) {
+        const { type, supportedServices, eligibilityRules } = carrierData;
+        
+        // Determine supported shipment types from services
+        const shipmentTypes = [];
+        if (supportedServices?.courier?.length > 0) {
+            shipmentTypes.push('courier');
+        }
+        if (supportedServices?.freight?.length > 0) {
+            shipmentTypes.push('freight');
+        }
+
+        // Build countries from geographic routing
+        const countries = new Set();
+        if (eligibilityRules?.geographicRouting?.domesticCanada) {
+            countries.add('CA');
+        }
+        if (eligibilityRules?.geographicRouting?.domesticUS) {
+            countries.add('US');
+        }
+
+        // Add countries from specific routing rules
+        const geoRouting = eligibilityRules?.geographicRouting || {};
+        
+        // From province/state routing
+        [
+            ...(geoRouting.provinceProvinceRouting || []),
+            ...(geoRouting.stateStateRouting || []),
+            ...(geoRouting.provinceStateRouting || [])
+        ].forEach(route => {
+            if (route.from) {
+                // Determine country from province/state code
+                countries.add(this.getCountryFromProvinceState(route.from));
+            }
+            if (route.to) {
+                countries.add(this.getCountryFromProvinceState(route.to));
+            }
+        });
+
+        // From country-to-country routing
+        (geoRouting.countryCountryRouting || []).forEach(route => {
+            if (route.from) countries.add(route.from);
+            if (route.to) countries.add(route.to);
+        });
+
+        // From city routing (extract countries from complete address info)
+        [
+            ...(geoRouting.provinceStateCityRouting || []),
+            ...(geoRouting.cityPairRouting || [])
+        ].forEach(route => {
+            if (route.fromCountry) countries.add(route.fromCountry);
+            if (route.toCountry) countries.add(route.toCountry);
+        });
+
+        // Determine route types
+        const routeTypes = [];
+        const countriesArray = Array.from(countries);
+        
+        if (countriesArray.length === 1) {
+            routeTypes.push('domestic');
+        } else if (countriesArray.length > 1) {
+            routeTypes.push('domestic', 'international');
+        }
+
+        // Calculate weight limits from weight restrictions
+        let minWeight = 0;
+        let maxWeight = 50000; // Default max
+
+        const weightRestrictions = eligibilityRules?.weightRanges?.weightRestrictions || 
+                                   eligibilityRules?.weightRanges || [];
+        
+        if (weightRestrictions.totalWeight?.length > 0) {
+            const weights = weightRestrictions.totalWeight.map(w => ({
+                min: parseFloat(w.minWeight) || 0,
+                max: parseFloat(w.maxWeight) || 50000
+            }));
+            minWeight = Math.min(...weights.map(w => w.min));
+            maxWeight = Math.max(...weights.map(w => w.max));
+        }
+
+        // Build modes from supported services
+        const modes = [];
+        if (supportedServices?.courier?.length > 0) {
+            modes.push('Ground', 'Express', 'Air');
+        }
+        if (supportedServices?.freight?.length > 0) {
+            modes.push('LTL', 'FTL');
+        }
+
+        return {
+            shipmentTypes: shipmentTypes,
+            countries: Array.from(countries),
+            modes: modes,
+            minWeight: minWeight,
+            maxWeight: maxWeight,
+            routeTypes: routeTypes
+        };
+    }
+
+    /**
+     * Get country from province/state code
+     */
+    getCountryFromProvinceState(code) {
+        const canadianProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
+        const usStates = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+        
+        if (canadianProvinces.includes(code)) return 'CA';
+        if (usStates.includes(code)) return 'US';
+        return 'CA'; // Default fallback
+    }
+
+    /**
+     * Calculate timeout based on carrier type and connection
+     */
+    calculateTimeout(type, connectionType) {
+        if (connectionType === 'manual') return 5000; // Manual carriers don't need API timeouts
+        
+        // API carriers - adjust based on type
+        switch (type) {
+            case 'courier': return 20000; // 20 seconds for courier
+            case 'freight': return 45000; // 45 seconds for freight
+            case 'hybrid': return 35000;  // 35 seconds for hybrid
+            default: return 25000;
+        }
+    }
+
+    /**
+     * Calculate priority (lower = higher priority)
+     */
+    calculatePriority(carrierData) {
+        // Database carriers get priority based on type and order
+        switch (carrierData.type) {
+            case 'courier': return 10;
+            case 'freight': return 20;
+            case 'hybrid': return 15;
+            default: return 30;
+        }
+    }
+
+    /**
+     * Enhanced eligibility check for database carriers
+     */
+    async checkCarrierEligibility(carrierData, shipmentData) {
+        const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
+        const { eligibilityRules, supportedServices, type } = carrierData;
+
+        // Basic shipment characteristics
+        const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
+        const originCountry = shipFrom?.country || 'CA';
+        const destinationCountry = shipTo?.country || 'CA';
+        const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
+        const isInternational = originCountry !== destinationCountry;
+
+        console.log(`\n🔍 Checking ${carrierData.name} eligibility (Database Carrier):`);
+
+        // 1. Check supported services
+        const hasCompatibleServices = this.checkServiceCompatibility(supportedServices, shipmentType);
+        if (!hasCompatibleServices) {
+            console.log(`  ❌ Services: ${shipmentType} not supported`);
+            return false;
+        }
+        console.log(`  ✅ Services: ${shipmentType} supported`);
+
+        // 2. Check geographic eligibility
+        const isGeographicallyEligible = this.checkGeographicEligibility(eligibilityRules?.geographicRouting, shipFrom, shipTo, isInternational);
+        if (!isGeographicallyEligible) {
+            console.log(`  ❌ Geography: Route not supported`);
+            return false;
+        }
+        console.log(`  ✅ Geography: Route supported`);
+
+        // 3. Check weight restrictions
+        const isWeightEligible = this.checkWeightEligibility(eligibilityRules?.weightRanges, totalWeight, packages);
+        if (!isWeightEligible) {
+            console.log(`  ❌ Weight: ${totalWeight}lbs not within limits`);
+            return false;
+        }
+        console.log(`  ✅ Weight: ${totalWeight}lbs within limits`);
+
+        // 4. Check dimension restrictions
+        const isDimensionEligible = this.checkDimensionEligibility(eligibilityRules?.dimensionRestrictions, packages);
+        if (!isDimensionEligible) {
+            console.log(`  ❌ Dimensions: Package dimensions exceed limits`);
+            return false;
+        }
+        console.log(`  ✅ Dimensions: Within limits`);
+
+        console.log(`  🎯 ${carrierData.name} is ELIGIBLE (Database Carrier)`);
+        return true;
+    }
+
+    /**
+     * Check service compatibility
+     */
+    checkServiceCompatibility(supportedServices, shipmentType) {
+        console.log('    📦 Service compatibility check:', {
+            shipmentType,
+            hasServices: !!supportedServices,
+            courierServices: supportedServices?.courier?.length || 0,
+            freightServices: supportedServices?.freight?.length || 0
+        });
+
+        if (!supportedServices) {
+            console.log('    ❌ No supported services defined');
+            return false;
+        }
+        
+        switch (shipmentType) {
+            case 'courier':
+                const hasCourierServices = supportedServices.courier && supportedServices.courier.length > 0;
+                console.log(`    📮 Courier check: ${hasCourierServices ? '✅' : '❌'} (${supportedServices.courier?.length || 0} services)`);
+                if (supportedServices.courier) {
+                    console.log('    📋 Available courier services:', supportedServices.courier);
+                }
+                return hasCourierServices;
+            case 'freight':
+                const hasFreightServices = supportedServices.freight && supportedServices.freight.length > 0;
+                console.log(`    🚛 Freight check: ${hasFreightServices ? '✅' : '❌'} (${supportedServices.freight?.length || 0} services)`);
+                if (supportedServices.freight) {
+                    console.log('    📋 Available freight services:', supportedServices.freight.slice(0, 5), supportedServices.freight.length > 5 ? `... and ${supportedServices.freight.length - 5} more` : '');
+                }
+                return hasFreightServices;
+            default:
+                console.log(`    ❌ Unknown shipment type: ${shipmentType}`);
+                return false;
+        }
+    }
+
+    /**
+     * Normalize country codes to standard 2-letter format
+     */
+    normalizeCountryCode(country) {
+        if (!country) return 'CA'; // Default to Canada
+        
+        const countryUpper = country.toString().toUpperCase();
+        
+        // Handle various formats for Canada
+        if (['CA', 'CAN', 'CANADA'].includes(countryUpper)) {
+            return 'CA';
+        }
+        
+        // Handle various formats for USA
+        if (['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(countryUpper)) {
+            return 'US';
+        }
+        
+        // Handle various formats for Mexico
+        if (['MX', 'MEX', 'MEXICO'].includes(countryUpper)) {
+            return 'MX';
+        }
+        
+        // Return as-is if already 2-letter code or unknown
+        return countryUpper.length === 2 ? countryUpper : country;
+    }
+
+    /**
+     * Check geographic eligibility
+     */
+    checkGeographicEligibility(geographicRouting, shipFrom, shipTo, isInternational) {
+        console.log('    🗺️ Geographic eligibility check:', {
+            hasRouting: !!geographicRouting,
+            isInternational,
+            rawOriginCountry: shipFrom?.country,
+            rawDestinationCountry: shipTo?.country
+        });
+
+        if (!geographicRouting) {
+            console.log('    ✅ No geographic restrictions = eligible');
+            return true; // No restrictions = eligible
+        }
+
+        // Normalize country codes to standard format
+        const originCountry = this.normalizeCountryCode(shipFrom?.country);
+        const destinationCountry = this.normalizeCountryCode(shipTo?.country);
+        
+        console.log('    🔄 Country normalization:', {
+            origin: `${shipFrom?.country} → ${originCountry}`,
+            destination: `${shipTo?.country} → ${destinationCountry}`
+        });
+        const originProvState = shipFrom?.state || shipFrom?.province;
+        const destinationProvState = shipTo?.state || shipTo?.province;
+        const originCity = shipFrom?.city;
+        const destinationCity = shipTo?.city;
+
+        console.log('    📍 Route details:', {
+            route: `${originCountry} → ${destinationCountry}`,
+            isInternational,
+            originProvState,
+            destinationProvState
+        });
+
+        // Check domestic country support
+        if (!isInternational) {
+            console.log('    🏠 Checking domestic routing...');
+            if (originCountry === 'CA' && geographicRouting.domesticCanada) {
+                console.log('    ✅ Domestic Canada supported');
+                return true;
+            }
+            if (originCountry === 'US' && geographicRouting.domesticUS) {
+                console.log('    ✅ Domestic US supported');
+                return true;
+            }
+            console.log('    ❌ Domestic routing not supported for', originCountry);
+        }
+
+        // Check specific routing rules
+        console.log('    🌍 Checking country-to-country routing...');
+        console.log('    📋 Geographic routing config:', JSON.stringify(geographicRouting, null, 2));
+        
+        if (geographicRouting.countryToCountry && geographicRouting.countryCountryRouting?.length > 0) {
+            console.log('    🔍 Country-to-country routes available:', geographicRouting.countryCountryRouting);
+            
+            const countryRouteMatch = geographicRouting.countryCountryRouting.some(route => {
+                const matches = route.from === originCountry && route.to === destinationCountry;
+                console.log(`    📊 Route check: ${route.from} → ${route.to} vs ${originCountry} → ${destinationCountry} = ${matches}`);
+                return matches;
+            });
+            
+            if (countryRouteMatch) {
+                console.log('    ✅ Country route match found!');
+                return true;
+            } else {
+                console.log('    ❌ No matching country route found');
+            }
+        } else {
+            console.log('    ⚠️ No country-to-country routing configured');
+        }
+
+        // Check province/state routing
+        if (originProvState && destinationProvState) {
+            // Province to Province
+            if (geographicRouting.provinceToProvince && geographicRouting.provinceProvinceRouting?.length > 0) {
+                const provRouteMatch = geographicRouting.provinceProvinceRouting.some(route =>
+                    route.from === originProvState && route.to === destinationProvState
+                );
+                if (provRouteMatch) return true;
+            }
+
+            // State to State
+            if (geographicRouting.stateToState && geographicRouting.stateStateRouting?.length > 0) {
+                const stateRouteMatch = geographicRouting.stateStateRouting.some(route =>
+                    route.from === originProvState && route.to === destinationProvState
+                );
+                if (stateRouteMatch) return true;
+            }
+
+            // Province to State (cross-border)
+            if (geographicRouting.provinceToState && geographicRouting.provinceStateRouting?.length > 0) {
+                const crossBorderMatch = geographicRouting.provinceStateRouting.some(route =>
+                    route.from === originProvState && route.to === destinationProvState
+                );
+                if (crossBorderMatch) return true;
+            }
+        }
+
+        // Check city routing
+        if (originCity && destinationCity) {
+            if (geographicRouting.cityToCity && geographicRouting.cityPairRouting?.length > 0) {
+                const cityRouteMatch = geographicRouting.cityPairRouting.some(route =>
+                    route.fromCity === originCity && route.toCity === destinationCity &&
+                    route.fromProvState === originProvState && route.toProvState === destinationProvState &&
+                    route.fromCountry === originCountry && route.toCountry === destinationCountry
+                );
+                if (cityRouteMatch) return true;
+            }
+
+            // Province/State to City routing
+            if (geographicRouting.provinceStateToCity && geographicRouting.provinceStateCityRouting?.length > 0) {
+                const provStateCityMatch = geographicRouting.provinceStateCityRouting.some(route =>
+                    route.from === originProvState && 
+                    route.toCity === destinationCity &&
+                    route.toProvState === destinationProvState &&
+                    route.toCountry === destinationCountry
+                );
+                if (provStateCityMatch) return true;
+            }
+        }
+
+        // If no specific rules match and no general domestic support, reject
+        return false;
+    }
+
+    /**
+     * Check weight eligibility
+     */
+    checkWeightEligibility(weightRanges, totalWeight, packages) {
+        if (!weightRanges) return true; // No restrictions = eligible
+
+        const weightRestrictions = weightRanges.weightRestrictions || weightRanges;
+
+        // Check total weight restrictions
+        if (weightRestrictions.totalWeight?.length > 0) {
+            const totalWeightMatch = weightRestrictions.totalWeight.some(range => {
+                const minWeight = parseFloat(range.minWeight) || 0;
+                const maxWeight = parseFloat(range.maxWeight) || Infinity;
+                return totalWeight >= minWeight && totalWeight <= maxWeight;
+            });
+            if (!totalWeightMatch) return false;
+        }
+
+        // Check weight per skid restrictions
+        if (weightRestrictions.weightPerSkid?.length > 0 && packages) {
+            const weightPerSkidMatch = packages.every(pkg => {
+                const packageWeight = parseFloat(pkg.weight) || 0;
+                return weightRestrictions.weightPerSkid.some(range => {
+                    const minWeight = parseFloat(range.minWeightPerSkid) || 0;
+                    const maxWeight = parseFloat(range.maxWeightPerSkid) || Infinity;
+                    return packageWeight >= minWeight && packageWeight <= maxWeight;
+                });
+            });
+            if (!weightPerSkidMatch) return false;
+        }
+
+        // Check cubic weight restrictions (if applicable)
+        if (weightRestrictions.cubicWeight?.length > 0 && packages) {
+            // Calculate cubic weight for each package
+            const cubicWeightMatch = packages.every(pkg => {
+                const length = parseFloat(pkg.length) || 0;
+                const width = parseFloat(pkg.width) || 0;
+                const height = parseFloat(pkg.height) || 0;
+                const actualWeight = parseFloat(pkg.weight) || 0;
+                
+                // Calculate cubic weight (L * W * H / density factor)
+                const cubicWeight = (length * width * height) / 166; // Standard density factor
+                
+                return weightRestrictions.cubicWeight.some(range => {
+                    const minCubicWeight = parseFloat(range.minCubicWeight) || 0;
+                    const maxCubicWeight = parseFloat(range.maxCubicWeight) || Infinity;
+                    const densityThreshold = parseFloat(range.densityThreshold) || 6;
+                    
+                    // Check if cubic weight rule applies (low density)
+                    const density = actualWeight / ((length * width * height) / 1728); // lbs per cubic foot
+                    if (density < densityThreshold) {
+                        return cubicWeight >= minCubicWeight && cubicWeight <= maxCubicWeight;
+                    }
+                    return true; // Not applicable for high-density shipments
+                });
+            });
+            if (!cubicWeightMatch) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check dimension eligibility
+     */
+    checkDimensionEligibility(dimensionRestrictions, packages) {
+        if (!dimensionRestrictions || dimensionRestrictions.length === 0) return true;
+        if (!packages || packages.length === 0) return true;
+
+        return packages.every(pkg => {
+            const length = parseFloat(pkg.length) || 0;
+            const width = parseFloat(pkg.width) || 0;
+            const height = parseFloat(pkg.height) || 0;
+
+            return dimensionRestrictions.some(restriction => {
+                const maxLength = parseFloat(restriction.maxLength) || Infinity;
+                const maxWidth = parseFloat(restriction.maxWidth) || Infinity;
+                const maxHeight = parseFloat(restriction.maxHeight) || Infinity;
+
+                return length <= maxLength && width <= maxWidth && height <= maxHeight;
+            });
+        });
+    }
+}
+
+// Create singleton instance
+const carrierEligibilityService = new CarrierEligibilityService();
+
+/**
+ * Enhanced function to determine eligible carriers for a shipment using database + static carriers
  * @param {Object} shipmentData - Universal shipment data
  * @returns {Array} - Array of eligible carrier configurations
  */
-export function getEligibleCarriers(shipmentData) {
+export async function getEligibleCarriers(shipmentData) {
+    console.log('🌟 Enhanced Multi-Carrier Eligibility Check with Database Integration');
+    
+    try {
+        // Get all carriers (database + static)
+        const allCarriers = await carrierEligibilityService.getAllCarriers();
+        
+        if (allCarriers.length === 0) {
+            console.log('❌ No carriers available in system');
+            return [];
+        }
+
+        console.log(`📋 Checking ${allCarriers.length} total carriers (database + static)`);
+
     const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
     
     // Determine shipment characteristics
     const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
-    const originCountry = shipFrom?.country || 'CA';
-    const destinationCountry = shipTo?.country || 'CA';
+        const originCountry = carrierEligibilityService.normalizeCountryCode(shipFrom?.country);
+        const destinationCountry = carrierEligibilityService.normalizeCountryCode(shipTo?.country);
     const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
     
     // Determine route type (domestic vs international)
     const isInternational = originCountry !== destinationCountry;
     const routeType = isInternational ? 'international' : 'domestic';
     
-    console.log('🔍 Multi-Carrier Eligibility Check:', {
+        console.log('🔍 Enhanced Eligibility Check:', {
+            shipmentType,
+            route: `${originCountry} → ${destinationCountry}`,
+            routeType: routeType + (isInternational ? ' (cross-border)' : ' (same country)'),
+            totalWeight: `${totalWeight} lbs`,
+            packagesCount: packages?.length || 0
+        });
+        
+        const eligibleCarriers = [];
+        
+        for (const carrier of allCarriers) {
+            if (carrier.isCustomCarrier) {
+                // Database carrier - use enhanced eligibility check
+                const isEligible = await carrierEligibilityService.checkCarrierEligibility(
+                    carrierEligibilityService.databaseCarriers.get(carrier.key), 
+                    shipmentData
+                );
+                if (isEligible) {
+                    eligibleCarriers.push(carrier);
+                }
+            } else {
+                // Static carrier - use original logic
+                const { eligibility } = carrier;
+                console.log(`\n🧪 Checking ${carrier.name} (Static):`);
+                
+                // Check shipment type
+                if (!eligibility.shipmentTypes.includes(shipmentType)) {
+                    console.log(`  ❌ Shipment type: ${shipmentType} not in [${eligibility.shipmentTypes.join(', ')}]`);
+                    continue;
+                }
+                console.log(`  ✅ Shipment type: ${shipmentType} supported`);
+                
+                // Check countries
+                if (!eligibility.countries.includes(originCountry) || !eligibility.countries.includes(destinationCountry)) {
+                    console.log(`  ❌ Countries: ${originCountry}->${destinationCountry} not supported by [${eligibility.countries.join(', ')}]`);
+                    continue;
+                }
+                console.log(`  ✅ Countries: ${originCountry}->${destinationCountry} supported`);
+                
+                // Check route type (domestic vs international)
+                if (eligibility.routeTypes && !eligibility.routeTypes.includes(routeType)) {
+                    console.log(`  ❌ Route type: ${routeType} not in [${eligibility.routeTypes.join(', ')}]`);
+                    continue;
+                }
+                console.log(`  ✅ Route type: ${routeType} supported`);
+                
+                // Check weight limits
+                if (totalWeight < eligibility.minWeight || totalWeight > eligibility.maxWeight) {
+                    console.log(`  ❌ Weight: ${totalWeight}lbs outside limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
+                    continue;
+                }
+                console.log(`  ✅ Weight: ${totalWeight}lbs within limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
+                
+                console.log(`  🎯 ${carrier.name} is ELIGIBLE (Priority: ${carrier.priority})`);
+                eligibleCarriers.push(carrier);
+            }
+        }
+        
+        // Sort by priority
+        eligibleCarriers.sort((a, b) => a.priority - b.priority);
+        
+        console.log(`\n🌟 Final Eligible Carriers: ${eligibleCarriers.length} carriers:`,
+            eligibleCarriers.map(c => `${c.name} (P${c.priority}, ${c.isCustomCarrier ? 'DB' : 'Static'})`));
+        
+        return eligibleCarriers;
+        
+    } catch (error) {
+        console.error('❌ Error in enhanced eligibility check:', error);
+        
+        // Fallback to static carriers only
+        console.log('🔄 Falling back to static carrier eligibility check');
+        return getStaticEligibleCarriers(shipmentData);
+    }
+}
+
+/**
+ * Fallback function for static carrier eligibility (original logic)
+ */
+function getStaticEligibleCarriers(shipmentData) {
+    const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
+    
+    // Determine shipment characteristics
+    const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
+    const originCountry = carrierEligibilityService.normalizeCountryCode(shipFrom?.country);
+    const destinationCountry = carrierEligibilityService.normalizeCountryCode(shipTo?.country);
+    const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
+    
+    // Determine route type (domestic vs international)
+    const isInternational = originCountry !== destinationCountry;
+    const routeType = isInternational ? 'international' : 'domestic';
+    
+    console.log('🔍 Static Multi-Carrier Eligibility Check:', {
         shipmentType,
         route: `${originCountry} → ${destinationCountry}`,
         routeType: routeType + (isInternational ? ' (cross-border)' : ' (same country)'),
@@ -166,28 +876,31 @@ export function getEligibleCarriers(shipmentData) {
     // Sort by priority
     eligibleCarriers.sort((a, b) => a.priority - b.priority);
     
-    console.log(`\n🌟 Final Results: ${eligibleCarriers.length} eligible carriers:`, 
+    console.log(`\n🌟 Static Eligible Carriers: ${eligibleCarriers.length} carriers:`,
         eligibleCarriers.map(c => `${c.name} (P${c.priority})`));
     
-    if (eligibleCarriers.length === 0) {
-        console.warn('🚨 NO ELIGIBLE CARRIERS FOUND! This will prevent multi-carrier rate fetching.');
-        console.log('Troubleshooting info:', {
-            shipmentType,
-            originCountry,
-            destinationCountry,
-            routeType,
-            totalWeight,
-            allCarriers: Object.values(CARRIER_CONFIG).map(c => ({
-                name: c.name,
-                shipmentTypes: c.eligibility.shipmentTypes,
-                countries: c.eligibility.countries,
-                routeTypes: c.eligibility.routeTypes || ['any'],
-                weightRange: `${c.eligibility.minWeight}-${c.eligibility.maxWeight} lbs`
-            }))
-        });
-    }
-    
     return eligibleCarriers;
+}
+
+/**
+ * Enhanced getAllCarriers that includes database carriers
+ * @returns {Array} - Array of all carrier configurations
+ */
+export async function getAllCarriers() {
+    try {
+        return await carrierEligibilityService.getAllCarriers();
+    } catch (error) {
+        console.error('❌ Error fetching all carriers, falling back to static:', error);
+        return Object.values(CARRIER_CONFIG);
+    }
+}
+
+/**
+ * Get static carriers only (for backward compatibility)
+ * @returns {Array} - Array of static carrier configurations
+ */
+export function getStaticCarriers() {
+    return Object.values(CARRIER_CONFIG);
 }
 
 /**
@@ -203,34 +916,27 @@ async function fetchCarrierRates(carrier, shipmentData) {
         console.log(`🚀 Fetching rates from ${carrier.name}...`);
         
         // Transform request to carrier format
+        console.log(`🔍 ${carrier.name} shipmentData being passed to translator:`, JSON.stringify(shipmentData, null, 2));
         const carrierRequest = carrier.translator.toRequest(shipmentData);
+        console.log(`🔍 ${carrier.name} carrierRequest after translation:`, JSON.stringify(carrierRequest, null, 2));
         
-        // Auto-fix missing fields for eShipPlus
-        if (carrier.key === 'ESHIPPLUS') {
-            if (!carrierRequest.Origin.Contact || carrierRequest.Origin.Contact.trim() === '') {
-                carrierRequest.Origin.Contact = 
-                    carrierRequest.Origin.Attention || 
-                    carrierRequest.Origin.Name || 
-                    carrierRequest.Origin.Company || 
-                    "Shipping Department";
-            }
-            
-            if (!carrierRequest.Destination.Contact || carrierRequest.Destination.Contact.trim() === '') {
-                carrierRequest.Destination.Contact = 
-                    carrierRequest.Destination.Attention || 
-                    carrierRequest.Destination.Name || 
-                    carrierRequest.Destination.Company || 
-                    "Receiving Department";
-            }
-            
-            if (!carrierRequest.Origin.SpecialInstructions) {
-                carrierRequest.Origin.SpecialInstructions = 'none';
-            }
-            
-            if (!carrierRequest.Destination.SpecialInstructions) {
-                carrierRequest.Destination.SpecialInstructions = 'none';
+        // Add service level information for multi-service carriers
+        if (shipmentData.shipmentInfo?.serviceLevel && shipmentData.shipmentInfo.serviceLevel !== 'any') {
+            // Convert single service level to array for consistency
+            carrierRequest.serviceLevels = [shipmentData.shipmentInfo.serviceLevel];
+        } else {
+            // Default service levels based on shipment type
+            if (shipmentData.shipmentInfo?.shipmentType === 'courier') {
+                carrierRequest.serviceLevels = ['economy', 'express', 'priority'];
+            } else if (shipmentData.shipmentInfo?.shipmentType === 'freight') {
+                carrierRequest.serviceLevels = ['economy']; // Default to economy for freight
+            } else {
+                carrierRequest.serviceLevels = ['economy']; // Safe default
             }
         }
+        
+        // Also pass shipmentInfo for context
+        carrierRequest.shipmentInfo = shipmentData.shipmentInfo;
         
         // Call Firebase function with carrier-specific timeout protection
         const functions = getFunctions();
@@ -627,12 +1333,4 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
  */
 export function getCarrierConfig(carrierKey) {
     return CARRIER_CONFIG[carrierKey] || null;
-}
-
-/**
- * Get all available carriers
- * @returns {Array} - Array of all carrier configurations
- */
-export function getAllCarriers() {
-    return Object.values(CARRIER_CONFIG);
 } 

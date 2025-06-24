@@ -19,6 +19,30 @@ const safeAccess = (obj, path, defaultValue = null) => {
     return current;
 };
 
+// Enhanced service mapping with proper service levels (moved to global scope)
+const getServiceInfo = (serviceType) => {
+    const serviceMap = {
+        1: { name: 'Canpar Ground', level: 'economy', category: 'domestic' },
+        2: { name: 'Canpar Select', level: 'express', category: 'domestic' },
+        3: { name: 'Canpar Select Letter', level: 'express', category: 'domestic' },
+        4: { name: 'Canpar Select Pak', level: 'express', category: 'domestic' },
+        5: { name: 'Canpar Overnight', level: 'priority', category: 'domestic' },
+        6: { name: 'Canpar Overnight Letter', level: 'priority', category: 'domestic' },
+        7: { name: 'Canpar Overnight Pak', level: 'priority', category: 'domestic' },
+        8: { name: 'Canpar USA', level: 'economy', category: 'international' },
+        9: { name: 'Canpar USA Letter', level: 'economy', category: 'international' },
+        10: { name: 'Canpar USA Pak', level: 'economy', category: 'international' },
+        11: { name: 'Canpar Select USA', level: 'express', category: 'international' },
+        12: { name: 'Canpar International', level: 'economy', category: 'international' }
+    };
+    return serviceMap[serviceType] || { name: `Service ${serviceType}`, level: 'economy', category: 'domestic' };
+};
+
+// Get service name for backward compatibility
+const getServiceName = (serviceType) => {
+    return getServiceInfo(serviceType).name;
+};
+
 // Transform Canpar SOAP response to internal format
 function transformCanparResponseToInternalFormat(canparResponse) {
     if (!canparResponse) return null;
@@ -260,27 +284,21 @@ function transformCanparResponseToInternalFormat(canparResponse) {
         billingDetailsCount: billingDetails.length
     });
 
-    // Map service type to service name
-    const getServiceName = (serviceType) => {
-        const serviceMap = {
-            1: 'Canpar Ground',
-            2: 'Canpar Select', 
-            3: 'Canpar Overnight',
-            4: 'Canpar USA',
-            5: 'Canpar Ground',
-            6: 'Canpar International'
-        };
-        return serviceMap[serviceType] || `Service ${serviceType}`;
-    };
 
+
+    // Get service info for proper classification
+    const serviceInfo = getServiceInfo(serviceType);
+    
     // Create a single rate object (Canpar typically returns one rate per service type)
     const rate = {
         quoteId: `CANPAR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         carrierName: 'Canpar Express',
         carrierScac: 'CANP',
         carrierKey: 'CANPAR',
-        serviceMode: getServiceName(serviceType),
-        serviceType: getServiceName(serviceType),
+        serviceMode: serviceInfo.name,
+        serviceType: serviceInfo.name,
+        serviceLevel: serviceInfo.level, // Add proper service level mapping
+        serviceCategory: serviceInfo.category, // domestic vs international
         transitTime: transitTime,
         estimatedDeliveryDate: estimatedDeliveryDate ? dayjs(estimatedDeliveryDate).format('YYYY-MM-DD') : null,
         freightCharges: freightCharge,
@@ -302,7 +320,9 @@ function transformCanparResponseToInternalFormat(canparResponse) {
         canparTaxCode2: safeAccess(shipment, 'ax27:tax_code_2.0'),
         // Add tax charges for proper mapping
         taxCharge1: taxCharge1,
-        taxCharge2: taxCharge2
+        taxCharge2: taxCharge2,
+        // Enhanced service metadata
+        canparServiceInfo: serviceInfo
     };
 
     // Log the final rate object for debugging
@@ -534,9 +554,126 @@ function validateCanparRateRequest(data) {
     return null; // No validation errors
 }
 
-// Main rate processing function
+/**
+ * Map courier service levels to Canpar service types
+ * @param {Array} serviceLevels - Array of service levels (e.g., ['economy', 'express', 'priority'])
+ * @param {boolean} isInternational - Whether this is an international shipment
+ * @returns {Array} - Array of Canpar service types to request
+ */
+function mapServiceLevelsToCanparTypes(serviceLevels, isInternational = false) {
+    if (!serviceLevels || serviceLevels.length === 0) {
+        // Default to ground/economy if no specific service levels requested
+        return isInternational ? [8] : [1]; // USA or Ground
+    }
+
+    const serviceMapping = {
+        domestic: {
+            economy: [1], // Ground
+            express: [2, 3, 4], // Select, Select Letter, Select Pak
+            priority: [5, 6, 7] // Overnight, Overnight Letter, Overnight Pak
+        },
+        international: {
+            economy: [8, 9, 10, 12], // USA, USA Letter, USA Pak, International
+            express: [11], // Select USA
+            priority: [] // No priority international services available
+        }
+    };
+
+    const category = isInternational ? 'international' : 'domestic';
+    const availableServices = serviceMapping[category];
+    
+    const canparServiceTypes = [];
+    
+    serviceLevels.forEach(level => {
+        if (availableServices[level]) {
+            canparServiceTypes.push(...availableServices[level]);
+        }
+    });
+
+    // Remove duplicates and return
+    return [...new Set(canparServiceTypes)];
+}
+
+/**
+ * Make a single Canpar API call for a specific service type
+ * @param {Object} data - Request data
+ * @param {Object} credentials - API credentials
+ * @param {string} apiUrl - API URL
+ * @param {number} serviceType - Canpar service type
+ * @returns {Promise<Object>} - Single rate response
+ */
+async function fetchCanparSingleServiceRate(data, credentials, apiUrl, serviceType) {
+    // Clone the data and set the specific service type
+    const serviceData = JSON.parse(JSON.stringify(data));
+    serviceData.shipment = serviceData.shipment || {};
+    serviceData.shipment.service_type = serviceType;
+
+    logger.info(`Fetching Canpar rate for service type ${serviceType}`);
+
+    // Build SOAP envelope for this specific service
+    const soapEnvelope = buildCanparSoapEnvelope(serviceData, credentials);
+
+    // Make SOAP request to Canpar
+    const response = await axios.post(apiUrl, soapEnvelope, {
+        headers: {
+            'Content-Type': 'text/xml; charset=utf-8',
+            'SOAPAction': 'rateShipment'
+        },
+        validateStatus: function (status) {
+            return status >= 200 && status < 600;
+        }
+    });
+
+    if (response.status >= 400) {
+        throw new Error(`Canpar API Error for service ${serviceType}: HTTP Status ${response.status}`);
+    }
+
+    // Parse XML response
+    const parsedResponse = await parseStringPromise(response.data, {
+        explicitArray: true,
+        ignoreAttrs: false
+    });
+
+    // Check for SOAP faults or errors
+    const soapFault = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.soapenv:Fault');
+    if (soapFault) {
+        const faultString = safeAccess(soapFault, '0.faultstring.0', 'Unknown SOAP fault');
+        throw new Error(`Canpar SOAP Fault for service ${serviceType}: ${faultString}`);
+    }
+
+    // Check for application errors
+    const error = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0.ax25:error.0');
+    if (error && error !== null) {
+        if (!(error.$ && error.$.hasOwnProperty('xsi:nil') && error.$['xsi:nil'] === 'true')) {
+            throw new Error(`Canpar application error for service ${serviceType}: ${JSON.stringify(error, null, 2)}`);
+        }
+    }
+
+    // Check for successful response structure
+    const rateResponse = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0');
+    if (!rateResponse) {
+        throw new Error(`Invalid response structure from Canpar API for service ${serviceType}`);
+    }
+
+    // Check for shipment data
+    const shipmentResult = safeAccess(rateResponse, 'ax25:processShipmentResult.0.ax27:shipment.0');
+    if (!shipmentResult) {
+        throw new Error(`No shipment data found in Canpar API response for service ${serviceType}`);
+    }
+
+    // Transform response to internal format
+    const transformedData = transformCanparResponseToInternalFormat(parsedResponse);
+    
+    if (!transformedData || !transformedData.availableRates || transformedData.availableRates.length === 0) {
+        throw new Error(`Failed to process rates from Canpar API for service ${serviceType}`);
+    }
+
+    return transformedData.availableRates[0]; // Return the single rate
+}
+
+// Main rate processing function with multi-service support
 async function processCanparRateRequest(data) {
-    logger.info('Processing Canpar rate request');
+    logger.info('Processing Canpar rate request with multi-service support');
     
     try {
         // Validate the request
@@ -560,121 +697,152 @@ async function processCanparRateRequest(data) {
         logger.info(`Using Canpar Rate API URL: ${apiUrl}`);
         logger.info(`Canpar credentials retrieved - username: ${credentials.username || "MISSING"}, accountNumber: ${credentials.accountNumber || "MISSING"}, hasPassword: ${!!credentials.password}`);
         
-        // Build SOAP envelope
-        const soapEnvelope = buildCanparSoapEnvelope(data, credentials);
-        logger.info('Canpar SOAP request envelope built');
+        // Determine if this is an international shipment
+        const isInternational = data.shipment?.pickup_address?.country !== data.shipment?.delivery_address?.country;
         
-        // Log the full SOAP envelope in chunks to avoid truncation
-        const chunkSize = 800; // Safe size for Firebase logs
-        const soapLength = soapEnvelope.length;
-        logger.info(`Full SOAP Envelope (${soapLength} characters total):`);
+        // Extract requested service levels from the request data
+        let requestedServiceLevels = data.serviceLevels || data.shipmentInfo?.serviceLevels || ['economy'];
         
-        for (let i = 0; i < soapLength; i += chunkSize) {
-            const chunk = soapEnvelope.substring(i, i + chunkSize);
-            const chunkNumber = Math.floor(i / chunkSize) + 1;
-            const totalChunks = Math.ceil(soapLength / chunkSize);
-            logger.info(`SOAP Chunk ${chunkNumber}/${totalChunks}: ${chunk}`);
-        }
-        
-        logger.info('=== END OF SOAP ENVELOPE ===');
-        
-        // Make SOAP request to Canpar
-        const response = await axios.post(apiUrl, soapEnvelope, {
-            headers: {
-                'Content-Type': 'text/xml; charset=utf-8',
-                'SOAPAction': 'rateShipment'
-            },
-            validateStatus: function (status) {
-                return status >= 200 && status < 600; // Accept all statuses to inspect body
-            }
-        });
-        
-        logger.info(`Canpar API Response Status: ${response.status}`);
-        
-        // Log the full response in chunks for debugging
-        const responseData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-        const responseLength = responseData.length;
-        logger.info(`Full Canpar Response (${responseLength} characters total):`);
-        
-        for (let i = 0; i < responseLength; i += chunkSize) {
-            const chunk = responseData.substring(i, i + chunkSize);
-            const chunkNumber = Math.floor(i / chunkSize) + 1;
-            const totalChunks = Math.ceil(responseLength / chunkSize);
-            logger.info(`Response Chunk ${chunkNumber}/${totalChunks}: ${chunk}`);
-        }
-        
-        logger.info('=== END OF CANPAR RESPONSE ===');
-        
-        if (response.status >= 400) {
-            logger.error('Canpar API Error Response:', response.data);
-            throw new Error(`Canpar API Error: HTTP Status ${response.status}`);
-        }
-        
-        // Parse XML response
-        const parsedResponse = await parseStringPromise(response.data, {
-            explicitArray: true,
-            ignoreAttrs: false
-        });
-        
-        logger.info('Canpar XML response parsed successfully');
-        
-        // Check for SOAP faults or errors
-        const soapFault = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.soapenv:Fault');
-        if (soapFault) {
-            const faultString = safeAccess(soapFault, '0.faultstring.0', 'Unknown SOAP fault');
-            logger.error('Canpar SOAP Fault:', faultString);
-            throw new Error(`Canpar SOAP Fault: ${faultString}`);
-        }
-        
-        // Check for application errors
-        const error = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0.ax25:error.0');
-        if (error && error !== null) {
-            // Check if it's a null error (which means NO error occurred)
-            if (error.$ && error.$.hasOwnProperty('xsi:nil') && error.$['xsi:nil'] === 'true') {
-                logger.info('Canpar error element is null (xsi:nil="true") - this means NO error occurred, proceeding with response processing');
+        // Handle "any" service level - expand to all available service levels for courier shipments
+        if (requestedServiceLevels.includes('any') || (data.shipmentInfo?.serviceLevel === 'any')) {
+            if (data.shipmentInfo?.shipmentType === 'courier') {
+                requestedServiceLevels = ['economy', 'express', 'priority'];
             } else {
-                // This is an actual error
-                logger.error('Canpar application error:', JSON.stringify(error, null, 2));
-                throw new Error(`Canpar application error: ${JSON.stringify(error, null, 2)}`);
+                requestedServiceLevels = ['economy']; // For freight, just use economy
             }
         }
         
-        // Check for successful response structure
-        const rateResponse = safeAccess(parsedResponse, 'soapenv:Envelope.soapenv:Body.0.ns:rateShipmentResponse.0.ns:return.0');
-        if (!rateResponse) {
-            logger.error('No rate response found in Canpar API response');
-            logger.error('Full parsed response:', JSON.stringify(parsedResponse, null, 2));
-            throw new Error('Invalid response structure from Canpar API - no rate data found');
-        }
+        logger.info('Original service levels:', data.serviceLevels);
+        logger.info('Shipment info service level:', data.shipmentInfo?.serviceLevel);
+        logger.info('Final requested service levels:', requestedServiceLevels);
+        logger.info('Is international shipment:', isInternational);
         
-        // Log successful response structure for debugging
-        logger.info('Canpar rate response structure found:', Object.keys(rateResponse));
+        // Map service levels to Canpar service types
+        const canparServiceTypes = mapServiceLevelsToCanparTypes(requestedServiceLevels, isInternational);
+        logger.info('Mapped Canpar service types:', canparServiceTypes);
         
-        // Check for shipment data
-        const shipmentResult = safeAccess(rateResponse, 'ax25:processShipmentResult.0.ax27:shipment.0');
-        if (!shipmentResult) {
-            logger.error('No shipment result found in Canpar response');
-            logger.error('Available response keys:', Object.keys(rateResponse));
-            throw new Error('No shipment data found in Canpar API response');
-        }
-        
-        // Transform response to internal format
-        const transformedData = transformCanparResponseToInternalFormat(parsedResponse);
-        
-        if (!transformedData || !transformedData.availableRates || transformedData.availableRates.length === 0) {
-            logger.error('Failed to transform Canpar response or no rates available');
-            logger.error('Transformed data:', JSON.stringify(transformedData, null, 2));
-            throw new Error('Failed to process rates from Canpar API or no rates available');
-        }
-        
-        logger.info('Successfully transformed rates from Canpar SOAP API');
-        logger.info('Number of rates found:', transformedData.availableRates.length);
-        logger.info('Transformed data summary:', {
-            bookingReference: transformedData.bookingReference,
-            ratesCount: transformedData.availableRates.length,
-            firstRateTotal: transformedData.availableRates[0]?.totalCharges,
-            firstRateCarrier: transformedData.availableRates[0]?.carrierName
+        // Add detailed mapping info for debugging
+        logger.info('Service mapping details:', {
+            isInternational,
+            requestedServiceLevels,
+            canparServiceTypes: canparServiceTypes.map(type => ({
+                type,
+                serviceName: getServiceInfo(type).name,
+                serviceLevel: getServiceInfo(type).level
+            }))
         });
+        
+        if (canparServiceTypes.length === 0) {
+            logger.warn('No applicable Canpar service types found for requested service levels');
+            return {
+                success: true,
+                data: {
+                    bookingReference: `CANPAR_${Date.now()}`,
+                    availableRates: []
+                }
+            };
+        }
+        
+        // Fetch rates for all service types in parallel
+        logger.info(`🚀 Fetching rates for ${canparServiceTypes.length} Canpar service types in parallel...`);
+        const startTime = Date.now();
+        
+        const ratePromises = canparServiceTypes.map(async (serviceType) => {
+            try {
+                logger.info(`🔄 Requesting Canpar service type ${serviceType} (${getServiceInfo(serviceType).name})`);
+                const rate = await fetchCanparSingleServiceRate(data, credentials, apiUrl, serviceType);
+                logger.info(`✅ Service type ${serviceType} returned: ${rate.serviceMode} (${rate.serviceLevel}) - $${rate.totalCharges}`);
+                logger.info(`📝 Rate details:`, {
+                    requestedServiceType: serviceType,
+                    returnedServiceMode: rate.serviceMode,
+                    returnedServiceLevel: rate.serviceLevel,
+                    canparServiceType: rate.canparServiceType,
+                    totalCharges: rate.totalCharges
+                });
+                return { success: true, rate, serviceType };
+            } catch (error) {
+                logger.warn(`❌ Failed to fetch rate for service type ${serviceType}: ${error.message}`);
+                return { success: false, error: error.message, serviceType };
+            }
+        });
+        
+        // Wait for all rate requests to complete
+        const results = await Promise.allSettled(ratePromises);
+        const endTime = Date.now();
+        const totalTime = endTime - startTime;
+        
+        // Process results
+        const successfulRates = [];
+        const failedServices = [];
+        
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value.success) {
+                successfulRates.push(result.value.rate);
+            } else {
+                const serviceType = canparServiceTypes[index];
+                const error = result.status === 'rejected' ? result.reason.message : result.value.error;
+                failedServices.push({ serviceType, error });
+            }
+        });
+        
+        logger.info(`📊 Canpar multi-service fetch completed in ${totalTime}ms:`);
+        logger.info(`  ✅ Successful rates: ${successfulRates.length}`);
+        logger.info(`  ❌ Failed services: ${failedServices.length}`);
+        
+        if (failedServices.length > 0) {
+            logger.warn('Failed services:', failedServices);
+        }
+        
+        // Remove duplicates based on service type and total charges
+        const uniqueRates = [];
+        const seenCombinations = new Set();
+        
+        successfulRates.forEach(rate => {
+            const key = `${rate.serviceMode}-${rate.totalCharges}-${rate.serviceLevel}`;
+            if (!seenCombinations.has(key)) {
+                seenCombinations.add(key);
+                uniqueRates.push(rate);
+            } else {
+                logger.info(`🔄 Removing duplicate rate: ${rate.serviceMode} - $${rate.totalCharges}`);
+            }
+        });
+        
+        // Sort rates by total charges (lowest first)
+        uniqueRates.sort((a, b) => (a.totalCharges || 0) - (b.totalCharges || 0));
+        
+        logger.info(`📊 Rate deduplication: ${successfulRates.length} → ${uniqueRates.length} rates`);
+        
+        const transformedData = {
+            bookingReference: `CANPAR_${Date.now()}`,
+            bookingReferenceType: "Shipment",
+            shipmentBillType: "Prepaid",
+            shipmentDate: new Date().toISOString().split('T')[0],
+            pickupWindow: {
+                earliest: "09:00",
+                latest: "17:00"
+            },
+            deliveryWindow: {
+                earliest: "09:00", 
+                latest: "17:00"
+            },
+            origin: uniqueRates[0]?.origin || {},
+            destination: uniqueRates[0]?.destination || {},
+            items: [],
+            availableRates: uniqueRates,
+            // Add metadata about the multi-service fetch
+            fetchMetadata: {
+                requestedServiceLevels,
+                canparServiceTypes,
+                originalRatesCount: successfulRates.length,
+                uniqueRatesCount: uniqueRates.length,
+                failedServices: failedServices.length,
+                totalFetchTime: totalTime,
+                isInternational,
+                duplicatesRemoved: successfulRates.length - uniqueRates.length
+            }
+        };
+        
+        logger.info(`🎯 Successfully retrieved ${uniqueRates.length} unique Canpar rates (${successfulRates.length} total fetched) across ${canparServiceTypes.length} service types`);
         
         return {
             success: true,

@@ -331,16 +331,23 @@ const ShipmentTableRow = ({
                         let dateTime = null;
                         let createdDate = null;
 
-                        // Priority order for created date: createdAt (primary) > bookedAt (QuickShip fallback) > bookingTimestamp (fallback)
-                        if (shipment.createdAt) {
-                            // Primary creation date field
-                            createdDate = shipment.createdAt;
-                        } else if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
-                            // For QuickShip records, use bookedAt if createdAt is missing
-                            createdDate = shipment.bookedAt;
-                        } else if (shipment.bookingTimestamp) {
-                            // Fallback to bookingTimestamp for some QuickShip records
-                            createdDate = shipment.bookingTimestamp;
+                        // Priority order for created date - different for QuickShip vs regular shipments
+                        if (shipment.creationMethod === 'quickship') {
+                            // For QuickShip: bookingTimestamp (primary) > bookedAt > createdAt (fallback)
+                            if (shipment.bookingTimestamp) {
+                                createdDate = shipment.bookingTimestamp;
+                            } else if (shipment.bookedAt) {
+                                createdDate = shipment.bookedAt;
+                            } else if (shipment.createdAt) {
+                                createdDate = shipment.createdAt;
+                            }
+                        } else {
+                            // For regular shipments: createdAt (primary) > bookingTimestamp (fallback)
+                            if (shipment.createdAt) {
+                                createdDate = shipment.createdAt;
+                            } else if (shipment.bookingTimestamp) {
+                                createdDate = shipment.bookingTimestamp;
+                            }
                         }
 
                         if (createdDate) {

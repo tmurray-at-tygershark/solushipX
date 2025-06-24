@@ -25,8 +25,10 @@ const formatFullTimestamp = (dateString) => { // dateString is YYYY-MM-DD
 };
 
 export function toEShipPlusRequest(formData) {
+    const bookingRef = formData.shipmentInfo?.shipperReferenceNumber || '';
+    
     return {
-        BookingReferenceNumber: formData.shipmentInfo?.shipperReferenceNumber || '',
+        BookingReferenceNumber: bookingRef,
         BookingReferenceNumberType: 2,
         ShipmentBillType: "DefaultLogisticsPlus",
         ShipmentDate: formatFullTimestamp(formData.shipmentInfo?.shipmentDate),
@@ -50,7 +52,7 @@ export function toEShipPlusRequest(formData) {
             City: formData.shipFrom?.city || '',
             State: formData.shipFrom?.state || '',
             Country: { Code: formData.shipFrom?.country || 'US' }, 
-            Contact: formData.shipFrom?.contactName || formData.shipFrom?.attention || '', 
+            Contact: formData.shipFrom?.contactName || formData.shipFrom?.attention || 'Shipping Department', 
             Phone: formData.shipFrom?.phone || formData.shipFrom?.contactPhone || '',
             Email: formData.shipFrom?.email || formData.shipFrom?.contactEmail || '',
             SpecialInstructions: formData.shipFrom?.specialInstructions || 'none',
@@ -63,7 +65,7 @@ export function toEShipPlusRequest(formData) {
             City: formData.shipTo?.city || '',
             State: formData.shipTo?.state || '',
             Country: { Code: formData.shipTo?.country || 'US' }, 
-            Contact: formData.shipTo?.contactName || formData.shipTo?.attention || '',
+            Contact: formData.shipTo?.contactName || formData.shipTo?.attention || 'Receiving Department',
             Phone: formData.shipTo?.phone || formData.shipTo?.contactPhone || '',
             Email: formData.shipTo?.email || formData.shipTo?.contactEmail || '',
             SpecialInstructions: formData.shipTo?.specialInstructions || 'none',
@@ -81,5 +83,10 @@ export function toEShipPlusRequest(formData) {
         })),
         DeclineAdditionalInsuranceIfApplicable: true,
         HazardousMaterialShipment: (formData.packages || []).some(pkg => pkg.hazardous || false),
+        
+        // Additional fields that match the working request format
+        ReferenceNumber: bookingRef,
+        serviceLevels: formData.serviceLevels || ["economy"],
+        shipmentInfo: formData.shipmentInfo || {}
     };
 } 

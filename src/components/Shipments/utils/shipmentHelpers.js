@@ -68,12 +68,14 @@ export const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermD
 
 // Helper function to format date and time
 export const formatDateTime = (timestamp) => {
-    if (!timestamp) return null;
+    if (!timestamp) {
+        return null;
+    }
 
     try {
         // Handle serverTimestamp placeholders
         if (timestamp._methodName === 'serverTimestamp') {
-            console.warn('Encountered serverTimestamp placeholder, returning null');
+            console.warn('formatDateTime: Encountered serverTimestamp placeholder, returning null');
             return null;
         }
 
@@ -86,14 +88,17 @@ export const formatDateTime = (timestamp) => {
             // Handle timestamp objects with seconds (and optional nanoseconds)
             const milliseconds = timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000;
             date = new Date(milliseconds);
+        } else if (typeof timestamp === 'string') {
+            // Handle ISO date strings (like bookingTimestamp)
+            date = new Date(timestamp);
         } else {
-            // Handle regular date strings/objects
+            // Handle regular date objects or other formats
             date = new Date(timestamp);
         }
 
         // Check if the date is valid
         if (isNaN(date.getTime())) {
-            console.warn('Invalid timestamp encountered:', timestamp);
+            console.warn('formatDateTime: Invalid timestamp encountered:', timestamp);
             return null;
         }
 
@@ -113,7 +118,7 @@ export const formatDateTime = (timestamp) => {
 
         return { date: formattedDate, time: formattedTime };
     } catch (error) {
-        console.warn('Error formatting timestamp:', timestamp, error);
+        console.warn('formatDateTime: Error formatting timestamp:', timestamp, error);
         return null;
     }
 };

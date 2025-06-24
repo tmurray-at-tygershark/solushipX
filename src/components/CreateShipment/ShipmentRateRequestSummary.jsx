@@ -4,7 +4,7 @@ import { Card, CardContent, Typography, Grid, Divider, Box, Chip } from '@mui/ma
 const ShipmentRateRequestSummary = ({ origin, destination, shipmentDetails, packages }) => {
     // Calculate totals
     const totalPackages = packages?.reduce((sum, pkg) => sum + (Number(pkg.packagingQuantity) || 1), 0) || 0;
-    const totalWeight = packages?.reduce((sum, pkg) => sum + (Number(pkg.weight) || 0), 0) || 0;
+    const totalWeight = packages?.reduce((sum, pkg) => sum + ((Number(pkg.weight) || 0) * (Number(pkg.packagingQuantity) || 1)), 0) || 0;
     const totalValue = packages?.reduce((sum, pkg) => sum + (Number(pkg.declaredValue) || 0), 0) || 0;
 
     const formatAddress = (address) => {

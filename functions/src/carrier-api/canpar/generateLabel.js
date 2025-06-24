@@ -194,12 +194,10 @@ async function storeCanparLabel(pdfBuffer, shipmentId, firebaseDocId, thermalFor
     }
 }
 
-// Main function to generate Canpar label
-const generateCanparLabel = onCall(async (request) => {
+// Internal function to generate Canpar label (can be called from other functions)
+async function generateCanparLabelInternal(shipmentId, firebaseDocId, thermalFormat = false) {
     try {
-        const { shipmentId, firebaseDocId, carrier, thermalFormat = false } = request.data;
-        
-        logger.info('generateCanparLabel called with:', { shipmentId, firebaseDocId, carrier, thermalFormat });
+        logger.info('generateCanparLabelInternal called with:', { shipmentId, firebaseDocId, thermalFormat });
         
         // Validate required parameters
         if (!shipmentId) {
@@ -303,6 +301,24 @@ const generateCanparLabel = onCall(async (request) => {
         };
         
     } catch (error) {
+        logger.error('Error in generateCanparLabelInternal:', error);
+        return {
+            success: false,
+            error: error.message,
+            data: null
+        };
+    }
+}
+
+// Main function to generate Canpar label
+const generateCanparLabel = onCall(async (request) => {
+    try {
+        const { shipmentId, firebaseDocId, carrier, thermalFormat = false } = request.data;
+        
+        // Call the internal function
+        return await generateCanparLabelInternal(shipmentId, firebaseDocId, thermalFormat);
+        
+    } catch (error) {
         logger.error('Error in generateCanparLabel:', error);
         return {
             success: false,
@@ -312,4 +328,4 @@ const generateCanparLabel = onCall(async (request) => {
     }
 });
 
-module.exports = { generateCanparLabel }; 
+module.exports = { generateCanparLabel, generateCanparLabelInternal }; 

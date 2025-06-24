@@ -54,18 +54,29 @@ const sendCreateShipmentXNotifications = onCall({
             results.push({ type: 'customer', success: false, error: error.message });
         }
         
-        // 2. Send carrier notification
-        try {
-            await sendCarrierNotification(shipmentData, documentResults);
-            results.push({ type: 'carrier', success: true });
-        } catch (error) {
-            logger.error('Failed to send carrier notification:', error);
-            results.push({ type: 'carrier', success: false, error: error.message });
+        // 2. Send carrier notification (skip for Canpar courier shipments)
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType || 'freight';
+        const carrierName = shipmentData.carrier || '';
+        const isCanparCourier = shipmentType === 'courier' && carrierName.toLowerCase().includes('canpar');
+        
+        if (isCanparCourier) {
+            logger.info('Skipping carrier notification for Canpar courier shipment - Canpar handles their own notifications');
+            results.push({ type: 'carrier', success: true, skipped: true, reason: 'Canpar handles own notifications' });
+        } else {
+            try {
+                await sendCarrierNotification(shipmentData, documentResults);
+                results.push({ type: 'carrier', success: true });
+            } catch (error) {
+                logger.error('Failed to send carrier notification:', error);
+                results.push({ type: 'carrier', success: false, error: error.message });
+            }
         }
         
         // 3. Send internal notifications
         try {
+            logger.info('Attempting to send internal notifications...');
             await sendInternalNotification(shipmentData, documentResults);
+            logger.info('Internal notifications sent successfully');
             results.push({ type: 'internal', success: true });
         } catch (error) {
             logger.error('Failed to send internal notification:', error);
@@ -276,41 +287,73 @@ async function sendCustomerNotification(shipmentData, documentResults) {
                 hasData: !!doc.data,
                 hasDownloadUrl: !!doc.data?.downloadUrl
             })),
-            shipmentType: shipmentData.shipmentType || 'unknown'
+            shipmentType: shipmentData.shipmentInfo?.shipmentType || 'unknown'
         });
         
-        // Prepare attachments (BOL only for customer per optimization)
+        // Prepare attachments based on shipment type
         const attachments = [];
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType || 'freight';
         
-        // Find and attach BOL document
-        const bolDocument = documentResults.find(doc => {
-            const fileName = doc.data?.fileName || doc.data?.filename;
-            logger.info('DEBUG: BOL document search result', {
-                bolDocData: doc.data,
-                bolDocFound: !!doc.data,
-                message: 'DEBUG: BOL document search result'
+        if (shipmentType === 'courier') {
+            // For courier shipments: attach shipping labels
+            const shippingLabelDocuments = documentResults.filter(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && (
+                    doc.type === 'shipping_label' ||
+                    fileName?.includes('label') ||
+                    fileName?.includes('canpar-label')
+                );
             });
-            return doc.success && fileName?.includes('BOL');
-        });
-        
-        if (bolDocument?.data?.downloadUrl) {
-            const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
-            const downloadSuccess = await downloadDocumentWithRetry(
-                bolDocument.data.downloadUrl,
-                bolFileName,
-                attachments,
-                'BOL (Customer Email)'
-            );
             
-            if (downloadSuccess) {
-                logger.info('Successfully attached BOL document to customer email:', {
-                    filename: bolFileName
-                });
-            } else {
-                logger.error('Failed to download BOL document after retries');
+            logger.info('DEBUG: Found shipping label documents for courier shipment', {
+                labelCount: shippingLabelDocuments.length,
+                labels: shippingLabelDocuments.map(doc => ({
+                    fileName: doc.data?.fileName,
+                    hasDownloadUrl: !!doc.data?.downloadUrl
+                }))
+            });
+            
+            for (const labelDoc of shippingLabelDocuments) {
+                if (labelDoc.data?.downloadUrl) {
+                    const labelFileName = labelDoc.data.fileName || labelDoc.data.filename;
+                    const downloadSuccess = await downloadDocumentWithRetry(
+                        labelDoc.data.downloadUrl,
+                        labelFileName,
+                        attachments,
+                        'Shipping Label (Customer Email)'
+                    );
+                    
+                    if (downloadSuccess) {
+                        logger.info('Successfully attached shipping label to customer email:', {
+                            filename: labelFileName
+                        });
+                    }
+                }
             }
         } else {
-            logger.warn('No BOL document found for customer attachment');
+            // For freight shipments: attach BOL only for customer
+            const bolDocument = documentResults.find(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && fileName?.includes('BOL');
+            });
+            
+            if (bolDocument?.data?.downloadUrl) {
+                const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
+                const downloadSuccess = await downloadDocumentWithRetry(
+                    bolDocument.data.downloadUrl,
+                    bolFileName,
+                    attachments,
+                    'BOL (Customer Email)'
+                );
+                
+                if (downloadSuccess) {
+                    logger.info('Successfully attached BOL document to customer email:', {
+                        filename: bolFileName
+                    });
+                }
+            } else {
+                logger.warn('No BOL document found for freight shipment customer attachment');
+            }
         }
         
         // Calculate total weight and pieces for email
@@ -334,7 +377,8 @@ async function sendCustomerNotification(shipmentData, documentResults) {
             to: customerEmail,
             from: emailContent.from.email,
             subject: emailContent.subject,
-            attachmentCount: attachments.length
+            attachmentCount: attachments.length,
+            shipmentType: shipmentType
         });
         
         await sgMail.send(emailContent);
@@ -374,57 +418,99 @@ async function sendCarrierNotification(shipmentData, documentResults) {
                 hasData: !!doc.data,
                 hasDownloadUrl: !!doc.data?.downloadUrl
             })),
-            carrierEmail
+            carrierEmail,
+            shipmentType: shipmentData.shipmentInfo?.shipmentType || 'unknown'
         });
         
-        // Prepare attachments (BOL + Carrier Confirmation for carrier)
+        // Prepare attachments based on shipment type
         const attachments = [];
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType || 'freight';
         
-        // Add BOL document
-        const bolDocument = documentResults.find(doc => {
-            const fileName = doc.data?.fileName || doc.data?.filename;
-            return doc.success && fileName?.includes('BOL');
-        });
-        
-        if (bolDocument?.data?.downloadUrl) {
-            const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
-            const downloadSuccess = await downloadDocumentWithRetry(
-                bolDocument.data.downloadUrl,
-                bolFileName,
-                attachments,
-                'BOL (Carrier Email)'
-            );
+        if (shipmentType === 'courier') {
+            // For courier shipments: attach shipping labels only
+            const shippingLabelDocuments = documentResults.filter(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && (
+                    doc.type === 'shipping_label' ||
+                    fileName?.includes('label') ||
+                    fileName?.includes('canpar-label')
+                );
+            });
             
-            if (downloadSuccess) {
-                logger.info('Successfully attached BOL document to carrier email:', {
-                    filename: bolFileName
-                });
+            logger.info('DEBUG: Found shipping label documents for courier carrier notification', {
+                labelCount: shippingLabelDocuments.length,
+                labels: shippingLabelDocuments.map(doc => ({
+                    fileName: doc.data?.fileName,
+                    hasDownloadUrl: !!doc.data?.downloadUrl
+                }))
+            });
+            
+            for (const labelDoc of shippingLabelDocuments) {
+                if (labelDoc.data?.downloadUrl) {
+                    const labelFileName = labelDoc.data.fileName || labelDoc.data.filename;
+                    const downloadSuccess = await downloadDocumentWithRetry(
+                        labelDoc.data.downloadUrl,
+                        labelFileName,
+                        attachments,
+                        'Shipping Label (Carrier Email)'
+                    );
+                    
+                    if (downloadSuccess) {
+                        logger.info('Successfully attached shipping label to carrier email:', {
+                            filename: labelFileName
+                        });
+                    }
+                }
             }
-        }
-        
-        // Add Carrier Confirmation document
-        const confirmationDocument = documentResults.find(doc => {
-            const fileName = doc.data?.fileName || doc.data?.filename;
-            return doc.success && (
-                fileName?.includes('CARRIER-CONFIRMATION') ||
-                fileName?.includes('CARRIER') ||
-                doc.data?.type === 'carrier_confirmation'
-            );
-        });
-        
-        if (confirmationDocument?.data?.downloadUrl) {
-            const confirmationFileName = confirmationDocument.data.fileName || confirmationDocument.data.filename;
-            const downloadSuccess = await downloadDocumentWithRetry(
-                confirmationDocument.data.downloadUrl,
-                confirmationFileName,
-                attachments,
-                'Carrier Confirmation (Carrier Email)'
-            );
+        } else {
+            // For freight shipments: attach BOL + Carrier Confirmation
             
-            if (downloadSuccess) {
-                logger.info('Successfully attached Carrier Confirmation document to carrier email:', {
-                    filename: confirmationFileName
-                });
+            // Add BOL document
+            const bolDocument = documentResults.find(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && fileName?.includes('BOL');
+            });
+            
+            if (bolDocument?.data?.downloadUrl) {
+                const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
+                const downloadSuccess = await downloadDocumentWithRetry(
+                    bolDocument.data.downloadUrl,
+                    bolFileName,
+                    attachments,
+                    'BOL (Carrier Email)'
+                );
+                
+                if (downloadSuccess) {
+                    logger.info('Successfully attached BOL document to carrier email:', {
+                        filename: bolFileName
+                    });
+                }
+            }
+            
+            // Add Carrier Confirmation document
+            const confirmationDocument = documentResults.find(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && (
+                    fileName?.includes('CARRIER-CONFIRMATION') ||
+                    fileName?.includes('CARRIER') ||
+                    doc.data?.type === 'carrier_confirmation'
+                );
+            });
+            
+            if (confirmationDocument?.data?.downloadUrl) {
+                const confirmationFileName = confirmationDocument.data.fileName || confirmationDocument.data.filename;
+                const downloadSuccess = await downloadDocumentWithRetry(
+                    confirmationDocument.data.downloadUrl,
+                    confirmationFileName,
+                    attachments,
+                    'Carrier Confirmation (Carrier Email)'
+                );
+                
+                if (downloadSuccess) {
+                    logger.info('Successfully attached Carrier Confirmation document to carrier email:', {
+                        filename: confirmationFileName
+                    });
+                }
             }
         }
         
@@ -449,7 +535,8 @@ async function sendCarrierNotification(shipmentData, documentResults) {
             to: carrierEmail,
             from: emailContent.from.email,
             subject: emailContent.subject,
-            attachmentCount: attachments.length
+            attachmentCount: attachments.length,
+            shipmentType: shipmentType
         });
         
         await sgMail.send(emailContent);
@@ -471,51 +558,63 @@ async function sendCarrierNotification(shipmentData, documentResults) {
  */
 async function sendInternalNotification(shipmentData, documentResults) {
     try {
+        logger.info('sendInternalNotification: Starting internal notification process');
+        
         // Get notification subscribers
         const subscribers = await getNotificationSubscribers(shipmentData.companyID);
+        logger.info(`sendInternalNotification: Found ${subscribers?.length || 0} subscribers`);
         
         if (!subscribers || subscribers.length === 0) {
             logger.warn('No internal notification subscribers found');
             return;
         }
         
-        // Prepare attachments (BOL + Carrier Confirmation for internal)
+        // Prepare attachments based on shipment type (NO labels for internal notifications)
         const attachments = [];
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType || 'freight';
+        logger.info(`sendInternalNotification: Processing ${shipmentType} shipment`);
         
-        // Add BOL document
-        const bolDocument = documentResults.find(doc => {
-            const fileName = doc.data?.fileName || doc.data?.filename;
-            return doc.success && fileName?.includes('BOL');
-        });
-        
-        if (bolDocument?.data?.downloadUrl) {
-            const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
-            await downloadDocumentWithRetry(
-                bolDocument.data.downloadUrl,
-                bolFileName,
-                attachments,
-                'BOL (Internal Email)'
-            );
-        }
-        
-        // Add Carrier Confirmation document
-        const confirmationDocument = documentResults.find(doc => {
-            const fileName = doc.data?.fileName || doc.data?.filename;
-            return doc.success && (
-                fileName?.includes('CARRIER-CONFIRMATION') ||
-                fileName?.includes('CARRIER') ||
-                doc.data?.type === 'carrier_confirmation'
-            );
-        });
-        
-        if (confirmationDocument?.data?.downloadUrl) {
-            const confirmationFileName = confirmationDocument.data.fileName || confirmationDocument.data.filename;
-            await downloadDocumentWithRetry(
-                confirmationDocument.data.downloadUrl,
-                confirmationFileName,
-                attachments,
-                'Carrier Confirmation (Internal Email)'
-            );
+        if (shipmentType === 'courier') {
+            // For courier shipments: NO attachments for internal notifications
+            logger.info('Internal notification for courier shipment - no attachments included');
+        } else {
+            // For freight shipments: attach BOL + Carrier Confirmation only
+            
+            // Add BOL document
+            const bolDocument = documentResults.find(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && fileName?.includes('BOL');
+            });
+            
+            if (bolDocument?.data?.downloadUrl) {
+                const bolFileName = bolDocument.data.fileName || bolDocument.data.filename;
+                await downloadDocumentWithRetry(
+                    bolDocument.data.downloadUrl,
+                    bolFileName,
+                    attachments,
+                    'BOL (Internal Email)'
+                );
+            }
+            
+            // Add Carrier Confirmation document
+            const confirmationDocument = documentResults.find(doc => {
+                const fileName = doc.data?.fileName || doc.data?.filename;
+                return doc.success && (
+                    fileName?.includes('CARRIER-CONFIRMATION') ||
+                    fileName?.includes('CARRIER') ||
+                    doc.data?.type === 'carrier_confirmation'
+                );
+            });
+            
+            if (confirmationDocument?.data?.downloadUrl) {
+                const confirmationFileName = confirmationDocument.data.fileName || confirmationDocument.data.filename;
+                await downloadDocumentWithRetry(
+                    confirmationDocument.data.downloadUrl,
+                    confirmationFileName,
+                    attachments,
+                    'Carrier Confirmation (Internal Email)'
+                );
+            }
         }
         
         // Calculate total weight and pieces for email
@@ -538,7 +637,10 @@ async function sendInternalNotification(shipmentData, documentResults) {
                 };
                 
                 await sgMail.send(emailContent);
-                logger.info('Internal notification sent to:', subscriber.userEmail);
+                logger.info('Internal notification sent to:', subscriber.userEmail, {
+                    attachmentCount: attachments.length,
+                    shipmentType: shipmentType
+                });
             } catch (error) {
                 logger.error(`Failed to send internal notification to ${subscriber.userEmail}:`, error);
             }
@@ -1225,18 +1327,29 @@ async function sendCreateShipmentXNotificationsInternal({ shipmentData, document
             results.push({ type: 'customer', success: false, error: error.message });
         }
 
-        // 2. Send carrier notification
-        try {
-            await sendCarrierNotification(shipmentData, documentResults);
-            results.push({ type: 'carrier', success: true });
-        } catch (error) {
-            logger.error('Failed to send carrier notification:', error);
-            results.push({ type: 'carrier', success: false, error: error.message });
+        // 2. Send carrier notification (skip for Canpar courier shipments)
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType || 'freight';
+        const carrierName = shipmentData.carrier || '';
+        const isCanparCourier = shipmentType === 'courier' && carrierName.toLowerCase().includes('canpar');
+        
+        if (isCanparCourier) {
+            logger.info('Skipping carrier notification for Canpar courier shipment - Canpar handles their own notifications');
+            results.push({ type: 'carrier', success: true, skipped: true, reason: 'Canpar handles own notifications' });
+        } else {
+            try {
+                await sendCarrierNotification(shipmentData, documentResults);
+                results.push({ type: 'carrier', success: true });
+            } catch (error) {
+                logger.error('Failed to send carrier notification:', error);
+                results.push({ type: 'carrier', success: false, error: error.message });
+            }
         }
 
         // 3. Send internal notifications
         try {
+            logger.info('Attempting to send internal notifications...');
             await sendInternalNotification(shipmentData, documentResults);
+            logger.info('Internal notifications sent successfully');
             results.push({ type: 'internal', success: true });
         } catch (error) {
             logger.error('Failed to send internal notification:', error);

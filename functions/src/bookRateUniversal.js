@@ -12,7 +12,9 @@ const db = admin.firestore();
  * Universal booking function that routes to the appropriate carrier
  * Based on the selected rate's carrier information
  */
-exports.bookRateUniversal = onCall(async (request) => {
+exports.bookRateUniversal = onCall({
+    timeoutSeconds: 60
+}, async (request) => {
     console.log('bookRateUniversal: Starting universal booking process');
     console.log('bookRateUniversal: Request data:', JSON.stringify(request.data, null, 2));
 
@@ -130,7 +132,69 @@ exports.bookRateUniversal = onCall(async (request) => {
 
             case 'canpar':
                 console.log('bookRateUniversal: Routing to Canpar booking');
-                bookingResult = await bookCanparShipment(rateRequestData, draftFirestoreDocId, selectedRateDocumentId);
+                console.log('bookRateUniversal: Original rateRequestData for debugging:', JSON.stringify({
+                    hasOrigin: !!rateRequestData.Origin,
+                    hasDestination: !!rateRequestData.Destination,
+                    hasShipFrom: !!rateRequestData.shipFrom,
+                    hasShipTo: !!rateRequestData.shipTo,
+                    originDescription: rateRequestData.Origin?.Description,
+                    destinationDescription: rateRequestData.Destination?.Description
+                }, null, 2));
+                
+                // Transform data structure for Canpar (it expects shipFrom/shipTo, not Origin/Destination)
+                const canparRateRequestData = {
+                    ...rateRequestData,
+                    shipFrom: {
+                        name: rateRequestData.Origin?.Description || rateRequestData.shipFrom?.company || rateRequestData.shipFrom?.name || '',
+                        street: rateRequestData.Origin?.Street || rateRequestData.shipFrom?.street || '',
+                        street2: rateRequestData.Origin?.StreetExtra || rateRequestData.shipFrom?.street2 || '',
+                        city: rateRequestData.Origin?.City || rateRequestData.shipFrom?.city || '',
+                        state: rateRequestData.Origin?.State || rateRequestData.shipFrom?.state || '',
+                        postalCode: rateRequestData.Origin?.PostalCode || rateRequestData.shipFrom?.postalCode || rateRequestData.shipFrom?.zipPostal || '',
+                        postal_code: rateRequestData.Origin?.PostalCode || rateRequestData.shipFrom?.postalCode || rateRequestData.shipFrom?.zipPostal || '', // Also include snake_case for Canpar compatibility
+                        country: rateRequestData.Origin?.Country?.Code || rateRequestData.shipFrom?.country || 'CA',
+                        phone: rateRequestData.Origin?.Phone || rateRequestData.shipFrom?.phone || '',
+                        email: rateRequestData.Origin?.Email || rateRequestData.shipFrom?.email || '',
+                        contactName: rateRequestData.Origin?.Contact || rateRequestData.shipFrom?.contactName || '',
+                        specialInstructions: rateRequestData.Origin?.SpecialInstructions || rateRequestData.shipFrom?.specialInstructions || ''
+                    },
+                    shipTo: {
+                        name: rateRequestData.Destination?.Description || rateRequestData.shipTo?.company || rateRequestData.shipTo?.name || '',
+                        street: rateRequestData.Destination?.Street || rateRequestData.shipTo?.street || '',
+                        street2: rateRequestData.Destination?.StreetExtra || rateRequestData.shipTo?.street2 || '',
+                        city: rateRequestData.Destination?.City || rateRequestData.shipTo?.city || '',
+                        state: rateRequestData.Destination?.State || rateRequestData.shipTo?.state || '',
+                        postalCode: rateRequestData.Destination?.PostalCode || rateRequestData.shipTo?.postalCode || rateRequestData.shipTo?.zipPostal || '',
+                        postal_code: rateRequestData.Destination?.PostalCode || rateRequestData.shipTo?.postalCode || rateRequestData.shipTo?.zipPostal || '', // Also include snake_case for Canpar compatibility
+                        country: rateRequestData.Destination?.Country?.Code || rateRequestData.shipTo?.country || 'CA',
+                        phone: rateRequestData.Destination?.Phone || rateRequestData.shipTo?.phone || '',
+                        email: rateRequestData.Destination?.Email || rateRequestData.shipTo?.email || '',
+                        contactName: rateRequestData.Destination?.Contact || rateRequestData.shipTo?.contactName || '',
+                        specialInstructions: rateRequestData.Destination?.SpecialInstructions || rateRequestData.shipTo?.specialInstructions || ''
+                    },
+                    packages: (rateRequestData.packages || []).map(pkg => ({
+                        weight: parseFloat(pkg.weight) || 1,
+                        length: parseFloat(pkg.length) || 1,
+                        width: parseFloat(pkg.width) || 1,
+                        height: parseFloat(pkg.height) || 1,
+                        packagingQuantity: parseInt(pkg.packagingQuantity || pkg.quantity) || 1,
+                        declaredValue: parseFloat(pkg.declaredValue || pkg.value) || 0,
+                        description: pkg.itemDescription || pkg.description || "Package"
+                    }))
+                };
+                
+                console.log('bookRateUniversal: Transformed Canpar data:', JSON.stringify({
+                    shipFromName: canparRateRequestData.shipFrom.name,
+                    shipFromCity: canparRateRequestData.shipFrom.city,
+                    shipFromPostal: canparRateRequestData.shipFrom.postalCode,
+                    shipToName: canparRateRequestData.shipTo.name,
+                    shipToCity: canparRateRequestData.shipTo.city,
+                    shipToPostal: canparRateRequestData.shipTo.postalCode,
+                    packagesCount: canparRateRequestData.packages.length
+                }, null, 2));
+                
+                console.log('bookRateUniversal: About to call bookCanparShipment with transformed data');
+                bookingResult = await bookCanparShipment(canparRateRequestData, draftFirestoreDocId, selectedRateDocumentId);
                 break;
 
             case 'polaristransportation':
@@ -245,12 +309,28 @@ exports.bookRateUniversal = onCall(async (request) => {
                 // The booking result should contain label information
                 if (bookingResult.data?.shippingDocuments && bookingResult.data.shippingDocuments.length > 0) {
                     // Labels were already generated during booking process
-                    documentResults.push({ 
-                        type: 'shipping_label', 
-                        success: true, 
-                        data: { documents: bookingResult.data.shippingDocuments }
-                    });
                     console.log('bookRateUniversal: Labels already generated during booking process');
+                    
+                    // Process each shipping document and add to documentResults with proper structure
+                    bookingResult.data.shippingDocuments.forEach((doc, index) => {
+                        documentResults.push({ 
+                            type: 'shipping_label', 
+                            success: true,
+                            data: {
+                                downloadUrl: doc.downloadUrl,
+                                fileName: doc.fileName,
+                                documentId: doc.documentId,
+                                storagePath: doc.storagePath,
+                                documents: [doc] // Keep original structure for compatibility
+                            }
+                        });
+                        
+                        console.log(`bookRateUniversal: Added shipping label ${index + 1} to documentResults:`, {
+                            hasDownloadUrl: !!doc.downloadUrl,
+                            fileName: doc.fileName,
+                            documentId: doc.documentId
+                        });
+                    });
                 } else {
                     console.log('bookRateUniversal: No labels found in booking result for courier shipment');
                     documentResults.push({ 
@@ -261,7 +341,7 @@ exports.bookRateUniversal = onCall(async (request) => {
                 }
             }
             
-            // STEP 2: Wait for documents to be written to shipmentDocuments collection (QuickShip pattern)
+            // STEP 2: Wait for documents to be written to shipmentDocuments collection (following freight pattern)
             console.log('bookRateUniversal: Waiting for documents to be written to shipmentDocuments collection...');
             
             // Function to check for document existence in shipmentDocuments collection
@@ -283,6 +363,9 @@ exports.bookRateUniversal = onCall(async (request) => {
                                 documentId = `${draftFirestoreDocId}_bol`;
                             } else if (docResult.type === 'carrier_confirmation') {
                                 documentId = `${draftFirestoreDocId}_carrier_confirmation`;
+                            } else if (docResult.type === 'shipping_label') {
+                                // CRITICAL: Shipping labels are stored using the firebaseDocId as document ID
+                                documentId = draftFirestoreDocId;
                             } else {
                                 // For other document types, skip collection check
                                 continue;
@@ -340,7 +423,7 @@ exports.bookRateUniversal = onCall(async (request) => {
                 return false;
             };
             
-            // Wait for documents to be written to the collection
+            // Wait for documents to be written to the collection (works for both freight and courier)
             const documentsWritten = await waitForDocumentsInCollection();
             
             if (documentsWritten) {

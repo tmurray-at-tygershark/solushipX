@@ -1009,7 +1009,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             };
 
             // Calculate total weight and pieces for validation
-            const totalWeight = packages.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0);
+            const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
             const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
 
             // Prepare shipment data with enhanced validation

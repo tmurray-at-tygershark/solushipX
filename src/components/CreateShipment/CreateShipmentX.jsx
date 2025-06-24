@@ -48,7 +48,7 @@ import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimest
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { fetchMultiCarrierRates, getAllCarriers } from '../../utils/carrierEligibility';
+import { fetchMultiCarrierRates, getAllCarriers, getEligibleCarriers } from '../../utils/carrierEligibility';
 import { validateUniversalRate } from '../../utils/universalDataModel';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 import ModalHeader from '../common/ModalHeader';
@@ -357,8 +357,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         loadCustomers();
     }, [companyIdForAddress]);
 
-    // Get company eligible carriers
-    const getCompanyEligibleCarriers = useCallback((shipmentData) => {
+    // Get company eligible carriers using enhanced system
+    const getCompanyEligibleCarriers = useCallback(async (shipmentData) => {
         const companyConnectedCarriers = companyData?.connectedCarriers || [];
 
         if (companyConnectedCarriers.length === 0) {
@@ -370,39 +370,57 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             cc.enabled === true && cc.carrierID
         );
 
-        const allSystemCarriers = getAllCarriers();
+        console.log('🏢 Company connected carriers:', enabledConnectedCarriers.map(cc => ({
+            carrierID: cc.carrierID,
+            enabled: cc.enabled
+        })));
+
+        // Get all eligible carriers from enhanced system (database + static)
+        const systemEligibleCarriers = await getEligibleCarriers(shipmentData);
+
+        console.log('🌐 System eligible carriers:', systemEligibleCarriers.map(c => ({
+            name: c.name,
+            key: c.key,
+            isCustomCarrier: c.isCustomCarrier
+        })));
+
+        // Filter system eligible carriers to only include company's connected carriers
         const carrierIdToKeyMap = {
             'ESHIPPLUS': 'ESHIPPLUS',
             'CANPAR': 'CANPAR',
             'POLARISTRANSPORTATION': 'POLARISTRANSPORTATION'
         };
 
-        const companyAvailableCarriers = allSystemCarriers.filter(systemCarrier => {
-            return enabledConnectedCarriers.some(cc =>
-                carrierIdToKeyMap[cc.carrierID] === systemCarrier.key
-            );
+        const companyEligibleCarriers = systemEligibleCarriers.filter(systemCarrier => {
+            console.log(`🔍 Checking carrier connection for ${systemCarrier.name}:`);
+            console.log(`  - System carrier key: ${systemCarrier.key}`);
+            console.log(`  - Is custom carrier: ${systemCarrier.isCustomCarrier}`);
+            console.log(`  - Company connected carrier IDs:`, enabledConnectedCarriers.map(cc => cc.carrierID));
+
+            // Check if company has this carrier connected
+            const staticMatch = carrierIdToKeyMap[systemCarrier.key];  // Check reverse mapping
+            const directMatch = enabledConnectedCarriers.some(cc => cc.carrierID === systemCarrier.key);
+            const legacyStaticMatch = enabledConnectedCarriers.some(cc => carrierIdToKeyMap[cc.carrierID] === systemCarrier.key);
+
+            console.log(`  - Static match: ${staticMatch}`);
+            console.log(`  - Direct match: ${directMatch}`);
+            console.log(`  - Legacy static match: ${legacyStaticMatch}`);
+
+            const isConnectedByCompany = directMatch || legacyStaticMatch;
+
+            if (isConnectedByCompany) {
+                console.log(`✅ ${systemCarrier.name} is connected and eligible for company`);
+                return true;
+            } else {
+                console.log(`❌ ${systemCarrier.name} not connected by company`);
+                return false;
+            }
         });
 
-        // Apply eligibility rules
-        return companyAvailableCarriers.filter(carrier => {
-            const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
-            const { eligibility } = carrier;
+        console.log(`🎯 Final company eligible carriers: ${companyEligibleCarriers.length} carriers:`,
+            companyEligibleCarriers.map(c => `${c.name} (${c.isCustomCarrier ? 'DB' : 'Static'})`));
 
-            const shipmentType = shipmentInfo?.shipmentType?.toLowerCase() || 'courier';
-            const originCountry = shipFrom?.country || 'CA';
-            const destinationCountry = shipTo?.country || 'CA';
-            const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
-            const isInternational = originCountry !== destinationCountry;
-            const routeType = isInternational ? 'international' : 'domestic';
-
-            // Check eligibility
-            if (!eligibility.shipmentTypes.includes(shipmentType)) return false;
-            if (!eligibility.countries.includes(originCountry) || !eligibility.countries.includes(destinationCountry)) return false;
-            if (eligibility.routeTypes && !eligibility.routeTypes.includes(routeType)) return false;
-            if (totalWeight < eligibility.minWeight || totalWeight > eligibility.maxWeight) return false;
-
-            return true;
-        });
+        return companyEligibleCarriers;
     }, [companyData]);
 
     // Check if we have enough data to fetch rates
@@ -432,7 +450,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 shipmentInfo
             };
 
-            const companyEligibleCarriers = getCompanyEligibleCarriers(shipmentData);
+            const companyEligibleCarriers = await getCompanyEligibleCarriers(shipmentData);
 
             if (companyEligibleCarriers.length === 0) {
                 setRatesError('No carriers available for this route and shipment details');
@@ -515,7 +533,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 clearTimeout(debounceTimeoutRef.current);
             }
         };
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, fetchRates, isBooking, showBookingDialog]);
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, isBooking, showBookingDialog]);
 
     // Load draft data if draftId is provided
     useEffect(() => {
@@ -669,6 +687,23 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 width: isCourier ? '12' : '40',
                 height: isCourier ? '12' : ''
             })));
+
+            // Clear rates and reset rate fetching state when shipment type changes
+            // This ensures rate fetching will work again once form is properly filled
+            setRates([]);
+            setFilteredRates([]);
+            setSelectedRate(null);
+            setRatesError(null);
+            setShowRates(false);
+            setIsLoadingRates(false);
+            setCompletedCarriers([]);
+            setFailedCarriers([]);
+            setLoadingCarriers([]);
+
+            // Clear any pending timeouts
+            if (debounceTimeoutRef.current) {
+                clearTimeout(debounceTimeoutRef.current);
+            }
         }
     }, [shipmentInfo.shipmentType]);
 
@@ -1193,7 +1228,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             }
 
             // Calculate total weight and pieces
-            const totalWeight = packages.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0);
+            const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
             const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
 
             // Debug: Log packages before transformation
