@@ -119,10 +119,11 @@ async function applyMarkupsToSingleRate(rate, markupRules, companyId, shipmentDa
                     markupScope: markup.markupScope,
                     type: markup.type,
                     value: markup.value,
-                    variable: markup.variable,
                     calculatedAmount: markupResult.amount,
                     carrier: markup.carrierName || 'ALL',
-                    company: markup.fromBusinessName || 'ALL'
+                    company: markup.fromBusinessName || 'ALL',
+                    // Only include variable if it's defined
+                    ...(markup.variable !== undefined && { variable: markup.variable })
                 });
 
                 if (markup.type === 'PERCENTAGE') {
@@ -341,8 +342,9 @@ function calculateMarkupAmount(rate, markup, shipmentData) {
             amount: Math.max(0, markupAmount), // Ensure non-negative
             type: markup.type,
             value: markup.value,
-            variable: markup.variable,
-            baseAmount
+            baseAmount,
+            // Only include variable if it's defined
+            ...(markup.variable !== undefined && { variable: markup.variable })
         };
 
     } catch (error) {

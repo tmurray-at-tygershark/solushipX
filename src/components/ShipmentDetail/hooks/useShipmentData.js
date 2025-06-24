@@ -285,6 +285,52 @@ export const useShipmentData = (shipmentId) => {
 
     // Computed values
     const getBestRateInfo = useMemo(() => {
+        // PRIORITY 1: Check if we have dual rate storage system data
+        if (shipment?.selectedRate && (shipment?.actualRates || shipment?.markupRates)) {
+            console.log('Using dual rate storage system data for rate display');
+            
+            // Use the selectedRate data which contains the complete rate information
+            const selectedRate = shipment.selectedRate;
+            
+            // Check if it's in universal format
+            if (selectedRate.carrier && selectedRate.pricing && selectedRate.transit) {
+                return {
+                    carrier: selectedRate.carrier.name,
+                    service: selectedRate.service?.name || 'Standard',
+                    totalCharges: selectedRate.pricing.total,
+                    freightCharge: selectedRate.pricing.freight,
+                    freightCharges: selectedRate.pricing.freight,
+                    fuelCharge: selectedRate.pricing.fuel,
+                    fuelCharges: selectedRate.pricing.fuel,
+                    serviceCharges: selectedRate.pricing.service,
+                    accessorialCharges: selectedRate.pricing.accessorial,
+                    transitDays: selectedRate.transit.days,
+                    estimatedDeliveryDate: selectedRate.transit.estimatedDelivery,
+                    guaranteed: selectedRate.transit.guaranteed,
+                    currency: selectedRate.pricing.currency,
+                    _isUniversalFormat: true
+                };
+            }
+            
+            // Fallback for non-universal format selectedRate
+            return {
+                carrier: selectedRate.carrier?.name || selectedRate.carrierName || selectedRate.sourceCarrierName || 'Unknown',
+                service: selectedRate.service?.name || selectedRate.serviceName || 'Standard',
+                totalCharges: selectedRate.totalCharges || selectedRate.pricing?.total || 0,
+                freightCharge: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
+                freightCharges: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
+                fuelCharge: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
+                fuelCharges: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
+                serviceCharges: selectedRate.serviceCharges || selectedRate.pricing?.service || 0,
+                accessorialCharges: selectedRate.accessorialCharges || selectedRate.pricing?.accessorial || 0,
+                transitDays: selectedRate.transitDays || selectedRate.transit?.days || 0,
+                estimatedDeliveryDate: selectedRate.estimatedDeliveryDate || selectedRate.transit?.estimatedDelivery,
+                guaranteed: selectedRate.guaranteed || selectedRate.transit?.guaranteed || false,
+                currency: selectedRate.currency || selectedRate.pricing?.currency || 'USD'
+            };
+        }
+
+        // PRIORITY 2: Legacy detailed rate info from separate rates collection
         if (detailedRateInfo) {
             if (detailedRateInfo.universalRateData) {
                 const universal = detailedRateInfo.universalRateData;
@@ -309,6 +355,7 @@ export const useShipmentData = (shipmentId) => {
             return detailedRateInfo;
         }
 
+        // PRIORITY 3: Legacy shipment.selectedRate (without dual rate storage)
         if (shipment?.selectedRate) {
             if (shipment.selectedRate.carrier && shipment.selectedRate.pricing && shipment.selectedRate.transit) {
                 return {
@@ -331,10 +378,12 @@ export const useShipmentData = (shipmentId) => {
             return shipment.selectedRate;
         }
 
+        // PRIORITY 4: Legacy selectedRateRef
         if (shipment?.selectedRateRef) {
             return shipment.selectedRateRef;
         }
 
+        // PRIORITY 5: Fallback to allShipmentRates
         if (allShipmentRates.length > 0) {
             const bookedRate = allShipmentRates.find(rate => rate.status === 'pending') ||
                 allShipmentRates.find(rate => rate.status === 'selected') ||
@@ -363,8 +412,9 @@ export const useShipmentData = (shipmentId) => {
             return bookedRate;
         }
 
+        console.log('No rate information available - checked all sources');
         return null;
-    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, allShipmentRates]);
+    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, shipment?.actualRates, shipment?.markupRates, allShipmentRates]);
 
     const isEShipPlusCarrier = useMemo(() => {
         return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||

@@ -46,7 +46,16 @@ const ShipmentTableRow = ({
 
     // Calculate charges for admin view
     const getCharges = () => {
-        // For now, show raw cost since no markups are applied yet
+        // Use the new dual rate storage system if available
+        if (shipment.actualRates && shipment.markupRates) {
+            return {
+                cost: parseFloat(shipment.actualRates.totalCharges) || 0,
+                companyCharge: parseFloat(shipment.markupRates.totalCharges) || 0,
+                currency: shipment.actualRates.currency || shipment.markupRates.currency || 'USD'
+            };
+        }
+
+        // Fallback to legacy approach for older shipments
         let cost = 0;
 
         // Check various places where the cost might be stored
@@ -66,7 +75,7 @@ const ShipmentTableRow = ({
             cost = shipment.totalCharges;
         }
 
-        // For now, company charge = cost (no markup)
+        // For legacy shipments without markup data, show the same value for both
         const companyCharge = cost;
 
         return {

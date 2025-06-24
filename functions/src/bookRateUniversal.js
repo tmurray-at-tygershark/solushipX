@@ -210,6 +210,31 @@ exports.bookRateUniversal = onCall({
 
         console.log('bookRateUniversal: Booking completed successfully');
         
+        // CRITICAL: Update shipment status after successful booking
+        try {
+            const statusUpdateData = {
+                status: 'booked',
+                bookedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                // Add booking confirmation details if available
+                ...(bookingResult.data?.confirmationNumber && {
+                    confirmationNumber: bookingResult.data.confirmationNumber
+                }),
+                ...(bookingResult.data?.trackingNumber && {
+                    trackingNumber: bookingResult.data.trackingNumber
+                }),
+                ...(bookingResult.data?.proNumber && {
+                    proNumber: bookingResult.data.proNumber
+                })
+            };
+            
+            await db.collection('shipments').doc(draftFirestoreDocId).update(statusUpdateData);
+            console.log('bookRateUniversal: Shipment status updated to "booked"');
+        } catch (statusUpdateError) {
+            console.error('bookRateUniversal: Error updating shipment status:', statusUpdateError);
+            // Don't fail the entire booking process for status update errors
+        }
+        
         // Record the booking confirmation event
         try {
             await recordShipmentEvent(
