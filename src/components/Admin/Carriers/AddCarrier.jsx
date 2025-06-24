@@ -106,6 +106,7 @@ const initialFormData = {
         domesticCountry: 'CA',
         weightRanges: [],
         dimensionRestrictions: [],
+        packageTypeRestrictions: [],
         geographicRouting: {
             domesticCanada: false,
             domesticUS: false,

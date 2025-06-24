@@ -156,6 +156,7 @@ const EditCarrier = ({
                         domesticCountry: carrierData.eligibilityRules?.domesticCountry || 'CA',
                         weightRanges: carrierData.eligibilityRules?.weightRanges || [],
                         dimensionRestrictions: carrierData.eligibilityRules?.dimensionRestrictions || [],
+                        packageTypeRestrictions: carrierData.eligibilityRules?.packageTypeRestrictions || [],
                         geographicRouting: {
                             domesticCanada: carrierData.eligibilityRules?.geographicRouting?.domesticCanada || false,
                             domesticUS: carrierData.eligibilityRules?.geographicRouting?.domesticUS || false,

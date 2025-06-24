@@ -38,6 +38,44 @@ const courierServices = [
     { value: 'priority', label: 'Priority', description: 'Premium courier service' }
 ];
 
+// Package types available for restrictions (from CreateShipmentX.jsx)
+const PACKAGING_TYPES = [
+    { value: 237, label: '10KG BOX' },
+    { value: 238, label: '25KG BOX' },
+    { value: 239, label: 'ENVELOPE' },
+    { value: 240, label: 'TUBE (PACKAGE)' },
+    { value: 241, label: 'PAK (PACKAGE)' },
+    { value: 242, label: 'BAGS' },
+    { value: 243, label: 'BALE(S)' },
+    { value: 244, label: 'BOX(ES)' },
+    { value: 245, label: 'BUNCH(ES)' },
+    { value: 246, label: 'BUNDLE(S)' },
+    { value: 248, label: 'CARBOY(S)' },
+    { value: 249, label: 'CARPET(S)' },
+    { value: 250, label: 'CARTONS' },
+    { value: 251, label: 'CASE(S)' },
+    { value: 252, label: 'COIL(S)' },
+    { value: 253, label: 'CRATE(S)' },
+    { value: 254, label: 'CYLINDER(S)' },
+    { value: 255, label: 'DRUM(S)' },
+    { value: 256, label: 'LOOSE' },
+    { value: 257, label: 'PAIL(S)' },
+    { value: 258, label: 'PALLET(S)' },
+    { value: 260, label: 'REELS(S)' },
+    { value: 261, label: 'ROLL(S)' },
+    { value: 262, label: 'SKID(S)' },
+    { value: 265, label: 'TOTE(S)' },
+    { value: 266, label: 'TUBES/PIPES' },
+    { value: 268, label: 'GALLONS' },
+    { value: 269, label: 'LIQUID BULK' },
+    { value: 270, label: 'CONTAINER' },
+    { value: 271, label: 'PIECES' },
+    { value: 272, label: 'LOAD' },
+    { value: 273, label: 'BLADE(S)' },
+    { value: 274, label: 'RACKS' },
+    { value: 275, label: 'GAYLORDS' }
+];
+
 const freightServices = [
     { value: 'ltl_standard_sk', label: 'LTL Standard - SK', description: 'Less than truckload standard service - Skid' },
     { value: 'ltl_economy_lb', label: 'LTL Economy - LB', description: 'Less than truckload economy service - per pound' },
@@ -600,75 +638,101 @@ const DimensionRestrictionsComponent = ({ dimensionRestrictions, onUpdate, error
                 Maximum Dimension Restrictions
             </Typography>
             <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                Define maximum package dimensions this carrier can handle due to truck space limitations. Measurements default to inches. Leave empty if no dimension restrictions apply.
+                Define package size limits due to vehicle constraints (truck space limitations)
             </Typography>
 
             {dimensionRestrictions.map((restriction, index) => (
-                <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#fff7ed', border: '1px solid #fed7aa' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
-                        <TextField
-                            size="small"
-                            label="Max Length"
-                            type="number"
-                            value={restriction.maxLength}
-                            onChange={(e) => handleDimensionRestrictionChange(index, 'maxLength', parseFloat(e.target.value) || 0)}
-                            sx={{
-                                width: 110,
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                            }}
-                        />
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>×</Typography>
-                        <TextField
-                            size="small"
-                            label="Max Width"
-                            type="number"
-                            value={restriction.maxWidth}
-                            onChange={(e) => handleDimensionRestrictionChange(index, 'maxWidth', parseFloat(e.target.value) || 0)}
-                            sx={{
-                                width: 110,
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                            }}
-                        />
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>×</Typography>
-                        <TextField
-                            size="small"
-                            label="Max Height"
-                            type="number"
-                            value={restriction.maxHeight}
-                            onChange={(e) => handleDimensionRestrictionChange(index, 'maxHeight', parseFloat(e.target.value) || 0)}
-                            sx={{
-                                width: 110,
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                            }}
-                        />
-                        <FormControl size="small" sx={{ minWidth: 80 }}>
+                <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#fef3ff', border: '1px solid #d8b4fe' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} sm={2}>
                             <TextField
-                                select
                                 size="small"
-                                value={restriction.unit}
-                                onChange={(e) => handleDimensionRestrictionChange(index, 'unit', e.target.value)}
-                                SelectProps={{ native: true }}
+                                label="Max Length"
+                                type="number"
+                                value={restriction.maxLength}
+                                onChange={(e) => handleDimensionRestrictionChange(index, 'maxLength', parseFloat(e.target.value) || 0)}
+                                fullWidth
                                 sx={{
-                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
                                 }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <TextField
+                                size="small"
+                                label="Max Width"
+                                type="number"
+                                value={restriction.maxWidth}
+                                onChange={(e) => handleDimensionRestrictionChange(index, 'maxWidth', parseFloat(e.target.value) || 0)}
+                                fullWidth
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <TextField
+                                size="small"
+                                label="Max Height"
+                                type="number"
+                                value={restriction.maxHeight}
+                                onChange={(e) => handleDimensionRestrictionChange(index, 'maxHeight', parseFloat(e.target.value) || 0)}
+                                fullWidth
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <FormControl size="small" fullWidth>
+                                <InputLabel sx={{ fontSize: '12px' }}>Unit</InputLabel>
+                                <Select
+                                    value={restriction.unit}
+                                    onChange={(e) => handleDimensionRestrictionChange(index, 'unit', e.target.value)}
+                                    label="Unit"
+                                    sx={{
+                                        '& .MuiSelect-select': { fontSize: '12px' }
+                                    }}
+                                >
+                                    <MenuItem value="inches" sx={{ fontSize: '12px' }}>
+                                        Inches
+                                    </MenuItem>
+                                    <MenuItem value="cm" sx={{ fontSize: '12px' }}>
+                                        Centimeters
+                                    </MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={3}>
+                            <TextField
+                                size="small"
+                                label="Description (Optional)"
+                                value={restriction.description || ''}
+                                onChange={(e) => handleDimensionRestrictionChange(index, 'description', e.target.value)}
+                                fullWidth
+                                placeholder="e.g., Standard truck bed"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={1}>
+                            <IconButton
+                                size="small"
+                                onClick={() => handleRemoveDimensionRestriction(index)}
+                                sx={{ color: '#d32f2f' }}
                             >
-                                <option value="in">in</option>
-                                <option value="cm">cm</option>
-                            </TextField>
-                        </FormControl>
-                        <IconButton
-                            size="small"
-                            onClick={() => handleRemoveDimensionRestriction(index)}
-                            sx={{ color: '#d32f2f' }}
-                        >
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </Box>
-                    <Typography sx={{ fontSize: '10px', color: '#c2410c' }}>
-                        Restriction {index + 1}: Max {restriction.maxLength} × {restriction.maxWidth} × {restriction.maxHeight} {restriction.unit} (L × W × H)
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Grid>
+                    </Grid>
+                    <Typography sx={{ fontSize: '10px', color: '#7c3aed', mt: 1 }}>
+                        Max Dimensions {index + 1}: {restriction.maxLength} × {restriction.maxWidth} × {restriction.maxHeight} {restriction.unit}
+                        {restriction.description && ` (${restriction.description})`}
                     </Typography>
                 </Paper>
             ))}
@@ -678,16 +742,171 @@ const DimensionRestrictionsComponent = ({ dimensionRestrictions, onUpdate, error
                 startIcon={<AddIcon />}
                 onClick={handleAddDimensionRestriction}
                 variant="outlined"
-                sx={{ fontSize: '11px', mb: 2 }}
+                sx={{ fontSize: '11px' }}
             >
                 Add Dimension Restriction
             </Button>
+        </Box>
+    );
+};
 
-            {errors?.dimensionRestrictions && (
-                <Alert severity="error" sx={{ fontSize: '12px', mt: 1 }}>
-                    {errors.dimensionRestrictions}
-                </Alert>
-            )}
+const PackageTypeRestrictionsComponent = ({ packageTypeRestrictions, onUpdate, errors }) => {
+    const handleAddPackageTypeRestriction = () => {
+        const newRestrictions = [...(packageTypeRestrictions || []), {
+            packageTypeCode: 262, // Default to SKID(S)
+            packageTypeName: 'SKID(S)',
+            minQuantity: 1,
+            maxQuantity: 26,
+            required: false
+        }];
+        onUpdate(newRestrictions);
+    };
+
+    const handleRemovePackageTypeRestriction = (index) => {
+        const newRestrictions = packageTypeRestrictions.filter((_, i) => i !== index);
+        onUpdate(newRestrictions);
+    };
+
+    const handlePackageTypeRestrictionChange = (index, field, value) => {
+        const newRestrictions = [...packageTypeRestrictions];
+
+        if (field === 'packageTypeCode') {
+            // Update both code and name when package type changes
+            const selectedPackageType = PACKAGING_TYPES.find(pt => pt.value === parseInt(value));
+            newRestrictions[index] = {
+                ...newRestrictions[index],
+                packageTypeCode: parseInt(value),
+                packageTypeName: selectedPackageType?.label || 'Unknown'
+            };
+        } else {
+            newRestrictions[index] = {
+                ...newRestrictions[index],
+                [field]: value
+            };
+        }
+
+        onUpdate(newRestrictions);
+    };
+
+    return (
+        <Box>
+            <Typography sx={{ fontSize: '13px', fontWeight: 500, mb: 2 }}>
+                Package Type Restrictions
+            </Typography>
+            <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                Define which package types this carrier supports and their quantity limits. This helps filter carriers based on the specific packaging types used in shipments.
+            </Typography>
+
+            <Alert severity="info" sx={{ fontSize: '11px', mb: 2 }}>
+                <Typography sx={{ fontSize: '11px', fontWeight: 500, mb: 1 }}>
+                    Package Type Eligibility Rules
+                </Typography>
+                <Typography sx={{ fontSize: '10px' }}>
+                    • <strong>Supported Types:</strong> ALL package types in a shipment must be supported by the carrier<br />
+                    • <strong>Required:</strong> Carrier ONLY accepts this package type (must be present in shipment)<br />
+                    • <strong>Optional:</strong> Carrier supports this package type but doesn't require it<br />
+                    • <strong>Min/Max Quantity:</strong> Acceptable quantity range for this package type<br />
+                    • <strong>Example:</strong> If carrier only accepts SKIDS and PALLETS, add both types. Shipments with BOXES will be rejected.
+                </Typography>
+            </Alert>
+
+            {(packageTypeRestrictions || []).map((restriction, index) => (
+                <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: '#fff7ed', border: '1px solid #fed7aa' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} sm={4}>
+                            <FormControl size="small" fullWidth>
+                                <InputLabel sx={{ fontSize: '12px' }}>Package Type</InputLabel>
+                                <Select
+                                    value={restriction.packageTypeCode || ''}
+                                    onChange={(e) => handlePackageTypeRestrictionChange(index, 'packageTypeCode', e.target.value)}
+                                    label="Package Type"
+                                    sx={{
+                                        '& .MuiSelect-select': { fontSize: '12px' }
+                                    }}
+                                >
+                                    {PACKAGING_TYPES.map((packageType) => (
+                                        <MenuItem key={packageType.value} value={packageType.value} sx={{ fontSize: '12px' }}>
+                                            {packageType.value} - {packageType.label}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <TextField
+                                size="small"
+                                label="Min Quantity"
+                                type="number"
+                                value={restriction.minQuantity || 1}
+                                onChange={(e) => handlePackageTypeRestrictionChange(index, 'minQuantity', parseInt(e.target.value) || 1)}
+                                fullWidth
+                                inputProps={{ min: 1 }}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <TextField
+                                size="small"
+                                label="Max Quantity"
+                                type="number"
+                                value={restriction.maxQuantity || 26}
+                                onChange={(e) => handlePackageTypeRestrictionChange(index, 'maxQuantity', parseInt(e.target.value) || 26)}
+                                fullWidth
+                                inputProps={{ min: 1 }}
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={2}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={restriction.required || false}
+                                        onChange={(e) => handlePackageTypeRestrictionChange(index, 'required', e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        Required
+                                    </Typography>
+                                }
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={1}>
+                            <IconButton
+                                size="small"
+                                onClick={() => handleRemovePackageTypeRestriction(index)}
+                                sx={{ color: '#d32f2f' }}
+                            >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Typography sx={{ fontSize: '10px', color: '#c2410c' }}>
+                                {restriction.packageTypeName || 'Unknown'} ({restriction.packageTypeCode}):
+                                {restriction.minQuantity}-{restriction.maxQuantity} units
+                                {restriction.required ? ' (REQUIRED)' : ' (Optional)'}
+                            </Typography>
+                        </Grid>
+                    </Grid>
+                </Paper>
+            ))}
+
+            <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={handleAddPackageTypeRestriction}
+                variant="outlined"
+                sx={{ fontSize: '11px' }}
+            >
+                Add Package Type Restriction
+            </Button>
         </Box>
     );
 };
@@ -776,14 +995,13 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
     }, [data.eligibilityRules, onUpdate]);
 
     // Handle dimension restrictions update
-    const handleDimensionRestrictionsUpdate = useCallback((newDimensionRestrictions) => {
-        onUpdate({
-            eligibilityRules: {
-                ...data.eligibilityRules,
-                dimensionRestrictions: newDimensionRestrictions
-            }
-        });
-    }, [data.eligibilityRules, onUpdate]);
+    const handleDimensionRestrictionsUpdate = (newDimensionRestrictions) => {
+        const updatedRules = {
+            ...data.eligibilityRules,
+            dimensionRestrictions: newDimensionRestrictions
+        };
+        onUpdate({ eligibilityRules: updatedRules });
+    };
 
     // Determine which service types to show based on carrier type
     const showCourierServices = data.type === 'courier' || data.type === 'hybrid';
@@ -793,6 +1011,15 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
     const courierCount = showCourierServices ? (data.supportedServices?.courier?.length || 0) : 0;
     const freightCount = showFreightServices ? (data.supportedServices?.freight?.length || 0) : 0;
     const totalServices = courierCount + freightCount;
+
+    // Handle package type restrictions update
+    const handlePackageTypeRestrictionsUpdate = (newPackageTypeRestrictions) => {
+        const updatedRules = {
+            ...data.eligibilityRules,
+            packageTypeRestrictions: newPackageTypeRestrictions
+        };
+        onUpdate({ eligibilityRules: updatedRules });
+    };
 
     return (
         <Box sx={{ width: '100%' }}>
@@ -2165,6 +2392,35 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                     <DimensionRestrictionsComponent
                                         dimensionRestrictions={data.eligibilityRules?.dimensionRestrictions || []}
                                         onUpdate={handleDimensionRestrictionsUpdate}
+                                        errors={errors}
+                                    />
+                                </AccordionDetails>
+                            </Accordion>
+                        </Grid>
+
+                        {/* Package Type Restrictions */}
+                        <Grid item xs={12}>
+                            <Accordion>
+                                <AccordionSummary
+                                    expandIcon={<ExpandMoreIcon />}
+                                    sx={{ bgcolor: '#f8fafc' }}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography sx={{ fontSize: '13px', fontWeight: 500 }}>
+                                            Package Type Restrictions
+                                        </Typography>
+                                        <Chip
+                                            label={data.eligibilityRules?.packageTypeRestrictions?.length || 0}
+                                            size="small"
+                                            sx={{ fontSize: '10px', height: '18px' }}
+                                            color="default"
+                                        />
+                                    </Box>
+                                </AccordionSummary>
+                                <AccordionDetails>
+                                    <PackageTypeRestrictionsComponent
+                                        packageTypeRestrictions={data.eligibilityRules?.packageTypeRestrictions || []}
+                                        onUpdate={handlePackageTypeRestrictionsUpdate}
                                         errors={errors}
                                     />
                                 </AccordionDetails>

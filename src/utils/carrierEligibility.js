@@ -423,6 +423,14 @@ class CarrierEligibilityService {
         }
         console.log(`  ✅ Dimensions: Within limits`);
 
+        // 5. Check package type restrictions
+        const isPackageTypeEligible = this.checkPackageTypeEligibility(eligibilityRules?.packageTypeRestrictions, packages);
+        if (!isPackageTypeEligible) {
+            console.log(`  ❌ Package Types: Required package types not found or quantities outside limits`);
+            return false;
+        }
+        console.log(`  ✅ Package Types: Compatible with carrier requirements`);
+
         console.log(`  🎯 ${carrierData.name} is ELIGIBLE (Database Carrier)`);
         return true;
     }
@@ -700,6 +708,129 @@ class CarrierEligibilityService {
                 return length <= maxLength && width <= maxWidth && height <= maxHeight;
             });
         });
+    }
+
+    /**
+     * Check package type eligibility
+     */
+    checkPackageTypeEligibility(packageTypeRestrictions, packages) {
+        console.log('    📦 Package type eligibility check:', {
+            hasRestrictions: !!packageTypeRestrictions,
+            restrictionCount: packageTypeRestrictions?.length || 0,
+            packageCount: packages?.length || 0
+        });
+
+        if (!packageTypeRestrictions || !Array.isArray(packageTypeRestrictions) || packageTypeRestrictions.length === 0) {
+            console.log('    ✅ No package type restrictions - all packages allowed');
+            return true; // No restrictions = all package types allowed
+        }
+
+        if (!packages || packages.length === 0) {
+            console.log('    ❌ No packages to check against restrictions');
+            return false;
+        }
+
+        // Group packages by type and sum quantities
+        const packageTypeCounts = {};
+        packages.forEach(pkg => {
+            const packageTypeCode = parseInt(pkg.packagingType) || parseInt(pkg.packageTypeCode) || 0;
+            const quantity = parseInt(pkg.packagingQuantity) || parseInt(pkg.quantity) || 1;
+            
+            if (packageTypeCounts[packageTypeCode]) {
+                packageTypeCounts[packageTypeCode] += quantity;
+            } else {
+                packageTypeCounts[packageTypeCode] = quantity;
+            }
+        });
+
+        console.log('    📊 Package type counts in shipment:', packageTypeCounts);
+        console.log('    📋 Package type restrictions:', packageTypeRestrictions.map(r => ({
+            code: r.packageTypeCode,
+            name: r.packageTypeName,
+            minQty: r.minQuantity,
+            maxQty: r.maxQuantity,
+            required: r.required
+        })));
+
+        // Get list of supported package type codes from restrictions
+        const supportedPackageTypeCodes = packageTypeRestrictions.map(r => parseInt(r.packageTypeCode));
+        console.log('    🎯 Supported package types by carrier:', supportedPackageTypeCodes);
+
+        // Check that ALL package types in shipment are supported by carrier
+        let allPackageTypesSupported = true;
+        let allRequiredPackageTypesMet = true;
+
+        // First, verify ALL package types in shipment are supported
+        for (const [packageTypeCodeStr, quantity] of Object.entries(packageTypeCounts)) {
+            const packageTypeCode = parseInt(packageTypeCodeStr);
+            
+            if (!supportedPackageTypeCodes.includes(packageTypeCode)) {
+                console.log(`    ❌ Package type ${packageTypeCode} (${quantity} units) is NOT supported by carrier`);
+                allPackageTypesSupported = false;
+            } else {
+                console.log(`    ✅ Package type ${packageTypeCode} (${quantity} units) is supported by carrier`);
+            }
+        }
+
+        // If any package type is unsupported, carrier is not eligible
+        if (!allPackageTypesSupported) {
+            console.log('    ❌ Carrier rejected: Contains unsupported package types');
+            return false;
+        }
+
+        // Now check quantity requirements for each restriction
+        for (const restriction of packageTypeRestrictions) {
+            const packageTypeCode = parseInt(restriction.packageTypeCode);
+            const minQuantity = parseInt(restriction.minQuantity) || 0;
+            const maxQuantity = restriction.maxQuantity ? parseInt(restriction.maxQuantity) : Infinity;
+            const required = restriction.required || false;
+            const packageTypeName = restriction.packageTypeName || `Type ${packageTypeCode}`;
+
+            const shipmentQuantity = packageTypeCounts[packageTypeCode] || 0;
+
+            console.log(`    🔍 Checking quantity rules for ${packageTypeName} (${packageTypeCode}):`, {
+                shipmentQty: shipmentQuantity,
+                minRequired: minQuantity,
+                maxAllowed: maxQuantity,
+                isRequired: required
+            });
+
+            if (shipmentQuantity > 0) {
+                // Package type exists in shipment - check quantity limits
+                if (shipmentQuantity < minQuantity || shipmentQuantity > maxQuantity) {
+                    console.log(`    ❌ ${packageTypeName}: ${shipmentQuantity} units (outside range ${minQuantity}-${maxQuantity})`);
+                    if (required) {
+                        allRequiredPackageTypesMet = false;
+                    }
+                    // For any supported type, if quantity is outside limits, reject
+                    return false;
+                } else {
+                    console.log(`    ✅ ${packageTypeName}: ${shipmentQuantity} units (within range ${minQuantity}-${maxQuantity})`);
+                }
+            } else {
+                // Package type not in shipment
+                if (required && minQuantity > 0) {
+                    console.log(`    ❌ ${packageTypeName}: Required but not found in shipment`);
+                    allRequiredPackageTypesMet = false;
+                } else {
+                    console.log(`    ℹ️ ${packageTypeName}: Not in shipment (optional)`);
+                }
+            }
+        }
+
+        // Carrier is eligible if:
+        // 1. ALL package types in shipment are supported by carrier, AND
+        // 2. All required package types are met, AND  
+        // 3. All quantity limits are respected
+        const isEligible = allPackageTypesSupported && allRequiredPackageTypesMet;
+
+        console.log(`    📊 Package type eligibility result:`, {
+            allTypesSupported: allPackageTypesSupported,
+            allRequiredMet: allRequiredPackageTypesMet,
+            finalResult: isEligible
+        });
+
+        return isEligible;
     }
 }
 
