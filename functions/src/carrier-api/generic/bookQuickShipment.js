@@ -5,21 +5,17 @@ const admin = require('firebase-admin');
 const db = admin.firestore();
 
 /**
- * Books a QuickShip shipment - manual carrier booking
- * Saves shipment data to database and generates documents - notifications handled by onShipmentCreated trigger
- * @param {Object} request - Firebase function request containing shipment data
+ * Internal booking function that can be called directly or via onCall
+ * @param {Object} data - The request data containing shipmentData and carrierDetails
+ * @param {Object} auth - Authentication context (optional for warmup)
  * @returns {Object} - Success/error response with booking confirmation
  */
-const bookQuickShipment = onCall({
-    minInstances: 1, // Keep warm to prevent cold starts for critical QuickShip operations
-    memory: '512MiB',
-    timeoutSeconds: 60
-}, async (request) => {
+async function bookQuickShipmentInternal(data, auth = null) {
     try {
-        const { shipmentData, carrierDetails } = request.data;
+        const { shipmentData, carrierDetails } = data;
         
         // Check if this is a warmup request
-        if (shipmentData?._isWarmupRequest || request.auth?.uid === 'keepalive-system' || request.auth?.uid?.includes('warmup')) {
+        if (shipmentData?._isWarmupRequest || auth?.uid === 'keepalive-system' || auth?.uid?.includes('warmup')) {
             logger.info('🔥 QuickShip bookQuickShipment warmup request detected - returning quick response');
             return {
                 success: true,
@@ -196,8 +192,23 @@ const bookQuickShipment = onCall({
             data: null
         };
     }
+}
+
+/**
+ * Books a QuickShip shipment - manual carrier booking
+ * Saves shipment data to database and generates documents - notifications handled by onShipmentCreated trigger
+ * @param {Object} request - Firebase function request containing shipment data
+ * @returns {Object} - Success/error response with booking confirmation
+ */
+const bookQuickShipment = onCall({
+    minInstances: 1, // Keep warm to prevent cold starts for critical QuickShip operations
+    memory: '512MiB',
+    timeoutSeconds: 60
+}, async (request) => {
+    return await bookQuickShipmentInternal(request.data, request.auth);
 });
 
 module.exports = {
-    bookQuickShipment
+    bookQuickShipment,
+    bookQuickShipmentInternal
 }; 

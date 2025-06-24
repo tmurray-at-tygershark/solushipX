@@ -43,7 +43,7 @@ import { useCompany } from '../../contexts/CompanyContext';
 
 const BillingDashboard = () => {
     const { currentUser } = useAuth();
-    const { companyIdForAddress, companyData, loading: companyLoading } = useCompany();
+    const { companyData, companyIdForAddress, forceRefreshCompanyData } = useCompany();
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [searchQuery, setSearchQuery] = useState('');
@@ -52,10 +52,10 @@ const BillingDashboard = () => {
     const [error, setError] = useState(null);
     const [creditInfo, setCreditInfo] = useState({
         creditLimit: 0,
-        currentBalance: 0,
-        availableCredit: 0,
+        paymentTerms: '',
         creditStatus: 'active',
-        paymentTerms: 'Net 30'
+        currentBalance: 0,
+        availableCredit: 0
     });
     const [totalCharges, setTotalCharges] = useState({
         uninvoiced: 0,
@@ -64,10 +64,8 @@ const BillingDashboard = () => {
     });
 
     useEffect(() => {
-        if (currentUser && companyIdForAddress && !companyLoading) {
-            fetchBillingData();
-        }
-    }, [currentUser, companyIdForAddress, companyLoading]);
+        fetchBillingData();
+    }, [companyData, companyIdForAddress]);
 
     const fetchBillingData = async () => {
         try {
@@ -79,18 +77,18 @@ const BillingDashboard = () => {
                 return;
             }
 
-            // Use company data from context
+            // Use fresh company data from context (no localStorage caching)
             const userCompany = companyData;
-            console.log('🏢 Using company from context:', {
+            console.log('🏢 Using fresh company data:', {
                 companyID: companyIdForAddress,
                 name: userCompany?.name,
                 paymentTerms: userCompany?.paymentTerms
             });
 
             if (userCompany) {
-                // Set credit information from company data
+                // Set credit information from fresh company data (no caching)
                 const paymentTerms = userCompany.paymentTerms || {};
-                console.log('💳 Payment terms found:', paymentTerms);
+                console.log('💳 Fresh payment terms found:', paymentTerms);
 
                 setCreditInfo({
                     creditLimit: paymentTerms.creditLimit || 5000,
@@ -98,7 +96,7 @@ const BillingDashboard = () => {
                     creditStatus: paymentTerms.onCreditHold ? 'on_hold' : 'active'
                 });
 
-                console.log('💳 Set credit info:', {
+                console.log('💳 Set fresh credit info (no caching):', {
                     creditLimit: paymentTerms.creditLimit || 5000,
                     paymentTerms: paymentTerms.netTerms ? `Net ${paymentTerms.netTerms}` : 'Net 30',
                     creditStatus: paymentTerms.onCreditHold ? 'on_hold' : 'active'

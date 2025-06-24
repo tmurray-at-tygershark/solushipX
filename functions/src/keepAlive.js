@@ -7,27 +7,58 @@ const logger = require('firebase-functions/logger');
  * This prevents "Cannot read properties of undefined (reading 'on')" errors
  */
 function createMockCallableRequest(data, authUid) {
-    return {
+    // Enhanced mock request object with all possible properties that Firebase functions might expect
+    const mockRequest = {
         data: data,
-        auth: authUid ? { uid: authUid } : null,
-        rawRequest: {},
+        auth: authUid ? { uid: authUid, token: {} } : null,
+        rawRequest: {
+            ip: '127.0.0.1',
+            headers: { 'user-agent': 'keepalive-warmup-system/1.0' },
+            method: 'POST',
+            url: '/warmup',
+            body: data
+        },
         instanceIdToken: null,
         appCheckToken: null,
-        // Add EventEmitter-like methods to prevent errors
-        on: () => {},
-        once: () => {},
-        emit: () => {},
-        removeListener: () => {},
-        removeAllListeners: () => {},
-        setMaxListeners: () => {},
-        getMaxListeners: () => 0,
-        listeners: () => [],
-        listenerCount: () => 0,
-        eventNames: () => [],
-        prependListener: () => {},
-        prependOnceListener: () => {},
-        off: () => {}
+        
+        // Add comprehensive EventEmitter-like methods to prevent any .on() errors
+        on: function(event, listener) { return this; },
+        once: function(event, listener) { return this; },
+        emit: function(event, ...args) { return false; },
+        removeListener: function(event, listener) { return this; },
+        removeAllListeners: function(event) { return this; },
+        setMaxListeners: function(n) { return this; },
+        getMaxListeners: function() { return 0; },
+        listeners: function(event) { return []; },
+        listenerCount: function(event) { return 0; },
+        eventNames: function() { return []; },
+        prependListener: function(event, listener) { return this; },
+        prependOnceListener: function(event, listener) { return this; },
+        off: function(event, listener) { return this; },
+        
+        // Add request/response-like methods that some functions might expect
+        pipe: function(destination) { return destination; },
+        unpipe: function(destination) { return this; },
+        read: function(size) { return null; },
+        write: function(chunk, encoding, callback) { return true; },
+        end: function(chunk, encoding, callback) { return this; },
+        destroy: function(error) { return this; },
+        
+        // Add HTTP-like properties
+        headers: { 'content-type': 'application/json', 'user-agent': 'keepalive-warmup/1.0' },
+        method: 'POST',
+        url: '/warmup',
+        statusCode: 200,
+        statusMessage: 'OK'
     };
+    
+    // Make the mock request appear as a proper request object
+    Object.defineProperty(mockRequest, 'constructor', {
+        value: { name: 'MockCallableRequest' },
+        writable: false
+    });
+    
+    return mockRequest;
 }
 
 /**
@@ -45,6 +76,8 @@ function createMockCallableRequest(data, authUid) {
  * Using minimal valid data to ensure functions initialize properly
  */
 const warmupRequestData = {
+    apiKey: 'warmup-request-key', // Add API key for warmup requests
+    _isWarmupRequest: true, // Add warmup flag directly in the data payload
     shipFrom: {
         company: "Test Company",
         address1: "123 Test St",
@@ -73,8 +106,7 @@ const warmupRequestData = {
     shipmentInfo: {
         shipmentDate: new Date().toISOString(),
         shipmentType: "freight"
-    },
-    _isWarmupRequest: true // Flag to identify warmup requests
+    }
 };
 
 /**
@@ -230,9 +262,8 @@ exports.keepAliveQuickShip = onSchedule({
 
     // 1. Warm up bookQuickShipment
     try {
-        const { bookQuickShipment } = require('./carrier-api/generic/bookQuickShipment');
-        const mockRequest = createMockCallableRequest(quickShipWarmupData, 'keepalive-system');
-        await bookQuickShipment(mockRequest);
+        const { bookQuickShipmentInternal } = require('./carrier-api/generic/bookQuickShipment');
+        await bookQuickShipmentInternal(quickShipWarmupData, { uid: 'keepalive-system' });
         results.push({ function: 'bookQuickShipment', success: true });
         logger.info('✅ bookQuickShipment warmed successfully');
     } catch (error) {
@@ -349,8 +380,8 @@ exports.keepAliveAllCarriers = onSchedule({
             const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
             
             if (quickShipFunc.name === 'bookQuickShipment') {
-                const mockRequest = createMockCallableRequest(quickShipWarmupData, 'keepalive-system');
-                await funcToCall(mockRequest);
+                const { bookQuickShipmentInternal } = require('./carrier-api/generic/bookQuickShipment');
+                await bookQuickShipmentInternal(quickShipWarmupData, { uid: 'keepalive-system' });
             } else if (quickShipFunc.name === 'generateGenericBOL') {
                 await funcToCall('WARMUP-COMPREHENSIVE-001', 'warmup-doc-id');
             } else if (quickShipFunc.name === 'generateCarrierConfirmation') {
@@ -451,8 +482,8 @@ exports.warmupCarriersNow = onCall({
             const { [quickShipFunc.func]: funcToCall } = require(quickShipFunc.module);
             
             if (quickShipFunc.name === 'bookQuickShipment') {
-                const mockRequest = createMockCallableRequest(quickShipWarmupData, request.auth?.uid || 'manual-warmup');
-                await funcToCall(mockRequest);
+                const { bookQuickShipmentInternal } = require('./carrier-api/generic/bookQuickShipment');
+                await bookQuickShipmentInternal(quickShipWarmupData, { uid: 'keepalive-system' });
             } else if (quickShipFunc.name === 'generateGenericBOL') {
                 await funcToCall('WARMUP-MANUAL-001', 'warmup-doc-id');
             } else if (quickShipFunc.name === 'generateCarrierConfirmation') {

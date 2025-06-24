@@ -17,17 +17,6 @@ export const CompanyProvider = ({ children }) => {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        // Check if we have cached company data in localStorage
-        const cachedCompanyData = localStorage.getItem('solushipx_company_data');
-        const cachedCompanyIdForAddress = localStorage.getItem('solushipx_company_id_for_address');
-
-        if (cachedCompanyData && cachedCompanyIdForAddress) {
-            setCompanyData(JSON.parse(cachedCompanyData));
-            setCompanyIdForAddress(cachedCompanyIdForAddress);
-            setLoading(false);
-            return;
-        }
-
         const fetchCompanyData = async () => {
             if (!currentUser) {
                 setLoading(false);
@@ -84,10 +73,6 @@ export const CompanyProvider = ({ children }) => {
                     id: companyDocId
                 };
 
-                // Cache the data in localStorage for future use
-                localStorage.setItem('solushipx_company_data', JSON.stringify(companyWithId));
-                localStorage.setItem('solushipx_company_id_for_address', companyDocData.companyID);
-
                 setCompanyData(companyWithId);
                 setCompanyIdForAddress(companyDocData.companyID);
                 setLoading(false);
@@ -114,8 +99,6 @@ export const CompanyProvider = ({ children }) => {
 
     // Function to clear company data on logout
     const clearCompanyData = () => {
-        localStorage.removeItem('solushipx_company_data');
-        localStorage.removeItem('solushipx_company_id_for_address');
         setCompanyData(null);
         setCompanyIdForAddress(null);
     };
@@ -139,9 +122,6 @@ export const CompanyProvider = ({ children }) => {
                 id: companyDoc.id
             };
 
-            // Update localStorage cache
-            localStorage.setItem('solushipx_company_data', JSON.stringify(freshCompanyData));
-
             // Update state
             setCompanyData(freshCompanyData);
 
@@ -151,13 +131,74 @@ export const CompanyProvider = ({ children }) => {
         }
     };
 
+    // Function to force refresh company data from Firestore (for credit hold updates)
+    const forceRefreshCompanyData = async () => {
+        if (!currentUser) {
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+
+            if (!userDoc.exists()) {
+                throw new Error('User data not found.');
+            }
+
+            const userData = userDoc.data();
+            const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
+
+            if (!companyIdValue) {
+                if (ADMIN_ROLES.includes(userRole)) {
+                    console.log('Admin user with no company data - this is normal');
+                    setCompanyData(null);
+                    setCompanyIdForAddress(null);
+                    setLoading(false);
+                    return;
+                }
+                throw new Error('No company ID found.');
+            }
+
+            // Query for the company document where companyID field equals the value
+            const companiesQuery = query(
+                collection(db, 'companies'),
+                where('companyID', '==', companyIdValue),
+                limit(1)
+            );
+
+            const companiesSnapshot = await getDocs(companiesQuery);
+
+            if (companiesSnapshot.empty) {
+                throw new Error(`No company found with companyID: ${companyIdValue}`);
+            }
+
+            const companyDoc = companiesSnapshot.docs[0];
+            const companyDocData = companyDoc.data();
+            const companyDocId = companyDoc.id;
+
+            const companyWithId = {
+                ...companyDocData,
+                id: companyDocId
+            };
+
+            setCompanyData(companyWithId);
+            setCompanyIdForAddress(companyDocData.companyID);
+            setLoading(false);
+
+            console.log('🔄 Company data force refreshed - fresh credit hold status loaded');
+
+        } catch (err) {
+            console.error('Error force refreshing company data:', err);
+            setError(err.message || 'Failed to refresh company data');
+            setLoading(false);
+        }
+    };
+
     // Function to manually set company data (for admin users switching context)
     const setCompanyContext = async (newCompanyData, returnPath = null) => {
         try {
-            // Update localStorage cache
-            localStorage.setItem('solushipx_company_data', JSON.stringify(newCompanyData));
-            localStorage.setItem('solushipx_company_id_for_address', newCompanyData.companyID);
-
             // Store the return path for "Return to Admin" functionality
             if (returnPath) {
                 localStorage.setItem('solushipx_admin_return_path', returnPath);
@@ -191,6 +232,7 @@ export const CompanyProvider = ({ children }) => {
         error,
         clearCompanyData,
         refreshCompanyData,
+        forceRefreshCompanyData,
         setCompanyContext,
         getAdminReturnPath,
         clearAdminReturnPath,
