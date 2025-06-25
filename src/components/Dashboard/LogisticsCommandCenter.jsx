@@ -32,6 +32,7 @@ import {
 
 import { collection, getDocs, getFirestore } from 'firebase/firestore';
 import { app } from '../../firebase/firebase';
+import { useCompany } from '../../contexts/CompanyContext';
 import AdvancedLogisticsMap from './AdvancedLogisticsMap';
 import StatusChip from '../StatusChip/StatusChip';
 
@@ -47,6 +48,9 @@ const SHIPMENT_STATUSES = {
 
 
 const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick }) => {
+    // Get company data for displaying company name and ID
+    const { companyData } = useCompany();
+
     // Core state
     const [selectedShipment, setSelectedShipment] = useState(null);
     const [currentShipmentIndex, setCurrentShipmentIndex] = useState(0);
@@ -611,7 +615,15 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                         color: 'rgba(255,255,255,0.7)',
                         fontSize: '0.75rem'
                     }}>
-                        Shipment monitoring & control
+                        {companyData?.name || 'Company Name'}
+                    </Typography>
+                    <Typography variant="caption" sx={{
+                        color: 'rgba(255,255,255,0.5)',
+                        fontSize: '0.65rem',
+                        display: 'block',
+                        mt: -0.25
+                    }}>
+                        ID: {companyData?.companyID?.toLowerCase() || 'n/a'}
                     </Typography>
                 </Box>
 

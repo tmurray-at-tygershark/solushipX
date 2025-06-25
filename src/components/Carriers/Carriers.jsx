@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
     Box,
     Paper,
@@ -10,491 +10,849 @@ import {
     CardMedia,
     Button,
     Switch,
-    Chip,
-    CircularProgress,
-    Alert,
-    Snackbar,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
     TextField,
-    FormControl,
-    FormLabel,
-    RadioGroup,
     FormControlLabel,
     Radio,
-    Divider,
-    IconButton
+    RadioGroup,
+    FormControl,
+    FormLabel,
+    IconButton,
+    Tooltip,
+    Chip,
+    Tabs,
+    Tab,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Avatar,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
+    CircularProgress,
+    Alert,
+    InputLabel,
+    Select,
+    Input
 } from '@mui/material';
 import {
     Home as HomeIcon,
     NavigateNext as NavigateNextIcon,
     Edit as EditIcon,
+    Delete as DeleteIcon,
     CheckCircle as CheckCircleIcon,
     Cancel as CancelIcon,
+    Add as AddIcon,
+    MoreVert as MoreVertIcon,
+    LocalShipping as LocalShippingIcon,
+    Business as BusinessIcon,
+    Speed as SpeedIcon,
     Settings as SettingsIcon,
-    CloudDone as CloudDoneIcon,
-    VpnKey as VpnKeyIcon,
-    Save as SaveIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon,
-    Close as CloseIcon
+    VpnKey as CredentialsIcon,
+    CloudUpload as CloudUploadIcon,
+    Remove as RemoveIcon
 } from '@mui/icons-material';
-import { collection, getDocs, doc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import './Carriers.css';
+import QuickShipCarrierDialog from '../CreateShipment/QuickShipCarrierDialog';
 
-// Import common components
+// Import the proper ModalHeader component (same as Notifications)
 import ModalHeader from '../common/ModalHeader';
 
 const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
-    const [carrierList, setCarrierList] = useState([]);
+    // Context and Auth
+    const { currentUser } = useAuth();
+    const { companyData, companyIdForAddress } = useCompany();
+
+    // Use the correct company ID - either from companyIdForAddress or from companyData.companyID
+    const companyId = companyIdForAddress || companyData?.companyID;
+
+    // States
+    const [selectedTab, setSelectedTab] = useState(0);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [successMessage, setSuccessMessage] = useState('');
-    const [configDialogOpen, setConfigDialogOpen] = useState(false);
+    const [solushipCarriers, setSolushipCarriers] = useState([]);
+    const [quickShipCarriers, setQuickShipCarriers] = useState([]);
+    const [showCarrierDialog, setShowCarrierDialog] = useState(false);
+    const [editingCarrier, setEditingCarrier] = useState(null);
+    const [carrierSuccessMessage, setCarrierSuccessMessage] = useState('');
+    const [solushipActionMenuAnchor, setSolushipActionMenuAnchor] = useState(null);
+    const [quickshipActionMenuAnchor, setQuickshipActionMenuAnchor] = useState(null);
     const [selectedCarrier, setSelectedCarrier] = useState(null);
-    const [saving, setSaving] = useState(false);
+    const [selectedSolushipCarrier, setSelectedSolushipCarrier] = useState(null);
 
-    const { companyData, refreshCompanyData } = useCompany();
-    const navigate = useNavigate();
-
-    // Credential state for the configuration dialog
+    // Credentials dialog states
+    const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
     const [credentials, setCredentials] = useState({
-        type: 'soluship', // 'soluship' for default or 'custom' for user credentials
-        username: '',
-        password: '',
+        type: 'soluship',
         accountNumber: '',
-        hostURL: '',
-        endpoints: {
-            rate: '',
-            booking: '',
-            tracking: '',
-            cancel: '',
-            labels: '',
-            status: ''
-        }
+        apiKey: '',
+        apiSecret: ''
     });
 
-    // Load only the company's connected carriers
-    useEffect(() => {
-        const loadCarriers = async () => {
+    // Load connected Soluship carriers
+    const loadConnectedCarriers = useCallback(async () => {
+        console.log('Loading connected carriers, companyData:', companyData);
+
+        try {
+            // Load all carriers from the carriers collection
+            const carriersSnapshot = await getDocs(collection(db, 'carriers'));
+            const allCarriers = carriersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log('All carriers from database:', allCarriers.length);
+            console.log('Company connected carriers:', companyData?.connectedCarriers);
+
+            if (!companyData?.connectedCarriers || companyData.connectedCarriers.length === 0) {
+                console.log('No connected carriers in company data');
+                setSolushipCarriers([]);
+                return;
+            }
+
+            // Filter to only show carriers that are connected to this company
+            const connectedCarriers = allCarriers.filter(carrier => {
+                const connection = companyData.connectedCarriers.find(cc =>
+                    cc.carrierID === carrier.carrierID || cc.carrierId === carrier.carrierID
+                );
+                console.log(`Checking carrier ${carrier.name} (${carrier.carrierID}):`, !!connection);
+                return connection; // Show all connected carriers, regardless of enabled status
+            });
+
+            console.log('Filtered connected carriers:', connectedCarriers.length);
+
+            // Add connection info to each carrier
+            const carriersWithConnectionInfo = connectedCarriers.map(carrier => {
+                const connection = companyData.connectedCarriers.find(cc =>
+                    cc.carrierID === carrier.carrierID || cc.carrierId === carrier.carrierID
+                );
+                return {
+                    ...carrier,
+                    connectionEnabled: connection?.enabled || false,
+                    connectionType: carrier.connectionType || 'api',
+                    connectionData: connection // Store full connection data for later use
+                };
+            });
+
+            setSolushipCarriers(carriersWithConnectionInfo);
+        } catch (error) {
+            console.error('Error loading connected carriers:', error);
+            setSolushipCarriers([]);
+        }
+    }, [companyData]);
+
+    // Load QuickShip carriers
+    const loadQuickShipCarriers = useCallback(async () => {
+        console.log('Loading QuickShip carriers for company:', companyId);
+        console.log('Company data:', companyData);
+        console.log('Available company fields:', Object.keys(companyData || {}));
+
+        if (!companyId) {
+            console.log('No companyId provided');
+            setQuickShipCarriers([]);
+            return;
+        }
+
+        try {
+            console.log('Attempting to query quickshipCarriers collection with companyID =', companyId);
+
+            const quickShipQuery = query(
+                collection(db, 'quickshipCarriers'),
+                where('companyID', '==', companyId),
+                orderBy('name', 'asc')
+            );
+
+            const querySnapshot = await getDocs(quickShipQuery);
+            console.log('Query returned', querySnapshot.docs.length, 'documents');
+
+            const carriers = querySnapshot.docs.map(doc => {
+                const data = doc.data();
+                console.log('QuickShip carrier found:', {
+                    id: doc.id,
+                    name: data.name,
+                    companyID: data.companyID,
+                    contactName: data.contactName
+                });
+                return {
+                    id: doc.id,
+                    ...data
+                };
+            });
+
+            console.log('Loaded QuickShip carriers:', carriers.length, carriers);
+            setQuickShipCarriers(carriers);
+        } catch (error) {
+            console.error('Error loading QuickShip carriers:', error);
+            // If there's an ordering error, try without orderBy
             try {
-                setLoading(true);
+                console.log('Retrying without orderBy...');
+                const simpleQuery = query(
+                    collection(db, 'quickshipCarriers'),
+                    where('companyID', '==', companyId)
+                );
 
-                // Get company's connected carriers
-                const companyConnectedCarriers = companyData?.connectedCarriers || [];
-                console.log('Company Connected Carriers:', companyConnectedCarriers);
+                const querySnapshot = await getDocs(simpleQuery);
+                console.log('Simple query returned', querySnapshot.docs.length, 'documents');
 
-                if (!companyConnectedCarriers.length) {
-                    console.log('No connected carriers found for company');
-                    setCarrierList([]);
-                    return;
-                }
-
-                // Get carrier IDs from connected carriers
-                const carrierIds = companyConnectedCarriers.map(cc => cc.carrierID);
-                console.log('Fetching carriers with IDs:', carrierIds);
-
-                // Fetch only the connected carriers from Firestore
-                const carriersRef = collection(db, 'carriers');
-                const carriersQuery = query(carriersRef, where('carrierID', 'in', carrierIds));
-                const snapshot = await getDocs(carriersQuery);
-
-                const carriers = [];
-                snapshot.forEach(doc => {
+                const carriers = querySnapshot.docs.map(doc => {
                     const data = doc.data();
-                    carriers.push({
-                        ...data,
+                    console.log('QuickShip carrier found (simple query):', {
                         id: doc.id,
-                        firestoreId: doc.id,
-                        connected: !!data.apiCredentials,
-                        enabled: data.enabled || false,
-                        credentialType: data.apiCredentials?.type || 'none'
+                        name: data.name,
+                        companyID: data.companyID,
+                        contactName: data.contactName
                     });
+                    return {
+                        id: doc.id,
+                        ...data
+                    };
                 });
 
-                console.log('Loaded connected carriers:', carriers);
-                setCarrierList(carriers);
+                console.log('Loaded QuickShip carriers (simple query):', carriers.length);
+                setQuickShipCarriers(carriers);
+            } catch (retryError) {
+                console.error('Error on retry:', retryError);
+
+                // Let's try to query all quickship carriers to see what's available
+                try {
+                    console.log('Attempting to fetch ALL quickship carriers for debugging...');
+                    const allCarriersQuery = collection(db, 'quickshipCarriers');
+                    const allSnapshot = await getDocs(allCarriersQuery);
+
+                    console.log('Found', allSnapshot.docs.length, 'total quickship carriers in database:');
+                    allSnapshot.docs.forEach(doc => {
+                        const data = doc.data();
+                        console.log('- Carrier:', data.name, 'CompanyID:', data.companyID, 'ID:', doc.id);
+                    });
+
+                    // Filter manually for our company
+                    const ourCarriers = allSnapshot.docs
+                        .map(doc => ({ id: doc.id, ...doc.data() }))
+                        .filter(carrier => carrier.companyID === companyId);
+
+                    console.log('Filtered carriers for company', companyId + ':', ourCarriers.length);
+                    setQuickShipCarriers(ourCarriers);
+                } catch (debugError) {
+                    console.error('Debug query also failed:', debugError);
+                    setQuickShipCarriers([]);
+                }
+            }
+        }
+    }, [companyId, companyData]);
+
+    // Load all data
+    useEffect(() => {
+        const loadData = async () => {
+            console.log('Carriers - Loading data, companyId:', companyId, 'companyData:', companyData);
+            setLoading(true);
+
+            try {
+                await Promise.all([
+                    loadConnectedCarriers(),
+                    loadQuickShipCarriers()
+                ]);
             } catch (error) {
-                console.error('Error loading carriers:', error);
-                setError('Failed to load carriers. Please try again.');
-                setCarrierList([]);
+                console.error('Error loading carriers data:', error);
             } finally {
                 setLoading(false);
             }
         };
 
-        if (companyData) {
-            loadCarriers();
-        }
-    }, [companyData]);
+        // Always try to load data, even if companyId is null (for debugging)
+        loadData();
+    }, [companyId, companyData, loadConnectedCarriers, loadQuickShipCarriers]);
 
-    // Refresh company data on mount to get latest connected carriers
-    useEffect(() => {
-        if (refreshCompanyData) {
-            refreshCompanyData();
-        }
-    }, []);
-
-    const handleToggleCarrier = async (carrierId) => {
-        try {
-            const carrier = carrierList.find(c => c.id === carrierId);
-            if (!carrier || !carrier.firestoreId) {
-                setError('Cannot update carrier: Carrier not found in database');
-                return;
-            }
-
-            const newEnabledState = !carrier.enabled;
-
-            // 1. Update the carrier document in the carriers collection
-            const carrierRef = doc(db, 'carriers', carrier.firestoreId);
-            await updateDoc(carrierRef, {
-                enabled: newEnabledState,
-                updatedAt: serverTimestamp()
-            });
-
-            // 2. Update the company's connectedCarriers array
-            if (companyData?.id) {
-                const companyRef = doc(db, 'companies', companyData.id);
-                const updatedConnectedCarriers = companyData.connectedCarriers.map(cc =>
-                    cc.carrierID === carrier.carrierID
-                        ? { ...cc, enabled: newEnabledState, updatedAt: new Date() }
-                        : cc
-                );
-
-                await updateDoc(companyRef, {
-                    connectedCarriers: updatedConnectedCarriers,
-                    updatedAt: serverTimestamp()
-                });
-            }
-
-            // Update local state
-            setCarrierList(prevList =>
-                prevList.map(c =>
-                    c.id === carrierId
-                        ? { ...c, enabled: newEnabledState }
-                        : c
-                )
-            );
-
-            setSuccessMessage(`${carrier.name} ${newEnabledState ? 'enabled' : 'disabled'} successfully`);
-        } catch (error) {
-            console.error('Error toggling carrier:', error);
-            setError('Failed to update carrier status. Please try again.');
-        }
+    // Handle tab change
+    const handleTabChange = (event, newValue) => {
+        setSelectedTab(newValue);
     };
 
-    const handleConfigureCarrier = (carrier) => {
+    // Handle carrier actions
+    const handleAddCarrier = () => {
+        setEditingCarrier(null);
+        setShowCarrierDialog(true);
+    };
+
+    const handleEditCarrier = (carrier) => {
+        setEditingCarrier(carrier);
+        setShowCarrierDialog(true);
+        setSolushipActionMenuAnchor(null);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleDeleteCarrier = async (carrier) => {
+        if (!window.confirm(`Are you sure you want to delete ${carrier.name}?`)) {
+            return;
+        }
+
+        try {
+            await deleteDoc(doc(db, 'quickshipCarriers', carrier.id));
+            await loadQuickShipCarriers(); // Refresh the list
+            setCarrierSuccessMessage(`${carrier.name} has been deleted successfully.`);
+            setTimeout(() => setCarrierSuccessMessage(''), 3000);
+        } catch (error) {
+            console.error('Error deleting carrier:', error);
+            alert('Failed to delete carrier. Please try again.');
+        }
+        setSolushipActionMenuAnchor(null);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleCarrierSaved = async () => {
+        setShowCarrierDialog(false);
+        setEditingCarrier(null);
+        await loadQuickShipCarriers(); // Refresh the list
+        setCarrierSuccessMessage('Carrier saved successfully!');
+        setTimeout(() => setCarrierSuccessMessage(''), 3000);
+    };
+
+    // Action menu handlers
+    const handleActionMenuOpen = (event, carrier) => {
         setSelectedCarrier(carrier);
-
-        // Always default to Soluship Connect for security
-        // Never expose existing Soluship credentials
-        setCredentials({
-            type: 'soluship',
-            username: '',
-            password: '',
-            accountNumber: '',
-            hostURL: '',
-            endpoints: {
-                rate: '',
-                booking: '',
-                tracking: '',
-                cancel: '',
-                labels: '',
-                status: ''
-            }
-        });
-
-        setConfigDialogOpen(true);
+        setQuickshipActionMenuAnchor(event.currentTarget);
+        setSolushipActionMenuAnchor(null);
     };
 
-    const handleSaveCredentials = async () => {
-        try {
-            setSaving(true);
-            setError(null);
+    const handleActionMenuClose = () => {
+        setSolushipActionMenuAnchor(null);
+        setQuickshipActionMenuAnchor(null);
+        setSelectedCarrier(null);
+        setSelectedSolushipCarrier(null);
+    };
 
-            // Temporarily disable saving to database for security
-            // This functionality will be implemented later
-            setSuccessMessage('Configuration saved locally. Database updates are temporarily disabled for security.');
-            setConfigDialogOpen(false);
+    // Soluship carrier action handlers
+    const handleSolushipActionMenuOpen = (event, carrier) => {
+        setSelectedSolushipCarrier(carrier);
+        setSolushipActionMenuAnchor(event.currentTarget);
+    };
 
-            // TODO: Implement proper credential saving logic later
-            // Do not save anything to database at this time
+    const handleConfigureCredentials = (carrier) => {
+        setSelectedSolushipCarrier(carrier);
+        setCredentials({
+            type: carrier.connectionData?.credentialType || 'soluship',
+            accountNumber: carrier.connectionData?.accountNumber || '',
+            apiKey: carrier.connectionData?.apiKey || '',
+            apiSecret: carrier.connectionData?.apiSecret || ''
+        });
+        setShowCredentialsDialog(true);
+        setSolushipActionMenuAnchor(null);
+    };
 
-        } catch (error) {
-            console.error('Error in save credentials (disabled):', error);
-            setError('Configuration is temporarily disabled.');
-        } finally {
-            setSaving(false);
+    const handleSaveCredentials = () => {
+        // For now, just close the dialog - in a real implementation this would save to the company's connectedCarriers
+        console.log('Saving credentials for carrier:', selectedSolushipCarrier?.name, credentials);
+        setShowCredentialsDialog(false);
+        setSelectedSolushipCarrier(null);
+        // Show success message
+        setCarrierSuccessMessage(`Credentials configured for ${selectedSolushipCarrier?.name}`);
+        setTimeout(() => setCarrierSuccessMessage(''), 3000);
+    };
+
+    // Handle activation toggle for Soluship carriers
+    const handleToggleActivation = async (carrier) => {
+        // For now, just update local state - in a real implementation this would update the company document
+        setSolushipCarriers(prev => prev.map(c =>
+            c.id === carrier.id ? { ...c, connectionEnabled: !c.connectionEnabled } : c
+        ));
+        console.log(`Toggled activation for ${carrier.name}: ${!carrier.connectionEnabled}`);
+    };
+
+    // Get carrier type color
+    const getCarrierTypeColor = (type) => {
+        switch (type) {
+            case 'courier':
+                return { color: '#3b82f6', bgcolor: '#eff6ff' };
+            case 'freight':
+                return { color: '#f59e0b', bgcolor: '#fffbeb' };
+            case 'hybrid':
+                return { color: '#8b5cf6', bgcolor: '#f5f3ff' };
+            default:
+                return { color: '#6b7280', bgcolor: '#f3f4f6' };
         }
     };
 
-    const handleCloseSnackbar = () => {
-        setError(null);
-        setSuccessMessage('');
-    };
+    // Render Soluship Carriers table
+    const renderSolushipCarriers = () => (
+        <Box sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ mb: 3, fontSize: '16px', fontWeight: 600 }}>
+                Connected Soluship Carriers
+            </Typography>
 
-    const handleCloseDialog = () => {
-        setConfigDialogOpen(false);
-        setSelectedCarrier(null);
-    };
-
-    if (loading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-                <CircularProgress />
-            </Box>
-        );
-    }
-
-    return (
-        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
-            <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
-                {/* Modal Header */}
-                {isModal && (
-                    <ModalHeader
-                        title="Connected Carriers"
-                        onClose={showCloseButton ? onClose : null}
-                        showCloseButton={showCloseButton}
-                    />
-                )}
-
-                <Box sx={{
-                    width: '100%',
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    position: 'relative',
-                    p: 3
-                }}>
-                    {/* Breadcrumb - only show when not in modal */}
-                    {!isModal && (
-                        <div className="breadcrumb-container">
-                            <Link to="/" className="breadcrumb-link">
-                                <HomeIcon />
-                                <Typography variant="body2">Home</Typography>
-                            </Link>
-                            <NavigateNextIcon />
-                            <Typography variant="body2">Carriers</Typography>
-                        </div>
-                    )}
-
-                    {!isModal && (
-                        <Box sx={{ mb: 4 }}>
-                            <Typography variant="h5" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
-                                Connected Carriers
-                            </Typography>
-                        </Box>
-                    )}
-
-                    {error && (
-                        <Alert severity="error" sx={{ mb: 2 }}>
-                            {error}
-                        </Alert>
-                    )}
-
-                    {carrierList.length === 0 ? (
-                        <Paper sx={{ p: 3, textAlign: 'center' }}>
-                            <Typography variant="h6" color="text.secondary" gutterBottom>
-                                No Carriers Connected
-                            </Typography>
-                            <Typography variant="body1" color="text.secondary">
-                                Please contact your administrator to connect carriers to your account.
-                            </Typography>
-                        </Paper>
-                    ) : (
-                        <Grid container spacing={3}>
-                            {carrierList.map((carrier) => (
-                                <Grid item xs={12} sm={6} md={4} key={carrier.id}>
-                                    <Card>
-                                        <CardMedia
-                                            component="img"
-                                            image={carrier.logoURL || '/images/carrier-badges/default.png'}
-                                            alt={carrier.name}
-                                            sx={{
-                                                width: '100%',
-                                                height: 'auto',
-                                                aspectRatio: '16/9',
-                                                objectFit: 'contain',
-                                                p: 2,
-                                                bgcolor: 'grey.100'
-                                            }}
-                                        />
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                                <Typography variant="h6" component="div">
+            {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress size={24} />
+                </Box>
+            ) : solushipCarriers.length === 0 ? (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                    <Typography sx={{ fontSize: '14px' }}>
+                        No Soluship carriers are currently connected to your account.
+                        Contact your administrator to enable carrier connections.
+                    </Typography>
+                </Alert>
+            ) : (
+                <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Carrier</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Type</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Activated</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Available</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Actions</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {solushipCarriers.map((carrier) => (
+                                <TableRow key={carrier.id} hover>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Avatar
+                                                src={carrier.logoURL}
+                                                sx={{ width: 32, height: 32 }}
+                                            >
+                                                <LocalShippingIcon sx={{ fontSize: '16px' }} />
+                                            </Avatar>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 500 }}>
                                                     {carrier.name}
                                                 </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    {carrier.carrierID}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            label={carrier.type || 'courier'}
+                                            size="small"
+                                            sx={{
+                                                ...getCarrierTypeColor(carrier.type),
+                                                fontSize: '11px',
+                                                fontWeight: 500
+                                            }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            icon={carrier.enabled ? <CheckCircleIcon /> : <CancelIcon />}
+                                            label={carrier.enabled ? 'Connected' : 'Not Connected'}
+                                            size="small"
+                                            sx={{
+                                                bgcolor: carrier.enabled ? '#f0fdf4' : '#fef2f2',
+                                                color: carrier.enabled ? '#166534' : '#dc2626',
+                                                fontSize: '11px',
+                                                fontWeight: 500
+                                            }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <FormControlLabel
+                                            control={
                                                 <Switch
-                                                    checked={carrier.enabled}
-                                                    onChange={() => handleToggleCarrier(carrier.id)}
+                                                    checked={carrier.connectionEnabled}
+                                                    onChange={() => handleToggleActivation(carrier)}
+                                                    size="small"
                                                     color="primary"
                                                 />
-                                            </Box>
-
-                                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                                {carrier.description}
-                                            </Typography>
-
-                                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                                <Chip
-                                                    label={carrier.enabled ? 'Enabled' : 'Disabled'}
-                                                    color={carrier.enabled ? 'success' : 'default'}
-                                                    size="small"
-                                                />
-                                                <Chip
-                                                    label={carrier.connected ? 'Connected' : 'Not Connected'}
-                                                    color={carrier.connected ? 'primary' : 'default'}
-                                                    size="small"
-                                                />
-                                                {carrier.credentialType !== 'none' && (
-                                                    <Chip
-                                                        label={carrier.credentialType === 'soluship' ? 'Soluship Connect' : 'Custom'}
-                                                        color={carrier.credentialType === 'soluship' ? 'info' : 'secondary'}
-                                                        size="small"
-                                                    />
-                                                )}
-                                            </Box>
-
-                                            {/* Configuration Buttons */}
-                                            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexDirection: 'column' }}>
-                                                {!carrier.connected ? (
-                                                    <>
-                                                        <Button
-                                                            variant="contained"
-                                                            size="small"
-                                                            startIcon={<CloudDoneIcon />}
-                                                            onClick={() => {
-                                                                setCredentials(prev => ({ ...prev, type: 'soluship' }));
-                                                                handleConfigureCarrier(carrier);
-                                                            }}
-                                                            sx={{ mb: 1 }}
-                                                        >
-                                                            Use Soluship Connect
-                                                        </Button>
-                                                        <Button
-                                                            variant="outlined"
-                                                            size="small"
-                                                            startIcon={<VpnKeyIcon />}
-                                                            onClick={() => {
-                                                                setCredentials(prev => ({ ...prev, type: 'custom' }));
-                                                                handleConfigureCarrier(carrier);
-                                                            }}
-                                                        >
-                                                            Use My Credentials
-                                                        </Button>
-                                                    </>
-                                                ) : (
-                                                    <Button
-                                                        variant="outlined"
-                                                        size="small"
-                                                        startIcon={<SettingsIcon />}
-                                                        onClick={() => handleConfigureCarrier(carrier)}
-                                                    >
-                                                        Configure
-                                                    </Button>
-                                                )}
-                                            </Box>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
+                                            }
+                                            label={
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {carrier.connectionEnabled ? 'Enabled' : 'Disabled'}
+                                                </Typography>
+                                            }
+                                            sx={{ margin: 0 }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography sx={{
+                                            fontSize: '12px',
+                                            color: carrier.connectionEnabled ? '#059669' : '#dc2626',
+                                            fontWeight: 500
+                                        }}>
+                                            {carrier.connectionEnabled ? 'Yes' : 'No'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => handleSolushipActionMenuOpen(e, carrier)}
+                                        >
+                                            <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
                             ))}
-                        </Grid>
-                    )}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            )}
+        </Box>
+    );
 
-                    {/* Configuration Dialog */}
-                    <Dialog
-                        open={configDialogOpen}
-                        onClose={handleCloseDialog}
-                        maxWidth="md"
-                        fullWidth
-                    >
-                        <DialogTitle>
-                            Configure {selectedCarrier?.name}
-                        </DialogTitle>
-                        <DialogContent dividers>
-                            <FormControl component="fieldset" sx={{ mb: 3 }}>
-                                <FormLabel component="legend">Connection Type</FormLabel>
-                                <RadioGroup
-                                    value={credentials.type}
-                                    onChange={(e) => setCredentials(prev => ({ ...prev, type: e.target.value }))}
-                                >
-                                    <FormControlLabel
-                                        value="soluship"
-                                        control={<Radio />}
-                                        label={
+    // Render QuickShip Carriers table
+    const renderQuickShipCarriers = () => (
+        <Box sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                    QuickShip Carriers
+                </Typography>
+                <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={handleAddCarrier}
+                    sx={{ fontSize: '12px' }}
+                >
+                    Add Carrier
+                </Button>
+            </Box>
+
+            {carrierSuccessMessage && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                    <Typography sx={{ fontSize: '14px' }}>{carrierSuccessMessage}</Typography>
+                </Alert>
+            )}
+
+            {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress size={24} />
+                </Box>
+            ) : quickShipCarriers.length === 0 ? (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                    <Typography sx={{ fontSize: '14px' }}>
+                        No QuickShip carriers found. Click "Add Carrier" to create your first manual carrier.
+                    </Typography>
+                </Alert>
+            ) : (
+                <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Carrier</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Type</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Contact</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Account Number</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Created</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Actions</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {quickShipCarriers.map((carrier) => (
+                                <TableRow key={carrier.id} hover>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Avatar
+                                                src={carrier.logoURL && !carrier.logoURL.startsWith('blob:') ? carrier.logoURL : null}
+                                                sx={{ width: 32, height: 32, bgcolor: '#f3f4f6' }}
+                                            >
+                                                <LocalShippingIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                            </Avatar>
                                             <Box>
-                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                                    Soluship Connect (Recommended)
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 500 }}>
+                                                    {carrier.name}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Use SolushipX default credentials. Quick setup with no configuration required.
+                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    {carrier.contactName || 'No contact name'}
                                                 </Typography>
                                             </Box>
-                                        }
-                                    />
-                                    <FormControlLabel
-                                        value="custom"
-                                        control={<Radio />}
-                                        disabled={true}
-                                        label={
-                                            <Box>
-                                                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.disabled' }}>
-                                                    My Own Credentials (Coming Soon)
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            label={carrier.carrierType || 'courier'}
+                                            size="small"
+                                            sx={{
+                                                ...getCarrierTypeColor(carrier.carrierType),
+                                                fontSize: '11px',
+                                                fontWeight: 500
+                                            }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box>
+                                            {carrier.contactEmail && (
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {carrier.contactEmail}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.disabled">
-                                                    Custom credential configuration will be available in a future update.
+                                            )}
+                                            {carrier.contactPhone && (
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    {carrier.contactPhone}
                                                 </Typography>
-                                            </Box>
-                                        }
-                                    />
-                                </RadioGroup>
-                            </FormControl>
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography sx={{ fontSize: '12px' }}>
+                                            {carrier.accountNumber || 'N/A'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography sx={{ fontSize: '12px' }}>
+                                            {carrier.createdAt ? new Date(carrier.createdAt.toDate()).toLocaleDateString() : 'N/A'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => handleActionMenuOpen(e, carrier)}
+                                        >
+                                            <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+            )}
+        </Box>
+    );
 
-                            {credentials.type === 'soluship' && (
-                                <Alert severity="info" sx={{ mb: 2 }}>
-                                    <Typography variant="body2">
-                                        <strong>Soluship Connect</strong> uses SolushipX managed credentials.
-                                        Shipments will be processed through your SolushipX account with competitive rates.
-                                        No additional configuration required.
-                                    </Typography>
-                                </Alert>
-                            )}
-
-                            {credentials.type === 'custom' && (
-                                <Alert severity="warning" sx={{ mb: 2 }}>
-                                    <Typography variant="body2">
-                                        Custom credential configuration is temporarily unavailable.
-                                        Please use Soluship Connect for now.
-                                    </Typography>
-                                </Alert>
-                            )}
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={handleCloseDialog}>
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="contained"
-                                onClick={handleSaveCredentials}
-                                disabled={saving || credentials.type === 'custom'}
-                                startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
+    // Email Array Field Component for Manual Carriers
+    const EmailArrayField = ({
+        label,
+        required = false,
+        emails,
+        section,
+        error,
+        onEmailChange,
+        onAddEmail,
+        onRemoveEmail
+    }) => {
+        return (
+            <Box sx={{ mb: 2 }}>
+                <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1, color: '#374151' }}>
+                    {label} {required && <span style={{ color: '#dc2626' }}>*</span>}
+                </Typography>
+                {emails.map((email, index) => (
+                    <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            type="email"
+                            value={email}
+                            onChange={(e) => onEmailChange(section, index, e.target.value)}
+                            placeholder="email@example.com"
+                            error={!!error}
+                            label={`${label} ${index + 1}`}
+                            InputProps={{ sx: { fontSize: '12px' } }}
+                            InputLabelProps={{
+                                sx: { fontSize: '12px' },
+                                shrink: true
+                            }}
+                        />
+                        {emails.length > 1 && (
+                            <IconButton
+                                size="small"
+                                onClick={() => onRemoveEmail(section, index)}
+                                sx={{ color: '#dc2626' }}
                             >
-                                {saving ? 'Processing...' : 'Confirm Soluship Connect'}
-                            </Button>
-                        </DialogActions>
-                    </Dialog>
+                                <RemoveIcon sx={{ fontSize: '16px' }} />
+                            </IconButton>
+                        )}
+                    </Box>
+                ))}
+                <Button
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={() => onAddEmail(section)}
+                    sx={{ fontSize: '11px', mt: 1 }}
+                    variant="outlined"
+                >
+                    Add Email
+                </Button>
+                {error && (
+                    <Typography sx={{ fontSize: '11px', color: '#dc2626', mt: 1 }}>
+                        {error}
+                    </Typography>
+                )}
+            </Box>
+        );
+    };
 
-                    <Snackbar
-                        open={!!successMessage}
-                        autoHideDuration={6000}
-                        onClose={handleCloseSnackbar}
-                        message={successMessage}
-                    />
+    return (
+        <Box sx={{ height: '100%', overflow: 'auto', bgcolor: 'white' }}>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    title="Carriers"
+                    onClose={onClose}
+                    showCloseButton={showCloseButton}
+                />
+            )}
+
+            {/* Main Content */}
+            <Box sx={{ height: isModal ? 'calc(100% - 64px)' : '100%' }}>
+                {/* Tabs */}
+                <Box sx={{ borderBottom: '1px solid #e5e7eb', px: 3, pt: 2 }}>
+                    <Tabs value={selectedTab} onChange={handleTabChange}>
+                        <Tab
+                            label={`Soluship Carriers (${solushipCarriers.length})`}
+                            sx={{ fontSize: '14px', textTransform: 'none' }}
+                        />
+                        <Tab
+                            label={`QuickShip Carriers (${quickShipCarriers.length})`}
+                            sx={{ fontSize: '14px', textTransform: 'none' }}
+                        />
+                    </Tabs>
+                </Box>
+
+                {/* Tab Content */}
+                <Box sx={{ height: 'calc(100% - 48px)', overflow: 'auto' }}>
+                    {selectedTab === 0 && renderSolushipCarriers()}
+                    {selectedTab === 1 && renderQuickShipCarriers()}
                 </Box>
             </Box>
-        </div>
+
+            {/* QuickShip Carrier Dialog */}
+            <QuickShipCarrierDialog
+                open={showCarrierDialog}
+                onClose={() => {
+                    setShowCarrierDialog(false);
+                    setEditingCarrier(null);
+                }}
+                onCarrierSaved={handleCarrierSaved}
+                companyId={companyId}
+                editingCarrier={editingCarrier}
+                isEditMode={!!editingCarrier}
+                existingCarriers={quickShipCarriers}
+            />
+
+            {/* Soluship Credentials Dialog */}
+            <Dialog
+                open={showCredentialsDialog}
+                onClose={() => setShowCredentialsDialog(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 2 }
+                }}
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    {selectedSolushipCarrier?.name} Credentials
+                </DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mt: 2 }}>
+                        <FormControl component="fieldset" sx={{ mb: 3 }}>
+                            <FormLabel sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                                Credentials Type
+                            </FormLabel>
+                            <RadioGroup
+                                value={credentials.type}
+                                onChange={(e) => setCredentials(prev => ({ ...prev, type: e.target.value }))}
+                                sx={{ mt: 1 }}
+                            >
+                                <FormControlLabel
+                                    value="soluship"
+                                    control={<Radio size="small" />}
+                                    label={<Typography sx={{ fontSize: '12px' }}>Use Soluship Credentials</Typography>}
+                                />
+                                <FormControlLabel
+                                    value="custom"
+                                    control={<Radio size="small" />}
+                                    label={<Typography sx={{ fontSize: '12px' }}>Use Custom Credentials</Typography>}
+                                />
+                            </RadioGroup>
+                        </FormControl>
+
+                        {credentials.type === 'custom' && (
+                            <>
+                                <TextField
+                                    fullWidth
+                                    label="Account Number"
+                                    value={credentials.accountNumber}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                    margin="normal"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                                <TextField
+                                    fullWidth
+                                    label="API Key"
+                                    value={credentials.apiKey}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, apiKey: e.target.value }))}
+                                    margin="normal"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                                <TextField
+                                    fullWidth
+                                    label="API Secret"
+                                    type="password"
+                                    value={credentials.apiSecret}
+                                    onChange={(e) => setCredentials(prev => ({ ...prev, apiSecret: e.target.value }))}
+                                    margin="normal"
+                                    size="small"
+                                    InputProps={{ sx: { fontSize: '12px' } }}
+                                    InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                />
+                            </>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowCredentialsDialog(false)} size="small" sx={{ fontSize: '12px' }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveCredentials}
+                        variant="contained"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Action Menu for Soluship Carriers */}
+            <Menu
+                anchorEl={solushipActionMenuAnchor}
+                open={Boolean(solushipActionMenuAnchor) && selectedSolushipCarrier}
+                onClose={handleActionMenuClose}
+            >
+                <MenuItem onClick={() => handleConfigureCredentials(selectedSolushipCarrier)}>
+                    <ListItemIcon>
+                        <CredentialsIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Configure Credentials</ListItemText>
+                </MenuItem>
+            </Menu>
+
+            {/* Action Menu for QuickShip Carriers */}
+            <Menu
+                anchorEl={quickshipActionMenuAnchor}
+                open={Boolean(quickshipActionMenuAnchor) && selectedCarrier && !selectedSolushipCarrier}
+                onClose={handleActionMenuClose}
+            >
+                <MenuItem onClick={() => handleEditCarrier(selectedCarrier)}>
+                    <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Edit</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => handleDeleteCarrier(selectedCarrier)}>
+                    <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Delete</ListItemText>
+                </MenuItem>
+            </Menu>
+        </Box>
     );
 };
 

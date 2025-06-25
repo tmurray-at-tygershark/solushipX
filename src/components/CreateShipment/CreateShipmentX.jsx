@@ -41,7 +41,8 @@ import {
     CheckCircle as CheckCircleIcon,
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    Edit as EditIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, limit, increment } from 'firebase/firestore';
@@ -61,6 +62,12 @@ import CarrierLoadingDisplay from './CarrierLoadingDisplay';
 import RateErrorDisplay from './RateErrorDisplay';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import CarrierStatsPopover from './CarrierStatsPopover';
+
+// Import Suspense for lazy loading
+import { Suspense } from 'react';
+
+// Lazy load the address dialog component
+const QuickShipAddressDialog = React.lazy(() => import('./QuickShipAddressDialog'));
 
 // Packaging types for shipments
 const PACKAGING_TYPES = [
@@ -265,7 +272,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         },
     ]);
 
-    // Rates state
+    // Rates state with progressive loading support
     const [isLoadingRates, setIsLoadingRates] = useState(false);
     const [rates, setRates] = useState([]);
     const [filteredRates, setFilteredRates] = useState([]);
@@ -276,6 +283,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [completedCarriers, setCompletedCarriers] = useState([]);
     const [failedCarriers, setFailedCarriers] = useState([]);
     const [rawRateApiResponseData, setRawRateApiResponseData] = useState(null);
+
+    // Progressive loading state
+    const [activeRateRequest, setActiveRateRequest] = useState(null);
+    const [progressiveRates, setProgressiveRates] = useState([]);
+    const [lastFormSnapshot, setLastFormSnapshot] = useState(null);
 
     // Rate filtering and sorting state
     const [sortBy, setSortBy] = useState('price');
@@ -308,6 +320,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [bookingError, setBookingError] = useState(null);
     const [finalShipmentId, setFinalShipmentId] = useState('');
     const [documentGenerationStatus, setDocumentGenerationStatus] = useState('');
+
+    // Address edit dialog state (for inline editing like QuickShip)
+    const [showAddressDialog, setShowAddressDialog] = useState(false);
+    const [editingAddressType, setEditingAddressType] = useState('from'); // 'from' or 'to'
+    const [editingAddressData, setEditingAddressData] = useState(null);
 
     // Extract draft ID from prePopulatedData or props
     const draftIdToLoad = prePopulatedData?.editDraftId || draftId;
@@ -433,15 +450,59 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         return hasAddresses && hasValidPackages;
     }, [shipFromAddress, shipToAddress, packages]);
 
-    // Fetch rates from carriers
+    // Create form snapshot for comparison
+    const createFormSnapshot = useCallback(() => {
+        return JSON.stringify({
+            shipFrom: shipFromAddress?.id || null,
+            shipTo: shipToAddress?.id || null,
+            packages: packages.map(p => ({
+                weight: p.weight,
+                length: p.length,
+                width: p.width,
+                height: p.height,
+                itemDescription: p.itemDescription,
+                packagingType: p.packagingType,
+                packagingQuantity: p.packagingQuantity
+            })),
+            shipmentType: shipmentInfo.shipmentType,
+            serviceLevel: shipmentInfo.serviceLevel
+        });
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo]);
+
+    // Check if form has significantly changed (requiring new rate fetch)
+    const hasSignificantFormChange = useCallback(() => {
+        const currentSnapshot = createFormSnapshot();
+        return currentSnapshot !== lastFormSnapshot;
+    }, [createFormSnapshot, lastFormSnapshot]);
+
+    // Fetch rates from carriers with progressive loading
     const fetchRates = useCallback(async (forceRefresh = false) => {
         if (!canFetchRates()) return;
+
+        // Check if we need to fetch new rates (significant form change or force refresh)
+        if (!forceRefresh && !hasSignificantFormChange()) {
+            console.log('📋 Form unchanged, skipping rate fetch');
+            return;
+        }
+
+        // Cancel any existing request only if we're starting a new one
+        if (activeRateRequest && typeof activeRateRequest.cancel === 'function') {
+            console.log('🚫 Cancelling previous rate request for new significant change');
+            activeRateRequest.cancel();
+        }
+
+        console.log('🚀 Starting progressive rate fetch...');
 
         setIsLoadingRates(true);
         setRatesError(null);
         setShowRates(true);
         setCompletedCarriers([]);
         setFailedCarriers([]);
+        setProgressiveRates([]); // Clear progressive rates for fresh start
+        setRates([]); // Clear existing rates
+
+        // Update form snapshot
+        setLastFormSnapshot(createFormSnapshot());
 
         try {
             const shipmentData = {
@@ -456,108 +517,215 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             if (companyEligibleCarriers.length === 0) {
                 setRatesError('No carriers available for this route and shipment details');
                 setRates([]);
+                setIsLoadingRates(false);
                 return;
             }
 
             setLoadingCarriers(companyEligibleCarriers.map(c => c.name));
 
+            // Enhanced progressive results with rate accumulation
             const multiCarrierResult = await fetchMultiCarrierRates(shipmentData, {
                 customEligibleCarriers: companyEligibleCarriers,
                 progressiveResults: true,
                 includeFailures: true,
-                timeout: 45000,
+                timeout: 50000, // Increased timeout for eShip Plus
                 retryAttempts: 1,
                 retryDelay: 2000,
-                companyId: companyData?.companyID, // Add company ID for markup application
-                onProgress: (progressData) => {
+                companyId: companyData?.companyID,
+                onProgress: async (progressData) => {
+                    console.log('📈 Rate progress update:', progressData);
+
+                    // Update completion tracking
                     if (progressData.completed) {
-                        setCompletedCarriers(prev => [...prev, {
-                            name: progressData.carrier,
-                            rates: progressData.rates?.length || 0
-                        }]);
+                        setCompletedCarriers(prev => {
+                            const existing = prev.find(c => c.name === progressData.carrier);
+                            if (existing) return prev; // Avoid duplicates
+                            return [...prev, {
+                                name: progressData.carrier,
+                                rates: progressData.rates?.length || 0
+                            }];
+                        });
+
+                        // PROGRESSIVE RATE DISPLAY: Add new rates immediately as they arrive
+                        if (progressData.rates && progressData.rates.length > 0) {
+                            console.log(`✅ Adding ${progressData.rates.length} rates from ${progressData.carrier}`);
+
+                            // Validate and process new rates
+                            const validNewRates = progressData.rates.filter(rate => {
+                                const validation = validateUniversalRate(rate);
+                                return validation.valid;
+                            });
+
+                            if (validNewRates.length > 0) {
+                                try {
+                                    // Apply markup to new rates
+                                    const shipmentDataForMarkup = {
+                                        shipmentInfo,
+                                        packages: packages.filter(p => p.weight && p.length && p.width && p.height),
+                                        shipFrom: shipFromAddress,
+                                        shipTo: shipToAddress
+                                    };
+
+                                    const newRatesWithMarkup = await Promise.all(
+                                        validNewRates.map(async (rate) => {
+                                            try {
+                                                const rateWithMarkup = await markupEngine.applyMarkupToRate(rate, companyData?.companyID, shipmentDataForMarkup);
+                                                return rateWithMarkup;
+                                            } catch (markupError) {
+                                                console.warn('⚠️ Failed to apply markup to progressive rate:', markupError);
+                                                return rate;
+                                            }
+                                        })
+                                    );
+
+                                    // Enhanced duplicate detection using multiple rate identifiers
+                                    const createRateKey = (rate) => {
+                                        return `${rate.id || rate.quoteId || rate.rateId || 'unknown'}-${rate.carrier?.name || rate.sourceCarrierName || 'unknown'}-${rate.pricing?.total || rate.totalCharges || rate.price || 0}`;
+                                    };
+
+                                    // Add new rates to progressive display with strict duplicate prevention
+                                    setProgressiveRates(prev => {
+                                        const existingKeys = prev.map(r => createRateKey(r));
+                                        const uniqueNewRates = newRatesWithMarkup.filter(r =>
+                                            !existingKeys.includes(createRateKey(r))
+                                        );
+
+                                        if (uniqueNewRates.length > 0) {
+                                            const updatedRates = [...prev, ...uniqueNewRates];
+                                            console.log(`📊 Progressive rates updated: ${updatedRates.length} total rates (${uniqueNewRates.length} new, ${newRatesWithMarkup.length - uniqueNewRates.length} duplicates filtered)`);
+                                            return updatedRates;
+                                        } else {
+                                            console.log(`🔄 All ${newRatesWithMarkup.length} rates were duplicates, skipping`);
+                                        }
+                                        return prev;
+                                    });
+
+                                    // Also update main rates state with the same duplicate prevention
+                                    setRates(prev => {
+                                        const existingKeys = prev.map(r => createRateKey(r));
+                                        const uniqueNewRates = newRatesWithMarkup.filter(r =>
+                                            !existingKeys.includes(createRateKey(r))
+                                        );
+
+                                        if (uniqueNewRates.length > 0) {
+                                            console.log(`📋 Main rates updated: ${prev.length + uniqueNewRates.length} total rates (${uniqueNewRates.length} new)`);
+                                            return [...prev, ...uniqueNewRates];
+                                        }
+                                        return prev;
+                                    });
+                                } catch (error) {
+                                    console.error('❌ Error processing progressive rates:', error);
+                                }
+                            }
+                        }
                     }
+
                     if (progressData.failed) {
-                        setFailedCarriers(prev => [...prev, {
-                            name: progressData.carrier,
-                            error: progressData.error
-                        }]);
+                        setFailedCarriers(prev => {
+                            const existing = prev.find(c => c.name === progressData.carrier);
+                            if (existing) return prev; // Avoid duplicates
+                            return [...prev, {
+                                name: progressData.carrier,
+                                error: progressData.error
+                            }];
+                        });
                     }
                 }
             });
 
+            // Store the request for potential cancellation
+            setActiveRateRequest(multiCarrierResult);
+
+            console.log('🏁 Multi-carrier request completed:', multiCarrierResult);
+
+            // Final processing - combine any remaining rates
             if (multiCarrierResult.success && multiCarrierResult.rates.length > 0) {
-                const validRates = multiCarrierResult.rates.filter(rate => {
+                const allValidRates = multiCarrierResult.rates.filter(rate => {
                     const validation = validateUniversalRate(rate);
                     return validation.valid;
                 });
 
-                if (validRates.length > 0) {
-                    try {
-                        // Apply markup to all rates before setting them
-                        console.log('🔧 Applying markup to', validRates.length, 'rates...');
+                if (allValidRates.length > 0) {
+                    console.log(`🏁 Final processing: ${allValidRates.length} valid rates from final result`);
 
-                        // Prepare shipment data for markup context
-                        const shipmentDataForMarkup = {
-                            shipmentInfo,
-                            packages: packages.filter(p => p.weight && p.length && p.width && p.height),
-                            shipFrom: shipFromAddress,
-                            shipTo: shipToAddress
-                        };
+                    // Enhanced duplicate detection for final rates
+                    const createRateKey = (rate) => {
+                        return `${rate.id || rate.quoteId || rate.rateId || 'unknown'}-${rate.carrier?.name || rate.sourceCarrierName || 'unknown'}-${rate.pricing?.total || rate.totalCharges || rate.price || 0}`;
+                    };
 
-                        const ratesWithMarkup = await Promise.all(
-                            validRates.map(async (rate) => {
-                                try {
-                                    const rateWithMarkup = await markupEngine.applyMarkupToRate(rate, companyData?.companyID, shipmentDataForMarkup);
-                                    console.log('✅ Markup applied to rate:', rate.id || rate.quoteId, rateWithMarkup);
-                                    return rateWithMarkup;
-                                } catch (markupError) {
-                                    console.warn('⚠️ Failed to apply markup to rate, using original:', rate.id || rate.quoteId, markupError);
-                                    return rate; // Fallback to original rate if markup fails
-                                }
-                            })
+                    // Check if we have any rates that weren't processed progressively
+                    setRates(prevRates => {
+                        const existingKeys = prevRates.map(r => createRateKey(r));
+                        const newRates = allValidRates.filter(r =>
+                            !existingKeys.includes(createRateKey(r))
                         );
 
-                        console.log('🎉 All rates processed with markup:', ratesWithMarkup.length);
-                        setRates(ratesWithMarkup);
-                    } catch (error) {
-                        console.error('❌ Error applying markup to rates, using original rates:', error);
-                        setRates(validRates); // Fallback to original rates
-                    }
-                    setRawRateApiResponseData(multiCarrierResult);
-                } else {
-                    setRatesError('No rates available for this shipment configuration');
-                    setRates([]);
-                    setRawRateApiResponseData(null);
+                        if (newRates.length > 0) {
+                            console.log(`📋 Adding ${newRates.length} final rates that weren't processed progressively (${allValidRates.length - newRates.length} were duplicates)`);
+                            return [...prevRates, ...newRates];
+                        } else {
+                            console.log(`✅ All ${allValidRates.length} final rates were already processed progressively`);
+                        }
+                        return prevRates;
+                    });
                 }
-            } else {
+
+                setRawRateApiResponseData(multiCarrierResult);
+            } else if (rates.length === 0) {
+                // Only show error if we have no rates at all
                 setRatesError('No rates available for this shipment configuration');
-                setRates([]);
                 setRawRateApiResponseData(null);
             }
 
         } catch (error) {
-            console.error('Error fetching rates:', error);
-            setRatesError(`Failed to fetch rates: ${error.message}`);
-            setRates([]);
-            setRawRateApiResponseData(null);
+            console.error('❌ Error fetching rates:', error);
+            // Only show error if we don't have any progressive rates
+            if (progressiveRates.length === 0) {
+                setRatesError(`Failed to fetch rates: ${error.message}`);
+                setRates([]);
+                setRawRateApiResponseData(null);
+            } else {
+                console.log('📊 Showing partial results despite error - have progressive rates');
+            }
         } finally {
             setIsLoadingRates(false);
+            setActiveRateRequest(null);
         }
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers, companyData]);
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers, companyData, hasSignificantFormChange, activeRateRequest, createFormSnapshot, progressiveRates, rates]);
 
-    // Auto-fetch rates when data changes with improved debouncing
+    // Smart auto-fetch rates with improved debouncing and duplicate prevention
     useEffect(() => {
         // Don't fetch rates during booking process
         if (isBooking || showBookingDialog) {
             return;
         }
 
+        // Clear debounce timeout when dependencies change
         if (debounceTimeoutRef.current) {
             clearTimeout(debounceTimeoutRef.current);
         }
 
         if (canFetchRates()) {
-            debounceTimeoutRef.current = setTimeout(() => fetchRates(), 1500);
+            // Check if form has significantly changed
+            const currentSnapshot = createFormSnapshot();
+            const isSignificantChange = currentSnapshot !== lastFormSnapshot;
+
+            if (isSignificantChange) {
+                console.log('📝 Form change detected, debouncing rate fetch...');
+
+                // Always use debouncing to prevent rapid-fire requests
+                // Increased timeout to prevent single character changes from triggering requests
+                debounceTimeoutRef.current = setTimeout(() => {
+                    // Double-check if this is still relevant and form hasn't changed again
+                    const latestSnapshot = createFormSnapshot();
+                    if (canFetchRates() && latestSnapshot === currentSnapshot) {
+                        console.log('🚀 Debounce completed, triggering rate fetch');
+                        fetchRates();
+                    } else {
+                        console.log('📋 Form changed during debounce, skipping fetch');
+                    }
+                }, 3000); // Increased to 3 seconds to prevent single character changes
+            }
         }
 
         return () => {
@@ -565,7 +733,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 clearTimeout(debounceTimeoutRef.current);
             }
         };
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, isBooking, showBookingDialog]); // REMOVED canFetchRates and fetchRates
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, isBooking, showBookingDialog, canFetchRates, fetchRates, createFormSnapshot, lastFormSnapshot]);
 
     // Load draft data if draftId is provided
     useEffect(() => {
@@ -1017,6 +1185,25 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             console.error('Failed to copy shipment ID:', error);
             showMessage('Failed to copy shipment ID', 'error');
         }
+    };
+
+    // Handle opening address edit dialog (for inline editing like QuickShip)
+    const handleOpenEditAddress = (type) => {
+        const addressToEdit = type === 'from' ? shipFromAddress : shipToAddress;
+        setEditingAddressType(type);
+        setEditingAddressData(addressToEdit);
+        setShowAddressDialog(true);
+    };
+
+    // Handle address update from dialog
+    const handleAddressUpdated = (updatedAddress) => {
+        if (editingAddressType === 'from') {
+            setShipFromAddress(updatedAddress);
+        } else {
+            setShipToAddress(updatedAddress);
+        }
+        setShowAddressDialog(false);
+        showMessage('Address updated successfully', 'success');
     };
 
     // Address dialog handlers
@@ -1933,54 +2120,55 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             />
 
                             {shipFromAddress && (
-                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb', position: 'relative' }}>
+                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
+                                    {/* Address display grid */}
                                     <Grid container spacing={2}>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Company & Contact
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
-                                                <strong>{shipFromAddress.companyName}</strong>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
+                                                {shipFromAddress.companyName}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                 {shipFromAddress.firstName} {shipFromAddress.lastName}
                                             </Typography>
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Street Address
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                 {shipFromAddress.street}
                                             </Typography>
                                             {shipFromAddress.street2 && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                     {shipFromAddress.street2}
                                                 </Typography>
                                             )}
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Location
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                 {shipFromAddress.city}, {shipFromAddress.state}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                 {shipFromAddress.postalCode}, {shipFromAddress.country}
                                             </Typography>
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Contact Information
                                             </Typography>
                                             {shipFromAddress.email && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                     📧 {shipFromAddress.email}
                                                 </Typography>
                                             )}
                                             {shipFromAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                     📞 {shipFromAddress.phone}
                                                 </Typography>
                                             )}
@@ -1991,6 +2179,42 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             )}
                                         </Grid>
                                     </Grid>
+
+                                    {/* Instructions section */}
+                                    {shipFromAddress.specialInstructions && (
+                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
+                                                Special Instructions
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                {shipFromAddress.specialInstructions}
+                                            </Typography>
+                                        </Box>
+                                    )}
+
+                                    {/* Edit button */}
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleOpenEditAddress('from')}
+                                        sx={{
+                                            position: 'absolute',
+                                            top: 8,
+                                            right: 8,
+                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                            border: '1px solid #bae6fd',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                            '&:hover': {
+                                                bgcolor: 'white',
+                                                borderColor: '#0ea5e9',
+                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                            },
+                                            width: 28,
+                                            height: 28
+                                        }}
+                                    >
+                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                    </IconButton>
+
                                     {/* Country Flag in bottom right corner */}
                                     {getCountryFlag(shipFromAddress.country) && (
                                         <Box sx={{
@@ -2088,54 +2312,54 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             />
 
                             {shipToAddress && (
-                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb', position: 'relative' }}>
+                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
                                     <Grid container spacing={2}>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Company & Contact
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
-                                                <strong>{shipToAddress.companyName}</strong>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
+                                                {shipToAddress.companyName}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                 {shipToAddress.firstName} {shipToAddress.lastName}
                                             </Typography>
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Street Address
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                 {shipToAddress.street}
                                             </Typography>
                                             {shipToAddress.street2 && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                     {shipToAddress.street2}
                                                 </Typography>
                                             )}
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Location
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                 {shipToAddress.city}, {shipToAddress.state}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                 {shipToAddress.postalCode}, {shipToAddress.country}
                                             </Typography>
                                         </Grid>
                                         <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
                                                 Contact Information
                                             </Typography>
                                             {shipToAddress.email && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
                                                     📧 {shipToAddress.email}
                                                 </Typography>
                                             )}
                                             {shipToAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
                                                     📞 {shipToAddress.phone}
                                                 </Typography>
                                             )}
@@ -2146,6 +2370,42 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             )}
                                         </Grid>
                                     </Grid>
+
+                                    {/* Instructions section */}
+                                    {shipToAddress.specialInstructions && (
+                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
+                                                Special Instructions
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                {shipToAddress.specialInstructions}
+                                            </Typography>
+                                        </Box>
+                                    )}
+
+                                    {/* Edit button */}
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleOpenEditAddress('to')}
+                                        sx={{
+                                            position: 'absolute',
+                                            top: 8,
+                                            right: 8,
+                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                            border: '1px solid #bae6fd',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                            '&:hover': {
+                                                bgcolor: 'white',
+                                                borderColor: '#0ea5e9',
+                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                            },
+                                            width: 28,
+                                            height: 28
+                                        }}
+                                    >
+                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                    </IconButton>
+
                                     {/* Country Flag in bottom right corner */}
                                     {getCountryFlag(shipToAddress.country) && (
                                         <Box sx={{
@@ -2705,6 +2965,33 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Box>
                                     </Box>
 
+                                    {/* Progressive Loading Indicator - Show when rates are loading but we already have some */}
+                                    {isLoadingRates && rates.length > 0 && (
+                                        <Box sx={{
+                                            mb: 2,
+                                            p: 2,
+                                            bgcolor: '#f0f9ff',
+                                            borderRadius: 1,
+                                            border: '1px solid #bae6fd',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 2
+                                        }}>
+                                            <CircularProgress size={20} sx={{ color: '#0ea5e9' }} />
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e' }}>
+                                                    Loading additional rates...
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                    {rates.length} rates loaded • {loadingCarriers.length - completedCarriers.length} carriers remaining
+                                                    {loadingCarriers.filter(c => c === 'eShip Plus').length > 0 && completedCarriers.filter(c => c.name === 'eShip Plus').length === 0 && (
+                                                        <span style={{ fontWeight: 600 }}> • eShip Plus starting up...</span>
+                                                    )}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    )}
+
                                     {/* Rate status message */}
                                     {!canFetchRates() && (
                                         <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, mb: 2 }}>
@@ -2714,8 +3001,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Box>
                                     )}
 
-                                    {/* Loading State */}
-                                    {isLoadingRates && (
+                                    {/* Initial Loading State - Only show when no rates are available yet */}
+                                    {isLoadingRates && rates.length === 0 && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                                             <CarrierLoadingDisplay
                                                 loadingCarriers={loadingCarriers}
@@ -2726,8 +3013,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Box>
                                     )}
 
-                                    {/* Error State - Simple and Elegant */}
-                                    {ratesError && (
+                                    {/* Error State - Only show if no rates available */}
+                                    {ratesError && rates.length === 0 && (
                                         <Box sx={{
                                             textAlign: 'center',
                                             py: 6,
@@ -2809,8 +3096,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Box>
                                     )}
 
-                                    {/* Rates Display */}
-                                    {!isLoadingRates && !ratesError && rates.length > 0 && (
+                                    {/* Rates Display - Show whenever we have rates, even during loading */}
+                                    {rates.length > 0 && (
                                         <Box>
                                             {/* Rate Filtering and Sorting Controls */}
                                             <Box sx={{ mb: 3 }}>
@@ -2881,6 +3168,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             </Button>
                                                             <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', ml: 2 }}>
                                                                 {filteredRates.length} of {rates.length} rates
+                                                                {isLoadingRates && (
+                                                                    <span style={{ color: '#0ea5e9', fontWeight: 500 }}> (loading...)</span>
+                                                                )}
                                                             </Typography>
                                                         </Box>
                                                     </Grid>
@@ -2904,7 +3194,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Box>
                                     )}
 
-                                    {/* No rates message */}
+                                    {/* No rates message - Only show when completely done loading and no rates */}
                                     {!isLoadingRates && !ratesError && showRates && rates.length === 0 && canFetchRates() && (
                                         <Box sx={{ textAlign: 'center', py: 4 }}>
                                             <Typography variant="body1" sx={{ color: '#6b7280' }}>
@@ -3009,38 +3299,15 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             </Snackbar>
 
             {/* Address Form Modal */}
-            {currentView === 'addaddress' && (
-                <Box sx={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    zIndex: 2000,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 2
-                }}>
-                    <Box sx={{
-                        width: '100%',
-                        maxWidth: '800px',
-                        maxHeight: '90vh',
-                        backgroundColor: 'white',
-                        borderRadius: 2,
-                        overflow: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column'
-                    }}>
-                        <AddressForm
-                            isModal={true}
-                            onCancel={handleBackToCreateShipment}
-                            onSuccess={handleAddressCreated}
-                        />
-                    </Box>
-                </Box>
-            )}
+            <Suspense fallback={<div>Loading...</div>}>
+                <QuickShipAddressDialog
+                    open={currentView === 'addaddress'}
+                    onClose={handleBackToCreateShipment}
+                    onSuccess={handleAddressCreated}
+                    addressType={addressEditMode}
+                    companyId={companyIdForAddress}
+                />
+            </Suspense>
 
             {/* Booking Confirmation Dialog */}
             <Dialog
@@ -3191,6 +3458,18 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     ) : null}
                 </DialogContent>
             </Dialog>
+
+            {/* Address Edit Dialog */}
+            <Suspense fallback={<CircularProgress />}>
+                <QuickShipAddressDialog
+                    open={showAddressDialog}
+                    onClose={() => setShowAddressDialog(false)}
+                    onSuccess={handleAddressUpdated}
+                    editingAddress={editingAddressData}
+                    addressType={editingAddressType}
+                    companyId={user?.companyId}
+                />
+            </Suspense>
         </Box>
     );
 };

@@ -86,18 +86,23 @@ const RateDetails = ({
             carrier: shipment?.selectedCarrier || shipment?.carrier || 'N/A',
             charges: [],
             total: 0,
+            totalCost: 0,
             currency: 'CAD'
         };
 
-        // Process manual rate line items
+        // Process manual rate line items with separate cost and charge
         rates.forEach(rate => {
-            if (rate.chargeName && rate.charge) {
-                const amount = safeNumber(rate.charge);
+            if (rate.chargeName && (rate.charge || rate.cost)) {
+                const chargeAmount = safeNumber(rate.charge || 0);
+                const costAmount = safeNumber(rate.cost || 0);
+
                 rateData.charges.push({
                     name: rate.chargeName,
-                    amount: amount
+                    amount: chargeAmount,
+                    cost: costAmount
                 });
-                rateData.total += amount;
+                rateData.total += chargeAmount;
+                rateData.totalCost += costAmount;
             }
         });
 
@@ -114,7 +119,7 @@ const RateDetails = ({
     const calculateTotals = () => {
         if (quickShipData) {
             return {
-                totalCost: quickShipData.total,
+                totalCost: quickShipData.totalCost,
                 totalCharge: quickShipData.total
             };
         }
@@ -260,7 +265,7 @@ const RateDetails = ({
                                                         </Typography>
                                                         {enhancedIsAdmin && (
                                                             <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                                (Cost: ${charge.amount.toFixed(2)})
+                                                                (Cost: ${charge.cost.toFixed(2)})
                                                             </Typography>
                                                         )}
                                                     </Box>

@@ -242,7 +242,20 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
 
     // Get carrier logo URL
     const getCarrierLogo = useCallback((shipment) => {
-        if (!shipment || !shipment.carrier) return null;
+        if (!shipment || !shipment.carrier) return '/images/integratedcarrriers_logo_blk.png'; // SoluShip fallback
+
+        // Handle QuickShip carriers with custom logos
+        if (shipment.creationMethod === 'quickship' && shipment.quickShipCarrierDetails?.logoURL) {
+            // Don't use blob URLs as they won't work across sessions
+            if (!shipment.quickShipCarrierDetails.logoURL.startsWith('blob:')) {
+                return shipment.quickShipCarrierDetails.logoURL;
+            }
+        }
+
+        // Handle carrier details from various sources
+        if (shipment.carrierDetails?.logoURL && !shipment.carrierDetails.logoURL.startsWith('blob:')) {
+            return shipment.carrierDetails.logoURL;
+        }
 
         // Handle both string and object carrier data
         let carrierName = '';
@@ -253,7 +266,7 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
         } else if (typeof shipment.carrier === 'object' && shipment.carrier.carrierName) {
             carrierName = shipment.carrier.carrierName.toLowerCase();
         } else {
-            return null;
+            return '/images/integratedcarrriers_logo_blk.png'; // SoluShip fallback
         }
 
         const logoMap = {
@@ -268,7 +281,8 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
             'polaris transportation': '/images/carrier-badges/polaris.png'
         };
 
-        return logoMap[carrierName] || null;
+        // Return mapped logo or SoluShip fallback for QuickShip carriers and unknown carriers
+        return logoMap[carrierName] || '/images/integratedcarrriers_logo_blk.png';
     }, []);
 
     // Calculate route directions using modern Routes API v2 (same as ShipmentDetailX)
@@ -1978,18 +1992,19 @@ const Dashboard = () => {
 
         console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
 
-        const shipmentsQuery = query(
-            collection(db, 'shipments'),
-            where('companyID', '==', companyIdForAddress),
-            where('createdAt', '>=', thirtyDaysAgo),
-            orderBy('createdAt', 'desc'),
-            limit(200)
-        );
+        // Function to process and combine shipment results
+        const processShipments = (normalDocs, quickShipDocs) => {
+            console.log(`Dashboard: Processing ${normalDocs.length} normal + ${quickShipDocs.length} QuickShip shipments`);
 
-        const unsubscribe = onSnapshot(shipmentsQuery, (snapshot) => {
-            console.log('Dashboard: Received shipments snapshot with', snapshot.docs.length, 'documents');
+            // Combine both sets of documents, removing duplicates
+            const allDocs = [...normalDocs];
+            quickShipDocs.forEach(doc => {
+                if (!allDocs.find(existing => existing.id === doc.id)) {
+                    allDocs.push(doc);
+                }
+            });
 
-            const shipmentsData = snapshot.docs.map(doc => {
+            const shipmentsData = allDocs.map(doc => {
                 const data = doc.data();
 
                 // Get customer data
@@ -1998,6 +2013,15 @@ const Dashboard = () => {
 
                 // Helper function to safely get rate info
                 const getRateInfo = () => {
+                    // Handle QuickShip manual rates
+                    if (data.creationMethod === 'quickship' && data.manualRates && data.manualRates.length > 0) {
+                        const totalCharges = data.manualRates.reduce((sum, rate) => sum + (rate.charge || 0), 0);
+                        return {
+                            carrier: data.carrier || data.manualRates[0]?.carrier || '',
+                            totalCharges: totalCharges
+                        };
+                    }
+
                     if (data.selectedRateRef) {
                         return {
                             carrier: data.selectedRateRef.carrier || data.selectedRateRef.carrierName || '',
@@ -2014,44 +2038,156 @@ const Dashboard = () => {
 
                     return {
                         carrier: data.carrier || '',
-                        totalCharges: 0
+                        totalCharges: data.totalCharges || 0
                     };
                 };
 
                 const rateInfo = getRateInfo();
 
+                // Enhanced timestamp handling
+                const getValidTimestamp = () => {
+                    // Try createdAt first
+                    if (data.createdAt && typeof data.createdAt === 'object' && data.createdAt.toDate) {
+                        return data.createdAt;
+                    }
+                    // Check if it's a malformed serverTimestamp
+                    if (data.createdAt && data.createdAt._methodName === 'serverTimestamp') {
+                        console.log(`⚠️ Malformed createdAt for shipment ${data.shipmentID}, using bookingTimestamp`);
+                        // Use bookingTimestamp as fallback
+                        if (data.bookingTimestamp) {
+                            const fallbackDate = new Date(data.bookingTimestamp);
+                            return { toDate: () => fallbackDate, seconds: fallbackDate.getTime() / 1000 };
+                        }
+                        // Use statusLastUpdated as another fallback
+                        if (data.statusLastUpdated) {
+                            return data.statusLastUpdated;
+                        }
+                        // Last resort - use current date
+                        const now = new Date();
+                        return { toDate: () => now, seconds: now.getTime() / 1000 };
+                    }
+                    // Handle direct timestamp values
+                    if (data.createdAt && data.createdAt.seconds) {
+                        return data.createdAt;
+                    }
+                    // Fallback to bookingTimestamp
+                    if (data.bookingTimestamp) {
+                        const fallbackDate = new Date(data.bookingTimestamp);
+                        return { toDate: () => fallbackDate, seconds: fallbackDate.getTime() / 1000 };
+                    }
+                    // Final fallback to current date
+                    const now = new Date();
+                    return { toDate: () => now, seconds: now.getTime() / 1000 };
+                };
+
+                const validTimestamp = getValidTimestamp();
+
+                // Handle missing addresses for QuickShip - create dummy addresses
+                const shipFrom = data.shipFrom || {
+                    city: 'Origin',
+                    province: '',
+                    country: 'Unknown'
+                };
+
+                const shipTo = data.shipTo || {
+                    city: 'Destination',
+                    province: '',
+                    country: 'Unknown'
+                };
+
                 return {
                     id: doc.id,
                     shipmentId: data.shipmentID || data.shipmentId || doc.id,
                     shipmentID: data.shipmentID, // Keep original shipmentID field for LogisticsCommandCenter
-                    date: formatDate(data.createdAt),
-                    createdAt: data.createdAt,
-                    customer: customerData.name || data.shipTo?.company || 'Unknown Customer',
-                    origin: formatAddress(data.shipFrom),
-                    destination: formatAddress(data.shipTo),
-                    shipFrom: data.shipFrom,
-                    shipTo: data.shipTo,
+                    date: formatDate(validTimestamp),
+                    createdAt: validTimestamp,
+                    customer: customerData.name || data.shipTo?.company || data.shipTo?.companyName || 'Unknown Customer',
+                    origin: formatAddress(shipFrom),
+                    destination: formatAddress(shipTo),
+                    shipFrom: shipFrom,
+                    shipTo: shipTo,
                     carrier: rateInfo.carrier,
-                    shipmentType: data.shipmentInfo?.shipmentType || 'Standard',
+                    shipmentType: data.shipmentInfo?.shipmentType || data.shipmentType || 'Standard',
                     status: data.status || 'pending',
                     value: rateInfo.totalCharges || data.packages?.[0]?.declaredValue || 0,
+                    // Include QuickShip specific fields
+                    creationMethod: data.creationMethod,
+                    isQuickShip: data.isQuickShip,
+                    quickShipCarrierDetails: data.quickShipCarrierDetails,
+                    carrierDetails: data.carrierDetails,
+                    bookingTimestamp: data.bookingTimestamp,
                     // Include other original fields that LogisticsCommandCenter might need
-                    ...data
+                    ...data,
+                    // Override the createdAt with our corrected timestamp
+                    createdAt: validTimestamp
                 };
             }).filter(shipment => {
-                // Exclude draft shipments
+                // Special debugging for QuickShip shipments
+                if (shipment.creationMethod === 'quickship') {
+                    console.log(`🚛 QuickShip shipment found: ${shipment.shipmentID} - status: ${shipment.status} - isDraft: ${shipment.isDraft}`);
+                }
+
+                // More lenient filtering for QuickShip shipments
+                if (shipment.creationMethod === 'quickship') {
+                    // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft)
+                    const keepShipment = shipment.status && shipment.status.toLowerCase() !== 'draft';
+                    if (keepShipment) {
+                        console.log(`✅ Keeping QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
+                    } else {
+                        console.log(`❌ Excluding QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
+                    }
+                    return keepShipment;
+                }
+
+                // Normal filtering for regular shipments
                 return shipment.status?.toLowerCase() !== 'draft';
             });
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
             setShipments(shipmentsData);
             setLoading(false);
+        };
+
+        // First query - normal shipments with valid createdAt
+        const normalShipmentsQuery = query(
+            collection(db, 'shipments'),
+            where('companyID', '==', companyIdForAddress),
+            where('createdAt', '>=', thirtyDaysAgo),
+            orderBy('createdAt', 'desc'),
+            limit(100)
+        );
+
+        // Second query - QuickShip shipments that might have malformed createdAt
+        const quickShipQuery = query(
+            collection(db, 'shipments'),
+            where('companyID', '==', companyIdForAddress),
+            where('creationMethod', '==', 'quickship'),
+            limit(50)
+        );
+
+        // Subscribe to both queries
+        const unsubscribeNormal = onSnapshot(normalShipmentsQuery, (normalSnapshot) => {
+            console.log('Dashboard: Received normal shipments snapshot with', normalSnapshot.docs.length, 'documents');
+
+            // Get QuickShip shipments separately
+            onSnapshot(quickShipQuery, (quickShipSnapshot) => {
+                console.log('Dashboard: Received QuickShip shipments snapshot with', quickShipSnapshot.docs.length, 'documents');
+
+                // Process both sets of results
+                processShipments(normalSnapshot.docs, quickShipSnapshot.docs);
+            }, (error) => {
+                console.error('Error fetching QuickShip shipments:', error);
+                // Process just normal shipments if QuickShip query fails
+                processShipments(normalSnapshot.docs, []);
+            });
         }, (error) => {
-            console.error('Error fetching shipments:', error);
+            console.error('Error fetching normal shipments:', error);
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeNormal();
+        };
     }, [companyIdForAddress, companyLoading, thirtyDaysAgo]);
 
     // Load user profile data
