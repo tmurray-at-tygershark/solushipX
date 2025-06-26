@@ -333,4 +333,68 @@ console.log('LOG-MAIN-INDEX: exports.sendTestReportNotification defined.');
 exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
 console.log('LOG-MAIN-INDEX: exports.generateInvoicePDFAndEmail defined.');
 
+// Import and export sales commission functions
+const salesCommissionFunctions = require('./salesCommissions');
+console.log('LOG-MAIN-INDEX: salesCommissionFunctions imported.');
+
+if (salesCommissionFunctions && salesCommissionFunctions.createSalesPerson) {
+    exports.createSalesPerson = salesCommissionFunctions.createSalesPerson;
+    console.log('LOG-MAIN-INDEX: exports.createSalesPerson defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.updateSalesPerson) {
+    exports.updateSalesPerson = salesCommissionFunctions.updateSalesPerson;
+    console.log('LOG-MAIN-INDEX: exports.updateSalesPerson defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.getSalesPersons) {
+    exports.getSalesPersons = salesCommissionFunctions.getSalesPersons;
+    console.log('LOG-MAIN-INDEX: exports.getSalesPersons defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.deleteSalesPerson) {
+    exports.deleteSalesPerson = salesCommissionFunctions.deleteSalesPerson;
+    console.log('LOG-MAIN-INDEX: exports.deleteSalesPerson defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.createSalesTeam) {
+    exports.createSalesTeam = salesCommissionFunctions.createSalesTeam;
+    console.log('LOG-MAIN-INDEX: exports.createSalesTeam defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.updateSalesTeam) {
+    exports.updateSalesTeam = salesCommissionFunctions.updateSalesTeam;
+    console.log('LOG-MAIN-INDEX: exports.updateSalesTeam defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.getSalesTeams) {
+    exports.getSalesTeams = salesCommissionFunctions.getSalesTeams;
+    console.log('LOG-MAIN-INDEX: exports.getSalesTeams defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.deleteSalesTeam) {
+    exports.deleteSalesTeam = salesCommissionFunctions.deleteSalesTeam;
+    console.log('LOG-MAIN-INDEX: exports.deleteSalesTeam defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.calculateCommissions) {
+    exports.calculateCommissions = salesCommissionFunctions.calculateCommissions;
+    console.log('LOG-MAIN-INDEX: exports.calculateCommissions defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.generateCommissionReport) {
+    exports.generateCommissionReport = salesCommissionFunctions.generateCommissionReport;
+    console.log('LOG-MAIN-INDEX: exports.generateCommissionReport defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.scheduleCommissionReport) {
+    exports.scheduleCommissionReport = salesCommissionFunctions.scheduleCommissionReport;
+    console.log('LOG-MAIN-INDEX: exports.scheduleCommissionReport defined.');
+}
+
+if (salesCommissionFunctions && salesCommissionFunctions.getSalesPersonCommissionSummary) {
+    exports.getSalesPersonCommissionSummary = salesCommissionFunctions.getSalesPersonCommissionSummary;
+    console.log('LOG-MAIN-INDEX: exports.getSalesPersonCommissionSummary defined.');
+}
+
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

@@ -70,6 +70,14 @@ export const PERMISSIONS = {
   MANAGE_PAYMENT_TERMS: 'manage_payment_terms',
   GENERATE_INVOICES: 'generate_invoices',
   
+  // Sales Commission Management
+  VIEW_COMMISSIONS: 'view_commissions',
+  MANAGE_SALES_PERSONS: 'manage_sales_persons',
+  MANAGE_SALES_TEAMS: 'manage_sales_teams',
+  CALCULATE_COMMISSIONS: 'calculate_commissions',
+  GENERATE_COMMISSION_REPORTS: 'generate_commission_reports',
+  SCHEDULE_COMMISSION_REPORTS: 'schedule_commission_reports',
+  
   // Carrier Management
   VIEW_CARRIERS: 'view_carriers',
   CREATE_CARRIERS: 'create_carriers',
@@ -177,6 +185,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_INVOICES]: true,
     [PERMISSIONS.MANAGE_PAYMENT_TERMS]: true,
     [PERMISSIONS.GENERATE_INVOICES]: true,
+    
+    // Sales Commission Management
+    [PERMISSIONS.VIEW_COMMISSIONS]: true,
+    [PERMISSIONS.MANAGE_SALES_PERSONS]: true,
+    [PERMISSIONS.MANAGE_SALES_TEAMS]: true,
+    [PERMISSIONS.CALCULATE_COMMISSIONS]: true,
+    [PERMISSIONS.GENERATE_COMMISSION_REPORTS]: true,
+    [PERMISSIONS.SCHEDULE_COMMISSION_REPORTS]: true,
     
     // Carrier Management
     [PERMISSIONS.VIEW_CARRIERS]: true,
@@ -590,6 +606,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/users': [PERMISSIONS.VIEW_USERS],
   '/admin/organizations': [PERMISSIONS.VIEW_ORGANIZATIONS],
   '/admin/billing': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.VIEW_ALL_INVOICES],
+  '/admin/billing/commissions': [PERMISSIONS.VIEW_COMMISSIONS, PERMISSIONS.VIEW_BILLING],
   '/admin/carriers': [PERMISSIONS.VIEW_CARRIERS, PERMISSIONS.MANAGE_CARRIER_KEYS],
   '/admin/role-permissions': [PERMISSIONS.MANAGE_ROLES],
   '/admin/settings': [PERMISSIONS.MANAGE_SETTINGS],

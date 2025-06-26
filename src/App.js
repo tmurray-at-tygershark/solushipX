@@ -268,6 +268,7 @@ function AppRoutes() {
                     <Route path="billing/generate" element={<GenerateInvoicesPage />} />
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
+                    <Route path="billing/commissions" element={<BillingDashboard initialTab="commissions" />} />
                     <Route path="billing/payment-terms" element={<BillingDashboard initialTab="payment-terms" />} />
                     <Route path="role-permissions" element={<RolePermissionsView />} />
                     <Route path="settings" element={<SystemSettings />} />

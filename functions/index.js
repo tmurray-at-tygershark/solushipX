@@ -110,6 +110,23 @@ const sendCreateShipmentXNotificationsModule = require('./src/functions/generic/
 // Import manual status override function
 const { updateManualShipmentStatus } = require('./src/updateManualShipmentStatus');
 
+// Import sales commission functions
+const {
+    createSalesPerson,
+    updateSalesPerson,
+    getSalesPersons,
+    deleteSalesPerson,
+    createSalesTeam,
+    updateSalesTeam,
+    getSalesTeams,
+    deleteSalesTeam,
+    calculateCommissions,
+    generateCommissionReport,
+    scheduleCommissionReport,
+    getSalesPersonCommissionSummary,
+    markCommissionsAsPaid
+} = require('./src/salesCommissions');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -194,6 +211,21 @@ exports.sendCreateShipmentXNotifications = sendCreateShipmentXNotificationsModul
 
 // Export manual status override function
 exports.updateManualShipmentStatus = updateManualShipmentStatus;
+
+// Export sales commission functions
+exports.createSalesPerson = createSalesPerson;
+exports.updateSalesPerson = updateSalesPerson;
+exports.getSalesPersons = getSalesPersons;
+exports.deleteSalesPerson = deleteSalesPerson;
+exports.createSalesTeam = createSalesTeam;
+exports.updateSalesTeam = updateSalesTeam;
+exports.getSalesTeams = getSalesTeams;
+exports.deleteSalesTeam = deleteSalesTeam;
+exports.calculateCommissions = calculateCommissions;
+exports.generateCommissionReport = generateCommissionReport;
+exports.scheduleCommissionReport = scheduleCommissionReport;
+exports.getSalesPersonCommissionSummary = getSalesPersonCommissionSummary;
+exports.markCommissionsAsPaid = markCommissionsAsPaid;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

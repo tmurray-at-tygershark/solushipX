@@ -86,6 +86,9 @@ import { useSnackbar } from 'notistack';
 import { useAuth } from '../../../contexts/AuthContext';
 import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 
+// Import Sales Commission Module
+import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
+
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -173,6 +176,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             setActiveTab('business');
         } else if (path.includes('/admin/billing/payments')) {
             setActiveTab('payments');
+        } else if (path.includes('/admin/billing/commissions')) {
+            setActiveTab('commissions');
         } else if (path.includes('/admin/billing/overview')) {
             setActiveTab('overview');
         } else if (path.startsWith('/admin/billing') &&
@@ -1376,6 +1381,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     <Tab label="Business Invoicing" value="business" />
                     <Tab label="Payment Terms" value="payment-terms" />
                     <Tab label="Received Payments" value="payments" />
+                    <Tab label="Sales Commissions" value="commissions" />
                 </Tabs>
             </Box>
 
@@ -1879,6 +1885,10 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         </Typography>
                     </Paper>
                 </Box>
+            )}
+
+            {activeTab === 'commissions' && (
+                <SalesCommissionsTab />
             )}
 
             <Dialog
