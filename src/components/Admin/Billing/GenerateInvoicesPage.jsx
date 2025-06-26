@@ -28,7 +28,10 @@ import {
     TextField,
     Switch,
     FormControlLabel,
-    Tooltip
+    Tooltip,
+    Badge,
+    Stack,
+    Autocomplete
 } from '@mui/material';
 import {
     CheckCircleOutline as CheckCircleIcon,
@@ -37,19 +40,35 @@ import {
     Download as DownloadIcon,
     Email as EmailIcon,
     Receipt as ReceiptIcon,
-    AccountBalance as AccountBalanceIcon
+    AccountBalance as AccountBalanceIcon,
+    Send as SendIcon,
+    Preview as PreviewIcon,
+    Business as BusinessIcon,
+    LocalShipping as LocalShippingIcon
 } from '@mui/icons-material';
-import { collection, getDocs, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useSnackbar } from 'notistack';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../../firebase';
+import { formatCurrencyWithPrefix, formatInvoiceCurrency, CURRENCIES, calculateTax } from '../../../utils/currencyUtils';
 
 const steps = [
     'Review Uninvoiced Shipments',
     'Configure Invoice Settings',
     'Generate & Send Invoices',
     'Process Complete'
+];
+
+const TAX_RATES = {
+    CAD: 0.13, // 13% HST for Canada
+    USD: 0.00  // No tax for US invoices by default
+};
+
+const PAYMENT_TERMS_OPTIONS = [
+    { value: 'Due on Receipt', label: 'Due on Receipt', days: 0 },
+    { value: 'Net 15', label: 'Net 15 Days', days: 15 },
+    { value: 'Net 30', label: 'Net 30 Days', days: 30 },
+    { value: 'Net 45', label: 'Net 45 Days', days: 45 },
+    { value: 'Net 60', label: 'Net 60 Days', days: 60 }
 ];
 
 const GenerateInvoicesPage = () => {
@@ -67,7 +86,12 @@ const GenerateInvoicesPage = () => {
         emailToCustomers: true,
         paymentTerms: 'Net 30',
         invoicePrefix: 'INV',
-        groupByCompany: true
+        groupByCompany: true,
+        currency: 'USD',
+        taxRate: 0.00,
+        enableTax: false,
+        testEmail: '',
+        enableTestMode: false
     });
     const [generationResults, setGenerationResults] = useState({
         successful: 0,
@@ -75,6 +99,9 @@ const GenerateInvoicesPage = () => {
         totalInvoices: 0,
         invoiceNumbers: []
     });
+    const [isSendingTest, setIsSendingTest] = useState(false);
+    const [testEmailSent, setTestEmailSent] = useState(false);
+    const [companies, setCompanies] = useState([]);
 
     useEffect(() => {
         fetchUninvoicedShipments();
@@ -234,11 +261,13 @@ const GenerateInvoicesPage = () => {
         // Create invoice record in database
         const invoiceNumber = `${invoiceSettings.invoicePrefix}-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
 
-        // Calculate invoice totals
+        // Calculate invoice totals with proper tax handling
         const subtotal = companyData.totalCharges;
-        const taxRate = 0.13; // 13% HST for Canada - should be configurable
-        const tax = subtotal * taxRate;
-        const total = subtotal + tax;
+        const taxCalc = calculateTax(
+            subtotal,
+            invoiceSettings.enableTax ? invoiceSettings.taxRate : 0,
+            invoiceSettings.currency
+        );
 
         // Prepare line items from shipments
         const lineItems = companyData.shipments.map(shipment => ({
@@ -259,11 +288,12 @@ const GenerateInvoicesPage = () => {
             dueDate: calculateDueDate(invoiceSettings.paymentTerms),
             status: 'pending',
             lineItems,
-            subtotal,
-            tax,
-            total,
-            currency: 'CAD',
+            subtotal: taxCalc.subtotal,
+            tax: taxCalc.tax,
+            total: taxCalc.total,
+            currency: invoiceSettings.currency,
             paymentTerms: invoiceSettings.paymentTerms,
+            taxRate: invoiceSettings.enableTax ? invoiceSettings.taxRate : 0,
             settings: invoiceSettings,
             createdAt: serverTimestamp(),
             shipmentIds: companyData.shipments.map(s => s.id)
@@ -275,11 +305,12 @@ const GenerateInvoicesPage = () => {
         // Generate PDF and send email if enabled
         if (invoiceSettings.emailToCustomers) {
             try {
-                const generatePDFAndEmail = httpsCallable(functions, 'generateInvoicePDFAndEmail');
-                await generatePDFAndEmail({
+                await triggerInvoiceGeneration(
                     invoiceData,
-                    companyId: companyData.companyId
-                });
+                    companyData.companyId,
+                    false,
+                    null
+                );
             } catch (emailError) {
                 console.error('Failed to send invoice email:', emailError);
                 // Don't fail the whole process if email fails
@@ -304,10 +335,119 @@ const GenerateInvoicesPage = () => {
     };
 
     const calculateDueDate = (paymentTerms) => {
-        const days = parseInt(paymentTerms.replace(/\D/g, '')) || 30;
+        const termOption = PAYMENT_TERMS_OPTIONS.find(opt => opt.value === paymentTerms);
+        const days = termOption ? termOption.days : 30;
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + days);
         return dueDate;
+    };
+
+    // Helper function to trigger invoice generation via Firestore (no CORS issues)
+    const triggerInvoiceGeneration = async (invoiceData, companyId, testMode = false, testEmail = null) => {
+        return new Promise((resolve, reject) => {
+            // Create a request document in Firestore
+            addDoc(collection(db, 'invoiceRequests'), {
+                invoiceData,
+                companyId,
+                testMode,
+                testEmail,
+                status: 'pending',
+                createdAt: serverTimestamp()
+            }).then((docRef) => {
+                // Listen for status updates on the document
+                const unsubscribe = onSnapshot(doc(db, 'invoiceRequests', docRef.id), (doc) => {
+                    const data = doc.data();
+                    if (data?.status === 'completed') {
+                        unsubscribe();
+                        resolve(data.result);
+                    } else if (data?.status === 'failed') {
+                        unsubscribe();
+                        reject(new Error(data.error || 'Invoice generation failed'));
+                    }
+                });
+
+                // Timeout after 60 seconds
+                setTimeout(() => {
+                    unsubscribe();
+                    reject(new Error('Invoice generation timed out'));
+                }, 60000);
+            }).catch(reject);
+        });
+    };
+
+    const sendTestInvoice = async () => {
+        if (!invoiceSettings.testEmail) {
+            enqueueSnackbar('Please enter a test email address', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setIsSendingTest(true);
+
+            // Create a sample invoice with the first selected company
+            const selectedByCompany = getSelectedShipmentsByCompany();
+            const firstCompanyId = Object.keys(selectedByCompany)[0];
+
+            if (!firstCompanyId) {
+                enqueueSnackbar('Please select at least one shipment to generate a test invoice', { variant: 'warning' });
+                return;
+            }
+
+            const companyData = selectedByCompany[firstCompanyId];
+
+            // Use only first 3 shipments for test to keep it manageable
+            const testCompanyData = {
+                ...companyData,
+                shipments: companyData.shipments.slice(0, 3),
+                totalCharges: companyData.shipments.slice(0, 3).reduce((sum, shipment) => sum + getShipmentCharges(shipment), 0)
+            };
+
+            const testInvoiceNumber = `TEST-${Date.now()}`;
+            const subtotal = testCompanyData.totalCharges;
+            const taxCalc = calculateTax(subtotal, invoiceSettings.enableTax ? invoiceSettings.taxRate : 0, invoiceSettings.currency);
+
+            const testInvoiceData = {
+                invoiceNumber: testInvoiceNumber,
+                companyId: testCompanyData.companyId,
+                companyName: testCompanyData.company,
+                issueDate: new Date(),
+                dueDate: calculateDueDate(invoiceSettings.paymentTerms),
+                status: 'test',
+                lineItems: testCompanyData.shipments.map(shipment => ({
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                    carrier: shipment.carrier,
+                    service: shipment.selectedRate?.service?.name || 'Standard',
+                    date: shipment.createdAt,
+                    charges: getShipmentCharges(shipment),
+                    chargeBreakdown: getChargeBreakdown(shipment)
+                })),
+                subtotal: taxCalc.subtotal,
+                tax: taxCalc.tax,
+                total: taxCalc.total,
+                currency: invoiceSettings.currency,
+                paymentTerms: invoiceSettings.paymentTerms,
+                settings: { ...invoiceSettings, testEmail: invoiceSettings.testEmail },
+                testMode: true
+            };
+
+            // Trigger invoice generation via Firestore (no CORS issues)
+            await triggerInvoiceGeneration(
+                testInvoiceData,
+                testCompanyData.companyId,
+                true,
+                invoiceSettings.testEmail
+            );
+
+            setTestEmailSent(true);
+            enqueueSnackbar(`Test invoice sent successfully to ${invoiceSettings.testEmail}`, { variant: 'success' });
+
+        } catch (error) {
+            console.error('Error sending test invoice:', error);
+            enqueueSnackbar('Failed to send test invoice: ' + error.message, { variant: 'error' });
+        } finally {
+            setIsSendingTest(false);
+        }
     };
 
     const handleNext = () => {
@@ -362,8 +502,10 @@ const GenerateInvoicesPage = () => {
             case 0:
                 return (
                     <Box>
-                        <Typography variant="h6" gutterBottom>Select Shipments to Invoice</Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                            Select Shipments to Invoice
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '12px' }}>
                             Review uninvoiced shipments below. Uncheck any shipments to exclude from this invoice run.
                         </Typography>
 
@@ -400,7 +542,10 @@ const GenerateInvoicesPage = () => {
                                             Total Value
                                         </Typography>
                                         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                                            ${Object.values(groupedShipments).reduce((sum, group) => sum + group.totalCharges, 0).toFixed(2)}
+                                            {formatCurrencyWithPrefix(
+                                                Object.values(groupedShipments).reduce((sum, group) => sum + group.totalCharges, 0),
+                                                invoiceSettings.currency
+                                            )}
                                         </Typography>
                                     </CardContent>
                                 </Card>
@@ -479,7 +624,7 @@ const GenerateInvoicesPage = () => {
                                                         </Typography>
                                                     </TableCell>
                                                     <TableCell align="right" sx={{ fontSize: '12px' }}>
-                                                        ${charges.toFixed(2)}
+                                                        {formatInvoiceCurrency(charges, invoiceSettings.currency)}
                                                     </TableCell>
                                                 </TableRow>
                                             );
@@ -489,7 +634,7 @@ const GenerateInvoicesPage = () => {
                                             <TableCell colSpan={7} align="center">
                                                 <Box sx={{ py: 4 }}>
                                                     <ReceiptIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
-                                                    <Typography variant="body1" color="text.secondary">
+                                                    <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
                                                         No uninvoiced shipments found
                                                     </Typography>
                                                 </Box>
@@ -499,7 +644,7 @@ const GenerateInvoicesPage = () => {
                                 </TableBody>
                             </Table>
                         </TableContainer>
-                        <Typography sx={{ mt: 2, fontSize: '14px' }}>
+                        <Typography sx={{ mt: 2, fontSize: '12px', color: '#6b7280' }}>
                             Selected {numSelected} of {rowCount} shipments for invoicing.
                         </Typography>
                     </Box>
@@ -508,128 +653,270 @@ const GenerateInvoicesPage = () => {
             case 1:
                 return (
                     <Box>
-                        <Typography variant="h6" gutterBottom>Configure Invoice Settings</Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600 }}>
+                            Configure Invoice Settings
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '12px' }}>
                             Customize how your invoices will be generated and delivered.
                         </Typography>
 
                         <Grid container spacing={3}>
+                            {/* Invoice Format Section */}
                             <Grid item xs={12} md={6}>
                                 <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
                                         Invoice Format
                                     </Typography>
 
-                                    <Box sx={{ mb: 2 }}>
-                                        <TextField
-                                            fullWidth
-                                            label="Invoice Prefix"
-                                            value={invoiceSettings.invoicePrefix}
-                                            onChange={(e) => setInvoiceSettings(prev => ({
-                                                ...prev,
-                                                invoicePrefix: e.target.value
-                                            }))}
-                                            size="small"
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Invoice Prefix"
+                                                value={invoiceSettings.invoicePrefix}
+                                                onChange={(e) => setInvoiceSettings(prev => ({
+                                                    ...prev,
+                                                    invoicePrefix: e.target.value
+                                                }))}
+                                                size="small"
+                                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                                InputProps={{ sx: { fontSize: '12px' } }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Currency</InputLabel>
+                                                <Select
+                                                    value={invoiceSettings.currency}
+                                                    onChange={(e) => {
+                                                        const currency = e.target.value;
+                                                        setInvoiceSettings(prev => ({
+                                                            ...prev,
+                                                            currency,
+                                                            taxRate: TAX_RATES[currency] || 0,
+                                                            enableTax: currency === 'CAD'
+                                                        }));
+                                                    }}
+                                                    label="Currency"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    {Object.values(CURRENCIES).map(curr => (
+                                                        <MenuItem key={curr.code} value={curr.code} sx={{ fontSize: '12px' }}>
+                                                            {curr.code} - {curr.name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                        <Grid item xs={12}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Payment Terms</InputLabel>
+                                                <Select
+                                                    value={invoiceSettings.paymentTerms}
+                                                    onChange={(e) => setInvoiceSettings(prev => ({
+                                                        ...prev,
+                                                        paymentTerms: e.target.value
+                                                    }))}
+                                                    label="Payment Terms"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    {PAYMENT_TERMS_OPTIONS.map(option => (
+                                                        <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
+                                                            {option.label}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                    </Grid>
+
+                                    <Box sx={{ mt: 2 }}>
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={invoiceSettings.includeShipmentDetails}
+                                                    onChange={(e) => setInvoiceSettings(prev => ({
+                                                        ...prev,
+                                                        includeShipmentDetails: e.target.checked
+                                                    }))}
+                                                    size="small"
+                                                />
+                                            }
+                                            label={<Typography sx={{ fontSize: '12px' }}>Include shipment details</Typography>}
+                                        />
+
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={invoiceSettings.includeChargeBreakdown}
+                                                    onChange={(e) => setInvoiceSettings(prev => ({
+                                                        ...prev,
+                                                        includeChargeBreakdown: e.target.checked
+                                                    }))}
+                                                    size="small"
+                                                />
+                                            }
+                                            label={<Typography sx={{ fontSize: '12px' }}>Include charge breakdown</Typography>}
+                                        />
+
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={invoiceSettings.emailToCustomers}
+                                                    onChange={(e) => setInvoiceSettings(prev => ({
+                                                        ...prev,
+                                                        emailToCustomers: e.target.checked
+                                                    }))}
+                                                    size="small"
+                                                />
+                                            }
+                                            label={<Typography sx={{ fontSize: '12px' }}>Email invoices to customers</Typography>}
                                         />
                                     </Box>
-
-                                    <Box sx={{ mb: 2 }}>
-                                        <FormControl fullWidth size="small">
-                                            <InputLabel>Payment Terms</InputLabel>
-                                            <Select
-                                                value={invoiceSettings.paymentTerms}
-                                                onChange={(e) => setInvoiceSettings(prev => ({
-                                                    ...prev,
-                                                    paymentTerms: e.target.value
-                                                }))}
-                                                label="Payment Terms"
-                                            >
-                                                <MenuItem value="Due on Receipt">Due on Receipt</MenuItem>
-                                                <MenuItem value="Net 15">Net 15</MenuItem>
-                                                <MenuItem value="Net 30">Net 30</MenuItem>
-                                                <MenuItem value="Net 45">Net 45</MenuItem>
-                                                <MenuItem value="Net 60">Net 60</MenuItem>
-                                            </Select>
-                                        </FormControl>
-                                    </Box>
-
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={invoiceSettings.includeShipmentDetails}
-                                                onChange={(e) => setInvoiceSettings(prev => ({
-                                                    ...prev,
-                                                    includeShipmentDetails: e.target.checked
-                                                }))}
-                                            />
-                                        }
-                                        label="Include shipment details"
-                                    />
-
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={invoiceSettings.includeChargeBreakdown}
-                                                onChange={(e) => setInvoiceSettings(prev => ({
-                                                    ...prev,
-                                                    includeChargeBreakdown: e.target.checked
-                                                }))}
-                                            />
-                                        }
-                                        label="Include charge breakdown"
-                                    />
                                 </Paper>
                             </Grid>
 
+                            {/* Tax Configuration Section */}
                             <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                                        Delivery Options
+                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mb: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                                        Tax Configuration
                                     </Typography>
 
                                     <FormControlLabel
                                         control={
                                             <Switch
-                                                checked={invoiceSettings.emailToCustomers}
+                                                checked={invoiceSettings.enableTax}
                                                 onChange={(e) => setInvoiceSettings(prev => ({
                                                     ...prev,
-                                                    emailToCustomers: e.target.checked
+                                                    enableTax: e.target.checked
                                                 }))}
+                                                size="small"
                                             />
                                         }
-                                        label="Email invoices to customers"
+                                        label={<Typography sx={{ fontSize: '12px' }}>Enable tax calculation</Typography>}
                                         sx={{ mb: 2 }}
                                     />
 
-                                    {invoiceSettings.emailToCustomers && (
-                                        <Alert severity="info" sx={{ fontSize: '12px' }}>
-                                            Invoices will be automatically emailed to the primary contact
-                                            for each company with PDF attachments.
-                                        </Alert>
+                                    {invoiceSettings.enableTax && (
+                                        <TextField
+                                            fullWidth
+                                            label="Tax Rate (%)"
+                                            type="number"
+                                            value={(invoiceSettings.taxRate * 100).toFixed(2)}
+                                            onChange={(e) => setInvoiceSettings(prev => ({
+                                                ...prev,
+                                                taxRate: parseFloat(e.target.value) / 100 || 0
+                                            }))}
+                                            size="small"
+                                            inputProps={{ min: 0, max: 50, step: 0.01 }}
+                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                            InputProps={{ sx: { fontSize: '12px' } }}
+                                            helperText={`Current rate: ${(invoiceSettings.taxRate * 100).toFixed(2)}%`}
+                                            FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                                        />
                                     )}
                                 </Paper>
 
-                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mt: 2 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                                {/* Test Invoice Section */}
+                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                                        Test Invoice
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                        Send a test invoice to verify formatting and email delivery
+                                    </Typography>
+
+                                    <TextField
+                                        fullWidth
+                                        label="Test Email Address"
+                                        type="email"
+                                        value={invoiceSettings.testEmail}
+                                        onChange={(e) => setInvoiceSettings(prev => ({
+                                            ...prev,
+                                            testEmail: e.target.value
+                                        }))}
+                                        size="small"
+                                        InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                        InputProps={{ sx: { fontSize: '12px' } }}
+                                        sx={{ mb: 2 }}
+                                    />
+
+                                    <Button
+                                        variant="outlined"
+                                        startIcon={isSendingTest ? <CircularProgress size={16} /> : <SendIcon />}
+                                        onClick={sendTestInvoice}
+                                        disabled={isSendingTest || !invoiceSettings.testEmail || numSelected === 0}
+                                        size="small"
+                                        sx={{ fontSize: '12px' }}
+                                        fullWidth
+                                    >
+                                        {isSendingTest ? 'Sending Test...' : 'Send Test Invoice'}
+                                    </Button>
+
+                                    {testEmailSent && (
+                                        <Alert severity="success" sx={{ mt: 2, fontSize: '11px' }}>
+                                            Test invoice sent successfully! Check your email.
+                                        </Alert>
+                                    )}
+                                </Paper>
+                            </Grid>
+
+                            {/* Enhanced Invoice Preview */}
+                            <Grid item xs={12}>
+                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
                                         Invoice Preview
                                     </Typography>
 
-                                    {Object.keys(getSelectedShipmentsByCompany()).length > 0 && (
+                                    {Object.keys(getSelectedShipmentsByCompany()).length > 0 ? (
                                         <Box>
-                                            <Typography variant="body2" sx={{ mb: 1 }}>
-                                                Will generate {Object.keys(getSelectedShipmentsByCompany()).length} invoice(s) for:
+                                            <Typography variant="body2" sx={{ mb: 2, fontSize: '12px' }}>
+                                                Will generate {Object.keys(getSelectedShipmentsByCompany()).length} invoice(s):
                                             </Typography>
-                                            {Object.values(getSelectedShipmentsByCompany()).map((company, idx) => (
-                                                <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                        {company.company}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                        ${company.totalCharges.toFixed(2)}
-                                                    </Typography>
-                                                </Box>
-                                            ))}
+                                            <Grid container spacing={2}>
+                                                {Object.values(getSelectedShipmentsByCompany()).map((company, idx) => {
+                                                    const taxCalc = calculateTax(
+                                                        company.totalCharges,
+                                                        invoiceSettings.enableTax ? invoiceSettings.taxRate : 0,
+                                                        invoiceSettings.currency
+                                                    );
+                                                    return (
+                                                        <Grid item xs={12} sm={6} md={4} key={idx}>
+                                                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                                                                <CardContent sx={{ p: 2 }}>
+                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                                        {company.company}
+                                                                    </Typography>
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {company.shipments.length} shipment(s)
+                                                                    </Typography>
+                                                                    <Divider sx={{ my: 1 }} />
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                                                        <span>Subtotal:</span>
+                                                                        <span>{formatInvoiceCurrency(taxCalc.subtotal, invoiceSettings.currency)}</span>
+                                                                    </Box>
+                                                                    {invoiceSettings.enableTax && (
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                                                            <span>Tax ({(invoiceSettings.taxRate * 100).toFixed(1)}%):</span>
+                                                                            <span>{formatInvoiceCurrency(taxCalc.tax, invoiceSettings.currency)}</span>
+                                                                        </Box>
+                                                                    )}
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, mt: 1 }}>
+                                                                        <span>Total:</span>
+                                                                        <span>{formatInvoiceCurrency(taxCalc.total, invoiceSettings.currency)}</span>
+                                                                    </Box>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </Grid>
+                                                    );
+                                                })}
+                                            </Grid>
                                         </Box>
+                                    ) : (
+                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                            No shipments selected for invoicing
+                                        </Typography>
                                     )}
                                 </Paper>
                             </Grid>
@@ -641,8 +928,10 @@ const GenerateInvoicesPage = () => {
                 return (
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 5 }}>
                         <CircularProgress size={60} sx={{ mb: 3 }} />
-                        <Typography variant="h6">Generating Invoices...</Typography>
-                        <Typography variant="body1" color="text.secondary">
+                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                            Generating Invoices...
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
                             Creating PDF invoices and sending email notifications...
                         </Typography>
                     </Box>
@@ -652,7 +941,9 @@ const GenerateInvoicesPage = () => {
                 return (
                     <Box sx={{ textAlign: 'center', py: 5 }}>
                         <CheckCircleIcon color="success" sx={{ fontSize: 70, mb: 2 }} />
-                        <Typography variant="h5" gutterBottom>Invoice Generation Complete!</Typography>
+                        <Typography variant="h5" gutterBottom sx={{ fontSize: '18px', fontWeight: 600, color: '#374151' }}>
+                            Invoice Generation Complete!
+                        </Typography>
 
                         <Grid container spacing={2} sx={{ mt: 2, mb: 3, maxWidth: 600, mx: 'auto' }}>
                             <Grid item xs={4}>
@@ -661,7 +952,7 @@ const GenerateInvoicesPage = () => {
                                         <Typography variant="h4" sx={{ fontWeight: 700, color: '#16a34a' }}>
                                             {generationResults.successful}
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
                                             Successful
                                         </Typography>
                                     </CardContent>
@@ -673,7 +964,7 @@ const GenerateInvoicesPage = () => {
                                         <Typography variant="h4" sx={{ fontWeight: 700, color: '#dc2626' }}>
                                             {generationResults.failed}
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
                                             Failed
                                         </Typography>
                                     </CardContent>
@@ -685,7 +976,7 @@ const GenerateInvoicesPage = () => {
                                         <Typography variant="h4" sx={{ fontWeight: 700 }}>
                                             {generationResults.totalInvoices}
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary">
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
                                             Total
                                         </Typography>
                                     </CardContent>
@@ -695,7 +986,7 @@ const GenerateInvoicesPage = () => {
 
                         {generationResults.invoiceNumbers.length > 0 && (
                             <Box sx={{ mt: 3 }}>
-                                <Typography variant="body1" sx={{ mb: 2 }}>Generated Invoice Numbers:</Typography>
+                                <Typography variant="body1" sx={{ mb: 2, fontSize: '12px', fontWeight: 600 }}>Generated Invoice Numbers:</Typography>
                                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
                                     {generationResults.invoiceNumbers.map((number, idx) => (
                                         <Chip
@@ -703,13 +994,14 @@ const GenerateInvoicesPage = () => {
                                             label={number}
                                             variant="outlined"
                                             size="small"
+                                            sx={{ fontSize: '11px' }}
                                         />
                                     ))}
                                 </Box>
                             </Box>
                         )}
 
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3, fontSize: '12px' }}>
                             Invoices are now available in the Invoices dashboard for review and management.
                         </Typography>
                     </Box>
@@ -722,28 +1014,35 @@ const GenerateInvoicesPage = () => {
 
     if (error) {
         return (
-            <Box sx={{ p: 3 }}>
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                </Alert>
-                <Button variant="contained" onClick={fetchUninvoicedShipments}>
-                    Retry
-                </Button>
+            <Box>
+                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
+                    <Alert severity="error" sx={{ mb: 2, fontSize: '12px' }}>
+                        {error}
+                    </Alert>
+                    <Button
+                        variant="contained"
+                        onClick={fetchUninvoicedShipments}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Retry
+                    </Button>
+                </Paper>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
-                Generate Customer Invoices
-            </Typography>
-
-            <Paper elevation={2} sx={{ p: 3 }}>
+        <Box>
+            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
                 <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
                     {steps.map((label) => (
                         <Step key={label}>
-                            <StepLabel>{label}</StepLabel>
+                            <StepLabel sx={{
+                                '& .MuiStepLabel-label': { fontSize: '12px' }
+                            }}>
+                                {label}
+                            </StepLabel>
                         </Step>
                     ))}
                 </Stepper>
@@ -757,8 +1056,9 @@ const GenerateInvoicesPage = () => {
                         color="inherit"
                         disabled={activeStep === 0 || isProcessing}
                         onClick={handleBack}
-                        sx={{ mr: 1 }}
+                        sx={{ mr: 1, fontSize: '12px' }}
                         startIcon={<NavigateBefore />}
+                        size="small"
                     >
                         Back
                     </Button>
@@ -768,6 +1068,8 @@ const GenerateInvoicesPage = () => {
                         variant="contained"
                         disabled={isProcessing || (activeStep === 2 && isProcessing)}
                         endIcon={activeStep !== steps.length - 1 && <NavigateNext />}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
                     >
                         {activeStep === steps.length - 1 ? 'Generate More Invoices' :
                             activeStep === 0 ? `Continue with ${numSelected} Shipments` :

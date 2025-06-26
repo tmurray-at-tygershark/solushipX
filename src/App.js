@@ -70,8 +70,7 @@ const EditCarrier = lazy(() => import('./components/Admin/Carriers/EditCarrier')
 // Markups Page (New)
 const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));
 
-// New Generate Invoices Page
-const GenerateInvoicesPage = lazy(() => import('./components/Admin/Billing/GenerateInvoicesPage'));
+
 
 // New Edit Carrier Mapping component
 const EditCarrierMapping = lazy(() => import('./components/Admin/Billing/EditCarrierMapping'));
@@ -264,8 +263,7 @@ function AppRoutes() {
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
                     <Route path="billing/edi" element={<BillingDashboard initialTab="edi" />} />
                     <Route path="billing/edi/:uploadId" element={<BillingDashboard initialTab="edi" />} />
-                    <Route path="billing/generate-old" element={<BillingDashboard initialTab="generate" />} />
-                    <Route path="billing/generate" element={<GenerateInvoicesPage />} />
+                                                    <Route path="billing/generate" element={<BillingDashboard initialTab="generate" />} />
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
                     <Route path="billing/commissions" element={<BillingDashboard initialTab="commissions" />} />

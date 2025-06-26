@@ -88,6 +88,7 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 
 // Import Sales Commission Module
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
+import GenerateInvoicesPage from './GenerateInvoicesPage';
 
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const { currentUser } = useAuth();
@@ -1855,14 +1856,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             )}
 
             {activeTab === 'generate' && (
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Generate Invoices</Typography>
-                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Invoice generation functionality will be available here.
-                        </Typography>
-                    </Paper>
-                </Box>
+                <GenerateInvoicesPage />
             )}
 
             {activeTab === 'business' && (

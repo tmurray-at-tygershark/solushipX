@@ -127,6 +127,9 @@ const {
     markCommissionsAsPaid
 } = require('./src/salesCommissions');
 
+// Import invoice generation function
+const { onInvoiceCreated } = require('./src/generateInvoicePDFAndEmail');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -226,6 +229,9 @@ exports.generateCommissionReport = generateCommissionReport;
 exports.scheduleCommissionReport = scheduleCommissionReport;
 exports.getSalesPersonCommissionSummary = getSalesPersonCommissionSummary;
 exports.markCommissionsAsPaid = markCommissionsAsPaid;
+
+// Export invoice generation function
+exports.onInvoiceCreated = onInvoiceCreated;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(
