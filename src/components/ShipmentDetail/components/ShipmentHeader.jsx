@@ -74,33 +74,7 @@ const ShipmentHeader = ({
 
     return (
         <Box sx={{ mb: 3 }}>
-            {/* Admin Breadcrumb - Show when in admin view */}
-            {isAdmin && onBackToTable && (
-                <Breadcrumbs
-                    separator={<NavigateNextIcon fontSize="small" />}
-                    sx={{ mb: 2 }}
-                >
-                    <Link
-                        component="button"
-                        variant="body2"
-                        onClick={handleBackClick}
-                        sx={{
-                            color: '#6b7280',
-                            textDecoration: 'none',
-                            fontSize: '12px',
-                            '&:hover': {
-                                textDecoration: 'underline',
-                                cursor: 'pointer'
-                            }
-                        }}
-                    >
-                        Shipments
-                    </Link>
-                    <Typography color="text.primary" sx={{ fontSize: '12px' }}>
-                        {shipment?.shipmentID || 'N/A'}
-                    </Typography>
-                </Breadcrumbs>
-            )}
+
 
             {/* Header Section - Compact Layout */}
             <Box sx={{
@@ -176,9 +150,10 @@ const ShipmentHeader = ({
                         />
                     )}
 
-                    {/* Labels Button - Show when actual shipping labels exist (not confirmation docs) */}
+                    {/* Labels Button - Show ONLY for courier shipments with actual shipping labels */}
                     {shipment?.status !== 'draft' &&
                         !documentsLoading &&
+                        !isFreightShipment && // Don't show for freight shipments
                         (() => {
                             // Get all potential label documents
                             const allDocs = [

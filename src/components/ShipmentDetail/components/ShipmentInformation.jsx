@@ -27,7 +27,8 @@ import {
     Close as CloseIcon
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
-import { GoogleMap, Marker, DirectionsRenderer, StreetViewPanorama } from '@react-google-maps/api';
+// Note: We don't use @react-google-maps/api components here due to provider issues
+// Instead we'll create the map directly with the Google Maps JavaScript API
 import { db } from '../../../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -86,9 +87,48 @@ const ShipmentInformation = ({
     useEffect(() => {
         const initializeMaps = async () => {
             try {
+                console.log('🗺️ [ShipmentInformation] Starting Maps initialization...');
                 setMapError(null);
 
-                // Always fetch API key from Firestore (needed for Routes API v2)
+                // Check if we're in admin context and Google Maps is already initialized
+                if (window.adminGoogleMapsStatus) {
+                    console.log('🏢 [ShipmentInformation] Checking admin Google Maps context');
+                    if (window.adminGoogleMapsStatus.isLoaded && window.adminGoogleMapsStatus.apiKey) {
+                        console.log('✅ [ShipmentInformation] Google Maps loaded from admin context');
+                        setIsGoogleMapsLoaded(true);
+                        setMapsApiKey(window.adminGoogleMapsStatus.apiKey);
+                        return;
+                    }
+                }
+
+                // Check if Google Maps is already loaded globally
+                if (window.google && window.google.maps) {
+                    console.log('✅ [ShipmentInformation] Google Maps already loaded globally');
+                    setIsGoogleMapsLoaded(true);
+
+                    // Still try to get API key for Routes API
+                    try {
+                        const keysRef = collection(db, 'keys');
+                        const keysSnapshot = await getDocs(keysRef);
+                        if (!keysSnapshot.empty) {
+                            const firstDoc = keysSnapshot.docs[0];
+                            const key = firstDoc.data().googleAPI;
+                            if (key) {
+                                console.log('✅ [ShipmentInformation] API key retrieved for Routes API');
+                                setMapsApiKey(key);
+                            } else {
+                                console.warn('⚠️ [ShipmentInformation] No API key found, maps will work but Routes API may fail');
+                            }
+                        }
+                    } catch (apiKeyError) {
+                        console.warn('⚠️ [ShipmentInformation] Could not get API key:', apiKeyError);
+                    }
+                    return;
+                }
+
+                console.log('🔄 [ShipmentInformation] Google Maps not loaded, fetching API key...');
+
+                // Fetch API key from Firestore
                 const keysRef = collection(db, 'keys');
                 const keysSnapshot = await getDocs(keysRef);
 
@@ -98,29 +138,53 @@ const ShipmentInformation = ({
                     if (!key) {
                         throw new Error('No API key found in Firestore');
                     }
+                    console.log('✅ [ShipmentInformation] API key retrieved from Firestore');
                     setMapsApiKey(key);
                 } else {
                     throw new Error('API key document not found in Firestore');
                 }
 
-                // Check if Google Maps is already loaded globally (from Globe component)
-                if (window.google && window.google.maps) {
-                    console.log('Google Maps already loaded globally');
-                    setIsGoogleMapsLoaded(true);
-                } else {
-                    // If not loaded, we still have the API key for when it loads
-                    const checkGoogleMaps = () => {
-                        if (window.google && window.google.maps) {
-                            setIsGoogleMapsLoaded(true);
-                        } else {
-                            setTimeout(checkGoogleMaps, 100);
+                // Wait for Google Maps to load (including admin context)
+                console.log('⏳ [ShipmentInformation] Waiting for Google Maps to load...');
+                const checkGoogleMaps = () => {
+                    // Check both regular loading and admin context
+                    const regularMapsLoaded = window.google && window.google.maps;
+                    const adminMapsLoaded = window.adminGoogleMapsStatus &&
+                        window.adminGoogleMapsStatus.isLoaded &&
+                        window.adminGoogleMapsStatus.apiKey;
+
+                    if (regularMapsLoaded || adminMapsLoaded) {
+                        console.log('✅ [ShipmentInformation] Google Maps loaded successfully');
+                        setIsGoogleMapsLoaded(true);
+
+                        // Use admin API key if available and not already set
+                        if (adminMapsLoaded && !mapsApiKey) {
+                            setMapsApiKey(window.adminGoogleMapsStatus.apiKey);
+                            console.log('✅ [ShipmentInformation] Using admin API key');
                         }
-                    };
-                    checkGoogleMaps();
-                }
+                    } else {
+                        console.log('🔄 [ShipmentInformation] Still waiting for Google Maps...');
+                        setTimeout(checkGoogleMaps, 500); // Increased interval for better debugging
+                    }
+                };
+                checkGoogleMaps();
+
+                // Set a timeout to show error if Maps doesn't load within 15 seconds (increased for admin routes)
+                setTimeout(() => {
+                    const regularMapsLoaded = window.google && window.google.maps;
+                    const adminMapsLoaded = window.adminGoogleMapsStatus &&
+                        window.adminGoogleMapsStatus.isLoaded;
+
+                    if (!regularMapsLoaded && !adminMapsLoaded) {
+                        console.error('❌ [ShipmentInformation] Google Maps failed to load within 15 seconds');
+                        setMapError('Google Maps failed to load. Please check your internet connection and try refreshing the page.');
+                        setIsGoogleMapsLoaded(false);
+                    }
+                }, 15000);
+
             } catch (error) {
-                console.error('Error initializing Maps:', error);
-                setMapError('Failed to load Google Maps. Please try refreshing the page.');
+                console.error('❌ [ShipmentInformation] Error initializing Maps:', error);
+                setMapError(`Failed to load Google Maps: ${error.message}`);
                 setIsGoogleMapsLoaded(false);
             }
         };
@@ -165,7 +229,19 @@ const ShipmentInformation = ({
 
     // Geocoding and map rendering logic
     useEffect(() => {
-        if (!openMap || !shipment || !isGoogleMapsLoaded) return;
+        console.log('🗺️ [ShipmentInformation] Geocoding effect triggered:', {
+            openMap,
+            hasShipment: !!shipment,
+            isGoogleMapsLoaded,
+            mapsApiKey: !!mapsApiKey
+        });
+
+        if (!openMap || !shipment || !isGoogleMapsLoaded) {
+            console.log('🔄 [ShipmentInformation] Geocoding conditions not met, skipping...');
+            return;
+        }
+
+        console.log('✅ [ShipmentInformation] Starting geocoding for:', openMap);
         setGeocodedPosition(null);
         setDirections(null);
         setMapError(null);
@@ -446,18 +522,165 @@ const ShipmentInformation = ({
         }
     }, [openMap, shipment, isGoogleMapsLoaded, mapsApiKey]);
 
+    // Map container ref
+    const mapContainerRef = React.useRef(null);
+    const mapInstanceRef = React.useRef(null);
+    const directionsRendererRef = React.useRef(null);
+
+    // Initialize map when container is ready and Google Maps is loaded
+    React.useEffect(() => {
+        if (!mapContainerRef.current || !isGoogleMapsLoaded || !openMap) return;
+
+        console.log('🗺️ [ShipmentInformation] Initializing Google Map directly...');
+
+        try {
+            // Clear any existing map
+            if (mapInstanceRef.current) {
+                console.log('🧹 [ShipmentInformation] Cleaning up existing map...');
+                mapInstanceRef.current = null;
+            }
+
+            if (directionsRendererRef.current) {
+                directionsRendererRef.current.setMap(null);
+                directionsRendererRef.current = null;
+            }
+
+            // Create map options
+            const mapOptions = {
+                disableDefaultUI: false,
+                zoomControl: true,
+                streetViewControl: true,
+                mapTypeControl: false,
+                fullscreenControl: true,
+                gestureHandling: 'greedy'
+            };
+
+            // Initialize the map
+            const map = new window.google.maps.Map(mapContainerRef.current, mapOptions);
+            mapInstanceRef.current = map;
+
+            console.log('✅ [ShipmentInformation] Google Map initialized successfully');
+
+            // Handle route view
+            if (openMap === 'route' && directions) {
+                console.log('🛣️ [ShipmentInformation] Rendering route on map...');
+
+                // Create and render directions
+                const directionsRenderer = new window.google.maps.DirectionsRenderer({
+                    polylineOptions: {
+                        strokeColor: '#2196f3',
+                        strokeWeight: 5,
+                        strokeOpacity: 0.8
+                    },
+                    suppressMarkers: true
+                });
+
+                directionsRenderer.setMap(map);
+                directionsRenderer.setDirections(directions);
+                directionsRendererRef.current = directionsRenderer;
+
+                // Add custom markers
+                const startIcon = {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#4caf50" stroke="#ffffff" stroke-width="2"/>
+                            <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+                        </svg>
+                    `),
+                    scaledSize: new window.google.maps.Size(24, 36),
+                    anchor: new window.google.maps.Point(12, 36)
+                };
+
+                const endIcon = {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#f44336" stroke="#ffffff" stroke-width="2"/>
+                            <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+                        </svg>
+                    `),
+                    scaledSize: new window.google.maps.Size(24, 36),
+                    anchor: new window.google.maps.Point(12, 36)
+                };
+
+                new window.google.maps.Marker({
+                    position: directions.routes[0].legs[0].start_location,
+                    map: map,
+                    icon: startIcon,
+                    title: "Start Location"
+                });
+
+                new window.google.maps.Marker({
+                    position: directions.routes[0].legs[0].end_location,
+                    map: map,
+                    icon: endIcon,
+                    title: "End Location"
+                });
+
+                // Fit bounds to show the entire route
+                map.fitBounds(directions.routes[0].bounds, {
+                    top: 50,
+                    right: 50,
+                    bottom: 50,
+                    left: 50
+                });
+
+            } else if (geocodedPosition) {
+                console.log('📍 [ShipmentInformation] Rendering single location on map...');
+
+                // Set center and zoom for single location
+                map.setCenter(geocodedPosition);
+                map.setZoom(15);
+
+                // Add marker for single location
+                const markerIcon = {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="${openMap === 'shipFrom' ? '#4caf50' : '#f44336'}" stroke="#ffffff" stroke-width="2"/>
+                            <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+                        </svg>
+                    `),
+                    scaledSize: new window.google.maps.Size(24, 36),
+                    anchor: new window.google.maps.Point(12, 36)
+                };
+
+                new window.google.maps.Marker({
+                    position: geocodedPosition,
+                    map: map,
+                    icon: markerIcon
+                });
+            }
+
+        } catch (error) {
+            console.error('❌ [ShipmentInformation] Error initializing map:', error);
+            setMapError(`Failed to initialize map: ${error.message}`);
+        }
+
+        // Cleanup function
+        return () => {
+            if (directionsRendererRef.current) {
+                directionsRendererRef.current.setMap(null);
+                directionsRendererRef.current = null;
+            }
+        };
+
+    }, [isGoogleMapsLoaded, openMap, directions, geocodedPosition]);
+
     const renderMap = () => {
         if (!isGoogleMapsLoaded || geocodingLoading) {
             return (
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                     <CircularProgress />
+                    <Typography variant="body2" sx={{ ml: 2 }}>
+                        {!isGoogleMapsLoaded ? 'Loading Google Maps...' : 'Loading location data...'}
+                    </Typography>
                 </Box>
             );
         }
+
         if (mapError) {
             return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <Typography color="error">{mapError}</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', p: 2 }}>
+                    <Typography color="error" align="center">{mapError}</Typography>
                 </Box>
             );
         }
@@ -467,107 +690,33 @@ const ShipmentInformation = ({
             if (!directions) {
                 return (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                        <Typography color="error">No route available</Typography>
+                        <Typography color="text.secondary" align="center">No route available</Typography>
                     </Box>
                 );
             }
-            return (
-                <Box sx={{ height: '100%', width: '100%' }}>
-                    <GoogleMap
-                        mapContainerStyle={{ width: '100%', height: '100%' }}
-                        center={directions.routes[0].bounds.getCenter()}
-                        zoom={6}
-                        options={mapOptions}
-                        onLoad={(map) => {
-                            // Fit bounds to show the entire route with appropriate padding
-                            map.fitBounds(directions.routes[0].bounds, {
-                                padding: {
-                                    top: 50,
-                                    right: 50,
-                                    bottom: 50,
-                                    left: 50
-                                }
-                            });
-                            // Let Google Maps determine the optimal zoom level to show the entire route
-                        }}
-                    >
-                        <DirectionsRenderer
-                            directions={directions}
-                            options={{
-                                polylineOptions: {
-                                    strokeColor: '#2196f3',
-                                    strokeWeight: 5,
-                                    strokeOpacity: 0.8
-                                },
-                                suppressMarkers: true
-                            }}
-                        />
-                        {/* Custom green start marker */}
-                        <Marker
-                            position={directions.routes[0].legs[0].start_location}
-                            icon={{
-                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                                    <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#4caf50" stroke="#ffffff" stroke-width="2"/>
-                                        <circle cx="12" cy="12" r="4" fill="#ffffff"/>
-                                    </svg>
-                                `),
-                                scaledSize: new window.google.maps.Size(24, 36),
-                                anchor: new window.google.maps.Point(12, 36)
-                            }}
-                            title="Start Location"
-                        />
-                        {/* Custom red end marker */}
-                        <Marker
-                            position={directions.routes[0].legs[0].end_location}
-                            icon={{
-                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                                    <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#f44336" stroke="#ffffff" stroke-width="2"/>
-                                        <circle cx="12" cy="12" r="4" fill="#ffffff"/>
-                                    </svg>
-                                `),
-                                scaledSize: new window.google.maps.Size(24, 36),
-                                anchor: new window.google.maps.Point(12, 36)
-                            }}
-                            title="End Location"
-                        />
-                    </GoogleMap>
-                </Box>
-            );
+        } else {
+            // For single location view
+            if (!geocodedPosition) {
+                return (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                        <Typography color="text.secondary" align="center">No location available</Typography>
+                    </Box>
+                );
+            }
         }
 
-        // For single location view
-        if (!geocodedPosition) {
-            return (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <Typography color="error">No address available</Typography>
-                </Box>
-            );
-        }
+        // Return the map container
         return (
-            <Box sx={{ height: '100%', width: '100%' }}>
-                <GoogleMap
-                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                    center={geocodedPosition}
-                    zoom={15}
-                    options={mapOptions}
-                >
-                    <Marker
-                        position={geocodedPosition}
-                        icon={{
-                            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                                <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="${openMap === 'shipFrom' ? '#4caf50' : '#f44336'}" stroke="#ffffff" stroke-width="2"/>
-                                    <circle cx="12" cy="12" r="4" fill="#ffffff"/>
-                                </svg>
-                            `),
-                            scaledSize: new window.google.maps.Size(24, 36),
-                            anchor: new window.google.maps.Point(12, 36)
-                        }}
-                    />
-                </GoogleMap>
-            </Box>
+            <Box
+                ref={mapContainerRef}
+                sx={{
+                    height: '100%',
+                    width: '100%',
+                    minHeight: '400px',
+                    borderRadius: 1,
+                    overflow: 'hidden'
+                }}
+            />
         );
     };
 
@@ -774,10 +923,7 @@ const ShipmentInformation = ({
                                 <Typography variant="caption" color="text.secondary">Company ID</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{shipment?.companyID || 'N/A'}</Typography>
                             </Box>
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">Customer ID</Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px' }}>{shipment?.shipTo?.customerID || 'N/A'}</Typography>
-                            </Box>
+
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
@@ -1058,7 +1204,15 @@ const ShipmentInformation = ({
                                         if (!address) return <Typography variant="body2" sx={{ fontSize: '12px' }}>N/A</Typography>;
 
                                         const addressLines = [];
-                                        if (address.company) addressLines.push(address.company);
+
+                                        // Check multiple sources for company name
+                                        const companyName = address.company ||
+                                            address.companyName ||
+                                            address.businessName ||
+                                            shipment?.shipmentInfo?.originCompany ||
+                                            shipment?.companyName;
+
+                                        if (companyName) addressLines.push(companyName);
                                         if (address.street) addressLines.push(address.street);
                                         if (address.street2) addressLines.push(address.street2);
                                         if (address.city && address.state) {
@@ -1104,7 +1258,16 @@ const ShipmentInformation = ({
                                         if (!address) return <Typography variant="body2" sx={{ fontSize: '12px' }}>N/A</Typography>;
 
                                         const addressLines = [];
-                                        if (address.company) addressLines.push(address.company);
+
+                                        // Check multiple sources for company name
+                                        const companyName = address.company ||
+                                            address.companyName ||
+                                            address.businessName ||
+                                            shipment?.shipmentInfo?.destinationCompany ||
+                                            shipment?.customerCompany ||
+                                            address.customerName;
+
+                                        if (companyName) addressLines.push(companyName);
                                         if (address.street) addressLines.push(address.street);
                                         if (address.street2) addressLines.push(address.street2);
                                         if (address.city && address.state) {

@@ -190,12 +190,29 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         // Handle deep link parameters from modal navigation
         if (deepLinkParams) {
             console.log('Applying deep link parameters:', deepLinkParams);
+
+            // 🔍 CRITICAL: Force navigation back to table view when searching
+            if (deepLinkParams.forceTableView && navigationStack.length > 1) {
+                console.log('🔍 Search triggered - forcing navigation back to table view');
+                // Reset navigation stack to just the table view
+                setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
+                setMountedViews(['table']);
+                setSliding(false);
+                setIsReturningFromDetail(false);
+                setHasAutoOpenedShipment(false);
+                console.log('✅ Navigation reset to table view for search');
+            }
+
             if (deepLinkParams.customerId) {
                 setSelectedCustomer(deepLinkParams.customerId);
                 setFiltersOpen(true); // Open filters when deep linking
             }
             if (deepLinkParams.shipmentId) {
                 setSearchFields(prev => ({ ...prev, shipmentId: deepLinkParams.shipmentId }));
+                setFiltersOpen(true);
+            }
+            if (deepLinkParams.referenceNumber) {
+                setSearchFields(prev => ({ ...prev, referenceNumber: deepLinkParams.referenceNumber }));
                 setFiltersOpen(true);
             }
             if (deepLinkParams.trackingNumber) {
@@ -220,7 +237,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.log('🧹 Deep link params changed - clearing auto-open state');
             setHasAutoOpenedShipment(false);
         };
-    }, [deepLinkParams]);
+    }, [deepLinkParams, navigationStack.length]);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -263,23 +280,53 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }, 10);
     }, []);
 
-    // Generic navigation pop
+    // Generic navigation pop - COMPLETELY RESET TO TABLE VIEW
     const popView = useCallback(() => {
         console.log('🔙 popView called, current stack:', navigationStack.length);
+        console.log('📚 Current stack contents:', navigationStack.map(v => v.key));
 
         if (navigationStack.length <= 1) {
             console.log('⚠️ Cannot pop - only one view in stack');
             return;
         }
 
-        // CRITICAL FIX: Clear auto-open state when popping back to table
-        console.log('🧹 Clearing auto-open state during popView');
-        setHasAutoOpenedShipment(false);
+        // 🧨 NUCLEAR OPTION: DESTROY ALL PERSISTENT SESSION DATA IMMEDIATELY
+        console.log('🧨🧹 NUCLEAR CLEANUP: Destroying ALL persistent session data');
 
-        // CRITICAL FIX: Clear deep link parameters to prevent auto-navigation loop
+        // Clear deep link parameters IMMEDIATELY - multiple ways to be sure
         if (onClearDeepLinkParams) {
-            console.log('🧹 Calling onClearDeepLinkParams to prevent auto-navigation loop');
+            console.log('🧹 Calling onClearDeepLinkParams IMMEDIATELY');
             onClearDeepLinkParams();
+        }
+
+        // DESTROY all auto-navigation flags and session state
+        console.log('🧹 Destroying all auto-navigation flags and session state');
+        setHasAutoOpenedShipment(false);
+        setIsReturningFromDetail(true);
+
+        // BRUTAL CLEANUP: Clear window storage that might persist across navigation
+        if (typeof window !== 'undefined') {
+            try {
+                // Clear any sessionStorage that might store navigation state
+                Object.keys(sessionStorage).forEach(key => {
+                    if (key.includes('shipment') || key.includes('navigation') || key.includes('deepLink')) {
+                        sessionStorage.removeItem(key);
+                        console.log('🧹 Cleared sessionStorage key:', key);
+                    }
+                });
+
+                // Clear any custom window properties that might store state
+                if (window.shipmentNavigationState) {
+                    delete window.shipmentNavigationState;
+                    console.log('🧹 Cleared window.shipmentNavigationState');
+                }
+                if (window.lastShipmentId) {
+                    delete window.lastShipmentId;
+                    console.log('🧹 Cleared window.lastShipmentId');
+                }
+            } catch (e) {
+                console.log('Note: Some cleanup operations not available in this environment');
+            }
         }
 
         // Set sliding state and direction
@@ -288,24 +335,27 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         console.log('🎬 Starting backward slide animation');
 
-        // After animation completes, update the navigation stack and mounted views
+        // After animation completes, COMPLETELY RESET TO JUST TABLE VIEW
         setTimeout(() => {
-            console.log('🔄 Animation complete, updating navigation stack');
+            console.log('🔄 Animation complete, FORCING RESET TO TABLE ONLY');
 
-            setNavigationStack((prevStack) => {
-                const newStack = prevStack.slice(0, -1);
-                console.log('📚 New navigation stack:', newStack.map(v => v.key));
-                return newStack;
-            });
+            // 💀 NUCLEAR RESET: Force navigation stack to ONLY contain table view
+            const tableOnlyStack = [{ key: 'table', component: 'table', props: {} }];
 
-            setMountedViews((prevMounted) => {
-                const newMounted = prevMounted.slice(0, -1);
-                console.log('🏠 New mounted views:', newMounted);
-                return newMounted;
-            });
+            setNavigationStack(tableOnlyStack);
+            setMountedViews(['table']);
+
+            console.log('💀 FORCED navigation stack to table only:', tableOnlyStack.map(v => v.key));
+            console.log('💀 FORCED mounted views to table only: ["table"]');
 
             setSliding(false);
-            console.log('✅ popView complete');
+
+            // FINAL CLEANUP after transition
+            console.log('🧹 Final post-transition cleanup');
+            setTimeout(() => {
+                setIsReturningFromDetail(false);
+                console.log('✅ popView complete - COMPLETELY RESET TO TABLE VIEW');
+            }, 100);
         }, 300); // Match CSS transition duration
     }, [navigationStack.length, onClearDeepLinkParams]);
 
@@ -335,17 +385,64 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Auto-open shipment detail if specified in deep link params
     const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
+    const [isReturningFromDetail, setIsReturningFromDetail] = useState(false);
 
     useEffect(() => {
+        // 🚨 AGGRESSIVE SAFETY CHECKS: Multiple layers of protection against auto-navigation loops
+
         // SAFETY CHECK: Only run if we're in table view (not already in detail view)
         if (navigationStack.length > 1) {
             console.log('🚫 Skipping auto-open - already in detail view');
+            setIsReturningFromDetail(true); // Mark that we've been in detail view
+            return;
+        }
+
+        // CRITICAL CHECK: Don't auto-navigate if we're returning from detail view
+        if (isReturningFromDetail) {
+            console.log('🚫 Skipping auto-open - returning from detail view, clearing flags');
+            // Clear all navigation state when returning from detail
+            setHasAutoOpenedShipment(false);
+            if (onClearDeepLinkParams) {
+                onClearDeepLinkParams();
+            }
+            return;
+        }
+
+        // PARANOID CHECK: Don't auto-navigate if we've already auto-opened something
+        if (hasAutoOpenedShipment) {
+            console.log('🚫 Skipping auto-open - already auto-opened a shipment in this session');
+            return;
+        }
+
+        // DEEP LINK PARAMS CHECK: Only proceed if we have valid, fresh deep link params
+        if (!deepLinkParams) {
+            console.log('🚫 No deep link params - no auto-navigation needed');
+            return;
+        }
+
+        // SHIPMENTS DATA CHECK: Only proceed if shipments are loaded
+        if (!shipments || shipments.length === 0) {
+            console.log('🚫 No shipments loaded yet - deferring auto-navigation');
+            return;
+        }
+
+        // RATE LIMITING: Prevent rapid successive auto-navigation attempts
+        const now = Date.now();
+        const lastAutoNav = window.lastAutoNavigation || 0;
+        if (now - lastAutoNav < 1000) { // 1 second cooldown
+            console.log('🚫 Rate limiting auto-navigation - too soon after last attempt');
             return;
         }
 
         // Handle direct-to-detail navigation from QuickShip "View Shipment"
-        if (deepLinkParams && deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId && shipments.length > 0 && !hasAutoOpenedShipment) {
-            console.log('Direct-to-detail navigation triggered for shipment:', deepLinkParams.selectedShipmentId);
+        if (deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId) {
+            console.log('🎯 Direct-to-detail navigation triggered for shipment:', deepLinkParams.selectedShipmentId);
+
+            // KILL THE DEEP LINK IMMEDIATELY - THE SECOND IT'S USED!
+            if (onClearDeepLinkParams) {
+                onClearDeepLinkParams();
+                console.log('💀 KILLED deep link params IMMEDIATELY upon use');
+            }
 
             const shipment = shipments.find(s =>
                 s.shipmentID === deepLinkParams.selectedShipmentId ||
@@ -353,43 +450,45 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             );
 
             if (shipment) {
+                // Set rate limiting
+                window.lastAutoNavigation = now;
+
                 // Use the document ID to open the detail view directly
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
-                console.log('✅ Auto-opened shipment detail and set flag to prevent re-opening');
-
-                // CRITICAL: Clear deep link parameters to prevent navigation loop
-                if (onClearDeepLinkParams) {
-                    onClearDeepLinkParams();
-                    console.log('🧹 Cleared deep link parameters after auto-opening shipment detail');
-                }
+                console.log('✅ Auto-opened shipment detail after killing deep link');
             } else {
                 console.warn('Shipment not found for direct-to-detail navigation:', deepLinkParams.selectedShipmentId);
             }
         }
         // Handle legacy auto-open shipment detail if specified in deep link params (for backwards compatibility)
-        else if (deepLinkParams && deepLinkParams.shipmentId && shipments.length > 0 && !hasAutoOpenedShipment) {
+        else if (deepLinkParams.shipmentId) {
+            console.log('🎯 Legacy auto-navigation triggered for shipment:', deepLinkParams.shipmentId);
+
+            // KILL THE DEEP LINK IMMEDIATELY - THE SECOND IT'S USED!
+            if (onClearDeepLinkParams) {
+                onClearDeepLinkParams();
+                console.log('💀 KILLED legacy deep link params IMMEDIATELY upon use');
+            }
+
             const shipment = shipments.find(s =>
                 s.shipmentID === deepLinkParams.shipmentId ||
                 s.id === deepLinkParams.shipmentId
             );
 
             if (shipment) {
+                // Set rate limiting
+                window.lastAutoNavigation = now;
+
                 // Use the document ID to open the detail view
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
-                console.log('✅ Auto-opened shipment detail (legacy) and set flag to prevent re-opening');
-
-                // CRITICAL: Clear deep link parameters to prevent navigation loop
-                if (onClearDeepLinkParams) {
-                    onClearDeepLinkParams();
-                    console.log('🧹 Cleared deep link parameters after auto-opening shipment detail (legacy)');
-                }
+                console.log('✅ Auto-opened shipment detail (legacy) after killing deep link');
             } else {
                 console.warn('Shipment not found for auto-detail open:', deepLinkParams.shipmentId);
             }
         }
-    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack]); // Include navigationStack to check current view
+    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack, isReturningFromDetail, onClearDeepLinkParams]); // Include all dependencies for proper effect management
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
@@ -833,19 +932,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             // Apply search filters
             let filteredData = [...shipmentsData];
 
-            // Shipment ID search
-            if (searchFields.shipmentId) {
-                const searchTerm = searchFields.shipmentId.toLowerCase();
-                filteredData = filteredData.filter(shipment => {
-                    const shipmentId = (shipment.shipmentID || shipment.id || '').toLowerCase();
-                    return shipmentId.includes(searchTerm);
-                });
-            }
+            // 🔍 UNIFIED SEARCH: Check if all three search fields have the same value (from admin search)
+            const unifiedSearchTerm = searchFields.shipmentId &&
+                searchFields.shipmentId === searchFields.referenceNumber &&
+                searchFields.referenceNumber === searchFields.trackingNumber
+                ? searchFields.shipmentId.toLowerCase()
+                : null;
 
-            // Reference Number search
-            if (searchFields.referenceNumber) {
-                const searchTerm = searchFields.referenceNumber.toLowerCase();
+            if (unifiedSearchTerm) {
+                // Admin search: Search across all three fields with OR logic
+                console.log('🔍 Unified admin search for:', unifiedSearchTerm);
                 filteredData = filteredData.filter(shipment => {
+                    // Shipment ID
+                    const shipmentId = (shipment.shipmentID || shipment.id || '').toLowerCase();
+                    if (shipmentId.includes(unifiedSearchTerm)) return true;
+
+                    // Reference Number
                     const refNumber = (
                         shipment.shipmentInfo?.shipperReferenceNumber ||
                         shipment.referenceNumber ||
@@ -854,14 +956,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         shipment.selectedRateRef?.referenceNumber ||
                         ''
                     ).toLowerCase();
-                    return refNumber.includes(searchTerm);
-                });
-            }
+                    if (refNumber.includes(unifiedSearchTerm)) return true;
 
-            // Tracking Number search
-            if (searchFields.trackingNumber) {
-                const searchTerm = searchFields.trackingNumber.toLowerCase();
-                filteredData = filteredData.filter(shipment => {
+                    // Tracking Number
                     const trackingNumber = (
                         shipment.trackingNumber ||
                         shipment.selectedRate?.trackingNumber ||
@@ -874,8 +971,57 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         shipment.bookingReferenceNumber ||
                         ''
                     ).toLowerCase();
-                    return trackingNumber.includes(searchTerm);
+                    if (trackingNumber.includes(unifiedSearchTerm)) return true;
+
+                    return false; // No match found
                 });
+            } else {
+                // Individual field searches with AND logic (for manual filter use)
+
+                // Shipment ID search
+                if (searchFields.shipmentId) {
+                    const searchTerm = searchFields.shipmentId.toLowerCase();
+                    filteredData = filteredData.filter(shipment => {
+                        const shipmentId = (shipment.shipmentID || shipment.id || '').toLowerCase();
+                        return shipmentId.includes(searchTerm);
+                    });
+                }
+
+                // Reference Number search
+                if (searchFields.referenceNumber) {
+                    const searchTerm = searchFields.referenceNumber.toLowerCase();
+                    filteredData = filteredData.filter(shipment => {
+                        const refNumber = (
+                            shipment.shipmentInfo?.shipperReferenceNumber ||
+                            shipment.referenceNumber ||
+                            shipment.shipperReferenceNumber ||
+                            shipment.selectedRate?.referenceNumber ||
+                            shipment.selectedRateRef?.referenceNumber ||
+                            ''
+                        ).toLowerCase();
+                        return refNumber.includes(searchTerm);
+                    });
+                }
+
+                // Tracking Number search
+                if (searchFields.trackingNumber) {
+                    const searchTerm = searchFields.trackingNumber.toLowerCase();
+                    filteredData = filteredData.filter(shipment => {
+                        const trackingNumber = (
+                            shipment.trackingNumber ||
+                            shipment.selectedRate?.trackingNumber ||
+                            shipment.selectedRate?.TrackingNumber ||
+                            shipment.selectedRateRef?.trackingNumber ||
+                            shipment.selectedRateRef?.TrackingNumber ||
+                            shipment.carrierTrackingData?.trackingNumber ||
+                            shipment.carrierBookingConfirmation?.trackingNumber ||
+                            shipment.carrierBookingConfirmation?.proNumber ||
+                            shipment.bookingReferenceNumber ||
+                            ''
+                        ).toLowerCase();
+                        return trackingNumber.includes(searchTerm);
+                    });
+                }
             }
 
             // Customer search
@@ -1139,6 +1285,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setMountedViews(['table']);
         // ENHANCED FIX: Reset auto-open state to prevent sticky navigation
         setHasAutoOpenedShipment(false);
+        setIsReturningFromDetail(false); // Reset the returning flag
         console.log('🧹 Reset complete - all session state cleared');
     }, []);
 
@@ -1242,6 +1389,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     </Tabs>
 
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                        {/* Always show filter and export buttons */}
                                         <Button variant="outlined" startIcon={<FilterIcon />} onClick={() => setFiltersOpen(!filtersOpen)} size="small" sx={{ fontSize: '11px', textTransform: 'none' }}>
                                             {filtersOpen ? 'Hide' : 'Show'}
                                         </Button>
@@ -1269,41 +1417,50 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             </>
                                         )}
 
-                                        {hasEnabledCarriers(companyData) && (
-                                            <>
-                                                <Button
-                                                    onClick={() => {
-                                                        if (onOpenCreateShipment) {
-                                                            // Open QuickShip modal with mode parameter
-                                                            onOpenCreateShipment(null, null, null, 'quickship');
-                                                        } else {
-                                                            showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
-                                                        }
-                                                    }}
-                                                    variant="contained"
-                                                    startIcon={<FlashOnIcon />}
-                                                    size="small"
-                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
-                                                >
-                                                    Quick Ship
-                                                </Button>
-                                                <Button
-                                                    onClick={() => {
-                                                        if (onOpenCreateShipment) {
-                                                            onOpenCreateShipment();
-                                                        } else {
-                                                            showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
-                                                        }
-                                                    }}
-                                                    variant="contained"
-                                                    startIcon={<AddIcon />}
-                                                    size="small"
-                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
-                                                >
-                                                    New
-                                                </Button>
-                                            </>
-                                        )}
+                                        {/* QuickShip and New buttons - disabled unless company is selected */}
+                                        <Button
+                                            onClick={() => {
+                                                if (onOpenCreateShipment) {
+                                                    // Open QuickShip modal with mode parameter
+                                                    onOpenCreateShipment(null, null, null, 'quickship');
+                                                } else {
+                                                    showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
+                                                }
+                                            }}
+                                            variant="contained"
+                                            startIcon={<FlashOnIcon />}
+                                            size="small"
+                                            disabled={
+                                                // Disable if no company selected or in admin "all companies" view
+                                                !companyIdForAddress ||
+                                                companyIdForAddress === 'all' ||
+                                                (adminViewMode && adminViewMode === 'all')
+                                            }
+                                            sx={{ fontSize: '11px', textTransform: 'none' }}
+                                        >
+                                            Quick Ship
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                if (onOpenCreateShipment) {
+                                                    onOpenCreateShipment();
+                                                } else {
+                                                    showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
+                                                }
+                                            }}
+                                            variant="contained"
+                                            startIcon={<AddIcon />}
+                                            size="small"
+                                            disabled={
+                                                // Disable if no company selected or in admin "all companies" view
+                                                !companyIdForAddress ||
+                                                companyIdForAddress === 'all' ||
+                                                (adminViewMode && adminViewMode === 'all')
+                                            }
+                                            sx={{ fontSize: '11px', textTransform: 'none' }}
+                                        >
+                                            New
+                                        </Button>
                                     </Box>
                                 </Toolbar>
 
@@ -1716,7 +1873,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('📋 Rendering shipment detail view with shipmentId:', view.props?.shipmentId);
                 return (
                     <Suspense fallback={<CircularProgress />}>
-                        <ShipmentDetailX {...view.props} onBackToTable={popView} />
+                        <ShipmentDetailX
+                            {...view.props}
+                            onBackToTable={popView}
+                            // Pass through adminViewMode to ShipmentDetailX
+                            isAdmin={adminViewMode !== null}
+                        />
                     </Suspense>
                 );
             default:
@@ -1731,9 +1893,37 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         console.log('📚 Current navigation stack:', navigationStack.map(v => v.key));
         console.log('🎯 Navigation stack length:', navigationStack.length);
 
-        // CRITICAL FIX: Always clear auto-open state when using back button
-        console.log('🧹 Clearing auto-open state during back navigation');
+        // 🧨 NUCLEAR CLEANUP: Destroy ALL persistent session data FIRST
+        console.log('🧨🧹 NUCLEAR CLEANUP in handleBackClick: Destroying ALL persistent session data');
+
+        // Clear deep link parameters FIRST to prevent any auto-navigation
+        if (onClearDeepLinkParams) {
+            console.log('🧹 Clearing deep link params in handleBackClick');
+            onClearDeepLinkParams();
+        }
+
+        // DESTROY all auto-navigation flags and session state
+        console.log('🧹 Destroying all auto-navigation flags during back navigation');
         setHasAutoOpenedShipment(false);
+        setIsReturningFromDetail(true); // Mark that we're returning from detail
+
+        // Clear window-level session storage
+        if (typeof window !== 'undefined') {
+            try {
+                // Clear rate limiting
+                delete window.lastAutoNavigation;
+
+                // Clear any other navigation-related window properties
+                Object.keys(window).forEach(key => {
+                    if (key.includes('shipment') || key.includes('navigation') || key.includes('deepLink')) {
+                        delete window[key];
+                        console.log('🧹 Cleared window property:', key);
+                    }
+                });
+            } catch (e) {
+                console.log('Note: Some window cleanup operations not available');
+            }
+        }
 
         if (navigationStack.length > 1) {
             console.log('✅ Calling popView()');
@@ -1741,9 +1931,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } else if (onModalBack) {
             console.log('✅ Calling onModalBack()');
             onModalBack();
-        } else if (onClose) {
+        } else if (onClose && isModal) {
             console.log('✅ Calling onClose()');
             onClose();
+        } else if (adminViewMode && !isModal) {
+            // Special case for admin view when not in modal
+            console.log('✅ Admin view - staying on shipments page, resetting to clean table state');
+
+            // COMPLETE RESET: Reset to completely clean table state
+            setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
+            setMountedViews(['table']);
+
+            // ADDITIONAL CLEANUP for admin view
+            setTimeout(() => {
+                setIsReturningFromDetail(false);
+                console.log('🧹 Admin view cleanup complete');
+            }, 100);
         } else {
             console.log('✅ Navigating to dashboard');
             navigate('/dashboard');
@@ -1754,9 +1957,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const handleCloseClick = () => {
         console.log('❌ Close button clicked - resetting state');
 
+        // CRITICAL FIX: Clear deep link parameters FIRST
+        if (onClearDeepLinkParams) {
+            console.log('🧹 Clearing deep link params in handleCloseClick');
+            onClearDeepLinkParams();
+        }
+
         // CRITICAL FIX: Clear auto-open state when closing modal
         console.log('🧹 Clearing auto-open state during modal close');
         setHasAutoOpenedShipment(false);
+        setIsReturningFromDetail(false); // Reset the returning flag
 
         // Reset to defaults
         resetToDefaults();
@@ -1956,13 +2166,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         const currentView = navigationStack[navigationStack.length - 1];
         const currentModalPage = modalNavigation.getCurrentPage();
 
+        // Special handling for admin view
+        const isAdminView = adminViewMode !== null;
+
         return {
             title: currentView?.component === 'shipment-detail'
                 ? currentModalPage?.title || 'Shipment Detail' // Use shipment ID from modal navigation
-                : 'Shipments',
-            canGoBack: navigationStack.length > 1,
+                : isAdminView ? 'Admin Shipments' : 'Shipments',
+            canGoBack: navigationStack.length > 1 || (isAdminView && !isModal),
             onBack: navigationStack.length > 1 ? popView : (onModalBack || onClose),
-            backText: navigationStack.length > 1 ? 'Shipments' : 'Back'
+            backText: navigationStack.length > 1 ? (isAdminView ? '' : 'Shipments') : 'Back'
         };
     };
 
@@ -2010,14 +2223,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
             <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-                {/* Modal Header */}
-                {isModal && (
+                {/* Modal Header - Show for modal mode OR when in admin view with detail page */}
+                {(isModal || (adminViewMode && navigationStack.length > 1)) && (
                     <ModalHeader
                         navigation={getNavigationObject()}
                         onBack={handleBackClick}
                         showBackButton={true}
-                        onClose={showCloseButton ? handleCloseClick : null}
-                        showCloseButton={showCloseButton}
+                        onClose={showCloseButton && isModal ? handleCloseClick : null}
+                        showCloseButton={showCloseButton && isModal}
                     />
                 )}
 

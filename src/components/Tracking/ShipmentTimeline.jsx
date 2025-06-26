@@ -38,20 +38,49 @@ const formatTimestamp = (timestamp) => {
         let date;
 
         // Handle Firestore Timestamp
-        if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-            date = timestamp.toDate();
+        if (timestamp && typeof timestamp === 'object' && timestamp.toDate && typeof timestamp.toDate === 'function') {
+            try {
+                date = timestamp.toDate();
+            } catch (error) {
+                console.warn('Error calling toDate() on timestamp:', error, timestamp);
+                return 'Invalid Date';
+            }
         }
-        // Handle timestamp objects with seconds
-        else if (timestamp.seconds) {
-            date = new Date(timestamp.seconds * 1000);
+        // Handle timestamp objects with seconds and nanoseconds
+        else if (timestamp && typeof timestamp === 'object' && typeof timestamp.seconds === 'number') {
+            date = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
         }
-        // Handle regular Date objects or strings
-        else {
+        // Handle numeric timestamps (milliseconds)
+        else if (typeof timestamp === 'number') {
             date = new Date(timestamp);
         }
+        // Handle Date objects
+        else if (timestamp instanceof Date) {
+            date = timestamp;
+        }
+        // Handle string timestamps
+        else if (typeof timestamp === 'string') {
+            // Try to parse various string formats
+            date = new Date(timestamp);
 
-        if (isNaN(date.getTime())) {
-            console.warn('Invalid timestamp:', timestamp);
+            // If parsing failed, try to handle special formats
+            if (isNaN(date.getTime())) {
+                // Try ISO format or other common formats
+                const isoMatch = timestamp.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+                if (isoMatch) {
+                    date = new Date(timestamp);
+                }
+            }
+        }
+        // Handle invalid or unknown timestamp formats
+        else {
+            console.warn('Unknown timestamp format:', typeof timestamp, timestamp);
+            return 'Unknown Date';
+        }
+
+        // Final validation
+        if (!date || isNaN(date.getTime())) {
+            console.warn('Invalid timestamp after processing:', timestamp, 'resulted in:', date);
             return 'Invalid Date';
         }
 
@@ -64,7 +93,7 @@ const formatTimestamp = (timestamp) => {
             hour12: true
         });
     } catch (error) {
-        console.error('Error formatting timestamp:', error, timestamp);
+        console.error('Error formatting timestamp:', error, 'for timestamp:', timestamp);
         return 'Invalid Date';
     }
 };
@@ -137,16 +166,36 @@ const ShipmentTimeline = ({ events }) => {
                 }
 
                 // Handle Firestore Timestamp
-                if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-                    return timestamp.toDate();
+                if (timestamp && typeof timestamp === 'object' && timestamp.toDate && typeof timestamp.toDate === 'function') {
+                    try {
+                        return timestamp.toDate();
+                    } catch (error) {
+                        console.warn('Error calling toDate() during sorting:', error, timestamp);
+                        return new Date(0);
+                    }
                 }
-                // Handle timestamp objects with seconds
-                if (timestamp.seconds) {
-                    return new Date(timestamp.seconds * 1000);
+                // Handle timestamp objects with seconds and nanoseconds
+                if (timestamp && typeof timestamp === 'object' && typeof timestamp.seconds === 'number') {
+                    return new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
                 }
-                // Handle regular Date objects or strings
-                const date = new Date(timestamp);
-                return isNaN(date.getTime()) ? new Date(0) : date;
+                // Handle numeric timestamps
+                if (typeof timestamp === 'number') {
+                    const date = new Date(timestamp);
+                    return isNaN(date.getTime()) ? new Date(0) : date;
+                }
+                // Handle Date objects
+                if (timestamp instanceof Date) {
+                    return isNaN(timestamp.getTime()) ? new Date(0) : timestamp;
+                }
+                // Handle string timestamps
+                if (typeof timestamp === 'string') {
+                    const date = new Date(timestamp);
+                    return isNaN(date.getTime()) ? new Date(0) : date;
+                }
+
+                // Unknown format
+                console.warn('Unknown timestamp format during sorting:', typeof timestamp, timestamp);
+                return new Date(0);
             } catch (error) {
                 console.warn('Error parsing timestamp for sorting:', timestamp, error);
                 return new Date(0);

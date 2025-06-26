@@ -78,10 +78,49 @@ const ShipmentTableRow = ({
         // For legacy shipments without markup data, show the same value for both
         const companyCharge = cost;
 
+        // Enhanced currency detection - check multiple possible locations
+        let currency = 'USD'; // Default fallback
+
+        // Priority order for currency detection:
+        // 1. Direct currency field
+        // 2. Selected rate currency (multiple paths)
+        // 3. Selected rate ref currency  
+        // 4. Rate detail currency
+        // 5. Shipment info currency
+        // 6. Manual rates currency (for QuickShip)
+        // 7. Booking confirmation currency
+        // 8. Carrier data currency
+        if (shipment.currency) {
+            currency = shipment.currency;
+        } else if (shipment.selectedRate?.currency) {
+            currency = shipment.selectedRate.currency;
+        } else if (shipment.selectedRate?.pricing?.currency) {
+            // For advanced shipments, check pricing.currency
+            currency = shipment.selectedRate.pricing.currency;
+        } else if (shipment.selectedRateRef?.currency) {
+            currency = shipment.selectedRateRef.currency;
+        } else if (shipment.selectedRateRef?.pricing?.currency) {
+            currency = shipment.selectedRateRef.pricing.currency;
+        } else if (shipment.rateDetails?.currency) {
+            currency = shipment.rateDetails.currency;
+        } else if (shipment.shipmentInfo?.currency) {
+            currency = shipment.shipmentInfo.currency;
+        } else if (shipment.manualRates && shipment.manualRates.length > 0) {
+            // For QuickShip shipments, check manual rates for currency
+            const rateWithCurrency = shipment.manualRates.find(rate => rate.currency);
+            if (rateWithCurrency) {
+                currency = rateWithCurrency.currency;
+            }
+        } else if (shipment.carrierBookingConfirmation?.currency) {
+            currency = shipment.carrierBookingConfirmation.currency;
+        } else if (carrierData[shipment.id]?.currency) {
+            currency = carrierData[shipment.id].currency;
+        }
+
         return {
             cost: parseFloat(cost) || 0,
             companyCharge: parseFloat(companyCharge) || 0,
-            currency: shipment.currency || shipment.selectedRate?.currency || 'USD'
+            currency: currency
         };
     };
 
@@ -421,7 +460,7 @@ const ShipmentTableRow = ({
                         }
 
                         // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
-                        if (!dateTime || !dateTime.date || !dateTime.time) {
+                        if (!dateTime || !dateTime.date) {
                             return (
                                 <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
                                     N/A
@@ -433,9 +472,6 @@ const ShipmentTableRow = ({
                             <Box>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {dateTime.date}
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#64748b' }}>
-                                    {dateTime.time}
                                 </Typography>
                             </Box>
                         );
@@ -644,20 +680,38 @@ const ShipmentTableRow = ({
                 }}>
                     {(() => {
                         const charges = getCharges();
+
                         const formatCurrency = (amount, currency) => {
-                            return new Intl.NumberFormat('en-US', {
+                            // Ensure currency is valid, fallback to USD if invalid
+                            const validCurrency = currency && currency.length === 3 ? currency : 'USD';
+
+                            // Format with currency symbol
+                            const formatted = new Intl.NumberFormat('en-US', {
                                 style: 'currency',
-                                currency: currency
+                                currency: validCurrency
                             }).format(amount);
+
+                            // For non-USD currencies, or when we want to show currency code explicitly
+                            // Replace the generic $ with currency-specific prefix
+                            if (validCurrency === 'CAD') {
+                                return formatted.replace('CA$', 'CAD$');
+                            } else if (validCurrency === 'USD') {
+                                return formatted.replace('$', 'USD$');
+                            } else if (validCurrency === 'EUR') {
+                                return formatted.replace('€', 'EUR€');
+                            }
+
+                            // For other currencies, return as-is
+                            return formatted;
                         };
 
                         return (
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                 <Typography variant="body2" sx={{ fontSize: '11px', color: '#374151' }}>
-                                    <span style={{ fontWeight: 500 }}>Cost:</span> {formatCurrency(charges.cost, charges.currency)}
+                                    {formatCurrency(charges.cost, charges.currency)}
                                 </Typography>
                                 <Typography variant="body2" sx={{ fontSize: '11px', color: '#059669' }}>
-                                    <span style={{ fontWeight: 500 }}>Charge:</span> {formatCurrency(charges.companyCharge, charges.currency)}
+                                    {formatCurrency(charges.companyCharge, charges.currency)}
                                 </Typography>
                             </Box>
                         );
