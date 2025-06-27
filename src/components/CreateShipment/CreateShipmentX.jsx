@@ -268,7 +268,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             width: '12', // Default box dimensions
             height: '12', // Default box dimensions
             unitSystem: 'imperial',
-            freightClass: ''
+            freightClass: '',
+            declaredValue: '', // Declared value amount
+            declaredValueCurrency: 'CAD' // Declared value currency
         },
     ]);
 
@@ -853,7 +855,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         width: '12', // Default box dimensions
                         height: '12', // Default box dimensions
                         freightClass: '',
-                        unitSystem: 'imperial'
+                        unitSystem: 'imperial',
+                        declaredValue: '',
+                        declaredValueCurrency: 'CAD'
                     }],
 
                     // Advanced shipment specific flags
@@ -1109,7 +1113,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             width: isCourier ? '12' : '40',  // 12" for courier box, 40" for freight skid
             height: isCourier ? '12' : '48', // 12" for courier box, 48" for freight skid (fixed)
             unitSystem: 'imperial',
-            freightClass: ''
+            freightClass: '',
+            declaredValue: '', // Declared value amount
+            declaredValueCurrency: 'CAD' // Declared value currency
         };
 
         setPackages(prev => [...prev, defaultPackage]);
@@ -1509,7 +1515,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     Length: parseFloat(pkg.length) || 0,
                     Stackable: true,
                     HazardousMaterial: false,
-                    DeclaredValue: 0,
+                    DeclaredValue: parseFloat(pkg.declaredValue) || 0,
+                    DeclaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
                     Description: pkg.itemDescription || "Package",
                     Comment: "",
                     NationalMotorFreightClassification: "",
@@ -1597,7 +1604,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     packagingQuantity: parseInt(pkg.packagingQuantity || 1),
                     length: parseFloat(pkg.length || 0),
                     width: parseFloat(pkg.width || 0),
-                    height: parseFloat(pkg.height || 0)
+                    height: parseFloat(pkg.height || 0),
+                    declaredValue: parseFloat(pkg.declaredValue || 0),
+                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
                 })),
 
                 // Selected rate and carrier information (clean undefined values)
@@ -1614,7 +1623,62 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     serviceCharges: selectedRate.pricing?.service || 0,
                     accessorialCharges: selectedRate.pricing?.accessorial || 0,
                     currency: selectedRate.pricing?.currency || 'USD',
-                    appliedMarkups: selectedRate.markupMetadata.appliedMarkups || []
+                    appliedMarkups: selectedRate.markupMetadata.appliedMarkups || [],
+                    // Create detailed billing breakdown for cost display
+                    billingDetails: (() => {
+                        const billingDetails = [];
+
+                        // Get actual amounts from billingDetails if markup was applied
+                        if (selectedRate.billingDetails && Array.isArray(selectedRate.billingDetails)) {
+                            selectedRate.billingDetails.forEach(detail => {
+                                if (detail.amount > 0) {
+                                    const actualAmount = detail.actualAmount || detail.amount;
+                                    billingDetails.push({
+                                        name: detail.name,
+                                        amount: actualAmount, // Use actualAmount for original cost
+                                        category: detail.category
+                                    });
+                                }
+                            });
+                        } else {
+                            // Fallback: Since markup engine typically applies markup only to freight,
+                            // calculate original freight amount and keep other charges unchanged
+                            const totalMarkupAmount = selectedRate.markupMetadata.totalMarkupAmount || 0;
+                            const originalFreight = Math.max(0, (selectedRate.pricing?.freight || 0) - totalMarkupAmount);
+
+                            if (selectedRate.pricing?.freight > 0) {
+                                billingDetails.push({
+                                    name: 'Freight Charges',
+                                    amount: originalFreight,
+                                    category: 'freight'
+                                });
+                            }
+                            // Fuel, service, and accessorial typically don't get markup
+                            if (selectedRate.pricing?.fuel > 0) {
+                                billingDetails.push({
+                                    name: 'Fuel Charges',
+                                    amount: selectedRate.pricing.fuel || 0,
+                                    category: 'fuel'
+                                });
+                            }
+                            if (selectedRate.pricing?.service > 0) {
+                                billingDetails.push({
+                                    name: 'Service Charges',
+                                    amount: selectedRate.pricing.service || 0,
+                                    category: 'service'
+                                });
+                            }
+                            if (selectedRate.pricing?.accessorial > 0) {
+                                billingDetails.push({
+                                    name: 'Accessorial Charges',
+                                    amount: selectedRate.pricing.accessorial || 0,
+                                    category: 'accessorial'
+                                });
+                            }
+                        }
+
+                        return billingDetails;
+                    })()
                 } : {
                     // If no markup metadata, rates are actual rates
                     totalCharges: selectedRate?.pricing?.total || selectedRate?.totalCharges || 0,
@@ -1623,7 +1687,30 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     serviceCharges: selectedRate?.pricing?.service || 0,
                     accessorialCharges: selectedRate?.pricing?.accessorial || 0,
                     currency: selectedRate?.pricing?.currency || 'USD',
-                    appliedMarkups: []
+                    appliedMarkups: [],
+                    // Create billing details from current pricing (no markup applied)
+                    billingDetails: [
+                        ...(selectedRate.pricing?.freight > 0 ? [{
+                            name: 'Freight Charges',
+                            amount: selectedRate.pricing.freight || 0,
+                            category: 'freight'
+                        }] : []),
+                        ...(selectedRate.pricing?.fuel > 0 ? [{
+                            name: 'Fuel Charges',
+                            amount: selectedRate.pricing.fuel || 0,
+                            category: 'fuel'
+                        }] : []),
+                        ...(selectedRate.pricing?.service > 0 ? [{
+                            name: 'Service Charges',
+                            amount: selectedRate.pricing.service || 0,
+                            category: 'service'
+                        }] : []),
+                        ...(selectedRate.pricing?.accessorial > 0 ? [{
+                            name: 'Accessorial Charges',
+                            amount: selectedRate.pricing.accessorial || 0,
+                            category: 'accessorial'
+                        }] : [])
+                    ]
                 },
                 markupRates: {
                     totalCharges: selectedRate?.pricing?.total || selectedRate?.totalCharges || 0,
@@ -1635,7 +1722,58 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     markupAmount: selectedRate?.markupMetadata?.totalMarkupAmount || 0,
                     markupPercentage: selectedRate?.markupMetadata ?
                         (selectedRate.markupMetadata.totalMarkupAmount / selectedRate.markupMetadata.originalTotal) * 100 : 0,
-                    appliedMarkups: selectedRate?.markupMetadata?.appliedMarkups || []
+                    appliedMarkups: selectedRate?.markupMetadata?.appliedMarkups || [],
+                    // Create detailed billing breakdown with markup amounts
+                    billingDetails: (() => {
+                        const markupBillingDetails = [];
+
+                        // Use the markup amounts from selectedRate.billingDetails if available
+                        if (selectedRate.billingDetails && Array.isArray(selectedRate.billingDetails)) {
+                            selectedRate.billingDetails.forEach(detail => {
+                                if (detail.amount > 0) {
+                                    // For markup rates, use the final amount (which includes markup for freight)
+                                    const markupAmount = detail.amount;
+                                    markupBillingDetails.push({
+                                        name: detail.name,
+                                        amount: markupAmount, // Use the marked-up amount
+                                        category: detail.category
+                                    });
+                                }
+                            });
+                        } else {
+                            // Fallback to pricing breakdown
+                            if (selectedRate.pricing?.freight > 0) {
+                                markupBillingDetails.push({
+                                    name: 'Freight Charges',
+                                    amount: selectedRate.pricing.freight || 0,
+                                    category: 'freight'
+                                });
+                            }
+                            if (selectedRate.pricing?.fuel > 0) {
+                                markupBillingDetails.push({
+                                    name: 'Fuel Charges',
+                                    amount: selectedRate.pricing.fuel || 0,
+                                    category: 'fuel'
+                                });
+                            }
+                            if (selectedRate.pricing?.service > 0) {
+                                markupBillingDetails.push({
+                                    name: 'Service Charges',
+                                    amount: selectedRate.pricing.service || 0,
+                                    category: 'service'
+                                });
+                            }
+                            if (selectedRate.pricing?.accessorial > 0) {
+                                markupBillingDetails.push({
+                                    name: 'Accessorial Charges',
+                                    amount: selectedRate.pricing.accessorial || 0,
+                                    category: 'accessorial'
+                                });
+                            }
+                        }
+
+                        return markupBillingDetails;
+                    })()
                 },
 
                 // Advanced shipment specific flags
@@ -1846,7 +1984,22 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
         if (finalShipmentId && onViewShipment) {
             // Call the onViewShipment prop to open shipment detail
+            console.log('🎯 CreateShipmentX: Calling onViewShipment with shipmentId:', finalShipmentId);
             onViewShipment(finalShipmentId);
+        } else if (finalShipmentId) {
+            // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
+            console.log('🎯 CreateShipmentX: No onViewShipment prop, attempting direct admin navigation');
+
+            // Check if we're in an admin context (look for admin in the URL)
+            const isAdminContext = window.location.pathname.includes('/admin');
+
+            if (isAdminContext) {
+                // Navigate directly to admin shipment detail
+                window.location.href = `/admin/shipments?shipment=${finalShipmentId}`;
+            } else {
+                // Navigate to regular shipment detail
+                window.location.href = `/shipments/${finalShipmentId}`;
+            }
         } else if (onReturnToShipments) {
             onReturnToShipments();
         }
@@ -2694,6 +2847,37 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     )
                                                 }}
                                             />
+                                        </Grid>
+
+                                        {/* Declared Value */}
+                                        <Grid item xs={12} md={3}>
+                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                <TextField
+                                                    size="small"
+                                                    label="Declared Value"
+                                                    type="number"
+                                                    value={pkg.declaredValue || ''}
+                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
+                                                    sx={{
+                                                        flex: 1,
+                                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                    placeholder="0.00"
+                                                />
+                                                <FormControl size="small" sx={{ minWidth: '70px' }}>
+                                                    <Select
+                                                        value={pkg.declaredValueCurrency || 'CAD'}
+                                                        onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
+                                                        sx={{
+                                                            '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
+                                                        <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Box>
                                         </Grid>
 
                                         {/* Unit System Toggle - show for each package */}

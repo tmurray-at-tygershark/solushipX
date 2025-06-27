@@ -123,7 +123,6 @@ const TrackingDetailSidebar = ({
     error,
     mergedEvents,
     onRefresh,
-    isRefreshing,
     trackingNumber,
     onClose
 }) => {
@@ -200,13 +199,13 @@ const TrackingDetailSidebar = ({
                         <IconButton
                             size="small"
                             onClick={onRefresh}
-                            disabled={isRefreshing}
-                            title="Refresh status"
+                            disabled={loading}
+                            title="Refresh tracking information"
                             sx={{
                                 '&:hover': { bgcolor: 'action.hover' }
                             }}
                         >
-                            {isRefreshing ? (
+                            {loading ? (
                                 <CircularProgress size={16} />
                             ) : (
                                 <RefreshIcon sx={{ fontSize: 18 }} />

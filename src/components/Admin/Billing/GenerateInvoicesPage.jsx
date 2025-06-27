@@ -160,6 +160,15 @@ const GenerateInvoicesPage = () => {
             setUninvoicedShipments(validShipments);
             setGroupedShipments(grouped);
 
+            // Auto-detect currency from shipments and update invoice settings
+            const detectedCurrency = detectShipmentsCurrency(validShipments);
+            setInvoiceSettings(prev => ({
+                ...prev,
+                currency: detectedCurrency,
+                taxRate: TAX_RATES[detectedCurrency] || 0,
+                enableTax: detectedCurrency === 'CAD'
+            }));
+
             // Pre-select all shipments by default
             const initialSelection = {};
             validShipments.forEach(shipment => {
@@ -185,6 +194,69 @@ const GenerateInvoicesPage = () => {
             shipment.selectedRate?.totalCharges ||
             shipment.selectedRate?.pricing?.total ||
             0;
+    };
+
+    // Helper function to get the currency from a shipment
+    const getShipmentCurrency = (shipment) => {
+        // Priority order for currency detection
+        if (shipment.markupRates?.currency) {
+            return shipment.markupRates.currency;
+        }
+        if (shipment.currency) {
+            return shipment.currency;
+        }
+        if (shipment.selectedRate?.pricing?.currency) {
+            return shipment.selectedRate.pricing.currency;
+        }
+        if (shipment.selectedRate?.currency) {
+            return shipment.selectedRate.currency;
+        }
+        // Default fallback
+        return 'CAD';
+    };
+
+    // Helper function to detect the predominant currency from all shipments
+    const detectShipmentsCurrency = (shipments) => {
+        if (!shipments || shipments.length === 0) return 'USD';
+
+        const currencyCount = {};
+        shipments.forEach(shipment => {
+            const currency = getShipmentCurrency(shipment);
+            currencyCount[currency] = (currencyCount[currency] || 0) + 1;
+        });
+
+        // Return the most common currency
+        return Object.keys(currencyCount).reduce((a, b) =>
+            currencyCount[a] > currencyCount[b] ? a : b
+        );
+    };
+
+    // Helper function to get the correct date for different shipment types
+    const getShipmentDate = (shipment) => {
+        if (shipment.creationMethod === 'quickship') {
+            // For QuickShip: bookedAt (primary) > bookingTimestamp > createdAt (fallback)
+            if (shipment.bookedAt) {
+                return shipment.bookedAt?.toDate ?
+                    shipment.bookedAt.toDate() :
+                    new Date(shipment.bookedAt);
+            } else if (shipment.bookingTimestamp) {
+                return new Date(shipment.bookingTimestamp);
+            } else if (shipment.createdAt) {
+                return shipment.createdAt?.toDate ?
+                    shipment.createdAt.toDate() :
+                    new Date(shipment.createdAt);
+            }
+        } else {
+            // For regular shipments: createdAt (primary) > bookingTimestamp (fallback)
+            if (shipment.createdAt) {
+                return shipment.createdAt?.toDate ?
+                    shipment.createdAt.toDate() :
+                    new Date(shipment.createdAt);
+            } else if (shipment.bookingTimestamp) {
+                return new Date(shipment.bookingTimestamp);
+            }
+        }
+        return null;
     };
 
     const getSelectedShipmentsByCompany = () => {
@@ -275,7 +347,7 @@ const GenerateInvoicesPage = () => {
             description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
             carrier: shipment.carrier,
             service: shipment.selectedRate?.service?.name || 'Standard',
-            date: shipment.createdAt,
+            date: getShipmentDate(shipment),
             charges: getShipmentCharges(shipment),
             chargeBreakdown: getChargeBreakdown(shipment)
         }));
@@ -418,7 +490,7 @@ const GenerateInvoicesPage = () => {
                     description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
                     carrier: shipment.carrier,
                     service: shipment.selectedRate?.service?.name || 'Standard',
-                    date: shipment.createdAt,
+                    date: getShipmentDate(shipment),
                     charges: getShipmentCharges(shipment),
                     chargeBreakdown: getChargeBreakdown(shipment)
                 })),
@@ -542,7 +614,7 @@ const GenerateInvoicesPage = () => {
                                             Total Value
                                         </Typography>
                                         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                                            {formatCurrencyWithPrefix(
+                                            {formatInvoiceCurrency(
                                                 Object.values(groupedShipments).reduce((sum, group) => sum + group.totalCharges, 0),
                                                 invoiceSettings.currency
                                             )}
@@ -585,9 +657,7 @@ const GenerateInvoicesPage = () => {
                                     ) : uninvoicedShipments.length > 0 ? (
                                         uninvoicedShipments.map((shipment) => {
                                             const charges = getShipmentCharges(shipment);
-                                            const createdDate = shipment.createdAt?.toDate ?
-                                                shipment.createdAt.toDate() :
-                                                new Date(shipment.createdAt);
+                                            const createdDate = getShipmentDate(shipment);
 
                                             return (
                                                 <TableRow
@@ -610,7 +680,7 @@ const GenerateInvoicesPage = () => {
                                                         {shipment.companyName || shipment.companyID}
                                                     </TableCell>
                                                     <TableCell sx={{ fontSize: '12px' }}>
-                                                        {createdDate.toLocaleDateString()}
+                                                        {createdDate ? createdDate.toLocaleDateString() : 'Invalid Date'}
                                                     </TableCell>
                                                     <TableCell sx={{ fontSize: '12px' }}>
                                                         {shipment.carrier || 'N/A'}

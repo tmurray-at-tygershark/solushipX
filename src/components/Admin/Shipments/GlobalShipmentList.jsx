@@ -28,6 +28,7 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import { ShipmentFormProvider } from '../../../contexts/ShipmentFormContext';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../firebase';
+import { useLocation } from 'react-router-dom';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Import the reusable components
@@ -38,6 +39,7 @@ import QuickShip from '../../CreateShipment/QuickShip';
 const GlobalShipmentList = () => {
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const { companyIdForAddress, setCompanyContext, loading: companyLoading } = useCompany();
+    const location = useLocation();
 
     // Debug logging
     console.log('[GlobalShipmentList] Debug info:', {
@@ -46,6 +48,9 @@ const GlobalShipmentList = () => {
         authLoading,
         companyLoading
     });
+
+    // Reset key that forces complete re-mount of ShipmentsX when navigation occurs
+    const [resetKey, setResetKey] = useState(0);
 
     // State for company selection
     const [availableCompanies, setAvailableCompanies] = useState([]);
@@ -70,6 +75,22 @@ const GlobalShipmentList = () => {
 
     // State for refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
+
+    // Reset component state when navigating to /admin/shipments (e.g., clicking nav link)
+    useEffect(() => {
+        if (location.pathname === '/admin/shipments') {
+            console.log('🔄 Navigation to /admin/shipments detected - resetting component state');
+
+            // Increment reset key to force complete remount of ShipmentsX
+            setResetKey(prev => prev + 1);
+
+            // Clear any deep link params or search state
+            setShipmentsDeepLinkParams(null);
+            setSearchValue('');
+
+            console.log('✅ Component state reset complete');
+        }
+    }, [location.pathname]);
 
     // Load available companies based on user role
     useEffect(() => {
@@ -563,7 +584,7 @@ const GlobalShipmentList = () => {
                     boxShadow: 'none'
                 }}>
                     <ShipmentsX
-                        key={`shipments-${selectedCompanyId}-${refreshKey}`}
+                        key={`shipments-${selectedCompanyId}-${refreshKey}-${resetKey}`}
                         isModal={false}
                         onClose={null}
                         showCloseButton={false}

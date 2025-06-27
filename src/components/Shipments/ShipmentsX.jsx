@@ -2421,8 +2421,37 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         const documents = documentsResult.data.data;
                         let bolUrl = null;
 
-                        // Check dedicated BOL array
-                        if (documents.bol && documents.bol.length > 0) {
+                        // For eShip Plus shipments, prioritize generically generated BOL
+                        const isEShipPlus = shipment.carrier?.toLowerCase().includes('eshipplus') ||
+                            shipment.carrier?.toLowerCase().includes('eShip Plus') ||
+                            shipment.selectedRate?.carrier?.toLowerCase().includes('eshipplus') ||
+                            shipment.selectedRate?.carrier?.toLowerCase().includes('eShip Plus');
+
+                        if (isEShipPlus) {
+                            // Find the generically generated BOL for eShip Plus
+                            const allDocs = Object.entries(documents)
+                                .filter(([key]) => key !== 'bol') // Exclude the dedicated BOL array
+                                .map(([, docs]) => docs)
+                                .flat();
+
+                            const genericBOL = allDocs.find(doc => {
+                                const filename = (doc.filename || '').toLowerCase();
+                                const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
+
+                                return (filename.includes('bol') ||
+                                    filename.includes('billoflading') ||
+                                    filename.includes('bill-of-lading') ||
+                                    filename.includes('bill_of_lading')) &&
+                                    isGeneratedBOL;
+                            });
+
+                            if (genericBOL) {
+                                bolUrl = genericBOL.downloadUrl;
+                            }
+                        }
+
+                        // Fallback: Check dedicated BOL array if no generic BOL found
+                        if (!bolUrl && documents.bol && documents.bol.length > 0) {
                             bolUrl = documents.bol[0].downloadUrl;
                         }
 

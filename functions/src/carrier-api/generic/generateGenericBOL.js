@@ -249,15 +249,15 @@ function extractBOLData(shipmentData, shipmentId) {
             specialInstructions: shipTo?.specialInstructions || shipTo?.instructions || ''
         },
         
-        // Third Party Billing (SolushipX - Integrated Carriers)
+        // Third Party Billing (Integrated Carriers)
         thirdParty: {
-            company: 'SOLUSHIPX - INTEGRATED CARRIERS',
+            company: 'INTEGRATED CARRIERS',
             address1: '9 - 75 FIRST STREET,',
             address2: 'SUITE 209,',
             city: 'Orangeville',
             state: 'ON',
             zip: 'L9W 5B6',
-            accountNumber: '000605'
+            accountNumber: '' // Will be populated dynamically in the future
         },
         
         // Package Information - Enhanced mapping for QuickShip
@@ -266,6 +266,8 @@ function extractBOLData(shipmentData, shipmentId) {
             const length = pkg.length || 48;
             const width = pkg.width || 40;
             const height = pkg.height || 48;
+            const declaredValue = parseFloat(String(pkg.declaredValue || 0).replace(/[^\d.-]/g, '')) || 0;
+            const declaredValueCurrency = pkg.declaredValueCurrency || 'CAD';
             
             return {
                 type: pkg.packageType || pkg.type || 'PALLET',
@@ -274,7 +276,9 @@ function extractBOLData(shipmentData, shipmentId) {
                            pkg.itemDescription ||
                            'General Freight',
                 dimensions: `${length} x ${width} x ${height}`,
-                freightClass: pkg.freightClass || pkg.class || ''
+                freightClass: pkg.freightClass || pkg.class || '',
+                declaredValue: declaredValue,
+                declaredValueCurrency: declaredValueCurrency
             };
         }),
         
@@ -426,15 +430,8 @@ function drawExactHeader(doc, bolData) {
            .fontSize(8)
            .text('INTEGRATED CARRIERS', 35, 60)
            .fontSize(7)
-           .text('Freight Logistics & Transportation', 35, 72);
+                          .text('Freight Logistics & Transportation', 35, 72);
     }
-    
-    // Professional accent line under logo area
-    doc.strokeColor('#000000')
-       .lineWidth(2)
-       .moveTo(35, 83)
-       .lineTo(170, 83)
-       .stroke();
     
     // Title section (top-right) - FIXED POSITIONING TO PREVENT OVERLAP
     doc.font('Helvetica-Bold')
@@ -656,12 +653,14 @@ function drawExactThirdPartySection(doc, bolData) {
        .text(bolData.thirdParty.address2, 30, 300)
        .text(`${bolData.thirdParty.city}, ${bolData.thirdParty.state} ${bolData.thirdParty.zip}`, 30, 310);
     
-    // Account number (right side)
-    doc.font('Helvetica-Bold')
-       .fontSize(7)
-       .text('Account Number:', 400, 280)
-       .font('Helvetica')
-       .text(bolData.thirdParty.accountNumber, 490, 280);
+    // Account number (right side) - only show if populated
+    if (bolData.thirdParty.accountNumber && bolData.thirdParty.accountNumber.trim() !== '') {
+        doc.font('Helvetica-Bold')
+           .fontSize(7)
+           .text('Account Number:', 400, 280)
+           .font('Helvetica')
+           .text(bolData.thirdParty.accountNumber, 490, 280);
+    }
     
     // Check boxes for freight terms with X marks based on billing type
     const checkBoxY = 300;
@@ -751,15 +750,16 @@ function drawExactFreightTable(doc, bolData) {
     const rowHeight = 16; // Slightly reduced row height
     const tableHeight = 140; // INCREASED from 120 to 140
     
-    // Column definitions with exact widths
+    // Column definitions with exact widths - Added declared value column
     const columns = [
-        { header: 'PACKAGE\nQUANTITY', width: 60, align: 'center' },
-        { header: 'PACKAGE\nTYPE', width: 60, align: 'center' },
-        { header: 'WEIGHT\n(LBS)', width: 60, align: 'center' },
-        { header: 'H/M', width: 40, align: 'center' },
-        { header: 'COMMODITY DESCRIPTION', width: 200, align: 'left' }, // Reduced width
-        { header: 'DIMENSIONS\nL x W x H', width: 80, align: 'center' },
-        { header: 'CLASS', width: 62, align: 'center' } // Increased width for freight class
+        { header: 'PACKAGE\nQUANTITY', width: 50, align: 'center' },
+        { header: 'PACKAGE\nTYPE', width: 50, align: 'center' },
+        { header: 'WEIGHT\n(LBS)', width: 50, align: 'center' },
+        { header: 'H/M', width: 30, align: 'center' },
+        { header: 'COMMODITY DESCRIPTION', width: 170, align: 'left' }, // Reduced width for declared value
+        { header: 'DIMENSIONS\nL x W x H', width: 70, align: 'center' },
+        { header: 'DECLARED\nVALUE', width: 70, align: 'right' }, // New declared value column
+        { header: 'CLASS', width: 72, align: 'center' } // Adjusted width
     ];
     
     // Draw table border
@@ -828,6 +828,14 @@ function drawExactFreightTable(doc, bolData) {
         }
         
         xPos = 25;
+        
+        // Format declared value with currency
+        const formatDeclaredValue = (value, currency) => {
+            if (!value || value <= 0) return '';
+            const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+            return `${currencySymbol}${value.toFixed(2)}`;
+        };
+        
         const rowData = [
             '1', // Package quantity
             pkg.type || 'PALLET',
@@ -835,7 +843,8 @@ function drawExactFreightTable(doc, bolData) {
             '', // H/M
             pkg.description,
             pkg.dimensions,
-            pkg.freightClass || '' // Now properly displays freight class
+            formatDeclaredValue(pkg.declaredValue, pkg.declaredValueCurrency), // Declared value with currency
+            pkg.freightClass || '' // Freight class
         ];
         
         rowData.forEach((data, colIndex) => {

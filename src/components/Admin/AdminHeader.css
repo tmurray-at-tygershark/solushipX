@@ -93,8 +93,15 @@
     display: block;
 }
 
-/* Tablet and larger screens - always show menu */
-@media (min-width: 1200px) {
+/* Ensure mobile menu is hidden on larger screens */
+@media (min-width: 900px) {
+    .navbar-collapse.show {
+        display: flex !important;
+    }
+}
+
+/* Tablet and desktop screens - always show menu inline */
+@media (min-width: 900px) {
     .navbar-collapse {
         display: flex !important;
     }
@@ -104,11 +111,12 @@
     }
 }
 
-/* Mobile and tablet responsive styles */
-@media (max-width: 1199px) {
+/* Mobile responsive styles */
+@media (max-width: 899px) {
     .navbar {
         padding: 1rem 1rem;
         min-height: 65px;
+        position: relative;
     }
     
     .navbar-collapse {
@@ -120,7 +128,9 @@
         padding: 1rem;
         border-top: 1px solid #e2e8f0;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        z-index: 1000;
+        z-index: 9999;
+        max-height: calc(100vh - 100px);
+        overflow-y: auto;
     }
 
     .navbar-nav {
@@ -186,7 +196,7 @@
 }
 
 /* Large screens - ensure consistent 12px font size */
-@media (min-width: 1200px) {
+@media (min-width: 900px) {
     .nav-link {
         font-size: 12px !important;
     }

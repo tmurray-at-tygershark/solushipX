@@ -174,78 +174,58 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.id, shipment?.shipmentID, carrierData, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
 
-    // Enhanced BOL handler - for QuickShip, BOL should already exist from booking process
+    // Enhanced BOL handler - ALWAYS show Generic BOL attached to email confirmations
     const handlePrintBOL = useCallback(async () => {
         try {
             setActionLoading('printBOL', true);
-            showSnackbar('Loading Bill of Lading...', 'info');
+            showSnackbar('Loading Generic BOL...', 'info');
 
             const bolDocuments = shipmentDocuments.bol || [];
 
             if (bolDocuments.length > 0) {
-                // Enhanced BOL selection with priority for generated BOL
                 console.log('🔍 BOL Selection - Available BOL documents:', bolDocuments.map(doc => ({
                     id: doc.id,
                     filename: doc.filename,
                     isGeneratedBOL: doc.isGeneratedBOL,
-                    replacesApiBOL: doc.replacesApiBOL,
                     docType: doc.docType,
                     carrier: doc.carrier,
                     metadata: doc.metadata
                 })));
 
-                // Priority 1: Look for explicitly generated BOL with our flags
-                let generatedBOL = bolDocuments.find(doc =>
-                    doc.isGeneratedBOL === true ||
-                    doc.metadata?.generated === true ||
-                    doc.metadata?.eshipplus?.generated === true ||
-                    doc.metadata?.polaris?.generated === true ||
-                    doc.metadata?.canpar?.generated === true
-                );
+                // ALWAYS prioritize Generic BOL that's attached to email confirmations
+                // Look for the SOLUSHIP-{shipmentID}-BOL.pdf pattern (Generic BOL)
+                const genericBOL = bolDocuments.find(doc => {
+                    const filename = (doc.filename || '').toUpperCase();
+                    return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
+                });
 
-                // Priority 2: Look for BOL with generated filename pattern
-                if (!generatedBOL) {
-                    generatedBOL = bolDocuments.find(doc =>
-                        doc.filename?.includes('-bol') ||
-                        doc.filename?.includes('generated-bol') ||
-                        doc.filename?.includes('professional-bol')
-                    );
-                }
-
-                if (generatedBOL) {
-                    console.log('✅ Selected generated BOL document:', {
-                        id: generatedBOL.id,
-                        filename: generatedBOL.filename,
-                        isGeneratedBOL: generatedBOL.isGeneratedBOL,
-                        carrier: generatedBOL.carrier
+                if (genericBOL) {
+                    console.log('✅ Selected Generic BOL document (attached to emails):', {
+                        id: genericBOL.id,
+                        filename: genericBOL.filename,
+                        isGeneratedBOL: genericBOL.isGeneratedBOL,
+                        carrier: genericBOL.carrier
                     });
 
-                    showSnackbar('Opening generated BOL...', 'success');
+                    showSnackbar('Opening Generic BOL (email attachment)...', 'success');
 
                     await viewPdfInModal(
-                        generatedBOL.id,
-                        generatedBOL.filename,
-                        `Generated BOL - ${shipment?.shipmentID}`,
+                        genericBOL.id,
+                        genericBOL.filename,
+                        `Generic BOL - ${shipment?.shipmentID}`,
                         'printBOL'
                     );
                 } else {
-                    // No generated BOL found, use the first available BOL
-                    showSnackbar('Opening BOL document...', 'success');
-                    await viewPdfInModal(
-                        bolDocuments[0].id,
-                        bolDocuments[0].filename,
-                        `BOL - ${shipment?.shipmentID}`,
-                        'printBOL'
-                    );
+                    // No Generic BOL found - this should not happen for properly generated shipments
+                    console.warn('⚠️ Generic BOL not found, shipment may have been created with older system');
+                    showSnackbar('Generic BOL not found. Contact support if this is a recent shipment.', 'error');
                 }
             } else {
-                // For QuickShip, BOL should have been generated during booking
-                // If no BOL exists, something went wrong during the booking process
+                // No BOL documents found at all
                 if (shipment?.creationMethod === 'quickship') {
                     showSnackbar('BOL document not found. The BOL should have been generated during booking. Please contact support.', 'error');
                 } else {
-                    // For regular shipments, offer to generate BOL
-                    showSnackbar('No BOL document found for this shipment', 'warning');
+                    showSnackbar('No BOL document found for this shipment. Contact support.', 'warning');
                 }
             }
 

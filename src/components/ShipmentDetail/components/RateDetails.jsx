@@ -313,6 +313,19 @@ const RateDetails = ({
 
                                 // Get actual vs markup rates for breakdown calculation
                                 const getActualVsMarkupAmount = (field) => {
+                                    // Debug logging to see the dual rate storage data
+                                    console.log('🔍 getActualVsMarkupAmount Debug:', {
+                                        field,
+                                        hasActualRates: !!shipment?.actualRates,
+                                        hasMarkupRates: !!shipment?.markupRates,
+                                        hasActualBillingDetails: !!shipment?.actualRates?.billingDetails,
+                                        hasMarkupBillingDetails: !!shipment?.markupRates?.billingDetails,
+                                        actualBillingDetails: shipment?.actualRates?.billingDetails,
+                                        markupBillingDetails: shipment?.markupRates?.billingDetails,
+                                        actualTotalCharges: shipment?.actualRates?.totalCharges,
+                                        markupTotalCharges: shipment?.markupRates?.totalCharges
+                                    });
+
                                     if (shipment?.actualRates?.billingDetails && shipment?.markupRates?.billingDetails) {
                                         const actualDetail = shipment.actualRates.billingDetails.find(detail =>
                                             detail.name && (
@@ -327,7 +340,17 @@ const RateDetails = ({
                                             )
                                         );
 
+                                        console.log(`🔍 Looking for ${field}:`, {
+                                            actualDetail,
+                                            markupDetail,
+                                            foundBoth: !!(actualDetail && markupDetail)
+                                        });
+
                                         if (actualDetail && markupDetail) {
+                                            console.log(`✅ Found dual rate data for ${field}:`, {
+                                                actual: actualDetail.amount,
+                                                markup: markupDetail.amount
+                                            });
                                             return {
                                                 actual: actualDetail.amount,
                                                 markup: markupDetail.amount
@@ -337,6 +360,7 @@ const RateDetails = ({
 
                                     // Fallback to same amount for both
                                     const fallbackAmount = safeNumber(getBestRateInfo?.pricing?.[field] || getBestRateInfo?.[field + 'Charge'] || getBestRateInfo?.[field + 'Charges']);
+                                    console.log(`⚠️ Using fallback for ${field}:`, fallbackAmount);
                                     return {
                                         actual: fallbackAmount,
                                         markup: fallbackAmount

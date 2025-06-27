@@ -50,7 +50,7 @@ const AdminHeader = () => {
         return name.split(' ').map(n => n[0]).join('').toUpperCase();
     };
 
-    // Handle outside clicks to close mobile menu
+    // Handle outside clicks to close mobile menu and window resize
     useEffect(() => {
         const handleOutsideClick = (event) => {
             if (navbarRef.current && !navbarRef.current.contains(event.target) && mobileMenuOpen) {
@@ -64,12 +64,23 @@ const AdminHeader = () => {
             }
         };
 
+        const handleResize = () => {
+            // Close mobile menu when screen becomes large enough
+            if (window.innerWidth >= 900 && mobileMenuOpen) {
+                setMobileMenuOpen(false);
+            }
+        };
+
+        // Always listen for resize
+        window.addEventListener('resize', handleResize);
+
         if (mobileMenuOpen) {
             document.addEventListener('click', handleOutsideClick);
             document.addEventListener('keydown', handleEscapeKey);
         }
 
         return () => {
+            window.removeEventListener('resize', handleResize);
             document.removeEventListener('click', handleOutsideClick);
             document.removeEventListener('keydown', handleEscapeKey);
         };
@@ -89,7 +100,7 @@ const AdminHeader = () => {
                     className="navbar-toggler"
                     onClick={handleMobileToggle}
                     aria-label="Toggle navigation"
-                    sx={{ display: { xs: 'flex', lg: 'none' }, color: '#0f172a' }}
+                    sx={{ display: { xs: 'flex', md: 'none' }, color: '#0f172a' }}
                 >
                     {mobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
                 </IconButton>

@@ -39,6 +39,7 @@ const PackageDetails = ({ packages = [] }) => {
                     `${pkg.length}" × ${pkg.width}" × ${pkg.height}"` : 'N/A'),
             freightClass: pkg.freightClass || null,
             value: pkg.value || pkg.declaredValue || 0,
+            declaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
             packagingType: pkg.packagingType || null
         }));
     }, [packages]);
@@ -64,10 +65,13 @@ const PackageDetails = ({ packages = [] }) => {
         return weightNum > 0 ? `${weightNum} lbs` : 'N/A';
     }, []);
 
-    // Format value display
-    const formatValue = useCallback((value) => {
+    // Format value display with currency
+    const formatValue = useCallback((value, currency = 'CAD') => {
         const valueNum = parseFloat(value) || 0;
-        return valueNum > 0 ? `$${valueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
+        if (valueNum <= 0) return 'N/A';
+
+        const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+        return `${currencySymbol}${valueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }, []);
 
     // Get freight class chip color
@@ -138,7 +142,7 @@ const PackageDetails = ({ packages = [] }) => {
                                 sx={{ fontSize: '11px', height: '24px' }}
                             />
                             <Chip
-                                label={totals.totalValue > 0 ? formatValue(totals.totalValue) : 'N/A'}
+                                label={totals.totalValue > 0 ? formatValue(totals.totalValue, 'CAD') : 'N/A'}
                                 size="small"
                                 variant="outlined"
                                 sx={{ fontSize: '11px', height: '24px' }}
@@ -159,7 +163,7 @@ const PackageDetails = ({ packages = [] }) => {
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', py: 1.5, color: '#374151', textAlign: 'right' }}>Weight</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', py: 1.5, color: '#374151', textAlign: 'center' }}>Dimensions</TableCell>
                                     <TableCell sx={{ fontWeight: 600, fontSize: '12px', py: 1.5, color: '#374151', textAlign: 'center' }}>Class</TableCell>
-                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', py: 1.5, color: '#374151', textAlign: 'right' }}>Value</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', py: 1.5, color: '#374151', textAlign: 'right' }}>Declared Value</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -215,7 +219,7 @@ const PackageDetails = ({ packages = [] }) => {
                                             )}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px', py: 1.5, textAlign: 'right', fontWeight: 500 }}>
-                                            {formatValue(pkg.value)}
+                                            {formatValue(pkg.value, pkg.declaredValueCurrency)}
                                         </TableCell>
                                     </TableRow>
                                 ))}

@@ -234,7 +234,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         }
     }, [initialTrackingIdentifier]);
 
-    // Add smart status update hook
+    // Add smart status update hook (disabled for public users)
     const {
         loading: smartUpdateLoading,
         error: smartUpdateError,
@@ -243,7 +243,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         getUpdateStatusMessage,
         clearUpdateState,
         hasUpdates
-    } = useSmartStatusUpdate(shipmentData?.id, shipmentData);
+    } = useSmartStatusUpdate(null, null); // Disabled for public tracking page
 
     // Copy to clipboard function
     const copyToClipboard = async (text, label) => {
@@ -283,7 +283,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         }
     };
 
-    // Enhanced refresh status function using smart update system
+    // Enhanced refresh status function (simplified for public access)
     const handleRefreshStatus = async () => {
         if (!shipmentData?.id) {
             console.warn('Cannot refresh status: no shipment data available');
@@ -291,31 +291,10 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         }
 
         try {
-            clearUpdateState();
-            console.log(`🔄 Refreshing status for tracking ${currentTrackingId} using smart update system`);
+            console.log(`🔄 Refreshing status for tracking ${currentTrackingId} (public mode - re-fetching data)`);
 
-            const result = await performSmartUpdate(true); // Force update for manual refresh
-
-            if (result && result.success) {
-                if (result.statusChanged) {
-                    // Status changed - update local state
-                    setShipmentData(prev => ({
-                        ...prev,
-                        status: result.newStatus,
-                        statusLastChecked: new Date().toISOString(),
-                        lastSmartUpdate: new Date().toISOString()
-                    }));
-
-                    console.log(`✅ Status updated for ${currentTrackingId}: ${result.previousStatus} → ${result.newStatus}`);
-                } else if (result.updated) {
-                    // Status confirmed but no change
-                    setShipmentData(prev => ({
-                        ...prev,
-                        statusLastChecked: new Date().toISOString(),
-                        lastSmartUpdate: new Date().toISOString()
-                    }));
-                }
-            }
+            // For public users, simply re-fetch the tracking data
+            await fetchTrackingData(currentTrackingId);
 
         } catch (error) {
             console.error('Error refreshing tracking status:', error);
@@ -476,7 +455,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                     data.selectedRate?.sourceCarrierName === 'eShipPlus') {
                     setCarrier('eShipPlus');
                     console.log('Detected eShipPlus shipment via displayCarrierId/sourceCarrierName');
-                } else if (determinedCarrierName) {
+                } else if (determinedCarrierName && typeof determinedCarrierName === 'string') {
                     const dcLower = determinedCarrierName.toLowerCase();
                     if (dcLower.includes('canpar')) setCarrier('Canpar');
                     else if (dcLower.includes('eshipplus') || dcLower.includes('e-ship') || determinedCarrierName === 'ESHIPPLUS') {
@@ -484,6 +463,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                     } else {
                         setCarrier(determinedCarrierName);
                     }
+                } else {
+                    setCarrier('Unknown');
                 }
 
                 console.log('Shipment found. Events will be loaded via shipmentEvents listener and tracking records.');
@@ -683,7 +664,6 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         error={displayError}
                         mergedEvents={mergedEvents}
                         onRefresh={handleRefreshStatus}
-                        isRefreshing={smartUpdateLoading}
                         trackingNumber={currentTrackingId}
                         onClose={onClose}
                     />
@@ -701,13 +681,13 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         <IconButton
                                             size="small"
                                             onClick={handleRefreshStatus}
-                                            disabled={smartUpdateLoading}
-                                            title="Refresh status (smart update)"
+                                            disabled={loading}
+                                            title="Refresh tracking information"
                                             sx={{
                                                 '&:hover': { bgcolor: 'action.hover' }
                                             }}
                                         >
-                                            {smartUpdateLoading ? (
+                                            {loading ? (
                                                 <CircularProgress size={16} />
                                             ) : (
                                                 <RefreshIcon sx={{ fontSize: 18 }} />
@@ -716,12 +696,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     )}
                                 </Box>
 
-                                {/* Smart update status message */}
-                                {hasUpdates && (
-                                    <Alert severity="info" sx={{ mb: 2, fontSize: '0.875rem' }}>
-                                        {getUpdateStatusMessage()}
-                                    </Alert>
-                                )}
+
 
                                 {/* QR Code Section - Moved to top and full width */}
                                 <Box sx={{ mb: 3 }}>

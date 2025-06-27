@@ -100,11 +100,27 @@ const PACKAGING_TYPES = [
 
 // Rate code options for manual entry
 const RATE_CODE_OPTIONS = [
-    { value: 'FRT', label: 'FRT - Freight' },
-    { value: 'FUE', label: 'FUE - Fuel' },
-    { value: 'ADC', label: 'ADC - Additional Charge' },
-    { value: 'SUR', label: 'SUR - Surcharge' },
-    { value: 'TRF', label: 'TRF - Transaction Fee' }
+    { value: 'FRT', label: 'FRT', description: 'Freight' },
+    { value: 'ACC', label: 'ACC', description: 'Accessorial' },
+    { value: 'FUE', label: 'FUE', description: 'Fuel Surcharge' },
+    { value: 'MSC', label: 'MSC', description: 'Miscellaneous' },
+    { value: 'LOG', label: 'LOG', description: 'Logistics Service' },
+    { value: 'IC LOG', label: 'IC LOG', description: 'Logistics Service' },
+    { value: 'SUR', label: 'SUR', description: 'Surcharge' },
+    { value: 'IC SUR', label: 'IC SUR', description: 'Surcharge' },
+    { value: 'HST', label: 'HST', description: 'Harmonized Sales Tax' },
+    { value: 'HST ON', label: 'HST ON', description: 'Harmonized Sales Tax - ON' },
+    { value: 'HST BC', label: 'HST BC', description: 'Harmonized Sales Tax - BC' },
+    { value: 'HST NB', label: 'HST NB', description: 'Harmonized Sales Tax - NB' },
+    { value: 'HST NF', label: 'HST NF', description: 'Harmonized Sales Tax - NF' },
+    { value: 'HST NS', label: 'HST NS', description: 'Harmonized Sales Tax - NS' },
+    { value: 'GST', label: 'GST', description: 'Goods and Sales Tax' },
+    { value: 'QST', label: 'QST', description: 'Quebec Sales Tax' },
+    { value: 'HST PE', label: 'HST PE', description: 'Harmonized Sales Tax - PEI' },
+    { value: 'GOVT', label: 'GOVT', description: 'Customs Taxes' },
+    { value: 'GOVD', label: 'GOVD', description: 'Customs Duty' },
+    { value: 'GSTIMP', label: 'GSTIMP', description: 'Customs Taxes' },
+    { value: 'CLAIMS', label: 'CLAIMS', description: 'Claims Refund' }
 ];
 
 // Freight class options (same as Packages.jsx)
@@ -275,7 +291,7 @@ const QUICKSHIP_VALIDATION = {
     rates: {
         minCount: 1,
         required: ['code', 'chargeName', 'cost', 'charge'],
-        validCodes: ['FRT', 'FUE', 'ADC', 'SUR', 'TRF'] // Match RATE_CODE_OPTIONS
+        validCodes: ['FRT', 'ACC', 'FUE', 'MSC', 'LOG', 'IC LOG', 'SUR', 'IC SUR', 'HST', 'HST ON', 'HST BC', 'HST NB', 'HST NF', 'HST NS', 'GST', 'QST', 'HST PE', 'GOVT', 'GOVD', 'GSTIMP', 'CLAIMS'] // Match RATE_CODE_OPTIONS
     }
 };
 
@@ -343,7 +359,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         width: '40', // Standard skid width  
         height: '',
         freightClass: '', // Add freight class field
-        unitSystem: 'imperial' // Individual package unit system
+        unitSystem: 'imperial', // Individual package unit system
+        declaredValue: '', // Declared value amount
+        declaredValueCurrency: 'CAD' // Declared value currency
     }]);
 
     // Unit system state
@@ -519,7 +537,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                         width: '40',
                         height: '',
                         freightClass: '',
-                        unitSystem: 'imperial'
+                        unitSystem: 'imperial',
+                        declaredValue: '',
+                        declaredValueCurrency: 'CAD'
                     }],
                     manualRates: [{
                         id: 1,
@@ -726,7 +746,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             width: '40', // Standard skid width
             height: '',
             freightClass: '', // Optional freight class field
-            unitSystem: 'imperial' // Individual unit system per package
+            unitSystem: 'imperial', // Individual unit system per package
+            declaredValue: '', // Declared value amount
+            declaredValueCurrency: 'CAD' // Declared value currency
         }]);
     };
 
@@ -762,9 +784,29 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     };
 
     const updateRateLineItem = (id, field, value) => {
-        setManualRates(prev => prev.map(rate =>
-            rate.id === id ? { ...rate, [field]: value } : rate
-        ));
+        setManualRates(prev => prev.map(rate => {
+            if (rate.id === id) {
+                const updatedRate = { ...rate, [field]: value };
+
+                // Auto-populate charge name when code is selected, but only if charge name is empty or was auto-populated
+                if (field === 'code' && value) {
+                    const selectedOption = RATE_CODE_OPTIONS.find(option => option.value === value);
+                    if (selectedOption) {
+                        // Check if the current charge name is empty, or matches a previous auto-populated value
+                        const currentChargeName = rate.chargeName || '';
+                        const isCurrentValueAutopopulated = RATE_CODE_OPTIONS.some(option => option.description === currentChargeName);
+
+                        // Only update if field is empty or contains an auto-populated value
+                        if (!currentChargeName.trim() || isCurrentValueAutopopulated) {
+                            updatedRate.chargeName = selectedOption.description;
+                        }
+                    }
+                }
+
+                return updatedRate;
+            }
+            return rate;
+        }));
     };
 
     // Calculate total rate cost with formatting
@@ -1100,7 +1142,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     packagingTypeCode: pkg.packagingType,
                     packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
                     unitSystem: pkg.unitSystem || 'imperial', // Include individual unit system
-                    freightClass: pkg.freightClass || '' // Include freight class
+                    freightClass: pkg.freightClass || '', // Include freight class
+                    declaredValue: parseFloat(pkg.declaredValue || 0), // Include parsed declared value
+                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD' // Include declared value currency
                 })),
 
                 // Carrier and rates
@@ -1112,6 +1156,14 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     cost: parseFloat(rate.cost || 0),
                     charge: parseFloat(rate.charge || 0)
                 })),
+                // Carrier confirmation rates (exclude IC SUR and IC LOG)
+                carrierConfirmationRates: manualRates
+                    .filter(rate => rate.code !== 'IC SUR' && rate.code !== 'IC LOG')
+                    .map(rate => ({
+                        ...rate,
+                        cost: parseFloat(rate.cost || 0),
+                        charge: parseFloat(rate.charge || 0)
+                    })),
                 totalCharges: totalCost,
                 currency: manualRates[0]?.chargeCurrency || 'CAD',
                 unitSystem: unitSystem,
@@ -1223,7 +1275,22 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         setTimeout(() => {
             if (finalShipmentId && onViewShipment) {
                 // Call the onViewShipment prop to open the shipment detail modal directly
+                console.log('🎯 QuickShip: Calling onViewShipment with shipmentId:', finalShipmentId);
                 onViewShipment(finalShipmentId);
+            } else if (finalShipmentId) {
+                // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
+                console.log('🎯 QuickShip: No onViewShipment prop, attempting direct admin navigation');
+
+                // Check if we're in an admin context (look for admin in the URL)
+                const isAdminContext = window.location.pathname.includes('/admin');
+
+                if (isAdminContext) {
+                    // Navigate directly to admin shipment detail
+                    window.location.href = `/admin/shipments?shipment=${finalShipmentId}`;
+                } else {
+                    // Navigate to regular shipment detail
+                    window.location.href = `/shipments/${finalShipmentId}`;
+                }
             } else if (onReturnToShipments) {
                 onReturnToShipments();
             }
@@ -1295,7 +1362,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                 width: pkg.width || '40', // Standard skid width
                                 height: pkg.height || '',
                                 freightClass: pkg.freightClass || '', // Include freight class field
-                                unitSystem: pkg.unitSystem || 'imperial' // Include individual unit system
+                                unitSystem: pkg.unitSystem || 'imperial', // Include individual unit system
+                                declaredValue: pkg.declaredValue || '', // Include declared value
+                                declaredValueCurrency: pkg.declaredValueCurrency || 'CAD' // Include declared value currency
                             }));
                             setPackages(validatedPackages);
                         }
@@ -1399,7 +1468,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     width: pkg.width || '40', // Standard skid width
                                     height: pkg.height || '',
                                     freightClass: pkg.freightClass || '', // Include freight class field
-                                    unitSystem: pkg.unitSystem || 'imperial' // Include individual unit system
+                                    unitSystem: pkg.unitSystem || 'imperial', // Include individual unit system
+                                    declaredValue: pkg.declaredValue || '', // Include declared value
+                                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD' // Include declared value currency
                                 }));
                                 setPackages(validatedPackages);
                             }
@@ -1694,6 +1765,14 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             const quantity = parseInt(pkg.packagingQuantity);
             if (isNaN(quantity) || quantity < 1 || quantity > 999) {
                 return { valid: false, message: `Package ${i + 1}: Quantity must be between 1 and 999.` };
+            }
+
+            // Validate declared value (optional field)
+            if (pkg.declaredValue && pkg.declaredValue !== '') {
+                const declaredValue = parseFloat(pkg.declaredValue);
+                if (isNaN(declaredValue) || declaredValue < 0) {
+                    return { valid: false, message: `Package ${i + 1}: Declared value must be a valid positive number.` };
+                }
             }
         }
 
@@ -2857,6 +2936,37 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                         )
                                                     }}
                                                 />
+                                            </Grid>
+
+                                            {/* Declared Value */}
+                                            <Grid item xs={12} md={3}>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <TextField
+                                                        size="small"
+                                                        label="Declared Value"
+                                                        type="number"
+                                                        value={pkg.declaredValue || ''}
+                                                        onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
+                                                        sx={{
+                                                            flex: 1,
+                                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                        placeholder="0.00"
+                                                    />
+                                                    <FormControl size="small" sx={{ minWidth: '70px' }}>
+                                                        <Select
+                                                            value={pkg.declaredValueCurrency || 'CAD'}
+                                                            onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
+                                                            sx={{
+                                                                '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
+                                                            }}
+                                                        >
+                                                            <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
+                                                            <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
+                                                        </Select>
+                                                    </FormControl>
+                                                </Box>
                                             </Grid>
 
                                             {/* Unit System Toggle - show for each package */}

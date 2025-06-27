@@ -322,7 +322,7 @@ function extractEShipPlusBOLData(shipmentData, shipmentId) {
             // Quote Information - USE CARRIER ORDER CONFIRMATION NUMBER (Requirement #5)
             quoteNumber: carrierOrderNumber,
             
-            // Package Information - Enhanced mapping
+            // Package Information - Enhanced mapping with declared value
             packages: Array.isArray(packages) ? packages.map((pkg, index) => {
                 const weight = parseFloat(pkg.weight || pkg.reported_weight || pkg.Weight || pkg.packageWeight || 0);
                 const freightClass = pkg.freightClass || 
@@ -330,6 +330,8 @@ function extractEShipPlusBOLData(shipmentData, shipmentId) {
                                    pkg.freight_class ||
                                    pkg.class ||
                                    70; // Default class
+                const declaredValue = parseFloat(String(pkg.declaredValue || 0).replace(/[^\d.-]/g, '')) || 0;
+                const declaredValueCurrency = pkg.declaredValueCurrency || 'CAD';
                 
                 return {
                     quantity: parseInt(pkg.quantity || pkg.PackagingQuantity || pkg.pieces || 1),
@@ -342,13 +344,17 @@ function extractEShipPlusBOLData(shipmentData, shipmentId) {
                     weight: weight,
                     freightClass: freightClass,
                     stcNumber: pkg.stcNumber || pkg.STC || '', // STC # column
+                    declaredValue: declaredValue,
+                    declaredValueCurrency: declaredValueCurrency
                 };
             }) : [{
                 quantity: 1,
                 description: 'GENERAL FREIGHT',
                 weight: 100,
                 freightClass: 70,
-                stcNumber: ''
+                stcNumber: '',
+                declaredValue: 0,
+                declaredValueCurrency: 'CAD'
             }],
             
             // Totals
@@ -929,26 +935,30 @@ function drawIntegratedCarriersPackageTable(doc, bolData) {
        .rect(15, startY, 582, tableHeight) // Adjusted width
        .stroke();
     
-    // Table headers - compact positioning
+    // Table headers - compact positioning with declared value
     const headerY = startY + 6;
     doc.font('Helvetica-Bold')
        .fontSize(7) // Smaller headers
-       .text('QUANTITY', 20, headerY, { width: 65, align: 'center' })
-       .text('DESCRIPTION AND IDENTIFICATION OF ARTICLES', 90, headerY, { width: 350, align: 'center' })
-       .text('WEIGHT (lb)', 445, headerY, { width: 60, align: 'center' })
-       .text('CLASS/RATE', 510, headerY, { width: 80, align: 'center' });
+       .text('QTY', 20, headerY, { width: 50, align: 'center' })
+       .text('DESCRIPTION AND IDENTIFICATION OF ARTICLES', 75, headerY, { width: 280, align: 'center' })
+       .text('WEIGHT\n(lb)', 360, headerY, { width: 50, align: 'center' })
+       .text('DECLARED\nVALUE', 415, headerY, { width: 70, align: 'center' })
+       .text('CLASS/\nRATE', 490, headerY, { width: 70, align: 'center' });
     
-    // Column separators - adjusted positions
+    // Column separators - adjusted positions for declared value
     doc.strokeColor('#000000')
        .lineWidth(0.5)
-       .moveTo(85, startY)
-       .lineTo(85, startY + tableHeight)
+       .moveTo(70, startY)
+       .lineTo(70, startY + tableHeight)
        .stroke()
-       .moveTo(440, startY)
-       .lineTo(440, startY + tableHeight)
+       .moveTo(355, startY)
+       .lineTo(355, startY + tableHeight)
        .stroke()
-       .moveTo(505, startY)
-       .lineTo(505, startY + tableHeight)
+       .moveTo(410, startY)
+       .lineTo(410, startY + tableHeight)
+       .stroke()
+       .moveTo(485, startY)
+       .lineTo(485, startY + tableHeight)
        .stroke();
     
     // Header separator
@@ -958,18 +968,26 @@ function drawIntegratedCarriersPackageTable(doc, bolData) {
        .lineTo(597, startY + 18)
        .stroke();
     
-    // Package data rows - COMPACT
+    // Package data rows - COMPACT with declared value
     let dataY = startY + 25;
     const lineHeight = 10; // Reduced line height
     bolData.packages.forEach((pkg, index) => {
         if (dataY > startY + tableHeight - 15) return; // Don't overflow table
         
+        // Format declared value with currency
+        const formatDeclaredValue = (value, currency) => {
+            if (!value || value <= 0) return '';
+            const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+            return `${currencySymbol}${value.toFixed(2)}`;
+        };
+        
         doc.font('Helvetica')
            .fontSize(6) // Smaller font
-           .text(pkg.quantity.toString(), 20, dataY, { width: 60, align: 'center' })
-           .text(pkg.description.toUpperCase(), 90, dataY, { width: 345, align: 'left' })
-           .text(pkg.weight.toFixed(1), 445, dataY, { width: 55, align: 'center' })
-           .text(pkg.freightClass.toString(), 510, dataY, { width: 75, align: 'center' });
+           .text(pkg.quantity.toString(), 20, dataY, { width: 45, align: 'center' })
+           .text(pkg.description.toUpperCase(), 75, dataY, { width: 275, align: 'left' })
+           .text(pkg.weight.toFixed(1), 360, dataY, { width: 45, align: 'center' })
+           .text(formatDeclaredValue(pkg.declaredValue, pkg.declaredValueCurrency), 415, dataY, { width: 65, align: 'center' })
+           .text(pkg.freightClass.toString(), 490, dataY, { width: 65, align: 'center' });
         
         dataY += lineHeight;
     });
@@ -977,7 +995,7 @@ function drawIntegratedCarriersPackageTable(doc, bolData) {
     // Total weight at bottom
     doc.font('Helvetica-Bold')
        .fontSize(7) // Smaller total
-       .text(`Total: ${bolData.totalWeight.toFixed(1)}`, 445, startY + tableHeight - 10, { width: 55, align: 'center' });
+       .text(`Total: ${bolData.totalWeight.toFixed(1)}`, 360, startY + tableHeight - 10, { width: 45, align: 'center' });
     
     // Horizontal separator
     doc.strokeColor('#000000')

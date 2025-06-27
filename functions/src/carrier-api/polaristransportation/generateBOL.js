@@ -228,12 +228,14 @@ function extractBOLData(shipmentData, shipmentId) {
             accountNumber: '000605'
         },
         
-        // Package Information - Enhanced mapping
+        // Package Information - Enhanced mapping with declared value
         packages: packages.map((pkg, index) => {
             const weight = parseFloat(pkg.weight || pkg.reported_weight || pkg.Weight || pkg.packageWeight || 0);
             const length = pkg.length || pkg.Length || pkg.dimensions?.length || 48;
             const width = pkg.width || pkg.Width || pkg.dimensions?.width || 40;
             const height = pkg.height || pkg.Height || pkg.dimensions?.height || 48;
+            const declaredValue = parseFloat(String(pkg.declaredValue || 0).replace(/[^\d.-]/g, '')) || 0;
+            const declaredValueCurrency = pkg.declaredValueCurrency || 'CAD';
             
             return {
                 type: pkg.packageType || pkg.type || 'PALLET', // Default to PALLET for LTL
@@ -249,7 +251,9 @@ function extractBOLData(shipmentData, shipmentId) {
                             pkg.FreightClass || 
                             pkg.freight_class ||
                             pkg.class ||
-                            ''
+                            '',
+                declaredValue: declaredValue,
+                declaredValueCurrency: declaredValueCurrency
             };
         }),
         
@@ -671,15 +675,16 @@ function drawExactFreightTable(doc, bolData) {
     const tableWidth = 562;
     const rowHeight = 18; // Reduced from 20
     
-    // Column definitions with exact widths
+    // Column definitions with exact widths - Added declared value
     const columns = [
-        { header: 'PACKAGE\nQUANTITY', width: 60, align: 'center' },
-        { header: 'PACKAGE\nTYPE', width: 60, align: 'center' },
-        { header: 'WEIGHT\n(LBS)', width: 60, align: 'center' },
-        { header: 'H/M', width: 40, align: 'center' },
-        { header: 'COMMODITY DESCRIPTION', width: 220, align: 'left' },
-        { header: 'DIMENSIONS\nL x W x H', width: 80, align: 'center' },
-        { header: 'CLASS', width: 42, align: 'center' }
+        { header: 'PACKAGE\nQUANTITY', width: 50, align: 'center' },
+        { header: 'PACKAGE\nTYPE', width: 50, align: 'center' },
+        { header: 'WEIGHT\n(LBS)', width: 50, align: 'center' },
+        { header: 'H/M', width: 30, align: 'center' },
+        { header: 'COMMODITY DESCRIPTION', width: 170, align: 'left' },
+        { header: 'DIMENSIONS\nL x W x H', width: 70, align: 'center' },
+        { header: 'DECLARED\nVALUE', width: 70, align: 'right' },
+        { header: 'CLASS', width: 72, align: 'center' }
     ];
     
     // Draw table border
@@ -748,6 +753,14 @@ function drawExactFreightTable(doc, bolData) {
         }
         
         xPos = 25;
+        
+        // Format declared value with currency
+        const formatDeclaredValue = (value, currency) => {
+            if (!value || value <= 0) return '';
+            const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+            return `${currencySymbol}${value.toFixed(2)}`;
+        };
+        
         const rowData = [
             '1', // Package quantity
             pkg.type || 'PALLET',
@@ -755,6 +768,7 @@ function drawExactFreightTable(doc, bolData) {
             '', // H/M
             pkg.description,
             pkg.dimensions,
+            formatDeclaredValue(pkg.declaredValue, pkg.declaredValueCurrency), // Declared value with currency
             pkg.freightClass || ''
         ];
         

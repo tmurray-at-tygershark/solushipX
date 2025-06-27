@@ -167,16 +167,9 @@ function AppRoutes() {
                         <CreateShipment />
                     </ProtectedRoute>
                 } />
-                <Route path="/tracking" element={
-                    <ProtectedRoute>
-                        <Tracking />
-                    </ProtectedRoute>
-                } />
-                <Route path="/tracking/:trackingIdentifier" element={
-                    <ProtectedRoute>
-                        <Tracking />
-                    </ProtectedRoute>
-                } />
+                {/* Public Tracking Routes - Anyone can access these */}
+                <Route path="/tracking" element={<Tracking />} />
+                <Route path="/tracking/:trackingIdentifier" element={<Tracking />} />
                 <Route path="/customers" element={
                     <ProtectedRoute>
                         <Customers />

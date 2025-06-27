@@ -130,6 +130,9 @@ const {
 // Import invoice generation function
 const { onInvoiceCreated } = require('./src/generateInvoicePDFAndEmail');
 
+// Import currency sync functions
+const { syncCurrencyRates, scheduledCurrencySync } = require('./src/syncCurrencyRates');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -232,6 +235,10 @@ exports.markCommissionsAsPaid = markCommissionsAsPaid;
 
 // Export invoice generation function
 exports.onInvoiceCreated = onInvoiceCreated;
+
+// Export currency sync functions
+exports.syncCurrencyRates = syncCurrencyRates;
+exports.scheduledCurrencySync = scheduledCurrencySync;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(
