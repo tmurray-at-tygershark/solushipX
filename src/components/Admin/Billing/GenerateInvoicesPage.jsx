@@ -342,15 +342,26 @@ const GenerateInvoicesPage = () => {
         );
 
         // Prepare line items from shipments
-        const lineItems = companyData.shipments.map(shipment => ({
-            shipmentId: shipment.shipmentID || shipment.id,
-            description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-            carrier: shipment.carrier,
-            service: shipment.selectedRate?.service?.name || 'Standard',
-            date: getShipmentDate(shipment),
-            charges: getShipmentCharges(shipment),
-            chargeBreakdown: getChargeBreakdown(shipment)
-        }));
+        const lineItems = companyData.shipments.map(shipment => {
+            // Get shipment date with fallback for regular invoices
+            const shipmentDate = getShipmentDate(shipment);
+            const validDate = shipmentDate || new Date(); // Use current date as fallback
+
+            return {
+                shipmentId: shipment.shipmentID || shipment.id,
+                orderNumber: shipment.orderNumber || shipment.shipmentInfo?.orderNumber || 'N/A',
+                trackingNumber: shipment.trackingNumber || shipment.shipmentInfo?.carrierTrackingNumber || 'TBD',
+                description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                carrier: shipment.carrier,
+                service: shipment.selectedRate?.service?.name || shipment.service || 'Standard',
+                date: validDate, // Use the validated date
+                charges: getShipmentCharges(shipment),
+                chargeBreakdown: getChargeBreakdown(shipment),
+                packages: shipment.packages?.length || shipment.packageCount || 1,
+                weight: shipment.totalWeight || shipment.weight || 0,
+                consignee: shipment.shipTo?.companyName || shipment.shipTo?.company || 'N/A'
+            };
+        });
 
         const invoiceData = {
             invoiceNumber,
@@ -395,12 +406,156 @@ const GenerateInvoicesPage = () => {
     const getChargeBreakdown = (shipment) => {
         const breakdown = [];
 
+        // Enhanced charge breakdown extraction
         if (shipment.markupRates) {
             const rates = shipment.markupRates;
-            if (rates.freightCharges > 0) breakdown.push({ name: 'Freight', amount: rates.freightCharges });
-            if (rates.fuelCharges > 0) breakdown.push({ name: 'Fuel', amount: rates.fuelCharges });
-            if (rates.serviceCharges > 0) breakdown.push({ name: 'Service', amount: rates.serviceCharges });
-            if (rates.accessorialCharges > 0) breakdown.push({ name: 'Accessorial', amount: rates.accessorialCharges });
+
+            // Extract freight charges
+            if (rates.freightCharges > 0) {
+                breakdown.push({
+                    description: 'Freight Charges',
+                    amount: rates.freightCharges
+                });
+            }
+
+            // Extract fuel surcharge
+            if (rates.fuelCharges > 0) {
+                breakdown.push({
+                    description: 'Fuel Surcharge',
+                    amount: rates.fuelCharges
+                });
+            }
+
+            // Extract service charges
+            if (rates.serviceCharges > 0) {
+                breakdown.push({
+                    description: 'Service Charges',
+                    amount: rates.serviceCharges
+                });
+            }
+
+            // Extract accessorial charges
+            if (rates.accessorialCharges > 0) {
+                breakdown.push({
+                    description: 'Accessorial Charges',
+                    amount: rates.accessorialCharges
+                });
+            }
+
+            // Extract other common charges
+            if (rates.hazmatFee > 0) {
+                breakdown.push({
+                    description: 'Hazmat Fee',
+                    amount: rates.hazmatFee
+                });
+            }
+
+            if (rates.residentialDelivery > 0) {
+                breakdown.push({
+                    description: 'Residential Delivery',
+                    amount: rates.residentialDelivery
+                });
+            }
+
+            if (rates.signatureRequired > 0) {
+                breakdown.push({
+                    description: 'Signature Required',
+                    amount: rates.signatureRequired
+                });
+            }
+
+            if (rates.insurance > 0) {
+                breakdown.push({
+                    description: 'Insurance',
+                    amount: rates.insurance
+                });
+            }
+        }
+
+        // Check for charges in selectedRate structure
+        else if (shipment.selectedRate) {
+            const rate = shipment.selectedRate;
+
+            // Extract from rate breakdown if available
+            if (rate.breakdown && Array.isArray(rate.breakdown)) {
+                rate.breakdown.forEach(charge => {
+                    if (charge.amount > 0) {
+                        breakdown.push({
+                            description: charge.name || charge.description || 'Charge',
+                            amount: charge.amount
+                        });
+                    }
+                });
+            }
+
+            // Extract from rate charges if available
+            else if (rate.charges && Array.isArray(rate.charges)) {
+                rate.charges.forEach(charge => {
+                    if (charge.amount > 0) {
+                        breakdown.push({
+                            description: charge.name || charge.description || 'Charge',
+                            amount: charge.amount
+                        });
+                    }
+                });
+            }
+
+            // Extract from direct rate properties
+            else {
+                const baseRate = rate.baseRate || rate.freightRate || 0;
+                const fuelSurcharge = rate.fuelSurcharge || rate.fuel || 0;
+                const taxes = rate.taxes || rate.tax || 0;
+
+                if (baseRate > 0) {
+                    breakdown.push({
+                        description: 'Base Freight',
+                        amount: baseRate
+                    });
+                }
+
+                if (fuelSurcharge > 0) {
+                    breakdown.push({
+                        description: 'Fuel Surcharge',
+                        amount: fuelSurcharge
+                    });
+                }
+
+                if (taxes > 0) {
+                    breakdown.push({
+                        description: 'Taxes',
+                        amount: taxes
+                    });
+                }
+            }
+        }
+
+        // If no detailed breakdown available, create estimated breakdown from total charges
+        if (breakdown.length === 0) {
+            const totalCharges = getShipmentCharges(shipment);
+
+            if (totalCharges > 0) {
+                // Create reasonable estimates based on industry standards
+                const freightEstimate = totalCharges * 0.75; // 75% freight
+                const fuelEstimate = totalCharges * 0.20;    // 20% fuel surcharge
+                const taxEstimate = totalCharges * 0.05;     // 5% taxes/fees
+
+                breakdown.push({
+                    description: 'Freight Charges',
+                    amount: freightEstimate
+                });
+
+                breakdown.push({
+                    description: 'Fuel Surcharge',
+                    amount: fuelEstimate
+                });
+
+                if (taxEstimate > 0) {
+                    breakdown.push({
+                        description: 'Taxes & Fees',
+                        amount: taxEstimate
+                    });
+                }
+            }
         }
 
         return breakdown;
@@ -456,22 +611,198 @@ const GenerateInvoicesPage = () => {
         try {
             setIsSendingTest(true);
 
-            // Create a sample invoice with the first selected company
-            const selectedByCompany = getSelectedShipmentsByCompany();
-            const firstCompanyId = Object.keys(selectedByCompany)[0];
+            // Create comprehensive test data with 20 random shipments
+            const testShipments = [
+                // Shipment 1 - Purolator
+                {
+                    id: 'TS-001', shipmentID: 'TS-2025-001', carrier: 'Purolator', service: 'Ground',
+                    shipFrom: { city: 'Toronto', state: 'ON', street: '100 King St W', postalCode: 'M5X 1A1', country: 'CA' },
+                    shipTo: { city: 'Vancouver', state: 'BC', street: '555 Granville St', postalCode: 'V6C 1X6', country: 'CA' },
+                    packages: 2, weight: 45.5, charges: 89.50, references: 'PO-2025-001, INV-445566'
+                },
 
-            if (!firstCompanyId) {
-                enqueueSnackbar('Please select at least one shipment to generate a test invoice', { variant: 'warning' });
-                return;
-            }
+                // Shipment 2 - FedEx
+                {
+                    id: 'TS-002', shipmentID: 'TS-2025-002', carrier: 'FedEx', service: 'Express',
+                    shipFrom: { city: 'Montreal', state: 'QC', street: '1250 René-Lévesque Blvd', postalCode: 'H3B 4W8', country: 'CA' },
+                    shipTo: { city: 'Calgary', state: 'AB', street: '888 - 3 St SW', postalCode: 'T2P 5C5', country: 'CA' },
+                    packages: 1, weight: 12.3, charges: 67.25, references: 'REF-789012, ORDER-334455'
+                },
 
-            const companyData = selectedByCompany[firstCompanyId];
+                // Shipment 3 - UPS
+                {
+                    id: 'TS-003', shipmentID: 'TS-2025-003', carrier: 'UPS', service: 'Ground',
+                    shipFrom: { city: 'Ottawa', state: 'ON', street: '90 Sparks St', postalCode: 'K1P 5B4', country: 'CA' },
+                    shipTo: { city: 'Winnipeg', state: 'MB', street: '201 Portage Ave', postalCode: 'R3B 3K6', country: 'CA' },
+                    packages: 3, weight: 78.9, charges: 125.75, references: 'WO-556677, TICKET-998877'
+                },
 
-            // Use only first 3 shipments for test to keep it manageable
+                // Shipment 4 - Canpar Express
+                {
+                    id: 'TS-004', shipmentID: 'TS-2025-004', carrier: 'Canpar Express', service: 'Overnight',
+                    shipFrom: { city: 'Halifax', state: 'NS', street: '1801 Hollis St', postalCode: 'B3J 3N4', country: 'CA' },
+                    shipTo: { city: 'Toronto', state: 'ON', street: '481 University Ave', postalCode: 'M5G 2E9', country: 'CA' },
+                    packages: 1, weight: 5.8, charges: 45.30, references: 'RUSH-001, PRIORITY-223344'
+                },
+
+                // Shipment 5 - Canada Post
+                {
+                    id: 'TS-005', shipmentID: 'TS-2025-005', carrier: 'Canada Post', service: 'Xpresspost',
+                    shipFrom: { city: 'Edmonton', state: 'AB', street: '10665 Jasper Ave', postalCode: 'T5J 3S9', country: 'CA' },
+                    shipTo: { city: 'Saskatoon', state: 'SK', street: '244 - 2nd Ave S', postalCode: 'S7K 1K9', country: 'CA' },
+                    packages: 4, weight: 156.2, charges: 198.40, references: 'BULK-2025, MULTI-667788'
+                },
+
+                // Shipment 6 - DHL
+                {
+                    id: 'TS-006', shipmentID: 'TS-2025-006', carrier: 'DHL', service: 'Express',
+                    shipFrom: { city: 'Quebec City', state: 'QC', street: '1150 Claire-Fontaine', postalCode: 'G1R 5G4', country: 'CA' },
+                    shipTo: { city: 'Moncton', state: 'NB', street: '655 Main St', postalCode: 'E1C 1E8', country: 'CA' },
+                    packages: 2, weight: 34.7, charges: 112.85, references: 'INTL-445566, EXPORT-112233'
+                },
+
+                // Shipment 7 - Purolator Express
+                {
+                    id: 'TS-007', shipmentID: 'TS-2025-007', carrier: 'Purolator', service: 'Express',
+                    shipFrom: { city: 'London', state: 'ON', street: '200 Queens Ave', postalCode: 'N6A 1J3', country: 'CA' },
+                    shipTo: { city: 'Windsor', state: 'ON', street: '350 City Hall Square W', postalCode: 'N9A 6S1', country: 'CA' },
+                    packages: 1, weight: 23.4, charges: 56.90, references: 'LOCAL-778899, SAME-DAY-445566'
+                },
+
+                // Shipment 8 - FedEx Ground
+                {
+                    id: 'TS-008', shipmentID: 'TS-2025-008', carrier: 'FedEx', service: 'Ground',
+                    shipFrom: { city: 'Victoria', state: 'BC', street: '1175 Douglas St', postalCode: 'V8W 2E1', country: 'CA' },
+                    shipTo: { city: 'Kelowna', state: 'BC', street: '1435 Water St', postalCode: 'V1Y 1J4', country: 'CA' },
+                    packages: 5, weight: 234.6, charges: 287.30, references: 'HEAVY-001, FREIGHT-889900'
+                },
+
+                // Shipment 9 - UPS Express Saver
+                {
+                    id: 'TS-009', shipmentID: 'TS-2025-009', carrier: 'UPS', service: 'Express Saver',
+                    shipFrom: { city: 'Charlottetown', state: 'PE', street: '165 Richmond St', postalCode: 'C1A 1J1', country: 'CA' },
+                    shipTo: { city: 'Sydney', state: 'NS', street: '320 Esplanade', postalCode: 'B1P 1A7', country: 'CA' },
+                    packages: 2, weight: 67.8, charges: 143.20, references: 'MARITIME-223344, ISLAND-556677'
+                },
+
+                // Shipment 10 - Canpar Ground
+                {
+                    id: 'TS-010', shipmentID: 'TS-2025-010', carrier: 'Canpar Express', service: 'Ground',
+                    shipFrom: { city: 'Thunder Bay', state: 'ON', street: '290 Red River Rd', postalCode: 'P7B 1A5', country: 'CA' },
+                    shipTo: { city: 'Sudbury', state: 'ON', street: '200 Brady St', postalCode: 'P3E 5L3', country: 'CA' },
+                    packages: 3, weight: 89.1, charges: 167.45, references: 'NORTHERN-667788, MINING-334455'
+                },
+
+                // Shipment 11 - Canada Post Regular
+                {
+                    id: 'TS-011', shipmentID: 'TS-2025-011', carrier: 'Canada Post', service: 'Regular Parcel',
+                    shipFrom: { city: 'Regina', state: 'SK', street: '2045 Broad St', postalCode: 'S4P 1Y3', country: 'CA' },
+                    shipTo: { city: 'Brandon', state: 'MB', street: '410 - 9th St', postalCode: 'R7A 6A2', country: 'CA' },
+                    packages: 1, weight: 15.6, charges: 28.75, references: 'PRAIRIE-445566, AGRI-778899'
+                },
+
+                // Shipment 12 - DHL Ground
+                {
+                    id: 'TS-012', shipmentID: 'TS-2025-012', carrier: 'DHL', service: 'Ground',
+                    shipFrom: { city: 'St. Johns', state: 'NL', street: '10 Fort William Pl', postalCode: 'A1C 1K4', country: 'CA' },
+                    shipTo: { city: 'Corner Brook', state: 'NL', street: '1 Confederation Dr', postalCode: 'A2H 6J7', country: 'CA' },
+                    packages: 2, weight: 43.2, charges: 134.60, references: 'NFLD-889900, REMOTE-112233'
+                },
+
+                // Shipment 13 - Purolator Ground
+                {
+                    id: 'TS-013', shipmentID: 'TS-2025-013', carrier: 'Purolator', service: 'Ground',
+                    shipFrom: { city: 'Kitchener', state: 'ON', street: '200 King St W', postalCode: 'N2G 4Y7', country: 'CA' },
+                    shipTo: { city: 'Barrie', state: 'ON', street: '70 Collier St', postalCode: 'L4M 1H2', country: 'CA' },
+                    packages: 4, weight: 112.8, charges: 203.15, references: 'TECH-223344, MANUFACTURING-556677'
+                },
+
+                // Shipment 14 - FedEx Priority Overnight
+                {
+                    id: 'TS-014', shipmentID: 'TS-2025-014', carrier: 'FedEx', service: 'Priority Overnight',
+                    shipFrom: { city: 'Whitehorse', state: 'YT', street: '2121 - 2nd Ave', postalCode: 'Y1A 1C2', country: 'CA' },
+                    shipTo: { city: 'Yellowknife', state: 'NT', street: '4920 - 52 St', postalCode: 'X1A 2P8', country: 'CA' },
+                    packages: 1, weight: 8.9, charges: 189.50, references: 'ARCTIC-667788, URGENT-998877'
+                },
+
+                // Shipment 15 - UPS Ground
+                {
+                    id: 'TS-015', shipmentID: 'TS-2025-015', carrier: 'UPS', service: 'Ground',
+                    shipFrom: { city: 'Iqaluit', state: 'NU', street: '924 Mivvik St', postalCode: 'X0A 0H0', country: 'CA' },
+                    shipTo: { city: 'Rankin Inlet', state: 'NU', street: 'Sivulliq Ave', postalCode: 'X0C 0G0', country: 'CA' },
+                    packages: 3, weight: 76.4, charges: 456.80, references: 'NUNAVUT-334455, ARCTIC-112233'
+                },
+
+                // Shipment 16 - Canpar Express
+                {
+                    id: 'TS-016', shipmentID: 'TS-2025-016', carrier: 'Canpar Express', service: 'Express',
+                    shipFrom: { city: 'Guelph', state: 'ON', street: '1 Carden St', postalCode: 'N1H 3A1', country: 'CA' },
+                    shipTo: { city: 'Cambridge', state: 'ON', street: '50 Dickson St', postalCode: 'N1R 1T7', country: 'CA' },
+                    packages: 2, weight: 54.3, charges: 78.90, references: 'REGIONAL-445566, EXPRESS-778899'
+                },
+
+                // Shipment 17 - Canada Post Priority
+                {
+                    id: 'TS-017', shipmentID: 'TS-2025-017', carrier: 'Canada Post', service: 'Priority',
+                    shipFrom: { city: 'Red Deer', state: 'AB', street: '4914 - 48 Ave', postalCode: 'T4N 3T5', country: 'CA' },
+                    shipTo: { city: 'Lethbridge', state: 'AB', street: '910 - 4 Ave S', postalCode: 'T1J 4E4', country: 'CA' },
+                    packages: 1, weight: 29.7, charges: 65.40, references: 'ALBERTA-889900, OIL-223344'
+                },
+
+                // Shipment 18 - DHL Express
+                {
+                    id: 'TS-018', shipmentID: 'TS-2025-018', carrier: 'DHL', service: 'Express',
+                    shipFrom: { city: 'Sherbrooke', state: 'QC', street: '145 Wellington St N', postalCode: 'J1H 5B7', country: 'CA' },
+                    shipTo: { city: 'Trois-Rivières', state: 'QC', street: '1425 Place du Frère-André', postalCode: 'G8Z 3R8', country: 'CA' },
+                    packages: 3, weight: 98.6, charges: 156.75, references: 'QUEBEC-556677, FRENCH-334455'
+                },
+
+                // Shipment 19 - Purolator Express
+                {
+                    id: 'TS-019', shipmentID: 'TS-2025-019', carrier: 'Purolator', service: 'Express',
+                    shipFrom: { city: 'Nanaimo', state: 'BC', street: '455 Wallace St', postalCode: 'V9R 5B7', country: 'CA' },
+                    shipTo: { city: 'Prince George', state: 'BC', street: '1100 Patricia Blvd', postalCode: 'V2L 3V9', country: 'CA' },
+                    packages: 2, weight: 67.2, charges: 134.50, references: 'BC-INTERIOR-667788, FORESTRY-998877'
+                },
+
+                // Shipment 20 - FedEx Ground
+                {
+                    id: 'TS-020', shipmentID: 'TS-2025-020', carrier: 'FedEx', service: 'Ground',
+                    shipFrom: { city: 'Peterborough', state: 'ON', street: '500 George St N', postalCode: 'K9H 3R9', country: 'CA' },
+                    shipTo: { city: 'Kingston', state: 'ON', street: '216 Ontario St', postalCode: 'K7L 2Z3', country: 'CA' },
+                    packages: 5, weight: 189.4, charges: 267.85, references: 'FINAL-112233, COMPLETE-445566'
+                }
+            ];
+
+            // Create complete test company data structure instead of relying on database lookup
             const testCompanyData = {
-                ...companyData,
-                shipments: companyData.shipments.slice(0, 3),
-                totalCharges: companyData.shipments.slice(0, 3).reduce((sum, shipment) => sum + getShipmentCharges(shipment), 0)
+                companyId: 'TEST_COMPANY', // Use a test ID that doesn't require database lookup
+                company: 'Tyger Shark Inc',
+                companyInfo: {
+                    name: 'Tyger Shark Inc',
+                    companyID: 'TEST_COMPANY',
+                    address: {
+                        street: '123 Business Street, Suite 100',
+                        city: 'Toronto',
+                        state: 'ON',
+                        postalCode: 'M5V 3A8',
+                        country: 'Canada'
+                    },
+                    phone: '(416) 555-0123',
+                    email: 'billing@tygershark.com',
+                    billingAddress: {
+                        address1: '123 Business Street, Suite 100',
+                        city: 'Toronto',
+                        stateProv: 'ON',
+                        zipPostal: 'M5V 3A8',
+                        country: 'CA',
+                        email: 'billing@tygershark.com'
+                    }
+                },
+                shipments: testShipments, // Use all 20 shipments for comprehensive test
+                totalCharges: testShipments.reduce((sum, shipment) => sum + shipment.charges, 0),
+                // Add mock test mode flag to bypass company lookup
+                testMode: true
             };
 
             const testInvoiceNumber = `TEST-${Date.now()}`;
@@ -485,15 +816,33 @@ const GenerateInvoicesPage = () => {
                 issueDate: new Date(),
                 dueDate: calculateDueDate(invoiceSettings.paymentTerms),
                 status: 'test',
-                lineItems: testCompanyData.shipments.map(shipment => ({
-                    shipmentId: shipment.shipmentID || shipment.id,
-                    description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                    carrier: shipment.carrier,
-                    service: shipment.selectedRate?.service?.name || 'Standard',
-                    date: getShipmentDate(shipment),
-                    charges: getShipmentCharges(shipment),
-                    chargeBreakdown: getChargeBreakdown(shipment)
-                })),
+                lineItems: testCompanyData.shipments.map((shipment, index) => {
+                    // Get shipment date with fallback to current date for test
+                    const shipmentDate = getShipmentDate(shipment);
+                    const testDate = shipmentDate || new Date(Date.now() - (index * 24 * 60 * 60 * 1000)); // Use current date minus index days as fallback
+
+                    return {
+                        shipmentId: shipment.shipmentID || shipment.id,
+                        orderNumber: shipment.orderNumber || `ORD-${Date.now()}-${index + 1}`,
+                        trackingNumber: shipment.trackingNumber || `1Z${Math.random().toString(36).substr(2, 9).toUpperCase()}${index}`,
+                        description: `Shipment from ${shipment.shipFrom?.city || 'Toronto'} to ${shipment.shipTo?.city || 'Vancouver'}`,
+                        carrier: shipment.carrier, // Use actual carrier from test data
+                        service: shipment.service, // Use actual service from test data
+                        date: testDate,
+                        charges: shipment.charges, // Use actual charges from test data
+                        chargeBreakdown: [
+                            { description: 'Freight Charges', amount: shipment.charges * 0.75 },
+                            { description: 'Fuel Surcharge', amount: shipment.charges * 0.20 },
+                            { description: 'Additional Fees', amount: shipment.charges * 0.05 }
+                        ],
+                        packages: shipment.packages, // Use actual package count
+                        weight: shipment.weight, // Use actual weight
+                        weightUnit: shipment.weightUnit || 'lbs',
+                        references: shipment.references,
+                        shipFrom: shipment.shipFrom, // Use actual shipFrom data
+                        shipTo: shipment.shipTo // Use actual shipTo data
+                    };
+                }),
                 subtotal: taxCalc.subtotal,
                 tax: taxCalc.tax,
                 total: taxCalc.total,
@@ -732,14 +1081,14 @@ const GenerateInvoicesPage = () => {
 
                         <Grid container spacing={3}>
                             {/* Invoice Format Section */}
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12}>
                                 <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
                                     <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
                                         Invoice Format
                                     </Typography>
 
                                     <Grid container spacing={2}>
-                                        <Grid item xs={12} sm={6}>
+                                        <Grid item xs={12}>
                                             <TextField
                                                 fullWidth
                                                 label="Invoice Prefix"
@@ -752,51 +1101,6 @@ const GenerateInvoicesPage = () => {
                                                 InputLabelProps={{ sx: { fontSize: '12px' } }}
                                                 InputProps={{ sx: { fontSize: '12px' } }}
                                             />
-                                        </Grid>
-                                        <Grid item xs={12} sm={6}>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Currency</InputLabel>
-                                                <Select
-                                                    value={invoiceSettings.currency}
-                                                    onChange={(e) => {
-                                                        const currency = e.target.value;
-                                                        setInvoiceSettings(prev => ({
-                                                            ...prev,
-                                                            currency,
-                                                            taxRate: TAX_RATES[currency] || 0,
-                                                            enableTax: currency === 'CAD'
-                                                        }));
-                                                    }}
-                                                    label="Currency"
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    {Object.values(CURRENCIES).map(curr => (
-                                                        <MenuItem key={curr.code} value={curr.code} sx={{ fontSize: '12px' }}>
-                                                            {curr.code} - {curr.name}
-                                                        </MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Payment Terms</InputLabel>
-                                                <Select
-                                                    value={invoiceSettings.paymentTerms}
-                                                    onChange={(e) => setInvoiceSettings(prev => ({
-                                                        ...prev,
-                                                        paymentTerms: e.target.value
-                                                    }))}
-                                                    label="Payment Terms"
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    {PAYMENT_TERMS_OPTIONS.map(option => (
-                                                        <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
-                                                            {option.label}
-                                                        </MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
                                         </Grid>
                                     </Grid>
 
@@ -846,49 +1150,8 @@ const GenerateInvoicesPage = () => {
                                 </Paper>
                             </Grid>
 
-                            {/* Tax Configuration Section */}
+                            {/* Test Invoice Section */}
                             <Grid item xs={12} md={6}>
-                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mb: 2 }}>
-                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
-                                        Tax Configuration
-                                    </Typography>
-
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={invoiceSettings.enableTax}
-                                                onChange={(e) => setInvoiceSettings(prev => ({
-                                                    ...prev,
-                                                    enableTax: e.target.checked
-                                                }))}
-                                                size="small"
-                                            />
-                                        }
-                                        label={<Typography sx={{ fontSize: '12px' }}>Enable tax calculation</Typography>}
-                                        sx={{ mb: 2 }}
-                                    />
-
-                                    {invoiceSettings.enableTax && (
-                                        <TextField
-                                            fullWidth
-                                            label="Tax Rate (%)"
-                                            type="number"
-                                            value={(invoiceSettings.taxRate * 100).toFixed(2)}
-                                            onChange={(e) => setInvoiceSettings(prev => ({
-                                                ...prev,
-                                                taxRate: parseFloat(e.target.value) / 100 || 0
-                                            }))}
-                                            size="small"
-                                            inputProps={{ min: 0, max: 50, step: 0.01 }}
-                                            InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                            InputProps={{ sx: { fontSize: '12px' } }}
-                                            helperText={`Current rate: ${(invoiceSettings.taxRate * 100).toFixed(2)}%`}
-                                            FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                                        />
-                                    )}
-                                </Paper>
-
-                                {/* Test Invoice Section */}
                                 <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
                                     <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
                                         Test Invoice

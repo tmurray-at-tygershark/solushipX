@@ -254,9 +254,8 @@ function AppRoutes() {
                     <Route path="billing/overview" element={<BillingDashboard initialTab="overview" />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
-                    <Route path="billing/edi" element={<BillingDashboard initialTab="edi" />} />
-                    <Route path="billing/edi/:uploadId" element={<BillingDashboard initialTab="edi" />} />
-                                                    <Route path="billing/generate" element={<BillingDashboard initialTab="generate" />} />
+                    <Route path="billing/ap-processing" element={<BillingDashboard initialTab="ap-processing" />} />
+                    <Route path="billing/generate" element={<BillingDashboard initialTab="generate" />} />
                     <Route path="billing/business" element={<BillingDashboard initialTab="business" />} />
                     <Route path="billing/payments" element={<BillingDashboard initialTab="payments" />} />
                     <Route path="billing/commissions" element={<BillingDashboard initialTab="commissions" />} />
@@ -264,12 +263,6 @@ function AppRoutes() {
                     <Route path="role-permissions" element={<RolePermissionsView />} />
                     <Route path="settings" element={<SystemSettings />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />
-                    <Route path="edi-mapping" element={<EDIMapping />} />
-                    <Route path="billing/edi-mapping" element={<EDIMapping />} />
-                    <Route path="billing/edi-mapping/new/*" element={<AddCarrierMapping />} />
-                    <Route path="billing/edi-mapping/edit/:carrierId/:stepName" element={<EditCarrierMapping />} />
-                    <Route path="billing/edi-mapping/edit/:carrierId" element={<Navigate to="details" replace />} />
-                    <Route path="billing/edi-mapping/new" element={<Navigate to="details" replace />} />
                     <Route path="carriers" element={<AdminCarriers />} />
                     <Route path="carriers/new" element={<AddCarrier />} />
                     <Route path="carriers/:carrierId" element={<CarrierDetail />} />

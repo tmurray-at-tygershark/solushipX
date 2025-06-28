@@ -128,10 +128,16 @@ const {
 } = require('./src/salesCommissions');
 
 // Import invoice generation function
-const { onInvoiceCreated } = require('./src/generateInvoicePDFAndEmail');
+const { onInvoiceCreated, generateInvoicePDFAndEmail } = require('./src/generateInvoicePDFAndEmail');
 
 // Import currency sync functions
 const { syncCurrencyRates, scheduledCurrencySync } = require('./src/syncCurrencyRates');
+
+// Import PDF parsing functions
+const { processPdfFile, getPdfResults, retryPdfProcessing, exportPdfResults, processPdfBatch } = require('./src/pdfParsing');
+
+// Import file upload functions
+const { uploadFile, uploadFileBase64 } = require('./src/fileUpload');
 
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
@@ -233,12 +239,24 @@ exports.scheduleCommissionReport = scheduleCommissionReport;
 exports.getSalesPersonCommissionSummary = getSalesPersonCommissionSummary;
 exports.markCommissionsAsPaid = markCommissionsAsPaid;
 
-// Export invoice generation function
-exports.onInvoiceCreated = onInvoiceCreated;
-
 // Export currency sync functions
 exports.syncCurrencyRates = syncCurrencyRates;
 exports.scheduledCurrencySync = scheduledCurrencySync;
+
+// Export PDF parsing functions
+exports.processPdfFile = processPdfFile;
+exports.getPdfResults = getPdfResults;
+exports.retryPdfProcessing = retryPdfProcessing;
+exports.exportPdfResults = exportPdfResults;
+exports.processPdfBatch = processPdfBatch;
+
+// Export file upload functions
+exports.uploadFile = uploadFile;
+exports.uploadFileBase64 = uploadFileBase64;
+
+// Export invoice generation functions
+exports.onInvoiceCreated = onInvoiceCreated;
+exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

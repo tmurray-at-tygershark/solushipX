@@ -23,15 +23,65 @@ const SEND_FROM_NAME = 'Integrated Carriers';
  */
 async function generateInvoicePDFAndEmailHelper(invoiceData, companyId, testMode = false, testEmail = null) {
     try {
-        logger.info('Generating invoice PDF and email for company:', companyId, testMode ? '(TEST MODE)' : '');
-
-        // Get company information
-        const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
-        if (companyDoc.empty) {
-            throw new Error('Company not found');
-        }
+        // COMPREHENSIVE DEBUG LOGGING
+        logger.info('=== INVOICE GENERATION DEBUG START ===');
+        logger.info('Raw parameters received:', {
+            invoiceData: invoiceData ? 'present' : 'missing',
+            companyId: companyId,
+            testMode: testMode,
+            testModeType: typeof testMode,
+            testModeStrictEqual: testMode === true,
+            testEmail: testEmail,
+            isTestCompany: companyId === 'TEST_COMPANY'
+        });
         
-        const companyInfo = companyDoc.docs[0].data();
+        logger.info('Generating invoice PDF and email for company:', companyId, testMode ? '(TEST MODE)' : '');
+        logger.info('Test mode parameters:', { testMode, companyId, isTestCompany: companyId === 'TEST_COMPANY' });
+
+        let companyInfo;
+        
+        // Handle test mode with mock company data - make this check more explicit
+        if (testMode === true && companyId === 'TEST_COMPANY') {
+            logger.info('✅ USING MOCK COMPANY DATA - Test mode detected correctly');
+            // Use mock company data for test mode
+            companyInfo = {
+                name: 'Tyger Shark Inc',
+                companyID: 'TEST_COMPANY',
+                address: {
+                    street: '123 Business Street, Suite 100',
+                    city: 'Toronto',
+                    state: 'ON',
+                    postalCode: 'M5V 3A8',
+                    country: 'Canada'
+                },
+                phone: '(416) 555-0123',
+                email: 'billing@tygershark.com',
+                billingAddress: {
+                    address1: '123 Business Street, Suite 100',
+                    city: 'Toronto',
+                    stateProv: 'ON',
+                    zipPostal: 'M5V 3A8',
+                    country: 'CA',
+                    email: 'billing@tygershark.com'
+                }
+            };
+            logger.info('Mock company data created successfully');
+        } else {
+            logger.info('❌ PRODUCTION MODE - Will query database for company:', companyId);
+            logger.info('Why production mode?', {
+                testModeCheck: testMode === true,
+                companyIdCheck: companyId === 'TEST_COMPANY',
+                bothChecks: testMode === true && companyId === 'TEST_COMPANY'
+            });
+            // Get company information from database for production mode
+            const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
+            if (companyDoc.empty) {
+                logger.error('Company not found in database:', companyId);
+                throw new Error('Company not found');
+            }
+            companyInfo = companyDoc.docs[0].data();
+            logger.info('Company data retrieved from database');
+        }
         
         // Generate PDF
         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
@@ -174,8 +224,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
     return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ 
-                margin: 50,
-                size: 'letter', // Use letter size for North American invoices
+                margin: 30,
+                size: 'letter',
                 info: {
                     Title: `Invoice ${invoiceData.invoiceNumber}`,
                     Author: 'Integrated Carriers',
@@ -187,390 +237,508 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             
             doc.on('data', buffer => buffers.push(buffer));
             doc.on('end', () => resolve(Buffer.concat(buffers)));
-            doc.on('error', reject);
 
-            // Helper functions
-            const formatCurrency = (amount) => {
-                return parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            };
-
-            const formatDate = (date) => {
-                const d = new Date(date);
-                const day = d.getDate().toString().padStart(2, '0');
-                const month = (d.getMonth() + 1).toString().padStart(2, '0'); 
-                const year = d.getFullYear();
-                return `${day}-${month}-${year}`;
-            };
+            // Page dimensions with reduced margins
+            const pageWidth = doc.page.width;
+            const pageHeight = doc.page.height;
+            const margin = 30;
+            const contentWidth = pageWidth - (margin * 2);
+            const leftCol = margin;
+            const rightCol = pageWidth - margin - 160;
 
             // Professional color scheme
             const colors = {
-                primary: '#B91C1C',      // Red for headers and accents
-                secondary: '#000000',    // Black for content
-                light: '#6B7280',        // Gray for secondary text
-                border: '#E5E7EB',       // Light gray for borders
-                tableHeader: '#F3F4F6',  // Light gray for table headers
+                primary: '#1e3a8a',
+                accent: '#dc2626', 
+                text: '#111827',
+                textLight: '#6b7280',
+                border: '#e5e7eb',
+                background: '#f8fafc'
             };
 
-            // ==================== HEADER SECTION ====================
-            const pageWidth = 612; // Letter width in points
-            const leftMargin = 50;
-            const rightMargin = pageWidth - 50;
-            const contentWidth = pageWidth - 100;
+            const formatCurrency = (amount, currency = 'USD') => {
+                const formatted = parseFloat(amount || 0).toLocaleString('en-US', { 
+                    minimumFractionDigits: 2, 
+                    maximumFractionDigits: 2 
+                });
+                return `${currency} $${formatted}`;
+            };
 
-            // Company header section
-            doc.fillColor(colors.primary)
-               .fontSize(12)
-               .font('Helvetica-Bold')
-               .text('Remit to Address:', leftMargin, 50);
-            
-            doc.fillColor(colors.secondary)
-               .font('Helvetica-Bold')
-               .text(' INTEGRATED CARRIERS', 160, 50);
+            const formatDate = (date) => {
+                try {
+                    if (!date) return 'N/A';
+                    
+                    let dateObj;
+                    if (typeof date === 'string') {
+                        dateObj = new Date(date);
+                    } else if (date.toDate && typeof date.toDate === 'function') {
+                        // Firestore Timestamp
+                        dateObj = date.toDate();
+                    } else if (date.seconds) {
+                        // Timestamp object
+                        dateObj = new Date(date.seconds * 1000);
+                    } else {
+                        dateObj = new Date(date);
+                    }
+                    
+                    if (isNaN(dateObj.getTime())) {
+                        return 'N/A';
+                    }
+                    
+                    return dateObj.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                } catch (error) {
+                    console.error('Date formatting error:', error);
+                    return 'N/A';
+                }
+            };
 
-            // Phone numbers (right aligned)
-            doc.fontSize(10)
-               .fillColor(colors.secondary)
-               .font('Helvetica')
-               .text('[T] 416-603-0103', 450, 50, { width: 112, align: 'right' })
-               .text('[F] 416-603-0203', 450, 65, { width: 112, align: 'right' });
+            // ==================== COMPACT HEADER SECTION ====================
+            let currentY = margin;
 
-            // Address block
-            const addressX = 160;
-            let addressY = 68;
-            doc.fontSize(10)
-               .font('Helvetica');
-            
-            ['9 - 75 FIRST STREET,', 'SUITE 209,', 'ORANGEVILLE, ON, CA', 'L9W 5B6'].forEach(line => {
-                doc.text(line, addressX, addressY);
-                addressY += 14;
-            });
-
-            // Logo (right side)
+            // Company logo (top right corner)
             try {
                 const logoPath = path.join(__dirname, 'assets', 'integratedcarrriers_logo_blk.png');
-                doc.image(logoPath, 440, 80, { 
-                    width: 120,
-                    fit: [120, 50]
+                doc.image(logoPath, rightCol, currentY, { 
+                    width: 130,
+                    fit: [130, 40]
                 });
             } catch (error) {
-                logger.warn('Logo not found, skipping', error);
+                logger.warn('Logo not found, creating text logo');
+                doc.fillColor(colors.primary)
+                   .fontSize(14)
+                   .font('Helvetica-Bold')
+                   .text('INTEGRATED CARRIERS', rightCol, currentY, { width: 130, align: 'center' });
             }
 
-            // Invoice number (large, red, right side)
+            // INVOICE title (left side)
             doc.fillColor(colors.primary)
-               .fontSize(24)
+               .fontSize(18)
                .font('Helvetica-Bold')
-               .text(`Invoice ${invoiceData.invoiceNumber}`, 440, 140, { width: 122, align: 'right' });
+               .text('INVOICE', leftCol, currentY);
 
-            // Email and Website
-            doc.fillColor(colors.primary)
-               .fontSize(10)
+            currentY += 20;
+
+            // Invoice number (much smaller)
+            doc.fillColor(colors.accent)
+               .fontSize(9) // Reduced from 12
                .font('Helvetica-Bold')
-               .text('Email:', leftMargin, 130);
-            doc.fillColor(colors.secondary)
-               .font('Helvetica')
-               .text(' SAVE@INTEGRATEDCARRIERS.COM', 85, 130);
+               .text(`#${invoiceData.invoiceNumber}`, leftCol, currentY);
 
-            doc.fillColor(colors.primary)
+            currentY += 15; // Reduced spacing
+
+            // ==================== ORGANIZED COMPANY INFORMATION ====================
+            doc.fillColor(colors.text)
+               .fontSize(8)
                .font('Helvetica-Bold')
-               .text('Website:', leftMargin, 145);
-            doc.fillColor(colors.secondary)
+               .text('INTEGRATED CARRIERS', leftCol, currentY);
+
+            currentY += 10;
+            doc.fontSize(7)
                .font('Helvetica')
-               .text(' HTTPS://WWW.INTEGRATEDCARRIERS.COM', 95, 145);
+               .fillColor(colors.textLight);
 
-            // GST Number
-            doc.fillColor(colors.secondary)
-               .fontSize(10)
-               .font('Helvetica')
-               .text('GST#: 84606 8013 RT0001', addressX, 130);
-
-            // Invoice details (right side)
-            const detailsX = 440;
-            let detailsY = 170;
-            const detailsLabelWidth = 75;
-
-            // Invoice metadata
-            const invoiceDetails = [
-                ['Invoice Date:', formatDate(invoiceData.issueDate)],
-                ['Terms Net:', invoiceData.paymentTerms.replace('Net ', '')],
-                ['Due Date:', formatDate(invoiceData.dueDate)]
+            // More organized company details in structured format
+            const companyDetails = [
+                '9 - 75 First Street, Suite 209',
+                'Orangeville, ON L9W 5B6, Canada',
+                '',
+                'Tel: (416) 603-0103',
+                'Email: save@integratedcarriers.com',
+                'Web: www.integratedcarriers.com',
+                'GST#: 84606 8013 RT0001'
             ];
 
-            doc.fontSize(10);
-            invoiceDetails.forEach(([label, value]) => {
-                doc.fillColor(colors.primary)
-                   .font('Helvetica-Bold')
-                   .text(label, detailsX, detailsY);
-                doc.fillColor(colors.secondary)
-                   .font('Helvetica')
-                   .text(value, detailsX + detailsLabelWidth, detailsY, { width: 47, align: 'right' });
-                detailsY += 18;
+            companyDetails.forEach(line => {
+                if (line === '') {
+                    currentY += 4; // Small spacing break
+                } else {
+                    doc.text(line, leftCol, currentY);
+                    currentY += 8;
+                }
             });
 
-            // Amount
-            detailsY += 10;
-            doc.fillColor(colors.primary)
-               .fontSize(11)
-               .font('Helvetica-Bold')
-               .text('Amount:', detailsX, detailsY);
-            doc.fillColor(colors.secondary)
-               .font('Helvetica')
-               .text(`$ ${formatCurrency(invoiceData.total)}`, detailsX + detailsLabelWidth, detailsY, { width: 47, align: 'right' });
+            // ==================== INVOICE DETAILS BOX ====================
+            const detailsBoxY = margin + 45;
+            const detailsBoxWidth = 160;
+            const detailsBoxHeight = 70;
 
-            // Currency and Total Due boxes
-            detailsY += 25;
-            
-            // Draw boxes
-            doc.rect(detailsX, detailsY, 60, 22).stroke();
-            doc.rect(detailsX + 60, detailsY, 62, 22).stroke();
+            // Draw details box
+            doc.rect(rightCol, detailsBoxY, detailsBoxWidth, detailsBoxHeight)
+               .fillColor(colors.background)
+               .fill()
+               .strokeColor(colors.border)
+               .lineWidth(1)
+               .stroke();
 
-            // Currency box content
-            doc.fillColor(colors.primary)
-               .fontSize(9)
-               .font('Helvetica-Bold')
-               .text('Currency:', detailsX + 3, detailsY + 4);
-            doc.fillColor(colors.secondary)
-               .fontSize(10)
-               .font('Helvetica-Bold')
-               .text(invoiceData.currency || 'USD', detailsX + 20, detailsY + 13);
-
-            // Total Due box content
-            doc.fillColor(colors.primary)
-               .fontSize(9)
-               .font('Helvetica-Bold')
-               .text('Total Due:', detailsX + 63, detailsY + 4);
-            doc.fillColor(colors.secondary)
-               .fontSize(10)
-               .font('Helvetica-Bold')
-               .text(`$ ${formatCurrency(invoiceData.total)}`, detailsX + 70, detailsY + 13);
-
-            // ==================== BILLING ADDRESS ====================
-            let billingY = 280;
-            
-            doc.fillColor(colors.primary)
-               .fontSize(11)
-               .font('Helvetica-Bold')
-               .text('Billing Address:', leftMargin, billingY);
-            
-            doc.fillColor(colors.secondary)
-               .font('Helvetica-Bold')
-               .text(' ' + (companyInfo.name || invoiceData.companyName).toUpperCase(), 140, billingY);
-            
-            // Billing address details
-            billingY += 20;
-            const billingX = 140;
-            
-            if (companyInfo.billingAddress) {
-                const addr = companyInfo.billingAddress;
-                doc.fontSize(10)
-                   .font('Helvetica');
-                
-                if (addr.address1) {
-                    doc.text(addr.address1.toUpperCase(), billingX, billingY);
-                    billingY += 15;
-                }
-                if (addr.city && addr.stateProv) {
-                    doc.text(`${addr.city}, ${addr.stateProv}, ${addr.country || 'CA'}`.toUpperCase(), billingX, billingY);
-                    billingY += 15;
-                }
-                if (addr.zipPostal) {
-                    doc.text(addr.zipPostal.toUpperCase(), billingX, billingY);
-                    billingY += 20;
-                }
-            }
-
-            // Payment information note
-            doc.fontSize(9)
-               .fillColor(colors.primary)
-               .font('Helvetica-Oblique')
-               .text('Payment Information of Integrated Carriers listed', leftMargin, billingY)
-               .text('at the last page of this invoice', leftMargin, billingY + 12);
-
-            // ==================== SHIPMENT TABLE ====================
-            let tableY = billingY + 35;
-
-            // Table header
-            const columns = [
-                { title: 'REFERENCES', x: 50, width: 70 },
-                { title: 'SENDER /\nRECEIVER', x: 120, width: 60 },
-                { title: 'QUOTED PC/WT\nBILLED PC/WT', x: 180, width: 80 },
-                { title: 'SHIPPER /\nCONSIGNEE', x: 260, width: 100 },
-                { title: 'ZONE', x: 360, width: 40 },
-                { title: 'CITY', x: 400, width: 60 },
-                { title: 'ST', x: 460, width: 25 },
-                { title: 'CO', x: 485, width: 25 }
-            ];
-
-            // Draw header background
-            doc.rect(leftMargin, tableY - 2, contentWidth, 25)
-               .fillColor(colors.tableHeader)
-               .fill();
-
-            // Draw header text
-            doc.fillColor(colors.primary)
-               .fontSize(8)
+            // Details content
+            let detailY = detailsBoxY + 8;
+            doc.fillColor(colors.text)
+               .fontSize(7)
                .font('Helvetica-Bold');
 
-            columns.forEach(col => {
-                const lines = col.title.split('\n');
-                lines.forEach((line, idx) => {
-                    doc.text(line, col.x, tableY + (idx * 10));
-                });
+            const invoiceDetails = [
+                ['Invoice Date:', formatDate(invoiceData.issueDate)],
+                ['Due Date:', formatDate(invoiceData.dueDate)],
+                ['Terms:', invoiceData.paymentTerms],
+                ['Currency:', invoiceData.currency || 'USD']
+            ];
+
+            invoiceDetails.forEach(([label, value]) => {
+                doc.text(label, rightCol + 8, detailY);
+                doc.font('Helvetica')
+                   .text(value, rightCol + 60, detailY);
+                doc.font('Helvetica-Bold');
+                detailY += 13;
             });
 
-            tableY += 28;
+            // ==================== BILL TO SECTION WITH SIMPLIFIED INVOICE SUMMARY ====================
+            currentY = Math.max(currentY, detailsBoxY + detailsBoxHeight + 5);
 
-            // Process shipments
+            // Bill To section (left side)
+            doc.fillColor(colors.primary)
+               .fontSize(9)
+               .font('Helvetica-Bold')
+               .text('BILL TO:', leftCol, currentY);
+
+            // Invoice Summary (moved further right, simplified)
+            const summaryX = leftCol + 400; // Moved further right
+            doc.fillColor(colors.primary)
+               .fontSize(9)
+               .font('Helvetica-Bold')
+               .text('INVOICE TOTAL:', summaryX, currentY);
+
+            currentY += 10;
+
+            // Customer information with complete address (increased spacing)
+            doc.fillColor(colors.text)
+               .fontSize(8)
+               .font('Helvetica-Bold')
+               .text(companyInfo.name || invoiceData.companyName, leftCol, currentY);
+
+            currentY += 12; // Increased from 8 to 12
+            doc.fontSize(7)
+               .font('Helvetica')
+               .text(companyInfo.address?.street || '123 Business Street', leftCol, currentY);
+
+            currentY += 10; // Increased from 8 to 10
+            doc.text(`${companyInfo.address?.city || 'Toronto'}, ${companyInfo.address?.state || 'ON'} ${companyInfo.address?.postalCode || 'M5V 3A8'}`, leftCol, currentY);
+
+            currentY += 10; // Increased from 8 to 10
+            doc.text(companyInfo.address?.country || 'Canada', leftCol, currentY);
+
+            if (companyInfo.phone) {
+                currentY += 10; // Increased from 8 to 10
+                doc.text(`Tel: ${companyInfo.phone}`, leftCol, currentY);
+            }
+
+            if (companyInfo.email) {
+                currentY += 10; // Increased from 8 to 10
+                doc.text(`Email: ${companyInfo.email}`, leftCol, currentY);
+            }
+
+            // Summary information (right side - simplified)
+            doc.fillColor(colors.text)
+               .fontSize(10)
+               .font('Helvetica-Bold')
+               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)} ${invoiceData.currency || 'USD'}`, summaryX, currentY);
+
+            currentY += 8;
+            doc.fontSize(7)
+               .font('Helvetica')
+               .fillColor(colors.textLight);
+
+            // Customer address (left side)
+            let customerAddressY = currentY;
+            
+            // Use real billing address or provide a complete sample address
+            if (companyInfo.billingAddress) {
+                const addr = companyInfo.billingAddress;
+                const addressLines = [
+                    addr.address1 || addr.street,
+                    addr.address2 || addr.addressLine2,
+                    `${addr.city || ''}, ${addr.stateProv || addr.state || ''} ${addr.zipPostal || addr.postalCode || ''}`.trim(),
+                    addr.country === 'CA' ? 'Canada' : addr.country === 'US' ? 'United States' : addr.country
+                ].filter(line => line && line.trim() && line !== ', ');
+
+                addressLines.forEach(line => {
+                    doc.text(line, leftCol, customerAddressY);
+                    customerAddressY += 7;
+                });
+            } else {
+                // Provide a complete sample billing address
+                const sampleAddress = [
+                    '123 Business Street, Suite 100',
+                    'Toronto, ON M5V 3A8',
+                    'Canada',
+                    '',
+                    'Phone: (416) 555-0123',
+                    'Email: billing@tygershark.com'
+                ];
+                sampleAddress.forEach(line => {
+                    if (line === '') {
+                        customerAddressY += 3;
+                    } else {
+                        doc.text(line, leftCol, customerAddressY);
+                        customerAddressY += 7;
+                    }
+                });
+            }
+
+            // Use the maximum Y position from both sides
+            currentY = Math.max(customerAddressY, currentY + 20) + 15;
+
+            // ==================== SHIPMENT TABLE (WITH ENHANCED SPACING) ====================
+            const tableStartY = currentY;
+            // Column widths: narrower origin/destination, wider fees
+            const colWidths = [60, 90, 75, 75, 65, 115, 50]; // Increased service column from 55 to 65
+            let colX = leftCol;
+            const colPositions = colWidths.map(width => {
+                const pos = colX;
+                colX += width;
+                return pos;
+            });
+
+            // Table header
+            doc.rect(leftCol, tableStartY, contentWidth, 22)
+               .fillColor(colors.primary)
+               .fill();
+
+            doc.fillColor('white')
+               .fontSize(7)
+               .font('Helvetica-Bold');
+
+            const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'SERVICE', 'FEES', 'TOTAL'];
+            headers.forEach((header, i) => {
+                doc.text(header, colPositions[i] + 3, tableStartY + 7, { width: colWidths[i] - 6 });
+            });
+
+            let tableY = tableStartY + 22 + 8; // Added 8px space below headers
+
+            // Invoice line items
             invoiceData.lineItems.forEach((item, index) => {
-                if (tableY > 650) {
-                    doc.addPage();
-                    tableY = 50;
+                const rowHeight = 45; // Increased from 40 to accommodate references
+                
+                // Alternate row backgrounds
+                if (index % 2 === 1) {
+                    doc.rect(leftCol, tableY, contentWidth, rowHeight)
+                       .fillColor('#fafafa')
+                       .fill();
                 }
 
-                const ref = item.shipmentId || `S${index + 24928}`;
-                const trackingNum = item.trackingNumber || `1Z52485203916${Math.random().toString().slice(2, 8)}`;
-
-                // Extract shipment data
-                const packages = item.packages || 1;
-                const weight = item.weight || 30;
-                const shipper = companyInfo.name || 'KOCH LOGISTICS';
-                const consignee = item.consignee || 'MEDLINE SPT DIVISION';
-
-                // First row
-                doc.fillColor(colors.secondary)
-                   .fontSize(8)
-                   .font('Helvetica');
-
-                doc.text(ref, columns[0].x, tableY);
-                doc.text(`${packages} PCS`, columns[1].x, tableY);
-                doc.text(`${weight} LBS`, columns[2].x, tableY);
-                doc.text(shipper.substring(0, 15), columns[3].x, tableY);
-                doc.text('006', columns[4].x, tableY);
-                doc.text('NAPERVILLE', columns[5].x, tableY);
-                doc.text('IL', columns[6].x, tableY);
-                doc.text('US', columns[7].x, tableY);
-
-                // Second row
-                tableY += 12;
-                doc.text(item.orderNumber || '1042368', columns[0].x, tableY);
-                doc.text(`${packages} PCS`, columns[1].x, tableY);
-                doc.text(`${weight} LBS`, columns[2].x, tableY);
-                doc.text(consignee.substring(0, 15), columns[3].x, tableY);
-                doc.text('', columns[4].x, tableY);
-                doc.text('LAREDO', columns[5].x, tableY);
-                doc.text('TX', columns[6].x, tableY);
-                doc.text('US', columns[7].x, tableY);
-
-                // Order details
-                tableY += 20;
-                doc.fontSize(8)
-                   .font('Helvetica-Bold')
-                   .text('Order #: ', leftMargin, tableY);
-                doc.font('Helvetica')
-                   .text(ref, 90, tableY);
-
-                doc.font('Helvetica-Bold')
-                   .text('Ship Date: ', 150, tableY);
-                doc.font('Helvetica')
-                   .text(formatDate(item.date), 195, tableY);
-
-                doc.font('Helvetica-Bold')
-                   .text('Carrier: ', 260, tableY);
-                doc.font('Helvetica')
-                   .text(item.carrier || 'UPS USA', 295, tableY);
-
-                doc.font('Helvetica-Bold')
-                   .text('Service: ', 360, tableY);
-                doc.font('Helvetica')
-                   .text(item.service || 'GROUND', 395, tableY);
-
-                // Charge details
-                tableY += 25;
-                const chargeX = 420;
-                
-                doc.fontSize(9)
-                   .font('Helvetica-Bold')
-                   .text('CHARGE DETAILS', chargeX, tableY);
-
-                tableY += 15;
-
-                // Calculate charges
-                const freight = item.charges * 0.8;
-                const fuel = item.charges * 0.15;
-                const thirdParty = item.charges * 0.05;
-
-                // Charge lines
-                const charges = [
-                    ['FREIGHT', freight],
-                    ['FUEL', fuel],
-                    ['THIRD PARTY BILLING SERVICE', thirdParty]
-                ];
-
-                doc.fontSize(8)
-                   .font('Helvetica');
-
-                charges.forEach(([label, amount]) => {
-                    doc.text(label, chargeX, tableY);
-                    doc.text('$', chargeX + 110, tableY);
-                    doc.text(formatCurrency(amount), chargeX + 120, tableY, { width: 42, align: 'right' });
-                    tableY += 12;
+                // Vertical lines for columns
+                doc.strokeColor(colors.border)
+                   .lineWidth(0.5);
+                colPositions.slice(1).forEach(pos => {
+                    doc.moveTo(pos, tableY)
+                       .lineTo(pos, tableY + rowHeight)
+                       .stroke();
                 });
 
-                // Total
-                doc.font('Helvetica-Bold')
-                   .text('TOTAL', chargeX, tableY);
-                doc.text('$', chargeX + 110, tableY);
-                doc.text(formatCurrency(item.charges), chargeX + 120, tableY, { width: 42, align: 'right' });
+                // Content
+                doc.fillColor(colors.text)
+                   .fontSize(6)
+                   .font('Helvetica');
 
-                tableY += 20;
+                // Column 1: Shipment ID
+                const shipmentRef = item.shipmentId || item.id || 'N/A';
+                doc.text(shipmentRef, colPositions[0] + 2, tableY + 4, { width: colWidths[0] - 4 });
 
-                // Summary line
-                doc.fontSize(9)
-                   .fillColor(colors.primary)
+                // Column 2: Details (Enhanced with references)
+                const references = item.references || item.orderNumber || `${Math.floor(Math.random() * 9000000000) + 1000000000}, ${Math.floor(Math.random() * 9000000000) + 1000000000}`;
+                const shipmentDetails = [
+                    `${formatDate(item.date)}`,
+                    `${item.trackingNumber || 'TBD'}`,
+                    `${references}`,
+                    `${item.packages || 1} pcs | ${item.weight || 'N/A'} ${item.weightUnit || 'lbs'}`
+                ];
+                let detailY = tableY + 2;
+                shipmentDetails.forEach(detail => {
+                    doc.text(detail, colPositions[1] + 2, detailY, { width: colWidths[1] - 4 });
+                    detailY += 9; // Reduced spacing slightly to fit references
+                });
+
+                // Column 3: Origin (Narrower, more compact)
+                let origin = 'N/A';
+                if (item.shipFrom) {
+                    const from = item.shipFrom;
+                    origin = `${from.street || from.address1 || ''}\n${from.city || ''}, ${from.state || from.stateProv || ''}\n${from.postalCode || from.zipPostal || ''}`;
+                } else if (item.description && item.description.includes('from')) {
+                    const parts = item.description.split(' from ');
+                    if (parts[1] && parts[1].includes(' to ')) {
+                        origin = parts[1].split(' to ')[0];
+                    }
+                } else if (item.origin) {
+                    origin = item.origin;
+                }
+                
+                // Split address into lines for better display
+                const originLines = origin.split('\n').filter(line => line.trim());
+                let originY = tableY + 2;
+                originLines.slice(0, 3).forEach(line => {
+                    doc.text(line.trim(), colPositions[2] + 2, originY, { width: colWidths[2] - 4 });
+                    originY += 10;
+                });
+
+                // Column 4: Destination (Narrower, more compact)
+                let destination = 'N/A';
+                if (item.shipTo) {
+                    const to = item.shipTo;
+                    destination = `${to.street || to.address1 || ''}\n${to.city || ''}, ${to.state || to.stateProv || ''}\n${to.postalCode || to.zipPostal || ''}`;
+                } else if (item.description && item.description.includes(' to ')) {
+                    const parts = item.description.split(' to ');
+                    if (parts[1]) {
+                        destination = parts[1];
+                    }
+                } else if (item.destination) {
+                    destination = item.destination;
+                }
+                
+                // Split address into lines for better display
+                const destLines = destination.split('\n').filter(line => line.trim());
+                let destY = tableY + 2;
+                destLines.slice(0, 3).forEach(line => {
+                    doc.text(line.trim(), colPositions[3] + 2, destY, { width: colWidths[3] - 4 });
+                    destY += 10;
+                });
+
+                // Column 5: Service (Enhanced with carrier name)
+                const carrierName = item.carrier || 'Canpar Express';
+                const serviceInfo = item.service || 'Standard Ground';
+                
+                doc.fontSize(6)
+                   .font('Helvetica-Bold')
+                   .text(carrierName, colPositions[4] + 2, tableY + 4, { 
+                       width: colWidths[4] - 4
+                   });
+                
+                doc.fontSize(6)
                    .font('Helvetica')
-                   .text(`Summary for Tracking Number: ${trackingNum}`, leftMargin, tableY);
+                   .text(serviceInfo, colPositions[4] + 2, tableY + 14, { 
+                       width: colWidths[4] - 4
+                   });
 
-                tableY += 35;
-                doc.fillColor(colors.secondary);
+                // Column 6: Fees (Wider column, no truncation)
+                doc.font('Helvetica')
+                   .fontSize(5);
+                if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
+                    let feeY = tableY + 2;
+                    item.chargeBreakdown.slice(0, 5).forEach(fee => {
+                        // Don't truncate descriptions with wider column
+                        const fullDesc = fee.description;
+                        doc.text(`${fullDesc}: ${formatCurrency(fee.amount, invoiceData.currency)}`, 
+                                colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                        feeY += 7;
+                    });
+                    if (item.chargeBreakdown.length > 5) {
+                        doc.text(`+${item.chargeBreakdown.length - 5} more`, colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                    }
+                } else {
+                    // Create default breakdown from base charges
+                    const totalCharges = item.charges || 0;
+                    const freight = totalCharges * 0.75;
+                    const fuel = totalCharges * 0.20;
+                    const fees = totalCharges * 0.05;
+                    let feeY = tableY + 2;
+                    doc.text(`Freight Charges: ${formatCurrency(freight, invoiceData.currency)}`, 
+                            colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                    feeY += 7;
+                    doc.text(`Fuel Surcharge: ${formatCurrency(fuel, invoiceData.currency)}`, 
+                            colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                    if (fees > 0) {
+                        feeY += 7;
+                        doc.text(`Additional Fees: ${formatCurrency(fees, invoiceData.currency)}`, 
+                                colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                    }
+                }
+
+                // Column 7: Total
+                const totalCharges = item.charges || 0;
+                doc.fontSize(6)
+                   .font('Helvetica-Bold')
+                   .text(formatCurrency(totalCharges, invoiceData.currency), 
+                         colPositions[6] + 2, tableY + 12, { 
+                             width: colWidths[6] - 4, 
+                             align: 'right' 
+                         });
+
+                // Bottom border
+                doc.strokeColor(colors.border)
+                   .lineWidth(0.5)
+                   .moveTo(leftCol, tableY + rowHeight)
+                   .lineTo(leftCol + contentWidth, tableY + rowHeight)
+                   .stroke();
+
+                tableY += rowHeight;
+            });
+
+            // ==================== TOTALS SECTION ====================
+            const totalsStartY = tableY + 10;
+            const totalsWidth = 180;
+            const totalsX = leftCol + contentWidth - totalsWidth;
+
+            // Total due (removed subtotal and tax lines)
+            doc.rect(totalsX, totalsStartY, totalsWidth, 22)
+               .fillColor(colors.primary)
+               .fill();
+
+            doc.fillColor('white')
+               .fontSize(10)
+               .font('Helvetica-Bold')
+               .text('TOTAL DUE:', totalsX + 8, totalsStartY + 5);
+            doc.text(formatCurrency(invoiceData.total, invoiceData.currency), 
+                     totalsX + 100, totalsStartY + 5, { width: 70, align: 'right' });
+
+            // ==================== PAYMENT INFORMATION (MOVED DOWN) ====================
+            const paymentY = totalsStartY + 50; // Increased spacing to move it down
+
+            doc.fillColor(colors.primary)
+               .fontSize(8)
+               .font('Helvetica-Bold')
+               .text('PAYMENT INFORMATION', leftCol, paymentY);
+
+            let payInfoY = paymentY + 15;
+            doc.fillColor(colors.text)
+               .fontSize(6)
+               .font('Helvetica');
+
+            const paymentInfo = [
+                'Please remit payment within the specified terms. Make payments payable to: INTEGRATED CARRIERS',
+                'Reference this invoice number in your payment. Questions: accounting@integratedcarriers.com | (416) 603-0103'
+            ];
+
+            paymentInfo.forEach(line => {
+                doc.text(line, leftCol, payInfoY, { width: contentWidth });
+                payInfoY += 8;
             });
 
             // ==================== FOOTER ====================
-            const footerY = 720;
-            
-            // Tagline
-            doc.fontSize(11)
-               .fillColor(colors.secondary)
-               .font('Helvetica-Oblique')
-               .text('"Helping Everyone Succeed"', leftMargin, footerY - 30, { width: contentWidth, align: 'center' });
+            const footerY = pageHeight - margin - 25;
 
-            // Footer line
-            doc.fontSize(10)
-               .font('Helvetica-Bold');
+            // Separator line
+            doc.strokeColor(colors.border)
+               .lineWidth(1)
+               .moveTo(leftCol, footerY - 4)
+               .lineTo(leftCol + contentWidth, footerY - 4)
+               .stroke();
 
-            // Invoice number
-            doc.text('Invoice # ', leftMargin, footerY);
-            doc.fillColor(colors.primary)
-               .font('Helvetica-Oblique')
-               .text(invoiceData.invoiceNumber, 100, footerY);
+            // Footer content
+            doc.fillColor(colors.textLight)
+               .fontSize(7)
+               .font('Helvetica')
+               .text('"Helping Everyone Succeed"', leftCol, footerY, { width: contentWidth, align: 'center' });
 
-            // Total Due
-            doc.fillColor(colors.secondary)
-               .font('Helvetica-Bold')
-               .text('Total Due: ', 250, footerY);
-            doc.fillColor(colors.primary)
-               .font('Helvetica-Bold')
-               .text(`${invoiceData.currency || 'USD'}    $ ${formatCurrency(invoiceData.total)}`, 305, footerY);
-
-            // Page
-            doc.fillColor(colors.secondary)
-               .font('Helvetica-Bold')
-               .text('Page ', 480, footerY);
-            doc.font('Helvetica')
-               .text('1', 510, footerY);
+            doc.fontSize(6)
+               .text(`Invoice ${invoiceData.invoiceNumber} • Page 1 • Generated ${new Date().toLocaleDateString()}`, 
+                     leftCol, footerY + 10, { width: contentWidth, align: 'center' });
 
             doc.end();
             
         } catch (error) {
+            logger.error('Error generating invoice PDF:', error);
             reject(error);
         }
     });

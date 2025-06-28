@@ -89,6 +89,7 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 // Import Sales Commission Module
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import GenerateInvoicesPage from './GenerateInvoicesPage';
+import APProcessing from './APProcessing';
 
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const { currentUser } = useAuth();
@@ -166,10 +167,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
 
         if (path.includes('/admin/billing/payment-terms')) {
             setActiveTab('payment-terms');
-        } else if (path.includes('/admin/billing/edi-mapping')) {
-            setActiveTab('edi-mapping');
-        } else if (path.includes('/admin/billing/edi')) {
-            setActiveTab('edi');
+        } else if (path.includes('/admin/billing/ap-processing')) {
+            setActiveTab('ap-processing');
         } else if (path.includes('/admin/billing/generate')) {
             // Handle generate tab properly
             setActiveTab('generate');
@@ -582,16 +581,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             case 'invoices':
                 navigate('/admin/billing');
                 break;
-            case 'edi':
-                if (selectedUploadId && showEdiResults) {
-                    navigate(`/admin/billing/edi/${selectedUploadId}`);
-                } else {
-                    navigate('/admin/billing/edi');
-                    setShowEdiResults(false);
-                }
-                break;
-            case 'edi-mapping':
-                navigate('/admin/billing/edi-mapping');
+            case 'ap-processing':
+                navigate('/admin/billing/ap-processing');
                 break;
             case 'generate':
                 navigate('/admin/billing/generate');
@@ -1376,8 +1367,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 >
                     <Tab label="Overview" value="overview" />
                     <Tab label="Invoices" value="invoices" />
-                    <Tab label="EDI Processing" value="edi" />
-                    <Tab label="EDI Mapping" value="edi-mapping" />
+                    <Tab label="AP Processing" value="ap-processing" />
                     <Tab label="Generate Invoices" value="generate" />
                     <Tab label="Business Invoicing" value="business" />
                     <Tab label="Payment Terms" value="payment-terms" />
@@ -1484,7 +1474,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                                 </Typography>
                                             </Box>
                                             <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                ${metrics.uninvoicedCharges?.toLocaleString() || 0}
+                                                CAD ${metrics.uninvoicedCharges?.toLocaleString() || 0}
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
                                                 Not Invoiced Total
@@ -1638,88 +1628,6 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                     }}
                                 />
                             </Paper>
-
-                            {/* Revenue Analytics */}
-                            <Grid container spacing={3}>
-                                <Grid item xs={12} lg={8}>
-                                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: 400 }}>
-                                        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, fontSize: '16px', color: '#111827' }}>
-                                            Revenue Trends
-                                        </Typography>
-                                        <ResponsiveContainer width="100%" height={300}>
-                                            <LineChart data={revenueTrends}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                                                <XAxis
-                                                    dataKey="date"
-                                                    tick={{ fontSize: 11 }}
-                                                    stroke="#6b7280"
-                                                />
-                                                <YAxis
-                                                    tick={{ fontSize: 11 }}
-                                                    stroke="#6b7280"
-                                                    tickFormatter={(value) => `$${value.toLocaleString()}`}
-                                                />
-                                                <ChartTooltip
-                                                    contentStyle={{
-                                                        backgroundColor: 'white',
-                                                        border: '1px solid #e5e7eb',
-                                                        borderRadius: '8px',
-                                                        fontSize: '12px'
-                                                    }}
-                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                                                />
-                                                <Line
-                                                    type="monotone"
-                                                    dataKey="revenue"
-                                                    stroke="#3b82f6"
-                                                    strokeWidth={3}
-                                                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
-                                                    activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
-                                                />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </Paper>
-                                </Grid>
-                                <Grid item xs={12} lg={4}>
-                                    <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: 400 }}>
-                                        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, fontSize: '16px', color: '#111827' }}>
-                                            Top Companies by Revenue
-                                        </Typography>
-                                        <ResponsiveContainer width="100%" height={300}>
-                                            <BarChart data={revenueByCompany.slice(0, 8)} layout="horizontal">
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                                                <XAxis
-                                                    type="number"
-                                                    tick={{ fontSize: 11 }}
-                                                    stroke="#6b7280"
-                                                    tickFormatter={(value) => `$${value.toLocaleString()}`}
-                                                />
-                                                <YAxis
-                                                    type="category"
-                                                    dataKey="company"
-                                                    tick={{ fontSize: 10 }}
-                                                    stroke="#6b7280"
-                                                    width={80}
-                                                />
-                                                <ChartTooltip
-                                                    contentStyle={{
-                                                        backgroundColor: 'white',
-                                                        border: '1px solid #e5e7eb',
-                                                        borderRadius: '8px',
-                                                        fontSize: '12px'
-                                                    }}
-                                                    formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                                                />
-                                                <Bar
-                                                    dataKey="revenue"
-                                                    fill="#8b5cf6"
-                                                    radius={[0, 4, 4, 0]}
-                                                />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </Paper>
-                                </Grid>
-                            </Grid>
                         </>
                     )}
                 </>
@@ -1729,126 +1637,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 <InvoiceManagement />
             )}
 
-            {activeTab === 'edi' && (
-                <>
-                    {showEdiResults ? (
-                        <Box sx={{ mb: 3 }}>
-                            <EDIResults
-                                uploadId={selectedUploadId}
-                                onClose={handleCloseEdiResults}
-                            />
-                        </Box>
-                    ) : (
-                        <>
-                            <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
-                                <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-                                    <Grid item xs>
-                                        <Box>
-                                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>EDI Processing</Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                                Upload and manage EDI files
-                                            </Typography>
-                                        </Box>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button
-                                            variant="outlined"
-                                            color="primary"
-                                            size="small"
-                                            onClick={checkStuckEdis}
-                                            disabled={ediLoading}
-                                            startIcon={ediLoading ? <CircularProgress size={16} /> : <HealthAndSafetyIcon />}
-                                            sx={{ mr: 1, fontSize: '12px' }}
-                                        >
-                                            Check Stuck Uploads
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            color="primary"
-                                            onClick={() => setEdiDialogOpen(true)}
-                                            size="small"
-                                            sx={{ fontSize: '12px' }}
-                                        >
-                                            Upload EDI File
-                                        </Button>
-                                    </Grid>
-                                </Grid>
-                            </Paper>
-
-                            <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
-                                <TableContainer>
-                                    <Table>
-                                        <TableHead>
-                                            <TableRow>
-                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>File Name</TableCell>
-                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
-                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Upload Date</TableCell>
-                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Records</TableCell>
-                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
-                                            </TableRow>
-                                        </TableHead>
-                                        <TableBody>
-                                            {ediLoading ? (
-                                                <TableRow>
-                                                    <TableCell colSpan={6} align="center">
-                                                        <Box sx={{ py: 3 }}>
-                                                            <CircularProgress size={24} />
-                                                            <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading EDI history...</Typography>
-                                                        </Box>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ) : ediProcessedItems.length > 0 ? (
-                                                ediProcessedItems.map((item) => (
-                                                    <TableRow key={item.id} hover>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{item.fileName}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{item.carrier || 'Not specified'}</TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>
-                                                            {item.formattedUploadDate}
-                                                        </TableCell>
-                                                        <TableCell sx={{ fontSize: '12px' }}>{item.recordCount || '0'}</TableCell>
-                                                        <TableCell>
-                                                            {getProcessingStatusChip(item.processingStatus)}
-                                                        </TableCell>
-                                                        <TableCell align="right">
-                                                            <Button
-                                                                size="small"
-                                                                onClick={() => handleViewEdiResults(item.uploadId)}
-                                                                disabled={item.processingStatus === 'queued'}
-                                                                sx={{ fontSize: '12px' }}
-                                                            >
-                                                                View Results
-                                                            </Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            ) : (
-                                                <TableRow>
-                                                    <TableCell colSpan={6} align="center">
-                                                        <Box sx={{ py: 3 }}>
-                                                            <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                                                No EDI files processed yet
-                                                            </Typography>
-                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '11px', mt: 1 }}>
-                                                                Upload your first EDI file to get started
-                                                            </Typography>
-                                                        </Box>
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </Paper>
-                        </>
-                    )}
-                </>
-            )}
-
-            {activeTab === 'edi-mapping' && (
-                <Box sx={{ mb: 3 }}>
-                    <EDIMapping />
-                </Box>
+            {activeTab === 'ap-processing' && (
+                <APProcessing />
             )}
 
             {activeTab === 'payment-terms' && (
