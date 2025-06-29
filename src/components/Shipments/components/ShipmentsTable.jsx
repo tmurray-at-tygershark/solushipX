@@ -19,6 +19,7 @@ const ShipmentsTable = ({
     onSelect,
     onActionMenuOpen,
     customers,
+    companyData,
     carrierData,
     searchFields,
     highlightSearchTerm,
@@ -37,24 +38,23 @@ const ShipmentsTable = ({
     // Check if we're in admin view mode
     const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
 
-    // Column configuration to match header widths
+    // Column configuration to match header widths (TYPE column removed)
     const columnConfig = {
         checkbox: { width: 48 },
-        id: { width: 110 }, // Further reduced from 130 to 110
+        id: { width: 110 },
         created: { width: 100 },
         date: { width: 100 },
         reference: { width: 120 },
         customer: { width: 140 },
         route: { width: 150 },
-        carrier: { width: isAdminView ? 180 : 220 }, // Reduced when charges column is shown
-        type: { width: 120 }, // Increased from 100 to 120
-        charges: { width: 100 }, // New charges column
+        carrier: { width: isAdminView ? 200 : 240 }, // Increased width since TYPE column removed
+        charges: { width: 100 }, // New charges column for admin view
         status: { width: 110 },
         actions: { width: 60 }
     };
 
-    // Calculate total width
-    const totalWidth = isAdminView ? 1378 : 1278; // Add 100 for charges column
+    // Calculate total width (TYPE column removed, so -120px)
+    const totalWidth = isAdminView ? 1258 : 1158;
 
     return (
         <Box sx={{
@@ -162,7 +162,7 @@ const ShipmentsTable = ({
                             maxWidth: 140,
                             backgroundColor: '#f8fafc !important'
                         }}>
-                            CUSTOMER
+                            {isAdminView ? 'COMPANY / CUSTOMER' : 'CUSTOMER'}
                         </TableCell>
                         <TableCell sx={{
                             width: 150,
@@ -179,14 +179,6 @@ const ShipmentsTable = ({
                             backgroundColor: '#f8fafc !important'
                         }}>
                             CARRIER
-                        </TableCell>
-                        <TableCell sx={{
-                            width: 120,
-                            minWidth: 120,
-                            maxWidth: 120,
-                            backgroundColor: '#f8fafc !important'
-                        }}>
-                            TYPE
                         </TableCell>
                         {isAdminView && (
                             <TableCell sx={{
@@ -222,13 +214,13 @@ const ShipmentsTable = ({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4 }}>
+                            <TableCell colSpan={isAdminView ? 11 : 10} align="center" sx={{ py: 4 }}>
                                 <CircularProgress />
                             </TableCell>
                         </TableRow>
                     ) : safeShipments.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                            <TableCell colSpan={isAdminView ? 11 : 10} align="center" sx={{ py: 4, color: '#6b7280' }}>
                                 No shipments found
                             </TableCell>
                         </TableRow>
@@ -241,6 +233,7 @@ const ShipmentsTable = ({
                                 onSelect={onSelect}
                                 onActionMenuOpen={onActionMenuOpen}
                                 customers={customers}
+                                companyData={companyData}
                                 carrierData={carrierData}
                                 searchFields={searchFields}
                                 highlightSearchTerm={highlightSearchTerm}

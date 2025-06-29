@@ -2361,7 +2361,7 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
 
                     const totals = processedPackages.reduce((acc, pkg) => ({
                         totalQuantity: acc.totalQuantity + (parseInt(pkg.quantity) || 0),
-                        totalWeight: acc.totalWeight + (parseFloat(pkg.weight) || 0),
+                        totalWeight: acc.totalWeight + ((parseFloat(pkg.weight) || 0) * (parseInt(pkg.quantity) || 1)), // FIXED: Weight × Quantity
                         totalValue: acc.totalValue + (parseFloat(pkg.value) || 0)
                     }), { totalQuantity: 0, totalWeight: 0, totalValue: 0 });
 

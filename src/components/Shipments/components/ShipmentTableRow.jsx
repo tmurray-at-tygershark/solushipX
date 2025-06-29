@@ -513,15 +513,152 @@ const ShipmentTableRow = ({
                     wordBreak: 'break-word',
                     lineHeight: 1.3
                 }}>
-                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                        {highlightSearchTerm(
-                            shipment.shipTo?.companyName ||
-                            shipment.shipTo?.company ||
-                            customers[shipment.shipTo?.customerID] ||
-                            'N/A',
-                            searchFields.customerName
-                        )}
-                    </Typography>
+                    {adminViewMode ? (
+                        // Enhanced Company/Customer display for admin view
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            {/* Company Row */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {/* Company Logo/Avatar */}
+                                <Box sx={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: '4px',
+                                    backgroundColor: '#f3f4f6',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    {(() => {
+                                        // Enhanced logo detection - check multiple possible sources
+                                        const company = companyData[shipment.companyID];
+                                        const logoUrl = company?.logo || company?.logoUrl || company?.companyLogo;
+
+                                        return logoUrl ? (
+                                            <img
+                                                src={logoUrl}
+                                                alt="Company"
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'contain',
+                                                    borderRadius: '3px'
+                                                }}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    e.target.nextSibling.style.display = 'flex';
+                                                }}
+                                            />
+                                        ) : null;
+                                    })()}
+                                    <Typography sx={{
+                                        fontSize: '8px',
+                                        fontWeight: 600,
+                                        color: '#6b7280',
+                                        lineHeight: 1,
+                                        display: companyData[shipment.companyID]?.logo || companyData[shipment.companyID]?.logoUrl || companyData[shipment.companyID]?.companyLogo ? 'none' : 'flex'
+                                    }}>
+                                        {(companyData[shipment.companyID]?.name || companyData[shipment.companyID]?.companyName || shipment.companyID || 'CO')[0].toUpperCase()}
+                                    </Typography>
+                                </Box>
+
+                                {/* Company Name */}
+                                <Typography variant="body2" sx={{
+                                    fontSize: '11px',
+                                    fontWeight: 500,
+                                    color: '#374151',
+                                    lineHeight: 1.2
+                                }}>
+                                    {companyData[shipment.companyID]?.name || shipment.companyID || 'Unknown Company'}
+                                </Typography>
+                            </Box>
+
+                            {/* Customer Row */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 0.5 }}>
+                                {/* Customer Logo/Avatar */}
+                                <Box sx={{
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: '3px',
+                                    backgroundColor: '#e5e7eb',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    {(() => {
+                                        // Enhanced customer logo detection - check multiple possible sources
+                                        const customer = customers[shipment.shipTo?.customerID];
+                                        const customerLogoUrl = customer?.logo || customer?.logoUrl || customer?.customerLogo || customer?.companyLogo;
+
+                                        return customerLogoUrl ? (
+                                            <img
+                                                src={customerLogoUrl}
+                                                alt="Customer"
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'contain',
+                                                    borderRadius: '2px'
+                                                }}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    e.target.nextSibling.style.display = 'flex';
+                                                }}
+                                            />
+                                        ) : null;
+                                    })()}
+                                    <Typography sx={{
+                                        fontSize: '7px',
+                                        fontWeight: 600,
+                                        color: '#9ca3af',
+                                        lineHeight: 1,
+                                        display: (() => {
+                                            const customer = customers[shipment.shipTo?.customerID];
+                                            return customer?.logo || customer?.logoUrl || customer?.customerLogo || customer?.companyLogo ? 'none' : 'flex';
+                                        })()
+                                    }}>
+                                        {(
+                                            customers[shipment.shipTo?.customerID]?.name ||
+                                            customers[shipment.shipTo?.customerID]?.companyName ||
+                                            customers[shipment.shipTo?.customerID] ||
+                                            shipment.shipTo?.companyName ||
+                                            shipment.shipTo?.company ||
+                                            'CU'
+                                        )[0].toUpperCase()}
+                                    </Typography>
+                                </Box>
+
+                                {/* Customer Name */}
+                                <Typography variant="body2" sx={{
+                                    fontSize: '11px',
+                                    color: '#6b7280',
+                                    lineHeight: 1.2
+                                }}>
+                                    {highlightSearchTerm(
+                                        customers[shipment.shipTo?.customerID]?.name ||
+                                        customers[shipment.shipTo?.customerID]?.companyName ||
+                                        customers[shipment.shipTo?.customerID] ||
+                                        shipment.shipTo?.companyName ||
+                                        shipment.shipTo?.company ||
+                                        'N/A',
+                                        searchFields.customerName
+                                    )}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    ) : (
+                        // Regular customer display for non-admin view
+                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                            {highlightSearchTerm(
+                                shipment.shipTo?.companyName ||
+                                shipment.shipTo?.company ||
+                                customers[shipment.shipTo?.customerID] ||
+                                'N/A',
+                                searchFields.customerName
+                            )}
+                        </Typography>
+                    )}
                 </TableCell>
             )}
 
@@ -655,20 +792,7 @@ const ShipmentTableRow = ({
                 </TableCell>
             )}
 
-            {/* Type - Narrower column */}
-            {visibleColumns.type !== false && (
-                <TableCell sx={{
-                    verticalAlign: 'top',
-                    textAlign: 'left',
-                    ...getColumnWidth('type'),
-                    padding: '8px 12px',
-                    wordBreak: 'break-word',
-                    lineHeight: 1.3,
-                    fontSize: '11px'
-                }}>
-                    {capitalizeShipmentType(shipment.shipmentInfo?.shipmentType)}
-                </TableCell>
-            )}
+
 
             {/* Charges - Admin View Only */}
             {isAdminView && (

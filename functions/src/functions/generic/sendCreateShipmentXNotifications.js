@@ -356,8 +356,8 @@ async function sendCustomerNotification(shipmentData, documentResults) {
             }
         }
         
-        // Calculate total weight and pieces for email
-        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0) || 0;
+        // Calculate total weight and pieces for email - FIXED: Weight × Quantity
+        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0) || 0;
         const totalPieces = shipmentData.packages?.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0) || 0;
         
         // Use direct sgMail.send() like QuickShip
@@ -514,8 +514,8 @@ async function sendCarrierNotification(shipmentData, documentResults) {
             }
         }
         
-        // Calculate total weight and pieces for email
-        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0) || 0;
+        // Calculate total weight and pieces for email - FIXED: Weight × Quantity
+        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0) || 0;
         const totalPieces = shipmentData.packages?.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0) || 0;
         
         // Use direct sgMail.send() like QuickShip
@@ -617,8 +617,8 @@ async function sendInternalNotification(shipmentData, documentResults) {
             }
         }
         
-        // Calculate total weight and pieces for email
-        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + parseFloat(pkg.weight || 0), 0) || 0;
+        // Calculate total weight and pieces for email - FIXED: Weight × Quantity
+        const totalWeight = shipmentData.packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0) || 0;
         const totalPieces = shipmentData.packages?.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0) || 0;
         
         // Send to all subscribers

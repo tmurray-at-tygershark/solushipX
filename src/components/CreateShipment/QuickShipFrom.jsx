@@ -102,12 +102,110 @@ const QuickShipFrom = ({ onNext }) => {
                 const addressesQuery = query(
                     collection(db, 'addressBook'),
                     where('addressClass', '==', 'company'),
-                    where('addressType', '==', 'origin'),
+                    where('addressType', '==', 'origin'), // This should ONLY return origin addresses
                     where('addressClassID', '==', companyIdForAddress),
                     where('status', '!=', 'deleted')
                 );
+
+                console.log('🔍 QuickShipFrom: Database query parameters:', {
+                    collection: 'addressBook',
+                    addressClass: 'company',
+                    addressType: 'origin', // CRITICAL: Only origin addresses should be returned
+                    addressClassID: companyIdForAddress,
+                    statusFilter: 'not deleted'
+                });
+
+                console.log('QuickShipFrom: Querying addresses with companyIdForAddress:', companyIdForAddress);
+
                 const addressesSnapshot = await getDocs(addressesQuery);
-                const fetchedAddresses = addressesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                console.log('QuickShipFrom: Raw query results:', addressesSnapshot.docs.length, 'documents');
+
+                // Log ALL raw addresses from database to debug what's actually being returned
+                console.log('🔍 QuickShipFrom: ALL RAW ADDRESSES FROM DATABASE:');
+                addressesSnapshot.docs.forEach(doc => {
+                    const addr = doc.data();
+                    console.log('📋 Raw DB Address:', {
+                        id: doc.id,
+                        nickname: addr.nickname,
+                        companyName: addr.companyName,
+                        address1: addr.address1,
+                        addressClass: addr.addressClass,
+                        addressType: addr.addressType,
+                        addressClassID: addr.addressClassID,
+                        status: addr.status
+                    });
+                });
+
+                const fetchedAddresses = addressesSnapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(addr => {
+                        // ULTRA STRICT FILTERING - Only pickup/origin addresses
+                        const isValid = (
+                            addr.addressClass === 'company' &&
+                            addr.addressType === 'origin' && // MUST be 'origin' - NOT 'contact' or 'destination'
+                            addr.addressClassID === companyIdForAddress &&
+                            addr.status !== 'deleted' &&
+                            // Ensure it's a real shipping address with physical location
+                            addr.companyName &&
+                            addr.address1 &&
+                            addr.city &&
+                            addr.stateProv &&
+                            addr.zipPostal &&
+                            // Additional safety check - exclude contact-type records
+                            addr.addressType !== 'contact' &&
+                            addr.addressType !== 'destination'
+                        );
+
+                        if (!isValid) {
+                            const issues = [];
+                            if (addr.addressClass !== 'company') issues.push(`addressClass: ${addr.addressClass} (expected: company)`);
+                            if (addr.addressType !== 'origin') issues.push(`addressType: ${addr.addressType} (expected: origin, NOT contact/destination)`);
+                            if (addr.addressType === 'contact') issues.push('BLOCKED: contact type address');
+                            if (addr.addressType === 'destination') issues.push('BLOCKED: destination type address');
+                            if (addr.addressClassID !== companyIdForAddress) issues.push(`addressClassID: ${addr.addressClassID} (expected: ${companyIdForAddress})`);
+                            if (addr.status === 'deleted') issues.push('status: deleted');
+                            if (!addr.companyName) issues.push('missing companyName');
+                            if (!addr.address1) issues.push('missing address1');
+                            if (!addr.city) issues.push('missing city');
+                            if (!addr.stateProv) issues.push('missing stateProv');
+                            if (!addr.zipPostal) issues.push('missing zipPostal');
+
+                            console.warn('❌ QuickShipFrom: BLOCKING address:', {
+                                id: addr.id,
+                                nickname: addr.nickname,
+                                companyName: addr.companyName,
+                                address1: addr.address1,
+                                addressType: addr.addressType,
+                                issues: issues
+                            });
+                        } else {
+                            console.log('✅ QuickShipFrom: ALLOWING address:', {
+                                id: addr.id,
+                                nickname: addr.nickname,
+                                companyName: addr.companyName,
+                                address1: addr.address1,
+                                addressType: addr.addressType
+                            });
+                        }
+
+                        return isValid;
+                    });
+
+                console.log('QuickShipFrom: Filtered addresses:', fetchedAddresses.length, 'valid addresses');
+
+                fetchedAddresses.forEach(addr => {
+                    console.log('QuickShipFrom: Valid address:', {
+                        id: addr.id,
+                        nickname: addr.nickname,
+                        companyName: addr.companyName,
+                        address1: addr.address1,
+                        city: addr.city,
+                        stateProv: addr.stateProv,
+                        zipPostal: addr.zipPostal
+                    });
+                });
+
                 setShipFromAddresses(fetchedAddresses);
 
                 const currentShipFrom = formData.shipFrom || {};
@@ -146,6 +244,7 @@ const QuickShipFrom = ({ onNext }) => {
                         setConfirmedAddressId(defaultSelectedOrigin.id);
                     }
                 } else {
+                    console.log('QuickShipFrom: No valid addresses found for company:', companyIdForAddress);
                     setSelectedAddressId(null);
                     setConfirmedAddressId(null);
                 }
@@ -160,8 +259,6 @@ const QuickShipFrom = ({ onNext }) => {
         fetchAddresses();
     }, [companyIdForAddress, companyData, formData.shipFrom?.id, updateFormSection]);
 
-
-
     const handleAddressChange = useCallback(async (addressId) => {
         const selectedDbAddress = shipFromAddresses.find(addr => addr.id === addressId);
         if (selectedDbAddress) {
@@ -169,8 +266,6 @@ const QuickShipFrom = ({ onNext }) => {
             // Don't immediately update form section or call onNext - let user confirm first
         }
     }, [shipFromAddresses]);
-
-
 
     const handleChangeAddress = useCallback(() => {
         setConfirmedAddressId(null);

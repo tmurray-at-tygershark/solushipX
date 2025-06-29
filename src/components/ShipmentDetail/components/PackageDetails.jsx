@@ -84,11 +84,11 @@ const PackageDetails = ({ packages = [] }) => {
         return 'success';
     }, []);
 
-    // Calculate totals
+    // Calculate totals - FIXED: Multiply weight by quantity for accurate total weight
     const totals = useMemo(() => {
         return processedPackages.reduce((acc, pkg) => ({
             totalQuantity: acc.totalQuantity + (parseInt(pkg.quantity) || 0),
-            totalWeight: acc.totalWeight + (parseFloat(pkg.weight) || 0),
+            totalWeight: acc.totalWeight + ((parseFloat(pkg.weight) || 0) * (parseInt(pkg.quantity) || 1)), // FIXED: Weight × Quantity
             totalValue: acc.totalValue + (parseFloat(pkg.value) || 0)
         }), { totalQuantity: 0, totalWeight: 0, totalValue: 0 });
     }, [processedPackages]);

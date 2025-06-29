@@ -238,7 +238,7 @@ function extractEShipPlusBOLData(shipmentData, shipmentId) {
                 const weight = parseFloat(pkg.weight || pkg.reported_weight || pkg.Weight || pkg.packageWeight || 0);
                 const quantity = parseInt(pkg.quantity || pkg.PackagingQuantity || pkg.pieces || 1);
                 
-                totalWeight += weight;
+                totalWeight += (weight * quantity); // FIXED: Weight × Quantity
                 totalPieces += quantity;
             });
         } else {

@@ -475,10 +475,20 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
                     setSelectedCompanyData(targetCompanyData);
 
+                    // CLEAR ADDRESSES when company changes - they belong to the previous company
+                    setShipFromAddress(null);
+                    setShipToAddress(null);
+                    setAvailableAddresses([]); // Clear available addresses as they're for the old company
+
+                    // Clear form sections as well
+                    updateFormSection('shipFrom', {});
+                    updateFormSection('shipTo', {});
+
                     // Switch company context
                     await setCompanyContext(targetCompanyData);
 
                     console.log('✅ Super admin switched to company context:', targetCompanyData.name);
+                    console.log('🧹 Cleared ship from/to addresses for new company');
                     // Show success message
                     showSuccess(`Switched to ${targetCompanyData.name || companyId}`);
                 } else {
@@ -488,13 +498,19 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 }
             } else {
                 setSelectedCompanyData(null);
+                // Clear addresses when no company is selected
+                setShipFromAddress(null);
+                setShipToAddress(null);
+                setAvailableAddresses([]);
+                updateFormSection('shipFrom', {});
+                updateFormSection('shipTo', {});
             }
         } catch (error) {
             console.error('❌ Error switching company context:', error);
             setError('Error switching company context');
             setTimeout(() => setError(null), 3000);
         }
-    }, [setCompanyContext]);
+    }, [setCompanyContext, updateFormSection]);
 
     // Scroll to error function
     const scrollToError = () => {

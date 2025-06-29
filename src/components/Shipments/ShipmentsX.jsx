@@ -114,6 +114,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [allShipments, setAllShipments] = useState([]);
     const [customers, setCustomers] = useState({});
     const [carrierData, setCarrierData] = useState({});
+    const [companiesData, setCompaniesData] = useState({}); // Enhanced to load multiple companies for admin view
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -780,11 +781,34 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Fetch customers for name lookup - optimized
     const fetchCustomers = useCallback(async () => {
-        if (!companyIdForAddress) return;
+        // Check if we're in admin "all companies" mode
+        const isAdminAllView = adminViewMode === 'all';
+
+        if (!companyIdForAddress && !isAdminAllView) return;
 
         try {
             const customersRef = collection(db, 'customers');
-            const q = query(customersRef, where('companyID', '==', companyIdForAddress));
+            let q;
+
+            if (isAdminAllView) {
+                // Admin viewing all companies - load customers from all companies
+                if (adminCompanyIds === 'all') {
+                    // Super admin - load all customers
+                    console.log('📊 Loading ALL customers (super admin view)');
+                    q = query(customersRef);
+                } else if (Array.isArray(adminCompanyIds) && adminCompanyIds.length > 0) {
+                    // Admin - load customers from connected companies
+                    console.log(`📊 Loading customers from ${adminCompanyIds.length} connected companies`);
+                    q = query(customersRef, where('companyID', 'in', adminCompanyIds));
+                } else {
+                    console.warn('No company IDs available for admin customer loading');
+                    return;
+                }
+            } else {
+                // Single company view
+                q = query(customersRef, where('companyID', '==', companyIdForAddress));
+            }
+
             const querySnapshot = await getDocs(q);
             const customersMap = {};
             querySnapshot.forEach(doc => {
@@ -794,10 +818,62 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 }
             });
             setCustomers(customersMap);
+            console.log(`📊 Loaded ${Object.keys(customersMap).length} customers for display`);
         } catch (error) {
             console.error('Error fetching customers:', error);
         }
-    }, [companyIdForAddress]); // Stable function
+    }, [companyIdForAddress, adminViewMode, adminCompanyIds]);
+
+    // Fetch companies data for admin view - NEW FUNCTION
+    const fetchCompaniesData = useCallback(async () => {
+        // Only load company data for admin view
+        if (!adminViewMode) return;
+
+        try {
+            const companiesRef = collection(db, 'companies');
+            let q;
+
+            if (adminViewMode === 'all') {
+                if (adminCompanyIds === 'all') {
+                    // Super admin - load all companies
+                    console.log('📊 Loading ALL companies data (super admin view)');
+                    q = query(companiesRef);
+                } else if (Array.isArray(adminCompanyIds) && adminCompanyIds.length > 0) {
+                    // Admin - load connected companies
+                    console.log(`📊 Loading ${adminCompanyIds.length} companies data`);
+                    q = query(companiesRef, where('companyID', 'in', adminCompanyIds));
+                } else {
+                    console.warn('No company IDs available for admin company data loading');
+                    return;
+                }
+            } else {
+                // Single company admin view - load just that company
+                const targetCompanyId = typeof adminViewMode === 'string' ? adminViewMode : companyIdForAddress;
+                if (targetCompanyId) {
+                    q = query(companiesRef, where('companyID', '==', targetCompanyId));
+                }
+            }
+
+            if (q) {
+                const querySnapshot = await getDocs(q);
+                const companiesMap = {};
+                querySnapshot.forEach(doc => {
+                    const company = doc.data();
+                    if (company.companyID) {
+                        companiesMap[company.companyID] = {
+                            name: company.name || company.companyName || company.companyID,
+                            logo: company.logo || company.logoURL || null,
+                            status: company.status || 'active'
+                        };
+                    }
+                });
+                setCompaniesData(companiesMap);
+                console.log(`📊 Loaded ${Object.keys(companiesMap).length} companies data for admin display`);
+            }
+        } catch (error) {
+            console.error('Error fetching companies data:', error);
+        }
+    }, [adminViewMode, adminCompanyIds, companyIdForAddress]);
 
     // Fetch carrier information from shipmentRates collection - optimized
     const fetchCarrierData = useCallback(async (shipmentIds) => {
@@ -1356,16 +1432,24 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         if (!authLoading && !companyCtxLoading && (companyIdForAddress || isAdminAllView)) {
             console.log('🔄 Initial data load triggered', { adminViewMode, isAdminAllView });
-            // Load customers and shipments in parallel for faster initial load
-            Promise.all([
+
+            // Load data in parallel for faster initial load
+            const dataPromises = [
                 fetchCustomers(),
                 loadShipments()
-            ]).catch(error => {
+            ];
+
+            // Add company data loading for admin view
+            if (adminViewMode) {
+                dataPromises.push(fetchCompaniesData());
+            }
+
+            Promise.all(dataPromises).catch(error => {
                 console.error('Error loading initial data:', error);
                 setLoading(false);
             });
         }
-    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments, adminViewMode]); // Removed companyData to prevent loops
+    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments, fetchCompaniesData, adminViewMode]);
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -1909,7 +1993,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     onActionMenuOpen={handleActionMenuOpen}
                                     onEditDraftShipment={handleEditDraftShipment}
                                     customers={customers}
-                                    companyData={companyData}
+                                    companyData={companiesData}
                                     carrierData={carrierData}
                                     searchFields={searchFields}
                                     highlightSearchTerm={highlightSearchTerm}

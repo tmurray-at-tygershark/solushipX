@@ -331,7 +331,7 @@ const GlobalAddressList = () => {
                                             <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
                                                 {company.name}
                                             </Typography>
-                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
                                                 {company.companyID}
                                             </Typography>
                                         </Box>
@@ -1502,7 +1502,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                             <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
                                                                 {company.name}
                                                             </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
                                                                 {company.companyID}
                                                             </Typography>
                                                         </Box>
@@ -1552,7 +1552,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                                 <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
                                                                     {customer.name || customer.customerID}
                                                                 </Typography>
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
                                                                     {customer.customerID}
                                                                 </Typography>
                                                             </Box>
@@ -1737,8 +1737,8 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                                 >
                                                                     {address.ownerCompanyName || 'N/A'}
                                                                 </Typography>
-                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                    ({address.companyID || 'N/A'})
+                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    {address.companyID || 'N/A'}
                                                                 </Typography>
                                                             </Box>
                                                         </Box>
@@ -1760,30 +1760,35 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                             >
                                                                 {!address.customerOwnerLogo && address.customerOwnerName.charAt(0).toUpperCase()}
                                                             </Avatar>
-                                                            <Typography
-                                                                variant="body2"
-                                                                component="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleNavigateToCustomer(address.customerOwnerCompanyID);
-                                                                }}
-                                                                sx={{
-                                                                    fontSize: '12px',
-                                                                    fontWeight: 500,
-                                                                    color: '#1976d2',
-                                                                    textDecoration: 'none',
-                                                                    cursor: 'pointer',
-                                                                    background: 'none',
-                                                                    border: 'none',
-                                                                    padding: 0,
-                                                                    textAlign: 'left',
-                                                                    '&:hover': {
-                                                                        textDecoration: 'underline'
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {address.customerOwnerName}
-                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    component="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleNavigateToCustomer(address.customerOwnerCompanyID);
+                                                                    }}
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        fontWeight: 500,
+                                                                        color: '#1976d2',
+                                                                        textDecoration: 'none',
+                                                                        cursor: 'pointer',
+                                                                        background: 'none',
+                                                                        border: 'none',
+                                                                        padding: 0,
+                                                                        textAlign: 'left',
+                                                                        '&:hover': {
+                                                                            textDecoration: 'underline'
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {address.customerOwnerName}
+                                                                </Typography>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    {address.customerOwnerID || address.addressClassID || 'N/A'}
+                                                                </Typography>
+                                                            </Box>
                                                         </Box>
                                                     ) : (
                                                         <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af' }}>

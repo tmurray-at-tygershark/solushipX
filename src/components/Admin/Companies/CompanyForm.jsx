@@ -318,7 +318,7 @@ const CompanyForm = () => {
     };
 
     const validateForm = () => {
-        if (!formData.name.trim() || !formData.companyID.trim() || !formData.ownerID) {
+        if (!formData.name || !formData.name.trim() || !formData.companyID || !formData.companyID.trim() || !formData.ownerID) {
             enqueueSnackbar('Company Name, Company ID, and Owner are required.', { variant: 'warning' });
             return false;
         }
@@ -336,7 +336,7 @@ const CompanyForm = () => {
         setSaveLoading(true);
         setError(null);
 
-        const humanReadableCompanyID = formData.companyID.trim();
+        const humanReadableCompanyID = formData.companyID ? formData.companyID.trim() : '';
 
         try {
             // Check for duplicate companyID on create (frontend)
@@ -386,9 +386,9 @@ const CompanyForm = () => {
 
             // Prepare company data, excluding mainContact and originAddresses from the direct company doc save
             const companyCoreData = {
-                name: formData.name.trim(),
+                name: formData.name ? formData.name.trim() : '',
                 companyID: humanReadableCompanyID,
-                website: formData.website.trim(),
+                website: formData.website ? formData.website.trim() : '',
                 logoUrl: logoUrl || '',
                 status: formData.status,
                 ownerID: formData.ownerID,
@@ -420,14 +420,14 @@ const CompanyForm = () => {
             });
 
             // Save main contact to addressBook
-            if (formData.mainContact.address1.trim()) { // Check if there's actual address data
+            if (formData.mainContact.address1 && formData.mainContact.address1.trim()) { // Check if there's actual address data
                 const mainContactRef = formData.mainContact.id ? doc(db, 'addressBook', formData.mainContact.id) : doc(collection(db, 'addressBook'));
                 const mainContactDataToSave = {
                     ...formData.mainContact,
                     addressClass: 'company',
                     addressClassID: humanReadableCompanyID,
                     addressType: 'contact',
-                    companyName: formData.name.trim(),
+                    companyName: formData.name ? formData.name.trim() : '',
                     updatedAt: now,
                     ...(formData.mainContact.id ? {} : { createdAt: now })
                 };
@@ -435,7 +435,7 @@ const CompanyForm = () => {
             }
 
             // Save billing address to addressBook
-            if (formData.billingAddress.address1.trim()) {
+            if (formData.billingAddress.address1 && formData.billingAddress.address1.trim()) {
                 // If billingAddress.id is the same as mainContact.id, ignore it (force new record)
                 let billingId = formData.billingAddress.id;
                 if (billingId && formData.mainContact.id && billingId === formData.mainContact.id) {
@@ -447,7 +447,7 @@ const CompanyForm = () => {
                     addressClass: 'company',
                     addressClassID: humanReadableCompanyID,
                     addressType: 'billing',
-                    companyName: formData.name.trim(),
+                    companyName: formData.name ? formData.name.trim() : '',
                     updatedAt: now,
                     ...(billingId ? {} : { createdAt: now })
                 };
@@ -611,11 +611,11 @@ const CompanyForm = () => {
     // Add debounced company ID check
     useEffect(() => {
         const checkCompanyId = async () => {
-            if (!formData.companyID.trim() || isEditMode) return;
+            if (!formData.companyID || !formData.companyID.trim() || isEditMode) return;
 
             setIsCheckingCompanyId(true);
             try {
-                const q = query(collection(db, 'companies'), where('companyID', '==', formData.companyID.trim()));
+                const q = query(collection(db, 'companies'), where('companyID', '==', formData.companyID ? formData.companyID.trim() : ''));
                 const snap = await getDocs(q);
                 if (!snap.empty) {
                     setCompanyIdError('This Company ID is already taken');

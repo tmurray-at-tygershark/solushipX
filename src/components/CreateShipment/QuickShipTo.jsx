@@ -184,6 +184,10 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
 
         try {
             let addressesToProcess = [];
+
+            // ENHANCED: Add debugging for address queries
+            console.log('QuickShipTo: Loading addresses for customerID:', localCustomerID);
+
             const addressesQuery = query(
                 collection(db, 'addressBook'),
                 where('addressClass', '==', 'customer'),
@@ -193,10 +197,57 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
             );
             const addressesSnapshot = await getDocs(addressesQuery);
 
+            console.log('QuickShipTo: Raw address query results:', addressesSnapshot.docs.length, 'documents');
+
             if (!addressesSnapshot.empty) {
-                addressesToProcess = addressesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                const rawAddresses = addressesSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // ENHANCED: Filter and validate addresses
+                addressesToProcess = rawAddresses.filter(addr => {
+                    const isValid = (
+                        addr.addressClass === 'customer' &&
+                        addr.addressType === 'destination' &&
+                        addr.addressClassID === localCustomerID &&
+                        addr.status !== 'deleted' &&
+                        // ENHANCED: Ensure required fields are present
+                        addr.address1 &&
+                        addr.city &&
+                        addr.stateProv &&
+                        addr.zipPostal
+                    );
+
+                    // ENHANCED: Log specific issues for debugging
+                    if (!isValid) {
+                        const issues = [];
+                        if (addr.addressClass !== 'customer') issues.push(`wrong addressClass: ${addr.addressClass}`);
+                        if (addr.addressType !== 'destination') issues.push(`wrong addressType: ${addr.addressType} (should be 'destination', not 'contact')`);
+                        if (addr.addressClassID !== localCustomerID) issues.push(`wrong addressClassID: ${addr.addressClassID}`);
+                        if (addr.status === 'deleted') issues.push('status is deleted');
+                        if (!addr.address1) issues.push('missing address1');
+                        if (!addr.city) issues.push('missing city');
+                        if (!addr.stateProv) issues.push('missing stateProv');
+                        if (!addr.zipPostal) issues.push('missing zipPostal');
+
+                        console.warn('QuickShipTo: Filtering out invalid address:', {
+                            id: addr.id,
+                            companyName: addr.companyName,
+                            address1: addr.address1,
+                            city: addr.city,
+                            issues: issues.join(', ')
+                        });
+                    }
+
+                    return isValid;
+                });
+
+                console.log('QuickShipTo: Filtered valid addresses:', addressesToProcess.length);
+
             } else if (customerForAddresses.addresses && customerForAddresses.addresses.length > 0 && customerForAddresses.addresses[0]?.street) {
+                // LEGACY: Handle old customer address format
+                console.log('QuickShipTo: Using legacy customer addresses format');
                 addressesToProcess = customerForAddresses.addresses.map((addr, idx) => ({ ...addr, id: addr.id || `legacy_${idx}` }));
+            } else {
+                console.log('QuickShipTo: No addresses found for customer:', localCustomerID);
             }
 
             const primaryContact = customerForAddresses.contacts?.find(c => c.isPrimary) || customerForAddresses.contacts?.[0] || {};
@@ -576,8 +627,6 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
                             Add New
                         </Button>
                     </Box>
-
-
 
                     {loadingDestinations ? (
                         <Box sx={{ py: 2 }}>

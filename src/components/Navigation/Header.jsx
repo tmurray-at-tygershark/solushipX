@@ -489,7 +489,10 @@ const Navigation = () => {
                         anchorEl={featuresAnchorEl}
                         open={Boolean(featuresAnchorEl)}
                         onClose={handleMenuClose}
-                        sx={{ display: { xs: 'none', md: 'block' } }}
+                        sx={{
+                            display: { xs: 'none', md: 'block' },
+                            zIndex: 1400 // Higher than modal header (1000)
+                        }}
                         PaperProps={{
                             elevation: 0,
                             sx: {
@@ -500,6 +503,7 @@ const Navigation = () => {
                                 maxHeight: { xs: '50vh', sm: '60vh', md: '600px' },
                                 borderRadius: 0,
                                 borderTop: '1px solid #e0e0e0',
+                                zIndex: 1400, // Ensure Paper also has high z-index
                                 '&:before': {
                                     content: '""',
                                     display: 'block',
@@ -562,7 +566,10 @@ const Navigation = () => {
                         anchorEl={integrationsAnchorEl}
                         open={Boolean(integrationsAnchorEl)}
                         onClose={handleMenuClose}
-                        sx={{ display: { xs: 'none', md: 'block' } }}
+                        sx={{
+                            display: { xs: 'none', md: 'block' },
+                            zIndex: 1400 // Higher than modal header (1000)
+                        }}
                         PaperProps={{
                             elevation: 0,
                             sx: {
@@ -573,6 +580,7 @@ const Navigation = () => {
                                 maxHeight: '600px',
                                 borderRadius: 0,
                                 borderTop: '1px solid #e0e0e0',
+                                zIndex: 1400, // Ensure Paper also has high z-index
                                 '&:before': {
                                     content: '""',
                                     display: 'block',
@@ -635,7 +643,10 @@ const Navigation = () => {
                         anchorEl={resourcesAnchorEl}
                         open={Boolean(resourcesAnchorEl)}
                         onClose={handleMenuClose}
-                        sx={{ display: { xs: 'none', md: 'block' } }}
+                        sx={{
+                            display: { xs: 'none', md: 'block' },
+                            zIndex: 1400 // Higher than modal header (1000)
+                        }}
                         PaperProps={{
                             elevation: 0,
                             sx: {
@@ -646,6 +657,7 @@ const Navigation = () => {
                                 maxHeight: '600px',
                                 borderRadius: 0,
                                 borderTop: '1px solid #e0e0e0',
+                                zIndex: 1400, // Ensure Paper also has high z-index
                                 '&:before': {
                                     content: '""',
                                     display: 'block',
@@ -708,11 +720,15 @@ const Navigation = () => {
                         anchorEl={profileAnchorEl}
                         open={Boolean(profileAnchorEl)}
                         onClose={handleProfileClose}
+                        sx={{
+                            zIndex: 1400 // Higher than modal header (1000)
+                        }}
                         PaperProps={{
                             sx: {
                                 mt: 1.5,
                                 minWidth: 180,
-                                boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+                                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                                zIndex: 1400 // Ensure Paper also has high z-index
                             }
                         }}
                     >
