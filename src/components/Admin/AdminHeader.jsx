@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
     IconButton,
     Avatar,
@@ -44,12 +44,10 @@ import {
     Assessment as AssessmentIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import './AdminHeader.css';
 
 const AdminHeader = () => {
     const location = useLocation();
-    const navigate = useNavigate();
     const { logout, currentUser } = useAuth();
     const [anchorEl, setAnchorEl] = useState(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -210,7 +208,7 @@ const AdminHeader = () => {
     const handleLogout = async () => {
         try {
             await logout();
-            navigate('/login');
+            hardRedirect('/login');
         } catch (error) {
             console.error('Failed to log out:', error);
         }
@@ -230,6 +228,11 @@ const AdminHeader = () => {
         return Object.values(megaMenuConfig).some(category =>
             category.items.some(item => location.pathname.startsWith(item.path))
         );
+    };
+
+    // Hard redirect function to reset all state and navigate
+    const hardRedirect = (path) => {
+        window.location.href = path;
     };
 
     // Handle outside clicks to close mobile menu and window resize
@@ -322,56 +325,54 @@ const AdminHeader = () => {
                         </Box>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                             {category.items.map((item, index) => (
-                                <Link
+                                <Box
                                     key={index}
-                                    to={item.path}
-                                    style={{ textDecoration: 'none' }}
-                                    onClick={() => setMegaMenuOpen(null)}
+                                    onClick={() => {
+                                        setMegaMenuOpen(null);
+                                        hardRedirect(item.path);
+                                    }}
+                                    sx={{
+                                        p: 1.5,
+                                        borderRadius: 1,
+                                        transition: 'all 0.15s ease',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        backgroundColor: location.pathname.startsWith(item.path) ? `${category.color}10` : 'transparent',
+                                        border: location.pathname.startsWith(item.path) ? `1px solid ${category.color}30` : '1px solid transparent',
+                                        '&:hover': {
+                                            backgroundColor: `${category.color}15`,
+                                            transform: 'translateX(2px)',
+                                            border: `1px solid ${category.color}40`
+                                        }
+                                    }}
                                 >
-                                    <Box
-                                        sx={{
-                                            p: 1.5,
-                                            borderRadius: 1,
-                                            transition: 'all 0.15s ease',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            backgroundColor: location.pathname.startsWith(item.path) ? `${category.color}10` : 'transparent',
-                                            border: location.pathname.startsWith(item.path) ? `1px solid ${category.color}30` : '1px solid transparent',
-                                            '&:hover': {
-                                                backgroundColor: `${category.color}15`,
-                                                transform: 'translateX(2px)',
-                                                border: `1px solid ${category.color}40`
-                                            }
-                                        }}
-                                    >
-                                        <Box sx={{ color: category.color, mr: 1.5, fontSize: '16px' }}>
-                                            {item.icon}
-                                        </Box>
-                                        <Box>
-                                            <Typography
-                                                sx={{
-                                                    fontSize: '13px',
-                                                    fontWeight: 500,
-                                                    color: '#111827',
-                                                    lineHeight: 1.2,
-                                                    mb: 0.5
-                                                }}
-                                            >
-                                                {item.title}
-                                            </Typography>
-                                            <Typography
-                                                sx={{
-                                                    fontSize: '11px',
-                                                    color: '#6b7280',
-                                                    lineHeight: 1.3
-                                                }}
-                                            >
-                                                {item.description}
-                                            </Typography>
-                                        </Box>
+                                    <Box sx={{ color: category.color, mr: 1.5, fontSize: '16px' }}>
+                                        {item.icon}
                                     </Box>
-                                </Link>
+                                    <Box>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '13px',
+                                                fontWeight: 500,
+                                                color: '#111827',
+                                                lineHeight: 1.2,
+                                                mb: 0.5
+                                            }}
+                                        >
+                                            {item.title}
+                                        </Typography>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '11px',
+                                                color: '#6b7280',
+                                                lineHeight: 1.3
+                                            }}
+                                        >
+                                            {item.description}
+                                        </Typography>
+                                    </Box>
+                                </Box>
                             ))}
                         </Box>
                     </Box>
@@ -388,14 +389,14 @@ const AdminHeader = () => {
                 title: 'Quickship',
                 description: 'Create Shipments Quickly',
                 icon: <ShippingIcon />,
-                action: () => navigate('/admin/shipments?action=quickship'),
+                action: () => hardRedirect('/admin/shipments?action=quickship'),
                 color: '#10b981'
             },
             {
                 title: 'Real-Time Rates',
                 description: 'Get Instant Shipping Rates',
                 icon: <ShippingIcon />,
-                action: () => navigate('/admin/shipments?action=rates'),
+                action: () => hardRedirect('/admin/shipments?action=rates'),
                 color: '#059669'
             },
             { title: 'New Company', description: 'Add a new company', icon: <BusinessIcon />, path: '/admin/companies/new', color: '#3b82f6' },
@@ -507,55 +508,53 @@ const AdminHeader = () => {
                                     );
                                 } else {
                                     return (
-                                        <Link
+                                        <Box
                                             key={index}
-                                            to={action.path}
-                                            style={{ textDecoration: 'none' }}
-                                            onClick={() => setMegaMenuOpen(null)}
+                                            onClick={() => {
+                                                setMegaMenuOpen(null);
+                                                hardRedirect(action.path);
+                                            }}
+                                            sx={{
+                                                p: 1.5,
+                                                borderRadius: 1,
+                                                transition: 'all 0.15s ease',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                border: '1px solid transparent',
+                                                '&:hover': {
+                                                    backgroundColor: `${action.color}15`,
+                                                    transform: 'translateX(2px)',
+                                                    border: `1px solid ${action.color}40`
+                                                }
+                                            }}
                                         >
-                                            <Box
-                                                sx={{
-                                                    p: 1.5,
-                                                    borderRadius: 1,
-                                                    transition: 'all 0.15s ease',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    border: '1px solid transparent',
-                                                    '&:hover': {
-                                                        backgroundColor: `${action.color}15`,
-                                                        transform: 'translateX(2px)',
-                                                        border: `1px solid ${action.color}40`
-                                                    }
-                                                }}
-                                            >
-                                                <Box sx={{ color: action.color, mr: 1.5, fontSize: '16px' }}>
-                                                    {action.icon}
-                                                </Box>
-                                                <Box>
-                                                    <Typography
-                                                        sx={{
-                                                            fontSize: '13px',
-                                                            fontWeight: 500,
-                                                            color: '#111827',
-                                                            lineHeight: 1.2,
-                                                            mb: 0.5
-                                                        }}
-                                                    >
-                                                        {action.title}
-                                                    </Typography>
-                                                    <Typography
-                                                        sx={{
-                                                            fontSize: '11px',
-                                                            color: '#6b7280',
-                                                            lineHeight: 1.3
-                                                        }}
-                                                    >
-                                                        {action.description}
-                                                    </Typography>
-                                                </Box>
+                                            <Box sx={{ color: action.color, mr: 1.5, fontSize: '16px' }}>
+                                                {action.icon}
                                             </Box>
-                                        </Link>
+                                            <Box>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '13px',
+                                                        fontWeight: 500,
+                                                        color: '#111827',
+                                                        lineHeight: 1.2,
+                                                        mb: 0.5
+                                                    }}
+                                                >
+                                                    {action.title}
+                                                </Typography>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        color: '#6b7280',
+                                                        lineHeight: 1.3
+                                                    }}
+                                                >
+                                                    {action.description}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
                                     );
                                 }
                             })}
@@ -569,13 +568,17 @@ const AdminHeader = () => {
     return (
         <nav className="navbar navbar-expand-lg" ref={navbarRef} style={{ position: 'relative' }}>
             <div className="container">
-                <Link className="navbar-brand" to="/admin">
+                <Box
+                    className="navbar-brand"
+                    onClick={() => hardRedirect('/admin')}
+                    sx={{ cursor: 'pointer' }}
+                >
                     <img
                         src="/images/solushipx_logo_white.png"
                         alt="SolushipX Logo"
                         style={{ height: '52px' }}
                     />
-                </Link>
+                </Box>
                 <IconButton
                     className="navbar-toggler"
                     onClick={handleMobileToggle}
@@ -679,7 +682,7 @@ const AdminHeader = () => {
 
                         {/* Settings Button */}
                         <IconButton
-                            onClick={() => navigate('/admin/settings')}
+                            onClick={() => hardRedirect('/admin/settings')}
                             sx={{
                                 backgroundColor: '#ffffff',
                                 color: '#374151',
@@ -725,19 +728,24 @@ const AdminHeader = () => {
                                         {category.title}
                                     </Typography>
                                     {category.items.map((item, index) => (
-                                        <Link
+                                        <Box
                                             key={index}
-                                            to={item.path}
-                                            onClick={handleMobileMenuClose}
-                                            style={{
-                                                textDecoration: 'none',
+                                            onClick={() => {
+                                                handleMobileMenuClose();
+                                                hardRedirect(item.path);
+                                            }}
+                                            sx={{
+                                                cursor: 'pointer',
                                                 display: 'block',
                                                 padding: '8px 16px',
                                                 color: location.pathname.startsWith(item.path) ? '#60a5fa' : '#e2e8f0',
                                                 backgroundColor: location.pathname.startsWith(item.path) ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
                                                 borderRadius: '4px',
                                                 marginBottom: '4px',
-                                                fontSize: '12px'
+                                                fontSize: '12px',
+                                                '&:hover': {
+                                                    backgroundColor: 'rgba(96, 165, 250, 0.2)'
+                                                }
                                             }}
                                         >
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -746,7 +754,7 @@ const AdminHeader = () => {
                                                 </Box>
                                                 <span>{item.title}</span>
                                             </Box>
-                                        </Link>
+                                        </Box>
                                     ))}
                                 </Box>
                             ))}
@@ -797,7 +805,7 @@ const AdminHeader = () => {
                         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
                         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
                     >
-                        <MenuItem onClick={() => { handleMenuClose(); navigate('/admin/profile'); }}>
+                        <MenuItem onClick={() => { handleMenuClose(); hardRedirect('/admin/profile'); }}>
                             <ListItemIcon>
                                 <PersonIcon fontSize="small" />
                             </ListItemIcon>
