@@ -67,6 +67,11 @@ const AddCarrier = lazy(() => import('./components/Admin/Carriers/AddCarrier'));
 const CarrierDetail = lazy(() => import('./components/Admin/Carriers/CarrierDetail'));
 const EditCarrier = lazy(() => import('./components/Admin/Carriers/EditCarrier'));
 
+// Admin Customers Components (New)
+const AdminCustomerList = lazy(() => import('./components/Admin/Customers/CustomerList'));
+const AdminCustomerDetail = lazy(() => import('./components/Admin/Customers/CustomerDetail'));
+const AdminCustomerForm = lazy(() => import('./components/Admin/Customers/CustomerForm'));
+
 // Markups Page (New)
 const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));
 
@@ -238,6 +243,10 @@ function AppRoutes() {
                     <Route path="companies/new" element={<CompanyForm />} />
                     <Route path="companies/:id" element={<CompanyDetail />} />
                     <Route path="companies/:id/edit" element={<CompanyForm />} />
+                    <Route path="customers" element={<AdminCustomerList />} />
+                    <Route path="customers/new" element={<AdminCustomerForm />} />
+                    <Route path="customers/:id" element={<AdminCustomerDetail />} />
+                    <Route path="customers/:id/edit" element={<AdminCustomerForm />} />
                     <Route path="organizations" element={<OrganizationList />} />
                     <Route path="organizations/new" element={<OrganizationForm />} />
                     <Route path="organizations/:id" element={<OrganizationDetail />} />

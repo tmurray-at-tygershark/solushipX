@@ -26,7 +26,11 @@ import {
     Dialog,
     DialogTitle,
     DialogContent,
-    DialogActions
+    DialogActions,
+    Avatar,
+    Menu,
+    ListItemIcon,
+    ListItemText
 } from '@mui/material';
 import {
     Business as BusinessIcon,
@@ -43,7 +47,9 @@ import {
     Add,
     ArrowBack,
     Edit as EditIcon,
-    CloudUpload as UploadIcon
+    CloudUpload as UploadIcon,
+    MoreVert as MoreVertIcon,
+    Visibility as ViewIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
@@ -402,6 +408,10 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     // Import state
     const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
+    // Actions menu state
+    const [actionsMenuAnchor, setActionsMenuAnchor] = useState(null);
+    const [selectedAddressForActions, setSelectedAddressForActions] = useState(null);
+
     useEffect(() => {
         const fetchAllAddresses = async () => {
             setLoading(true);
@@ -421,7 +431,8 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     const companyAddresses = querySnapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data(),
-                        ownerCompanyName: company.name // Add company name for display
+                        ownerCompanyName: company.name, // Add company name for display
+                        ownerCompanyLogo: company.logo || company.logoUrl // Add company logo for display
                     }));
 
                     allAddresses.push(...companyAddresses);
@@ -588,7 +599,8 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                 const companyAddresses = querySnapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data(),
-                    ownerCompanyName: company.name // Add company name for display
+                    ownerCompanyName: company.name, // Add company name for display
+                    ownerCompanyLogo: company.logo || company.logoUrl // Add company logo for display
                 }));
 
                 allAddresses.push(...companyAddresses);
@@ -781,6 +793,32 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     const handleImportComplete = () => {
         fetchAllAddresses(); // Refresh the address list
         setIsImportDialogOpen(false);
+    };
+
+    // Actions menu handlers
+    const handleActionsMenuOpen = (event, address) => {
+        event.stopPropagation();
+        setActionsMenuAnchor(event.currentTarget);
+        setSelectedAddressForActions(address);
+    };
+
+    const handleActionsMenuClose = () => {
+        setActionsMenuAnchor(null);
+        setSelectedAddressForActions(null);
+    };
+
+    const handleActionsView = () => {
+        if (selectedAddressForActions) {
+            handleViewAddress(selectedAddressForActions);
+        }
+        handleActionsMenuClose();
+    };
+
+    const handleActionsEdit = () => {
+        if (selectedAddressForActions) {
+            handleEditAddress(selectedAddressForActions);
+        }
+        handleActionsMenuClose();
     };
 
     if (loading) {
@@ -1219,7 +1257,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                             <Table stickyHeader>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell padding="checkbox">
+                                        <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
                                             <Checkbox
                                                 checked={selectedAddresses.size === filteredAddresses.length && filteredAddresses.length > 0}
                                                 indeterminate={selectedAddresses.size > 0 && selectedAddresses.size < filteredAddresses.length}
@@ -1227,20 +1265,19 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                 size="small"
                                             />
                                         </TableCell>
-                                        {viewMode === 'all' && <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner Company</TableCell>}
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company</TableCell>
+                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Business Name</TableCell>
+                                        {viewMode === 'all' && <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company Owner</TableCell>}
                                         <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Contact</TableCell>
                                         <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Email</TableCell>
                                         <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Phone</TableCell>
                                         <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Address</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px', width: 80 }}>Actions</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {paginatedAddresses.length === 0 && filteredAddresses.length === 0 && hasActiveFilters ? (
                                         <TableRow>
-                                            <TableCell colSpan={viewMode === 'all' ? 9 : 8} sx={{ textAlign: 'center', py: 4 }}>
+                                            <TableCell colSpan={viewMode === 'all' ? 8 : 7} sx={{ textAlign: 'center', py: 4 }}>
                                                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                                     <SearchOffIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                                     <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -1262,7 +1299,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                         </TableRow>
                                     ) : paginatedAddresses.length === 0 && filteredAddresses.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={viewMode === 'all' ? 9 : 8} sx={{ textAlign: 'center', py: 4 }}>
+                                            <TableCell colSpan={viewMode === 'all' ? 8 : 7} sx={{ textAlign: 'center', py: 4 }}>
                                                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                                     <BusinessIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
                                                     <Typography variant="h6" sx={{ color: '#6b7280' }}>
@@ -1280,28 +1317,62 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                 key={address.id}
                                                 hover
                                                 selected={isSelected(address.id)}
-                                                sx={{ cursor: 'pointer' }}
-                                                onClick={() => handleViewAddress(address)}
                                             >
-                                                <TableCell padding="checkbox">
+                                                <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
                                                     <Checkbox
                                                         checked={isSelected(address.id)}
                                                         onChange={(e) => handleSelectAddress(address.id, e)}
                                                         size="small"
                                                     />
                                                 </TableCell>
-                                                {viewMode === 'all' && (
-                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#1976d2' }}>
-                                                            {address.ownerCompanyName || 'N/A'}
-                                                        </Typography>
-                                                    </TableCell>
-                                                )}
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    <Typography
+                                                        variant="body2"
+                                                        component="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleViewAddress(address);
+                                                        }}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            fontWeight: 400,
+                                                            color: '#1976d2',
+                                                            textDecoration: 'none',
+                                                            cursor: 'pointer',
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            padding: 0,
+                                                            textAlign: 'left',
+                                                            '&:hover': {
+                                                                textDecoration: 'underline'
+                                                            }
+                                                        }}
+                                                    >
                                                         {address.companyName || 'N/A'}
                                                     </Typography>
                                                 </TableCell>
+                                                {viewMode === 'all' && (
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                            <Avatar
+                                                                src={address.ownerCompanyLogo || ''}
+                                                                sx={{
+                                                                    width: 32,
+                                                                    height: 32,
+                                                                    bgcolor: address.ownerCompanyLogo ? 'transparent' : '#059669',
+                                                                    fontSize: '12px',
+                                                                    fontWeight: 600,
+                                                                    border: '1px solid #e5e7eb'
+                                                                }}
+                                                            >
+                                                                {!address.ownerCompanyLogo && (address.ownerCompanyName || 'N/A').charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#1976d2' }}>
+                                                                {address.ownerCompanyName || 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                    </TableCell>
+                                                )}
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                                         {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
@@ -1325,21 +1396,13 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                     </Typography>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Chip
-                                                        label={address.isResidential ? 'Residential' : 'Commercial'}
+                                                    <IconButton
                                                         size="small"
-                                                        color={address.isResidential ? 'warning' : 'primary'}
-                                                        variant="outlined"
-                                                        sx={{ fontSize: '11px' }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Chip
-                                                        label={address.status || 'active'}
-                                                        size="small"
-                                                        color={address.status === 'active' ? 'success' : 'default'}
-                                                        sx={{ fontSize: '11px' }}
-                                                    />
+                                                        onClick={(e) => handleActionsMenuOpen(e, address)}
+                                                        sx={{ color: '#6b7280' }}
+                                                    >
+                                                        <MoreVertIcon sx={{ fontSize: 18 }} />
+                                                    </IconButton>
                                                 </TableCell>
                                             </TableRow>
                                         ))
@@ -1348,6 +1411,42 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                             </Table>
                         </Box>
                     </Box>
+
+                    {/* Actions Menu */}
+                    <Menu
+                        anchorEl={actionsMenuAnchor}
+                        open={Boolean(actionsMenuAnchor)}
+                        onClose={handleActionsMenuClose}
+                        anchorOrigin={{
+                            vertical: 'bottom',
+                            horizontal: 'right',
+                        }}
+                        transformOrigin={{
+                            vertical: 'top',
+                            horizontal: 'right',
+                        }}
+                        PaperProps={{
+                            sx: {
+                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '6px',
+                                minWidth: 120
+                            }
+                        }}
+                    >
+                        <MenuItem onClick={handleActionsView} sx={{ fontSize: '12px', py: 1 }}>
+                            <ListItemIcon>
+                                <ViewIcon sx={{ fontSize: 16 }} />
+                            </ListItemIcon>
+                            <ListItemText primary="View" sx={{ '& .MuiTypography-root': { fontSize: '12px' } }} />
+                        </MenuItem>
+                        <MenuItem onClick={handleActionsEdit} sx={{ fontSize: '12px', py: 1 }}>
+                            <ListItemIcon>
+                                <EditIcon sx={{ fontSize: 16 }} />
+                            </ListItemIcon>
+                            <ListItemText primary="Edit" sx={{ '& .MuiTypography-root': { fontSize: '12px' } }} />
+                        </MenuItem>
+                    </Menu>
 
                     {/* Pagination */}
                     <Box sx={{ flexShrink: 0, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa', mt: 2, mx: 2 }}>

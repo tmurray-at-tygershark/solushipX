@@ -28,7 +28,7 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import { ShipmentFormProvider } from '../../../contexts/ShipmentFormContext';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 
 // Import the reusable components
@@ -40,6 +40,8 @@ const GlobalShipmentList = () => {
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const { companyIdForAddress, setCompanyContext, loading: companyLoading } = useCompany();
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
 
     // Debug logging
     console.log('[GlobalShipmentList] Debug info:', {
@@ -373,6 +375,29 @@ const GlobalShipmentList = () => {
         // Trigger refresh
         setRefreshKey(prev => prev + 1);
     }, []);
+
+    // Handle URL action parameters (quickship, rates)
+    useEffect(() => {
+        const action = searchParams.get('action');
+
+        if (action && !authLoading && !companyLoading) {
+            console.log('🎯 GlobalShipmentList: Action parameter detected:', action);
+
+            // Clear the action parameter from URL to prevent re-triggering
+            const newSearchParams = new URLSearchParams(searchParams);
+            newSearchParams.delete('action');
+            setSearchParams(newSearchParams, { replace: true });
+
+            // Open the appropriate modal
+            if (action === 'quickship') {
+                console.log('🚀 Opening QuickShip modal from URL parameter');
+                setQuickShipOpen(true);
+            } else if (action === 'rates') {
+                console.log('📊 Opening Real Time Rates (CreateShipmentX) modal from URL parameter');
+                setCreateShipmentOpen(true);
+            }
+        }
+    }, [searchParams, setSearchParams, authLoading, companyLoading]);
 
     // Cleanup timer on unmount
     useEffect(() => {

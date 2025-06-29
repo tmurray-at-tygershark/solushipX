@@ -80,68 +80,7 @@ const uploadFileBase64 = onCall(async (request) => {
     }
 });
 
-// Upload file with direct stream (alternative method)
-const uploadFileStream = onCall(async (request) => {
-    try {
-        if (!request.auth) {
-            throw new Error('Authentication required');
-        }
 
-        const { fileName, fileUrl } = request.data;
-        
-        if (!fileName || !fileUrl) {
-            throw new Error('Missing required parameters: fileName and fileUrl');
-        }
-
-        console.log('Processing file stream upload:', { fileName, fileUrl });
-
-        // Generate unique file path
-        const timestamp = Date.now();
-        const filePath = `uploads/${request.auth.uid}/${timestamp}_${fileName}`;
-        
-        // Download file from temporary URL and re-upload to Firebase Storage
-        const response = await fetch(fileUrl);
-        if (!response.ok) {
-            throw new Error('Failed to fetch file from temporary URL');
-        }
-        
-        const fileBuffer = await response.buffer();
-        
-        // Upload to Firebase Storage
-        const file = bucket.file(filePath);
-        
-        await file.save(fileBuffer, {
-            metadata: {
-                contentType: response.headers.get('content-type') || 'application/octet-stream',
-                metadata: {
-                    uploadedBy: request.auth.uid,
-                    uploadedAt: new Date().toISOString(),
-                    originalName: fileName
-                }
-            }
-        });
-
-        // Make file publicly readable
-        await file.makePublic();
-
-        // Get public URL
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
-
-        console.log('File stream uploaded successfully:', publicUrl);
-
-        return {
-            success: true,
-            downloadURL: publicUrl,
-            filePath,
-            fileName,
-            uploadedAt: new Date().toISOString()
-        };
-
-    } catch (error) {
-        console.error('File stream upload error:', error);
-        throw new Error(`Stream upload failed: ${error.message}`);
-    }
-});
 
 /**
  * Cloud function to generate signed upload URL for large files

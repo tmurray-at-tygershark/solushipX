@@ -1,3 +1,95 @@
+/* Enhanced Admin Header Styles */
+.enhanced-admin-header {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.75rem 1rem;
+    min-height: 60px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.enhanced-admin-header .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 100%;
+    padding: 0;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* Enhanced Navigation Links */
+.nav-link.enhanced {
+    color: #64748b;
+    padding: 0.5rem 0.75rem;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 12px !important;
+    transition: all 0.2s ease-in-out;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    white-space: nowrap;
+}
+
+.nav-link.enhanced:hover {
+    color: #0f172a;
+    background-color: #f8fafc;
+}
+
+.nav-link.enhanced.active {
+    color: #3b82f6;
+    background-color: #eff6ff;
+    font-weight: 600;
+}
+
+.nav-link.enhanced.active svg {
+    color: #3b82f6;
+}
+
+/* Mobile Grouped Navigation */
+.nav-link.mobile-grouped {
+    color: #64748b;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 12px !important;
+    transition: all 0.2s ease-in-out;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0.125rem 0;
+}
+
+.nav-link.mobile-grouped:hover {
+    color: #0f172a;
+    background-color: #f8fafc;
+}
+
+.nav-link.mobile-grouped.active {
+    color: #3b82f6;
+    background-color: #eff6ff;
+    font-weight: 600;
+}
+
+.nav-link.mobile-grouped.active svg {
+    color: #3b82f6;
+}
+
+/* Original styles maintained for compatibility */
 .navbar {
     background-color: #ffffff;
     border-bottom: 1px solid #e2e8f0;
@@ -55,6 +147,7 @@
 .profile-menu .MuiMenuItem-root {
     padding: 0.75rem 1rem;
     color: #1e293b;
+    font-size: 12px;
 }
 
 .profile-menu .MuiMenuItem-root:hover {
@@ -113,7 +206,7 @@
 
 /* Mobile responsive styles */
 @media (max-width: 899px) {
-    .navbar {
+    .enhanced-admin-header {
         padding: 1rem 1rem;
         min-height: 65px;
         position: relative;
@@ -176,7 +269,7 @@
 
 /* Extra small mobile devices */
 @media (max-width: 576px) {
-    .navbar {
+    .enhanced-admin-header {
         padding: 0.75rem 0.75rem;
         min-height: 55px;
     }

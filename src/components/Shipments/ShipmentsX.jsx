@@ -56,7 +56,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import { collection, getDocs, query, where, orderBy, doc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, deleteDoc, getDoc, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase';
 import './Shipments.css';
@@ -97,8 +97,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment, adminViewMode, adminCompanyIds });
 
     // Auth and company context
-    const { user, loading: authLoading } = useAuth();
-    const { companyIdForAddress, loading: companyCtxLoading, companyData } = useCompany();
+    const { user, userRole, loading: authLoading } = useAuth();
+    const { companyIdForAddress, loading: companyCtxLoading, companyData, setCompanyContext } = useCompany();
 
     const navigate = useNavigate();
 
@@ -360,9 +360,57 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     }, [navigationStack.length, onClearDeepLinkParams]);
 
     // Add handler for viewing shipment detail - moved before useEffect that uses it
-    const handleViewShipmentDetail = useCallback((shipmentId) => {
+    const handleViewShipmentDetail = useCallback(async (shipmentId) => {
         // Find the shipment to get its details for the title
         const shipment = shipments.find(s => s.id === shipmentId) || { shipmentID: shipmentId };
+
+        // 🚀 SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
+        // If super admin clicks on a shipment from a different company, automatically switch context
+        if (userRole === 'superadmin' && shipment.companyID && shipment.companyID !== companyIdForAddress) {
+            console.log('🚀 Super admin viewing shipment from different company - auto-switching context');
+            console.log('🏢 Shipment company ID:', shipment.companyID);
+            console.log('🏢 Current company context:', companyIdForAddress);
+
+            try {
+                // Query for the shipment's company data
+                const companiesQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', shipment.companyID),
+                    limit(1)
+                );
+
+                const companiesSnapshot = await getDocs(companiesQuery);
+
+                if (!companiesSnapshot.empty) {
+                    const companyDoc = companiesSnapshot.docs[0];
+                    const companyDocData = companyDoc.data();
+
+                    const targetCompanyData = {
+                        ...companyDocData,
+                        id: companyDoc.id
+                    };
+
+                    console.log('🔄 Switching to company context:', targetCompanyData.name, '(', shipment.companyID, ')');
+
+                    // Switch company context - this will update companyIdForAddress and companyData
+                    await setCompanyContext(targetCompanyData);
+
+                    // Show success message
+                    showSnackbar(`Switched to ${targetCompanyData.name || shipment.companyID} to view shipment`, 'success');
+
+                    // Small delay to ensure context is fully updated before proceeding
+                    await new Promise(resolve => setTimeout(resolve, 200));
+
+                    console.log('✅ Company context switched successfully');
+                } else {
+                    console.warn('⚠️ Company not found for shipment:', shipment.companyID);
+                    showSnackbar(`Warning: Company ${shipment.companyID} not found, proceeding with current context`, 'warning');
+                }
+            } catch (companyError) {
+                console.error('❌ Error switching company context:', companyError);
+                showSnackbar('Error switching company context, proceeding with current context', 'warning');
+            }
+        }
 
         // Create the shipment detail view and push it to navigation stack
         pushView({
@@ -381,7 +429,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             component: 'shipment-detail',
             data: { shipmentId }
         });
-    }, [shipments, pushView, modalNavigation, adminViewMode]);
+    }, [shipments, pushView, modalNavigation, adminViewMode, userRole, companyIdForAddress, setCompanyContext, showSnackbar]);
 
     // Auto-open shipment detail if specified in deep link params
     const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
@@ -1417,7 +1465,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             </>
                                         )}
 
-                                        {/* QuickShip and New buttons - disabled unless company is selected */}
+                                        {/* QuickShip and New buttons - enabled for super admins with company selector */}
                                         <Button
                                             onClick={() => {
                                                 if (onOpenCreateShipment) {
@@ -1431,10 +1479,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             startIcon={<FlashOnIcon />}
                                             size="small"
                                             disabled={
-                                                // Disable if no company selected or in admin "all companies" view
-                                                !companyIdForAddress ||
-                                                companyIdForAddress === 'all' ||
-                                                (adminViewMode && adminViewMode === 'all')
+                                                // Enable for super admins (they have company selector), disable for others without company
+                                                userRole !== 'superadmin' && (
+                                                    !companyIdForAddress ||
+                                                    companyIdForAddress === 'all' ||
+                                                    (adminViewMode && adminViewMode === 'all')
+                                                )
                                             }
                                             sx={{ fontSize: '11px', textTransform: 'none' }}
                                         >
@@ -1452,10 +1502,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                             startIcon={<AddIcon />}
                                             size="small"
                                             disabled={
-                                                // Disable if no company selected or in admin "all companies" view
-                                                !companyIdForAddress ||
-                                                companyIdForAddress === 'all' ||
-                                                (adminViewMode && adminViewMode === 'all')
+                                                // Enable for super admins (they have company selector), disable for others without company
+                                                userRole !== 'superadmin' && (
+                                                    !companyIdForAddress ||
+                                                    companyIdForAddress === 'all' ||
+                                                    (adminViewMode && adminViewMode === 'all')
+                                                )
                                             }
                                             sx={{ fontSize: '11px', textTransform: 'none' }}
                                         >
@@ -2064,9 +2116,60 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             const draftData = draftDoc.data();
             const creationMethod = draftData.creationMethod;
+            const draftCompanyId = draftData.companyID;
 
             console.log('🔍 Draft creation method:', creationMethod);
+            console.log('🏢 Draft company ID:', draftCompanyId);
+            console.log('👤 Current user role:', userRole);
+            console.log('🏢 Current company context:', companyIdForAddress);
 
+            // 🚀 SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
+            // If super admin clicks on a draft from a different company, automatically switch context
+            if (userRole === 'superadmin' && draftCompanyId && draftCompanyId !== companyIdForAddress) {
+                console.log('🚀 Super admin accessing draft from different company - auto-switching context');
+
+                try {
+                    // Query for the draft's company data
+                    const companiesQuery = query(
+                        collection(db, 'companies'),
+                        where('companyID', '==', draftCompanyId),
+                        limit(1)
+                    );
+
+                    const companiesSnapshot = await getDocs(companiesQuery);
+
+                    if (!companiesSnapshot.empty) {
+                        const companyDoc = companiesSnapshot.docs[0];
+                        const companyDocData = companyDoc.data();
+
+                        const targetCompanyData = {
+                            ...companyDocData,
+                            id: companyDoc.id
+                        };
+
+                        console.log('🔄 Switching to company context:', targetCompanyData.name, '(', draftCompanyId, ')');
+
+                        // Switch company context - this will update companyIdForAddress and companyData
+                        await setCompanyContext(targetCompanyData);
+
+                        // Show success message
+                        showSnackbar(`Switched to ${targetCompanyData.name || draftCompanyId} to edit draft`, 'success');
+
+                        // Small delay to ensure context is fully updated before proceeding
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        console.log('✅ Company context switched successfully');
+                    } else {
+                        console.warn('⚠️ Company not found for draft:', draftCompanyId);
+                        showSnackbar(`Warning: Company ${draftCompanyId} not found, proceeding with current context`, 'warning');
+                    }
+                } catch (companyError) {
+                    console.error('❌ Error switching company context:', companyError);
+                    showSnackbar('Error switching company context, proceeding with current context', 'warning');
+                }
+            }
+
+            // Proceed with opening the draft for editing
             if (creationMethod === 'quickship') {
                 console.log('🚀 Opening QuickShip for quickship draft');
                 // For QuickShip drafts, open in QuickShip mode
@@ -2094,7 +2197,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error checking draft type:', error);
             showSnackbar('Error loading draft shipment', 'error');
         }
-    }, [isModal, onOpenCreateShipment, navigate, showSnackbar]);
+    }, [isModal, onOpenCreateShipment, navigate, showSnackbar, userRole, companyIdForAddress, setCompanyContext]);
 
     // Handle repeating a shipment (creating a new draft with pre-populated data)
     const handleRepeatShipment = useCallback(async (shipment) => {

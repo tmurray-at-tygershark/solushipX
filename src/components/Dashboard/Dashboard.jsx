@@ -1115,9 +1115,29 @@ const GoogleMapComponent = ({ directions, shipment }) => {
     );
 };
 
-// Dashboard Stats Overlay Component
-const DashboardStatsOverlay = ({ shipments }) => {
+// Enhanced Dashboard Stats Overlay with comprehensive KPIs and trends
+const DashboardStatsOverlay = ({
+    shipments,
+    onOpenCreateShipment,
+    onOpenShipments,
+    onOpenReports
+}) => {
     const stats = useMemo(() => {
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        // Helper function to get date from various timestamp formats
+        const getShipmentDate = (shipment) => {
+            const timestamp = shipment.createdAt || shipment.bookedAt || shipment.shipmentDate;
+            if (!timestamp) return null;
+
+            if (timestamp.toDate) return timestamp.toDate();
+            if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+            return new Date(timestamp);
+        };
+
+        // Current metrics
         const activeShipments = shipments.filter(s =>
             s.status !== 'delivered' &&
             s.status !== 'cancelled' &&
@@ -1127,13 +1147,69 @@ const DashboardStatsOverlay = ({ shipments }) => {
         const inTransit = shipments.filter(s => s.status === 'in_transit').length;
         const delivered = shipments.filter(s => s.status === 'delivered').length;
         const pending = shipments.filter(s => s.status === 'pending').length;
+        const delayed = shipments.filter(s =>
+            s.status === 'delayed' ||
+            s.status === 'exception' ||
+            s.status === 'on_hold'
+        ).length;
+
+        // Today's metrics
+        const todayShipments = shipments.filter(s => {
+            const date = getShipmentDate(s);
+            return date && date.toDateString() === now.toDateString();
+        });
+
+        // Yesterday's metrics for comparison
+        const yesterdayShipments = shipments.filter(s => {
+            const date = getShipmentDate(s);
+            return date && date.toDateString() === yesterday.toDateString();
+        });
+
+        // Week's metrics
+        const weekShipments = shipments.filter(s => {
+            const date = getShipmentDate(s);
+            return date && date >= weekAgo;
+        });
+
+        // Calculate trends (percentage change from yesterday)
+        const calculateTrend = (current, previous) => {
+            if (previous === 0) return current > 0 ? 100 : 0;
+            return ((current - previous) / previous * 100);
+        };
+
+        // Revenue estimation (if cost data is available)
+        const estimatedRevenue = shipments.reduce((sum, shipment) => {
+            const amount = shipment.selectedRate?.amount ||
+                shipment.totalCharges ||
+                shipment.cost || 0;
+            return sum + (typeof amount === 'number' ? amount : 0);
+        }, 0);
 
         return {
+            // Core metrics
             total: shipments.length,
             active: activeShipments.length,
             inTransit,
             delivered,
-            pending
+            pending,
+            delayed,
+
+            // Today's metrics
+            todayTotal: todayShipments.length,
+            todayDelivered: todayShipments.filter(s => s.status === 'delivered').length,
+
+            // Trends
+            totalTrend: calculateTrend(todayShipments.length, yesterdayShipments.length),
+            activeTrend: calculateTrend(activeShipments.length, activeShipments.length), // Simplified for now
+
+            // Performance metrics
+            onTimeRate: delivered > 0 ? Math.round((delivered - delayed) / delivered * 100) : 100,
+            weeklyVolume: weekShipments.length,
+            estimatedRevenue: Math.round(estimatedRevenue),
+
+            // Quick insights
+            avgDailyVolume: Math.round(shipments.length / 7), // Last 7 days average
+            criticalAlerts: delayed + shipments.filter(s => s.status === 'exception').length
         };
     }, [shipments]);
 
@@ -1144,56 +1220,535 @@ const DashboardStatsOverlay = ({ shipments }) => {
             left: { xs: '240px', sm: '260px', md: '280px' },
             zIndex: 8,
             display: 'flex',
+            flexDirection: 'column',
             gap: 2,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            maxWidth: 'calc(100vw - 320px)', // Prevent overflow
         }}>
-            {/* Stats Cards */}
+            {/* Main KPI Dashboard */}
             <Card sx={{
                 background: 'rgba(255, 255, 255, 0.95)',
                 backdropFilter: 'blur(20px)',
+                borderRadius: '20px',
+                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.15)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                pointerEvents: 'auto',
+                minWidth: '800px'
+            }}>
+                <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+                    {/* Header */}
+                    <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="h6" sx={{
+                            fontSize: '1.1rem',
+                            fontWeight: 700,
+                            color: '#1a1a1a',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                        }}>
+                            📊 Logistics Command Center
+                        </Typography>
+                        <Chip
+                            label={`${stats.todayTotal} Today`}
+                            size="small"
+                            sx={{
+                                bgcolor: '#e3f2fd',
+                                color: '#1976d2',
+                                fontWeight: 600,
+                                fontSize: '0.75rem'
+                            }}
+                        />
+                    </Box>
+
+                    {/* Primary KPIs Row */}
+                    <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+                        {/* Active Shipments */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: 'rgba(76, 175, 80, 0.1)',
+                            border: '1px solid rgba(76, 175, 80, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '2rem',
+                                fontWeight: 800,
+                                color: '#4CAF50',
+                                lineHeight: 1
+                            }}>
+                                {stats.active}
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                Active
+                            </Typography>
+                        </Box>
+
+                        {/* In Transit */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: 'rgba(33, 150, 243, 0.1)',
+                            border: '1px solid rgba(33, 150, 243, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '2rem',
+                                fontWeight: 800,
+                                color: '#2196F3',
+                                lineHeight: 1
+                            }}>
+                                {stats.inTransit}
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                In Transit
+                            </Typography>
+                        </Box>
+
+                        {/* Pending */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: 'rgba(255, 152, 0, 0.1)',
+                            border: '1px solid rgba(255, 152, 0, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '2rem',
+                                fontWeight: 800,
+                                color: '#FF9800',
+                                lineHeight: 1
+                            }}>
+                                {stats.pending}
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                Pending
+                            </Typography>
+                        </Box>
+
+                        {/* Delivered Today */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: 'rgba(156, 39, 176, 0.1)',
+                            border: '1px solid rgba(156, 39, 176, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '2rem',
+                                fontWeight: 800,
+                                color: '#9C27B0',
+                                lineHeight: 1
+                            }}>
+                                {stats.todayDelivered}
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                Delivered Today
+                            </Typography>
+                        </Box>
+
+                        {/* Divider */}
+                        <Box sx={{
+                            width: '1px',
+                            bgcolor: 'rgba(0,0,0,0.1)',
+                            mx: 1,
+                            alignSelf: 'stretch'
+                        }} />
+
+                        {/* Performance Metrics */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: stats.onTimeRate >= 95 ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 193, 7, 0.1)',
+                            border: stats.onTimeRate >= 95 ? '1px solid rgba(76, 175, 80, 0.2)' : '1px solid rgba(255, 193, 7, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '1.6rem',
+                                fontWeight: 800,
+                                color: stats.onTimeRate >= 95 ? '#4CAF50' : '#FFC107',
+                                lineHeight: 1
+                            }}>
+                                {stats.onTimeRate}%
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                On-Time Rate
+                            </Typography>
+                        </Box>
+
+                        {/* Weekly Volume */}
+                        <Box sx={{
+                            textAlign: 'center',
+                            minWidth: '90px',
+                            p: 2,
+                            borderRadius: '12px',
+                            bgcolor: 'rgba(103, 58, 183, 0.1)',
+                            border: '1px solid rgba(103, 58, 183, 0.2)'
+                        }}>
+                            <Typography variant="h4" sx={{
+                                fontSize: '1.6rem',
+                                fontWeight: 800,
+                                color: '#673AB7',
+                                lineHeight: 1
+                            }}>
+                                {stats.weeklyVolume}
+                            </Typography>
+                            <Typography variant="caption" sx={{
+                                fontSize: '0.7rem',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                display: 'block',
+                                mt: 0.5
+                            }}>
+                                This Week
+                            </Typography>
+                        </Box>
+                    </Box>
+
+                    {/* Secondary Metrics Row */}
+                    <Box sx={{
+                        display: 'flex',
+                        gap: 2,
+                        pt: 2,
+                        borderTop: '1px solid rgba(0,0,0,0.1)'
+                    }}>
+                        {/* Alerts */}
+                        {stats.criticalAlerts > 0 && (
+                            <Chip
+                                label={`⚠️ ${stats.criticalAlerts} Alert${stats.criticalAlerts > 1 ? 's' : ''}`}
+                                size="small"
+                                sx={{
+                                    bgcolor: '#fff3e0',
+                                    color: '#f57c00',
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    '& .MuiChip-label': { px: 1.5 }
+                                }}
+                            />
+                        )}
+
+                        {/* Daily Average */}
+                        <Chip
+                            label={`📈 ${stats.avgDailyVolume}/day avg`}
+                            size="small"
+                            sx={{
+                                bgcolor: '#f3e5f5',
+                                color: '#7b1fa2',
+                                fontWeight: 600,
+                                fontSize: '0.75rem',
+                                '& .MuiChip-label': { px: 1.5 }
+                            }}
+                        />
+
+                        {/* Revenue Estimate (if available) */}
+                        {stats.estimatedRevenue > 0 && (
+                            <Chip
+                                label={`💰 $${(stats.estimatedRevenue / 1000).toFixed(1)}k Est. Revenue`}
+                                size="small"
+                                sx={{
+                                    bgcolor: '#e8f5e8',
+                                    color: '#2e7d32',
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    '& .MuiChip-label': { px: 1.5 }
+                                }}
+                            />
+                        )}
+
+                        <Box sx={{ flexGrow: 1 }} />
+
+                        {/* Last Updated */}
+                        <Typography variant="caption" sx={{
+                            color: '#999',
+                            fontSize: '0.7rem',
+                            alignSelf: 'center'
+                        }}>
+                            Updated {new Date().toLocaleTimeString()}
+                        </Typography>
+                    </Box>
+                </CardContent>
+            </Card>
+
+            {/* Quick Actions Toolbar */}
+            <Card sx={{
+                background: 'rgba(255, 255, 255, 0.92)',
+                backdropFilter: 'blur(15px)',
                 borderRadius: '16px',
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
                 border: '1px solid rgba(255, 255, 255, 0.2)',
                 pointerEvents: 'auto'
             }}>
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                    <Box sx={{ display: 'flex', gap: 3 }}>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#4CAF50' }}>
-                                {stats.active}
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
-                                Active
-                            </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#2196F3' }}>
-                                {stats.inTransit}
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
-                                In Transit
-                            </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#FF9800' }}>
-                                {stats.pending}
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
-                                Pending
-                            </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 700, color: '#9C27B0' }}>
-                                {stats.delivered}
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#666', textTransform: 'uppercase' }}>
-                                Delivered
-                            </Typography>
-                        </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Typography variant="subtitle2" sx={{
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            color: '#666',
+                            mr: 1
+                        }}>
+                            Quick Actions:
+                        </Typography>
+
+                        <Chip
+                            label="🚚 New Shipment"
+                            size="small"
+                            clickable
+                            onClick={onOpenCreateShipment}
+                            sx={{
+                                bgcolor: '#e3f2fd',
+                                color: '#1976d2',
+                                fontWeight: 500,
+                                fontSize: '0.75rem',
+                                '&:hover': { bgcolor: '#bbdefb' }
+                            }}
+                        />
+
+                        <Chip
+                            label="📊 View All"
+                            size="small"
+                            clickable
+                            onClick={onOpenShipments}
+                            sx={{
+                                bgcolor: '#f3e5f5',
+                                color: '#7b1fa2',
+                                fontWeight: 500,
+                                fontSize: '0.75rem',
+                                '&:hover': { bgcolor: '#e1bee7' }
+                            }}
+                        />
+
+                        <Chip
+                            label="📈 Reports"
+                            size="small"
+                            clickable
+                            onClick={onOpenReports}
+                            sx={{
+                                bgcolor: '#e8f5e8',
+                                color: '#2e7d32',
+                                fontWeight: 500,
+                                fontSize: '0.75rem',
+                                '&:hover': { bgcolor: '#c8e6c9' }
+                            }}
+                        />
+
+                        {stats.criticalAlerts > 0 && (
+                            <Chip
+                                label={`⚠️ ${stats.criticalAlerts} Alert${stats.criticalAlerts > 1 ? 's' : ''}`}
+                                size="small"
+                                clickable
+                                sx={{
+                                    bgcolor: '#fff3e0',
+                                    color: '#f57c00',
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    animation: 'pulse 2s infinite',
+                                    '&:hover': { bgcolor: '#ffe0b2' },
+                                    '@keyframes pulse': {
+                                        '0%': { opacity: 1 },
+                                        '50%': { opacity: 0.7 },
+                                        '100%': { opacity: 1 }
+                                    }
+                                }}
+                            />
+                        )}
                     </Box>
                 </CardContent>
             </Card>
         </Box>
+    );
+};
+
+// Recent Activity Feed Component
+const RecentActivityFeed = ({ shipments }) => {
+    const recentActivities = useMemo(() => {
+        const now = new Date();
+        const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        // Get recent shipments and status changes
+        const activities = [];
+
+        shipments.forEach(shipment => {
+            const getDate = (timestamp) => {
+                if (!timestamp) return null;
+                if (timestamp.toDate) return timestamp.toDate();
+                if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+                return new Date(timestamp);
+            };
+
+            const createdDate = getDate(shipment.createdAt || shipment.bookedAt);
+            const updatedDate = getDate(shipment.updatedAt);
+
+            // Recent shipments created
+            if (createdDate && createdDate >= last24Hours) {
+                activities.push({
+                    id: `created-${shipment.id}`,
+                    type: 'created',
+                    shipment,
+                    timestamp: createdDate,
+                    message: `New shipment created: ${shipment.shipmentID || 'N/A'}`,
+                    icon: '🚚',
+                    color: '#4CAF50'
+                });
+            }
+
+            // Recent status updates
+            if (updatedDate && updatedDate >= last24Hours && updatedDate !== createdDate) {
+                const statusIcon = {
+                    'in_transit': '🚛',
+                    'delivered': '✅',
+                    'pending': '⏳',
+                    'delayed': '⚠️',
+                    'exception': '❌',
+                    'on_hold': '⏸️'
+                }[shipment.status] || '📦';
+
+                activities.push({
+                    id: `updated-${shipment.id}`,
+                    type: 'status_update',
+                    shipment,
+                    timestamp: updatedDate,
+                    message: `${shipment.shipmentID || 'Shipment'} → ${shipment.status?.replace('_', ' ').toUpperCase()}`,
+                    icon: statusIcon,
+                    color: '#2196F3'
+                });
+            }
+        });
+
+        // Sort by most recent first and limit to 8 items
+        return activities
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(0, 8);
+    }, [shipments]);
+
+    if (recentActivities.length === 0) return null;
+
+    return (
+        <Card sx={{
+            background: 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(15px)',
+            borderRadius: '16px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            pointerEvents: 'auto',
+            maxWidth: '400px'
+        }}>
+            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                <Typography variant="subtitle1" sx={{
+                    fontSize: '0.9rem',
+                    fontWeight: 700,
+                    color: '#1a1a1a',
+                    mb: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                }}>
+                    ⚡ Recent Activity
+                    <Chip
+                        label={`${recentActivities.length} updates`}
+                        size="small"
+                        sx={{
+                            bgcolor: '#e8f5e8',
+                            color: '#2e7d32',
+                            fontSize: '0.7rem',
+                            height: '20px'
+                        }}
+                    />
+                </Typography>
+
+                <Box sx={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {recentActivities.map((activity, index) => (
+                        <Box
+                            key={activity.id}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: 1.5,
+                                py: 1,
+                                borderBottom: index < recentActivities.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none'
+                            }}
+                        >
+                            <Box sx={{
+                                fontSize: '1.1rem',
+                                mt: 0.2
+                            }}>
+                                {activity.icon}
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" sx={{
+                                    fontSize: '0.8rem',
+                                    fontWeight: 500,
+                                    color: '#333',
+                                    lineHeight: 1.3,
+                                    mb: 0.3
+                                }}>
+                                    {activity.message}
+                                </Typography>
+                                <Typography variant="caption" sx={{
+                                    fontSize: '0.7rem',
+                                    color: '#666'
+                                }}>
+                                    {activity.timestamp.toLocaleTimeString()} • {activity.timestamp.toLocaleDateString()}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    ))}
+                </Box>
+
+                <Box sx={{
+                    mt: 2,
+                    pt: 1.5,
+                    borderTop: '1px solid rgba(0,0,0,0.06)',
+                    textAlign: 'center'
+                }}>
+                    <Typography variant="caption" sx={{
+                        color: '#999',
+                        fontSize: '0.7rem'
+                    }}>
+                        Last 24 hours • Auto-refreshing
+                    </Typography>
+                </Box>
+            </CardContent>
+        </Card>
     );
 };
 
@@ -3734,7 +4289,27 @@ const Dashboard = () => {
             </Fade>
 
             {/* Dashboard Stats Overlay - Only show in maps mode */}
-            {viewMode === 'maps' && <DashboardStatsOverlay shipments={shipments} />}
+            {viewMode === 'maps' && (
+                <DashboardStatsOverlay
+                    shipments={shipments}
+                    onOpenCreateShipment={() => handleOpenCreateShipmentModal()}
+                    onOpenShipments={() => setIsShipmentsModalOpen(true)}
+                    onOpenReports={() => setIsReportsModalOpen(true)}
+                />
+            )}
+
+            {/* Recent Activity Feed - Bottom right corner */}
+            {viewMode === 'maps' && (
+                <Box sx={{
+                    position: 'absolute',
+                    bottom: 20,
+                    right: 20,
+                    zIndex: 8,
+                    pointerEvents: 'none'
+                }}>
+                    <RecentActivityFeed shipments={shipments} />
+                </Box>
+            )}
         </Box>
     );
 };

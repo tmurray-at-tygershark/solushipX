@@ -1170,6 +1170,72 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                     </Card>
                 </Grid>
 
+                {/* Company Owner */}
+                <Grid item xs={12} md={6}>
+                    <Card sx={{ border: '1px solid #e2e8f0', height: '100%' }}>
+                        <CardHeader
+                            title={
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                    Company Owner
+                                </Typography>
+                            }
+                            sx={{ pb: 1 }}
+                        />
+                        <CardContent sx={{ pt: 1 }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                <Box>
+                                    <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block' }}>
+                                        Owner Company
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+                                        {(address.ownerCompanyLogo || address.ownerCompanyName) && (
+                                            <Avatar
+                                                src={address.ownerCompanyLogo || ''}
+                                                sx={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    bgcolor: address.ownerCompanyLogo ? 'transparent' : '#059669',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    border: '1px solid #e5e7eb'
+                                                }}
+                                            >
+                                                {!address.ownerCompanyLogo && address.ownerCompanyName ?
+                                                    address.ownerCompanyName.charAt(0).toUpperCase() :
+                                                    'N/A'
+                                                }
+                                            </Avatar>
+                                        )}
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                            {address.ownerCompanyName || 'N/A'}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                                <Divider />
+                                <Box>
+                                    <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block' }}>
+                                        Company ID
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                            {address.ownerCompanyID || 'N/A'}
+                                        </Typography>
+                                        {address.ownerCompanyID && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => handleCopyToClipboard(address.ownerCompanyID, 'Company ID')}
+                                                sx={{ p: 0.5 }}
+                                            >
+                                                <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                            </IconButton>
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Box>
+                        </CardContent>
+                    </Card>
+                </Grid>
+
                 {/* Contact Information */}
                 <Grid item xs={12} md={6}>
                     <Card sx={{ border: '1px solid #e2e8f0', height: '100%' }}>

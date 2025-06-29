@@ -33,6 +33,7 @@ const AdminBreadcrumb = ({
         // Route mapping for better display names
         const routeMap = {
             'companies': 'Companies',
+            'customers': 'Customers',
             'users': 'Users',
             'shipments': 'Shipments',
             'addresses': 'Addresses',

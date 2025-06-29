@@ -42,7 +42,8 @@ import {
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon,
     ContentCopy as ContentCopyIcon,
-    Edit as EditIcon
+    Edit as EditIcon,
+    SwapHoriz as SwapHorizIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, limit, increment } from 'firebase/firestore';
@@ -55,6 +56,7 @@ import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
+import CompanySelector from '../common/CompanySelector';
 
 // Import sophisticated rate components from Rates.jsx
 import EnhancedRateCard from './EnhancedRateCard';
@@ -67,7 +69,7 @@ import CarrierStatsPopover from './CarrierStatsPopover';
 import { Suspense } from 'react';
 
 // Lazy load the address dialog component
-const QuickShipAddressDialog = React.lazy(() => import('./QuickShipAddressDialog'));
+const AddressFormDialog = React.lazy(() => import('../AddressBook/AddressFormDialog'));
 
 // Packaging types for shipments
 const PACKAGING_TYPES = [
@@ -226,8 +228,8 @@ const FREIGHT_CLASSES = [
 ];
 
 const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData }) => {
-    const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
-    const { currentUser: user, loading: authLoading } = useAuth();
+    const { companyData, companyIdForAddress, loading: companyLoading, setCompanyContext } = useCompany();
+    const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const debounceTimeoutRef = useRef(null);
 
 
@@ -330,6 +332,57 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
     // Extract draft ID from prePopulatedData or props
     const draftIdToLoad = prePopulatedData?.editDraftId || draftId;
+
+    // Company selection state for super admins
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+    const [selectedCompanyData, setSelectedCompanyData] = useState(null);
+
+    // Determine if super admin needs to select a company (always show for super admins to allow switching)
+    const needsCompanySelection = userRole === 'superadmin';
+
+    // Handle company selection for super admins
+    const handleCompanySelection = useCallback(async (companyId) => {
+        try {
+            setSelectedCompanyId(companyId);
+
+            if (companyId) {
+                // Query for the selected company data
+                const companiesQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', companyId),
+                    limit(1)
+                );
+
+                const companiesSnapshot = await getDocs(companiesQuery);
+
+                if (!companiesSnapshot.empty) {
+                    const companyDoc = companiesSnapshot.docs[0];
+                    const companyDocData = companyDoc.data();
+
+                    const targetCompanyData = {
+                        ...companyDocData,
+                        id: companyDoc.id
+                    };
+
+                    setSelectedCompanyData(targetCompanyData);
+
+                    // Switch company context
+                    await setCompanyContext(targetCompanyData);
+
+                    console.log('✅ Super admin switched to company context:', targetCompanyData.name);
+                    showMessage(`Switched to ${targetCompanyData.name || companyId}`, 'success');
+                } else {
+                    console.warn('⚠️ Company not found:', companyId);
+                    showMessage(`Warning: Company ${companyId} not found`, 'warning');
+                }
+            } else {
+                setSelectedCompanyData(null);
+            }
+        } catch (error) {
+            console.error('❌ Error switching company context:', error);
+            showMessage('Error switching company context', 'error');
+        }
+    }, [setCompanyContext]);
 
     // Load addresses
     useEffect(() => {
@@ -1202,14 +1255,29 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     };
 
     // Handle address update from dialog
-    const handleAddressUpdated = (updatedAddress) => {
-        if (editingAddressType === 'from') {
-            setShipFromAddress(updatedAddress);
-        } else {
-            setShipToAddress(updatedAddress);
+    const handleAddressUpdated = async (addressId) => {
+        try {
+            // Fetch the updated address data from the database
+            const addressDoc = await getDoc(doc(db, 'addressBook', addressId));
+            if (addressDoc.exists()) {
+                const updatedAddress = { id: addressDoc.id, ...addressDoc.data() };
+
+                if (editingAddressType === 'from') {
+                    setShipFromAddress(updatedAddress);
+                } else {
+                    setShipToAddress(updatedAddress);
+                }
+                showMessage('Address updated successfully', 'success');
+            } else {
+                console.error('Updated address not found');
+                showMessage('Failed to load updated address data', 'error');
+            }
+        } catch (error) {
+            console.error('Error fetching updated address:', error);
+            showMessage('Failed to load updated address data', 'error');
         }
+
         setShowAddressDialog(false);
-        showMessage('Address updated successfully', 'success');
     };
 
     // Address dialog handlers
@@ -2056,1414 +2124,1522 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             )}
 
             {/* Main content - only show when both contexts are loaded and data is available */}
-            {!authLoading && !companyLoading && user?.uid && companyData?.companyID && (
+            {!authLoading && !companyLoading && user?.uid && (
                 <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-                    {/* Shipment Information */}
-                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
-                                Shipment Information
-                            </Typography>
-                            <Grid container spacing={3}>
-                                <Grid item xs={12} md={6}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
-                                        <Select
-                                            value={shipmentInfo.shipmentType}
-                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentType: e.target.value }))}
-                                            label="Shipment Type"
-                                            sx={{
-                                                fontSize: '12px',
-                                                '& .MuiSelect-select': { fontSize: '12px' }
-                                            }}
-                                        >
-                                            <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
-                                            <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <TextField
-                                        fullWidth
-                                        size="small"
-                                        label="Shipment Date"
-                                        type="date"
-                                        value={shipmentInfo.shipmentDate}
-                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
-                                        InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                                        sx={{
-                                            '& .MuiInputBase-input': {
-                                                fontSize: '12px',
-                                                '&::placeholder': { fontSize: '12px' }
-                                            }
-                                        }}
-                                    />
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Service Level</InputLabel>
-                                        <Select
-                                            value={shipmentInfo.serviceLevel}
-                                            label="Service Level"
-                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, serviceLevel: e.target.value }))}
-                                            sx={{
-                                                fontSize: '12px',
-                                                '& .MuiSelect-select': { fontSize: '12px' }
-                                            }}
-                                        >
-                                            {(shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS).map(level => (
-                                                <MenuItem key={level.value} value={level.value} sx={{ fontSize: '12px' }}>
-                                                    {level.label}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <TextField
-                                        fullWidth
-                                        size="small"
-                                        label="Reference Number"
-                                        value={shipmentInfo.shipperReferenceNumber}
-                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                        sx={{
-                                            '& .MuiInputBase-input': {
-                                                fontSize: '12px',
-                                                '&::placeholder': { fontSize: '12px' }
-                                            },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                        }}
-                                    />
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
-                                        <Select
-                                            value={shipmentInfo.billType}
-                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
-                                            label="Bill Type"
-                                            sx={{
-                                                fontSize: '12px',
-                                                '& .MuiSelect-select': { fontSize: '12px' }
-                                            }}
-                                        >
-                                            <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
-                                            <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
-                                            <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-                                {shipmentID && (
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Shipment ID"
-                                            value={shipmentID}
-                                            InputProps={{
-                                                readOnly: true,
-                                                endAdornment: (
-                                                    <InputAdornment position="end">
-                                                        <Tooltip title="Copy Shipment ID">
-                                                            <IconButton
-                                                                onClick={handleCopyShipmentId}
-                                                                size="small"
-                                                                sx={{
-                                                                    color: '#6b7280',
-                                                                    '&:hover': {
-                                                                        color: '#1976d2',
-                                                                        backgroundColor: 'rgba(25, 118, 210, 0.1)'
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <ContentCopyIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontWeight: 600, color: '#1976d2', fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                )}
-                            </Grid>
-                        </CardContent>
-                    </Card>
-
-                    {/* Ship From Section */}
-                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                    Ship From
-                                </Typography>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => handleOpenAddAddress('from')}
-                                    startIcon={<AddIcon />}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    New Address
-                                </Button>
-                            </Box>
-
-                            <Autocomplete
-                                fullWidth
-                                options={availableAddresses}
-                                getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
-                                value={shipFromAddress}
-                                onChange={(event, newValue) => handleAddressSelect(newValue, 'from')}
-                                loading={loadingAddresses}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Select Ship From Address"
-                                        placeholder="Search addresses..."
-                                        size="small"
-                                        required
-                                        error={!!formErrors.shipFrom}
-                                        helperText={formErrors.shipFrom}
-                                        sx={{
-                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' },
-                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                        }}
-                                        InputProps={{
-                                            ...params.InputProps,
-                                            endAdornment: (
-                                                <>
-                                                    {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
-                                                    {params.InputProps.endAdornment}
-                                                </>
-                                            ),
-                                        }}
-                                    />
-                                )}
-                                renderOption={(props, option) => (
-                                    <Box component="li" {...props} sx={{
-                                        fontSize: '12px',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start !important',
-                                        py: 1,
-                                        textAlign: 'left !important',
-                                        justifyContent: 'flex-start !important',
-                                        display: 'flex !important'
-                                    }}>
-                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
-                                            {option.companyName}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
-                                            {formatAddressForDisplay(option)}
-                                        </Typography>
-                                    </Box>
-                                )}
-                                sx={{
-                                    '& .MuiAutocomplete-option': {
-                                        fontSize: '12px !important',
-                                        textAlign: 'left !important',
-                                        justifyContent: 'flex-start !important',
-                                        alignItems: 'flex-start !important',
-                                        display: 'flex !important'
-                                    }
-                                }}
+                    {/* Company Selector for Super Admins */}
+                    {(() => {
+                        const shouldShowSelector = userRole === 'superadmin';
+                        console.log('🔍 CreateShipmentX Company Selector Debug:', {
+                            userRole,
+                            companyIdForAddress,
+                            selectedCompanyId,
+                            needsCompanySelection,
+                            shouldShowSelector
+                        });
+                        return shouldShowSelector;
+                    })() && (
+                            <CompanySelector
+                                selectedCompanyId={selectedCompanyId || companyIdForAddress}
+                                onCompanyChange={handleCompanySelection}
+                                userRole={userRole}
+                                size="small"
+                                required={true}
+                                label="Select Company to Create Shipment"
+                                placeholder="Choose a company to create shipment on their behalf..."
                             />
+                        )}
 
-                            {shipFromAddress && (
-                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
-                                    {/* Address display grid */}
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Company & Contact
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
-                                                {shipFromAddress.companyName}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipFromAddress.firstName} {shipFromAddress.lastName}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Street Address
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                {shipFromAddress.street}
-                                            </Typography>
-                                            {shipFromAddress.street2 && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                    {shipFromAddress.street2}
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Location
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                {shipFromAddress.city}, {shipFromAddress.state}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipFromAddress.postalCode}, {shipFromAddress.country}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Contact Information
-                                            </Typography>
-                                            {shipFromAddress.email && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                    📧 {shipFromAddress.email}
-                                                </Typography>
-                                            )}
-                                            {shipFromAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                    📞 {shipFromAddress.phone}
-                                                </Typography>
-                                            )}
-                                            {!shipFromAddress.email && !shipFromAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
-                                                    No contact info available
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-
-                                    {/* Instructions section */}
-                                    {shipFromAddress.specialInstructions && (
-                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
-                                                Special Instructions
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipFromAddress.specialInstructions}
-                                            </Typography>
-                                        </Box>
-                                    )}
-
-                                    {/* Edit button */}
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => handleOpenEditAddress('from')}
-                                        sx={{
-                                            position: 'absolute',
-                                            top: 8,
-                                            right: 8,
-                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                            border: '1px solid #bae6fd',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                            '&:hover': {
-                                                bgcolor: 'white',
-                                                borderColor: '#0ea5e9',
-                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                            },
-                                            width: 28,
-                                            height: 28
-                                        }}
-                                    >
-                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
-                                    </IconButton>
-
-                                    {/* Country Flag in bottom right corner */}
-                                    {getCountryFlag(shipFromAddress.country) && (
-                                        <Box sx={{
-                                            position: 'absolute',
-                                            bottom: 8,
-                                            right: 8,
-                                            fontSize: '20px',
-                                            opacity: 0.7
-                                        }}>
-                                            {getCountryFlag(shipFromAddress.country)}
-                                        </Box>
-                                    )}
-                                </Box>
-                            )}
-                        </CardContent>
-                    </Card >
-
-                    {/* Ship To Section */}
-                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                    Ship To
-                                </Typography>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => handleOpenAddAddress('to')}
-                                    startIcon={<AddIcon />}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    New Address
-                                </Button>
-                            </Box>
-
-                            <Autocomplete
-                                fullWidth
-                                options={availableAddresses}
-                                getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
-                                value={shipToAddress}
-                                onChange={(event, newValue) => handleAddressSelect(newValue, 'to')}
-                                loading={loadingAddresses}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Select Ship To Address"
-                                        placeholder="Search addresses..."
-                                        size="small"
-                                        required
-                                        error={!!formErrors.shipTo}
-                                        helperText={formErrors.shipTo}
-                                        sx={{
-                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' },
-                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                        }}
-                                        InputProps={{
-                                            ...params.InputProps,
-                                            endAdornment: (
-                                                <>
-                                                    {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
-                                                    {params.InputProps.endAdornment}
-                                                </>
-                                            ),
-                                        }}
-                                    />
-                                )}
-                                renderOption={(props, option) => (
-                                    <Box component="li" {...props} sx={{
-                                        fontSize: '12px',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start !important',
-                                        py: 1,
-                                        textAlign: 'left !important',
-                                        justifyContent: 'flex-start !important',
-                                        display: 'flex !important'
-                                    }}>
-                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
-                                            {option.companyName}
+                    {/* Show rest of form only when company is selected or user is not super admin */}
+                    {(() => {
+                        const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyData?.companyID));
+                        console.log('🔍 CreateShipmentX Form Visibility Debug:', {
+                            userRole,
+                            companyIdForAddress,
+                            selectedCompanyId,
+                            companyData: companyData?.companyID,
+                            shouldShowForm,
+                            'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
+                            'regularUserCondition': userRole !== 'superadmin' && companyData?.companyID
+                        });
+                        return shouldShowForm;
+                    })() && (
+                            <form autoComplete="off" noValidate>
+                                {/* Shipment Information */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
+                                            Shipment Information
                                         </Typography>
-                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
-                                            {formatAddressForDisplay(option)}
-                                        </Typography>
-                                    </Box>
-                                )}
-                                sx={{
-                                    '& .MuiAutocomplete-option': {
-                                        fontSize: '12px !important',
-                                        textAlign: 'left !important',
-                                        justifyContent: 'flex-start !important',
-                                        alignItems: 'flex-start !important',
-                                        display: 'flex !important'
-                                    }
-                                }}
-                            />
-
-                            {shipToAddress && (
-                                <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Company & Contact
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
-                                                {shipToAddress.companyName}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipToAddress.firstName} {shipToAddress.lastName}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Street Address
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                {shipToAddress.street}
-                                            </Typography>
-                                            {shipToAddress.street2 && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                    {shipToAddress.street2}
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Location
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                {shipToAddress.city}, {shipToAddress.state}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipToAddress.postalCode}, {shipToAddress.country}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                                Contact Information
-                                            </Typography>
-                                            {shipToAddress.email && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
-                                                    📧 {shipToAddress.email}
-                                                </Typography>
-                                            )}
-                                            {shipToAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                    📞 {shipToAddress.phone}
-                                                </Typography>
-                                            )}
-                                            {!shipToAddress.email && !shipToAddress.phone && (
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
-                                                    No contact info available
-                                                </Typography>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-
-                                    {/* Instructions section */}
-                                    {shipToAddress.specialInstructions && (
-                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
-                                                Special Instructions
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                                {shipToAddress.specialInstructions}
-                                            </Typography>
-                                        </Box>
-                                    )}
-
-                                    {/* Edit button */}
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => handleOpenEditAddress('to')}
-                                        sx={{
-                                            position: 'absolute',
-                                            top: 8,
-                                            right: 8,
-                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                            border: '1px solid #bae6fd',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                            '&:hover': {
-                                                bgcolor: 'white',
-                                                borderColor: '#0ea5e9',
-                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                            },
-                                            width: 28,
-                                            height: 28
-                                        }}
-                                    >
-                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
-                                    </IconButton>
-
-                                    {/* Country Flag in bottom right corner */}
-                                    {getCountryFlag(shipToAddress.country) && (
-                                        <Box sx={{
-                                            position: 'absolute',
-                                            bottom: 8,
-                                            right: 8,
-                                            fontSize: '20px',
-                                            opacity: 0.7
-                                        }}>
-                                            {getCountryFlag(shipToAddress.country)}
-                                        </Box>
-                                    )}
-                                </Box>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Packages Section */}
-                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                    Package Information
-                                </Typography>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    startIcon={<AddIcon />}
-                                    onClick={addPackage}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    Add Package
-                                </Button>
-                            </Box>
-
-                            {packages.map((pkg, index) => (
-                                <Box
-                                    key={`${pkg.id}`}
-                                    component="fieldset"
-                                    sx={{
-                                        border: '1px solid #e5e7eb',
-                                        borderRadius: 2,
-                                        p: 2,
-                                        mb: 2,
-                                        position: 'relative'
-                                    }}
-                                >
-                                    <Box
-                                        component="legend"
-                                        sx={{
-                                            px: 1,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 2,
-                                            fontSize: '12px',
-                                            fontWeight: 600,
-                                            color: 'text.primary'
-                                        }}
-                                    >
-                                        Package {index + 1}
-                                        {packages.length > 1 && (
-                                            <Button
-                                                variant="outlined"
-                                                color="error"
-                                                size="small"
-                                                onClick={() => removePackage(pkg.id)}
-                                                sx={{
-                                                    fontSize: '10px',
-                                                    textTransform: 'none',
-                                                    minWidth: 'auto',
-                                                    px: 1.5,
-                                                    py: 0.25,
-                                                    minHeight: '24px'
-                                                }}
-                                            >
-                                                Remove
-                                            </Button>
-                                        )}
-                                    </Box>
-
-                                    <Grid container spacing={2}>
-                                        <Grid item xs={12} md={5}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Item Description"
-                                                value={pkg.itemDescription || ''}
-                                                onChange={(e) => updatePackage(pkg.id, 'itemDescription', e.target.value)}
-                                                required
-                                                error={!!formErrors[`package_${index}_itemDescription`]}
-                                                helperText={formErrors[`package_${index}_itemDescription`]}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-
-                                        {/* Packaging Type */}
-                                        <Grid item xs={12} md={4}>
-                                            <FormControl fullWidth required size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Packaging Type</InputLabel>
-                                                <Select
-                                                    value={pkg.packagingType || 262}
-                                                    onChange={(e) => updatePackage(pkg.id, 'packagingType', e.target.value)}
-                                                    label="Packaging Type"
-                                                    sx={{
-                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                >
-                                                    {PACKAGING_TYPES.map(type => (
-                                                        <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                                            {type.label}
-                                                        </MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
-                                        </Grid>
-
-                                        <Grid item xs={12} md={3}>
-                                            <FormControl fullWidth required size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Qty</InputLabel>
-                                                <Select
-                                                    value={pkg.packagingQuantity || 1}
-                                                    onChange={(e) => updatePackage(pkg.id, 'packagingQuantity', e.target.value)}
-                                                    label="Qty"
-                                                    sx={{
-                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                >
-                                                    {[...Array(30)].map((_, i) => (
-                                                        <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
-                                                            {i + 1}
-                                                        </MenuItem>
-                                                    ))}
-                                                </Select>
-                                            </FormControl>
-                                        </Grid>
-
-                                        <Grid item xs={12} md={2.4}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Weight"
-                                                type="number"
-                                                value={pkg.weight || ''}
-                                                onChange={(e) => updatePackage(pkg.id, 'weight', e.target.value)}
-                                                required
-                                                error={!!formErrors[`package_${index}_weight`]}
-                                                helperText={formErrors[`package_${index}_weight`]}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <InputAdornment position="end">
-                                                            <Box
-                                                                sx={{
-                                                                    bgcolor: 'grey.800',
-                                                                    color: 'white',
-                                                                    px: 1,
-                                                                    py: 0.5,
-                                                                    borderRadius: 1,
-                                                                    fontSize: '0.875rem'
-                                                                }}
-                                                            >
-                                                                {(pkg.unitSystem || 'imperial') === 'metric' ? 'kg' : 'lbs'}
-                                                            </Box>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                            />
-                                        </Grid>
-
-                                        <Grid item xs={12} md={2.4}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Length"
-                                                type="number"
-                                                value={pkg.length || ''}
-                                                onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)}
-                                                required
-                                                error={!!formErrors[`package_${index}_length`]}
-                                                helperText={formErrors[`package_${index}_length`]}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <InputAdornment position="end">
-                                                            <Box
-                                                                sx={{
-                                                                    bgcolor: 'grey.800',
-                                                                    color: 'white',
-                                                                    px: 1,
-                                                                    py: 0.5,
-                                                                    borderRadius: 1,
-                                                                    fontSize: '0.875rem'
-                                                                }}
-                                                            >
-                                                                {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
-                                                            </Box>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                            />
-                                        </Grid>
-
-                                        <Grid item xs={12} md={2.4}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Width"
-                                                type="number"
-                                                value={pkg.width || ''}
-                                                onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)}
-                                                required
-                                                error={!!formErrors[`package_${index}_width`]}
-                                                helperText={formErrors[`package_${index}_width`]}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <InputAdornment position="end">
-                                                            <Box
-                                                                sx={{
-                                                                    bgcolor: 'grey.800',
-                                                                    color: 'white',
-                                                                    px: 1,
-                                                                    py: 0.5,
-                                                                    borderRadius: 1,
-                                                                    fontSize: '0.875rem'
-                                                                }}
-                                                            >
-                                                                {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
-                                                            </Box>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                            />
-                                        </Grid>
-
-                                        <Grid item xs={12} md={2.4}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Height"
-                                                type="number"
-                                                value={pkg.height || ''}
-                                                onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)}
-                                                required
-                                                error={!!formErrors[`package_${index}_height`]}
-                                                helperText={formErrors[`package_${index}_height`]}
-                                                sx={{
-                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <InputAdornment position="end">
-                                                            <Box
-                                                                sx={{
-                                                                    bgcolor: 'grey.800',
-                                                                    color: 'white',
-                                                                    px: 1,
-                                                                    py: 0.5,
-                                                                    borderRadius: 1,
-                                                                    fontSize: '0.875rem'
-                                                                }}
-                                                            >
-                                                                {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
-                                                            </Box>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                            />
-                                        </Grid>
-
-                                        {/* Declared Value */}
-                                        <Grid item xs={12} md={3}>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <TextField
-                                                    size="small"
-                                                    label="Declared Value"
-                                                    type="number"
-                                                    value={pkg.declaredValue || ''}
-                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
-                                                    sx={{
-                                                        flex: 1,
-                                                        '& .MuiInputBase-root': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    placeholder="0.00"
-                                                />
-                                                <FormControl size="small" sx={{ minWidth: '70px' }}>
+                                        <Grid container spacing={3}>
+                                            <Grid item xs={12} md={6}>
+                                                <FormControl fullWidth size="small">
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
                                                     <Select
-                                                        value={pkg.declaredValueCurrency || 'CAD'}
-                                                        onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
+                                                        value={shipmentInfo.shipmentType}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentType: e.target.value }))}
+                                                        label="Shipment Type"
                                                         sx={{
-                                                            '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
+                                                            fontSize: '12px',
+                                                            '& .MuiSelect-select': { fontSize: '12px' }
                                                         }}
                                                     >
-                                                        <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
-                                                        <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
+                                                        <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                        <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
                                                     </Select>
                                                 </FormControl>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Unit System Toggle - show for each package */}
-                                        <Grid item xs={12} md={2.4}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '40px', justifyContent: 'center' }}>
-                                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Imperial</Typography>
-                                                <Switch
-                                                    checked={(pkg.unitSystem || 'imperial') === 'metric'}
-                                                    onChange={(e) => handlePackageUnitChange(pkg.id, e.target.checked ? 'metric' : 'imperial')}
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Shipment Date"
+                                                    type="date"
+                                                    value={shipmentInfo.shipmentDate}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
+                                                    InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                    autoComplete="off"
                                                     sx={{
-                                                        '& .MuiSwitch-switchBase.Mui-checked': {
-                                                            color: 'primary.main',
-                                                            '&:hover': {
-                                                                backgroundColor: 'primary.light'
-                                                            }
-                                                        },
-                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                            backgroundColor: 'primary.main'
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            '&::placeholder': { fontSize: '12px' }
                                                         }
                                                     }}
                                                 />
-                                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Metric</Typography>
-                                            </Box>
-                                        </Grid>
-
-                                        {/* Freight Class - Only show for freight shipments */}
-                                        {shipmentInfo.shipmentType === 'freight' && (
-                                            <Grid item xs={12}>
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
                                                 <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Service Level</InputLabel>
                                                     <Select
-                                                        value={pkg.freightClass || ''}
-                                                        onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
-                                                        label="Freight Class (Optional)"
+                                                        value={shipmentInfo.serviceLevel}
+                                                        label="Service Level"
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, serviceLevel: e.target.value }))}
                                                         sx={{
-                                                            '& .MuiSelect-select': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                        renderValue={(value) => {
-                                                            if (!value) return '';
-                                                            const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
-                                                            return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                                            fontSize: '12px',
+                                                            '& .MuiSelect-select': { fontSize: '12px' }
                                                         }}
                                                     >
-                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                            <em>No freight class selected</em>
-                                                        </MenuItem>
-                                                        {FREIGHT_CLASSES.map((fc) => (
-                                                            <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
-                                                                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                                                    Class {fc.class} - {fc.description}
-                                                                </Typography>
+                                                        {(shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS).map(level => (
+                                                            <MenuItem key={level.value} value={level.value} sx={{ fontSize: '12px' }}>
+                                                                {level.label}
                                                             </MenuItem>
                                                         ))}
                                                     </Select>
-                                                    <FormHelperText sx={{ fontSize: '11px' }}>
-                                                        Optional: Select freight class if applicable for your shipment
-                                                    </FormHelperText>
                                                 </FormControl>
                                             </Grid>
-                                        )}
-                                    </Grid>
-                                </Box>
-                            ))}
-                        </CardContent>
-                    </Card>
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Reference Number"
+                                                    value={shipmentInfo.shipperReferenceNumber}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            '&::placeholder': { fontSize: '12px' }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <FormControl fullWidth size="small">
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
+                                                    <Select
+                                                        value={shipmentInfo.billType}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
+                                                        label="Bill Type"
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+                                            {shipmentID && (
+                                                <Grid item xs={12} md={6}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipment ID"
+                                                        value={shipmentID}
+                                                        InputProps={{
+                                                            readOnly: true,
+                                                            endAdornment: (
+                                                                <InputAdornment position="end">
+                                                                    <Tooltip title="Copy Shipment ID">
+                                                                        <IconButton
+                                                                            onClick={handleCopyShipmentId}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                color: '#6b7280',
+                                                                                '&:hover': {
+                                                                                    color: '#1976d2',
+                                                                                    backgroundColor: 'rgba(25, 118, 210, 0.1)'
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            <ContentCopyIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                </InputAdornment>
+                                                            )
+                                                        }}
+                                                        sx={{
+                                                            '& .MuiInputBase-input': { fontWeight: 600, color: '#1976d2', fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                    />
+                                                </Grid>
+                                            )}
+                                        </Grid>
+                                    </CardContent>
+                                </Card>
 
-                    {/* Additional Options Section */}
-                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Box
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    cursor: 'pointer',
-                                    mb: serviceOptionsExpanded ? 3 : 0
-                                }}
-                                onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
-                            >
-                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', flex: 1 }}>
-                                    Additional Options
-                                </Typography>
-                                {serviceOptionsExpanded ? (
-                                    <ExpandLessIcon sx={{ color: '#666' }} />
-                                ) : (
-                                    <ExpandMoreIcon sx={{ color: '#666' }} />
-                                )}
-                            </Box>
-
-                            <Collapse in={serviceOptionsExpanded}>
-                                <Grid container spacing={3}>
-                                    {/* Delivery & Pickup Options */}
-                                    <Grid item xs={12} md={6}>
-                                        <Box sx={{ mb: 1 }}>
-                                            <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                Delivery & Pickup Options
+                                {/* Ship From Section */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                Ship From
                                             </Typography>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
-                                                <Select
-                                                    value={additionalOptions.deliveryPickupOption || ''}
-                                                    onChange={(e) => handleAdditionalOptionsChange('deliveryPickupOption', e.target.value)}
-                                                    label="Delivery Options"
-                                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                >
-                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                        Standard Delivery
-                                                    </MenuItem>
-                                                    <MenuItem value="residential" sx={{ fontSize: '12px' }}>
-                                                        Residential Delivery
-                                                    </MenuItem>
-                                                    <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
-                                                        Hold for Pickup
-                                                    </MenuItem>
-                                                </Select>
-                                            </FormControl>
-                                        </Box>
-                                    </Grid>
-
-                                    {/* Hazardous Goods */}
-                                    <Grid item xs={12} md={6}>
-                                        <Box sx={{ mb: 1 }}>
-                                            <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                Hazardous Materials
-                                            </Typography>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
-                                                <Select
-                                                    value={additionalOptions.hazardousGoods || ''}
-                                                    onChange={(e) => handleAdditionalOptionsChange('hazardousGoods', e.target.value)}
-                                                    label="Hazardous Goods"
-                                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                >
-                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
-                                                    <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
-                                                    <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
-                                                    <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
-                                                </Select>
-                                            </FormControl>
-                                        </Box>
-                                    </Grid>
-
-                                    {/* Courier-specific options */}
-                                    {shipmentInfo.shipmentType === 'courier' && (
-                                        <>
-                                            {/* Priority Delivery */}
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                        Priority Delivery
-                                                    </Typography>
-                                                    <FormControl fullWidth size="small">
-                                                        <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
-                                                        <Select
-                                                            value={additionalOptions.priorityDelivery || ''}
-                                                            onChange={(e) => handleAdditionalOptionsChange('priorityDelivery', e.target.value)}
-                                                            label="Priority Options"
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
-                                                            <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
-                                                            <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
-                                                            <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
-                                                </Box>
-                                            </Grid>
-
-                                            {/* Signature Options */}
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                        Signature Requirements
-                                                    </Typography>
-                                                    <FormControl fullWidth size="small">
-                                                        <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
-                                                        <Select
-                                                            value={additionalOptions.signatureOptions || ''}
-                                                            onChange={(e) => handleAdditionalOptionsChange('signatureOptions', e.target.value)}
-                                                            label="Signature Options"
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
-                                                            <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
-                                                            <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
-                                                </Box>
-                                            </Grid>
-                                        </>
-                                    )}
-
-                                    {/* Freight-specific options */}
-                                    {shipmentInfo.shipmentType === 'freight' && (
-                                        <>
-                                            {/* Liftgate Service */}
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                        Liftgate Service
-                                                    </Typography>
-                                                    <FormControl fullWidth size="small">
-                                                        <InputLabel sx={{ fontSize: '12px' }}>Liftgate Options</InputLabel>
-                                                        <Select
-                                                            value={additionalOptions.liftgateService || ''}
-                                                            onChange={(e) => handleAdditionalOptionsChange('liftgateService', e.target.value)}
-                                                            label="Liftgate Options"
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="" sx={{ fontSize: '12px' }}>No Liftgate Required</MenuItem>
-                                                            <MenuItem value="pickup" sx={{ fontSize: '12px' }}>Liftgate at Pickup</MenuItem>
-                                                            <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Liftgate at Delivery</MenuItem>
-                                                            <MenuItem value="both" sx={{ fontSize: '12px' }}>Liftgate at Both</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
-                                                </Box>
-                                            </Grid>
-
-                                            {/* Inside Delivery */}
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                        Inside Delivery
-                                                    </Typography>
-                                                    <FormControl fullWidth size="small">
-                                                        <InputLabel sx={{ fontSize: '12px' }}>Inside Delivery</InputLabel>
-                                                        <Select
-                                                            value={additionalOptions.insideDelivery || ''}
-                                                            onChange={(e) => handleAdditionalOptionsChange('insideDelivery', e.target.value)}
-                                                            label="Inside Delivery"
-                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                        >
-                                                            <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
-                                                            <MenuItem value="inside" sx={{ fontSize: '12px' }}>Inside Delivery</MenuItem>
-                                                            <MenuItem value="threshold" sx={{ fontSize: '12px' }}>Threshold Delivery</MenuItem>
-                                                        </Select>
-                                                    </FormControl>
-                                                </Box>
-                                            </Grid>
-                                        </>
-                                    )}
-                                </Grid>
-                            </Collapse>
-                        </CardContent>
-                    </Card>
-
-                    {/* Rates Section */}
-                    {
-                        showRates && (
-                            <Card sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', mb: 3 }}>
-                                <CardContent sx={{ p: 3 }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                        <Box>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
-                                                Shipping Rates
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                                             <Button
                                                 variant="outlined"
                                                 size="small"
-                                                onClick={() => fetchRates(true)}
-                                                disabled={isLoadingRates}
-                                                startIcon={<RefreshIcon />}
+                                                onClick={() => handleOpenAddAddress('from')}
+                                                startIcon={<AddIcon />}
                                                 sx={{ fontSize: '12px' }}
                                             >
-                                                Refresh Rates
+                                                New Address
                                             </Button>
                                         </Box>
-                                    </Box>
 
-                                    {/* Progressive Loading Indicator - Show when rates are loading but we already have some */}
-                                    {isLoadingRates && rates.length > 0 && (
-                                        <Box sx={{
-                                            mb: 2,
-                                            p: 2,
-                                            bgcolor: '#f0f9ff',
-                                            borderRadius: 1,
-                                            border: '1px solid #bae6fd',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 2
-                                        }}>
-                                            <CircularProgress size={20} sx={{ color: '#0ea5e9' }} />
-                                            <Box sx={{ flex: 1 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e' }}>
-                                                    Loading additional rates...
-                                                </Typography>
-                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
-                                                    {rates.length} rates loaded • {loadingCarriers.length - completedCarriers.length} carriers remaining
-                                                    {loadingCarriers.filter(c => c === 'eShip Plus').length > 0 && completedCarriers.filter(c => c.name === 'eShip Plus').length === 0 && (
-                                                        <span style={{ fontWeight: 600 }}> • eShip Plus starting up...</span>
-                                                    )}
-                                                </Typography>
+                                        <Autocomplete
+                                            fullWidth
+                                            options={availableAddresses}
+                                            getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
+                                            value={shipFromAddress}
+                                            onChange={(event, newValue) => handleAddressSelect(newValue, 'from')}
+                                            loading={loadingAddresses}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Select Ship From Address"
+                                                    placeholder="Search addresses..."
+                                                    size="small"
+                                                    required
+                                                    error={!!formErrors.shipFrom}
+                                                    helperText={formErrors.shipFrom}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                    }}
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        endAdornment: (
+                                                            <>
+                                                                {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                {params.InputProps.endAdornment}
+                                                            </>
+                                                        ),
+                                                    }}
+                                                />
+                                            )}
+                                            renderOption={(props, option) => (
+                                                <Box component="li" {...props} sx={{
+                                                    fontSize: '12px',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'flex-start !important',
+                                                    py: 1,
+                                                    textAlign: 'left !important',
+                                                    justifyContent: 'flex-start !important',
+                                                    display: 'flex !important'
+                                                }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
+                                                        {option.companyName}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
+                                                        {formatAddressForDisplay(option)}
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                            sx={{
+                                                '& .MuiAutocomplete-option': {
+                                                    fontSize: '12px !important',
+                                                    textAlign: 'left !important',
+                                                    justifyContent: 'flex-start !important',
+                                                    alignItems: 'flex-start !important',
+                                                    display: 'flex !important'
+                                                }
+                                            }}
+                                        />
+
+                                        {shipFromAddress && (
+                                            <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
+                                                {/* Address display grid */}
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Company & Contact
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
+                                                            {shipFromAddress.companyName}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipFromAddress.firstName} {shipFromAddress.lastName}
+                                                        </Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Street Address
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                            {shipFromAddress.street}
+                                                        </Typography>
+                                                        {shipFromAddress.street2 && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                                {shipFromAddress.street2}
+                                                            </Typography>
+                                                        )}
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Location
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                            {shipFromAddress.city}, {shipFromAddress.state}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipFromAddress.postalCode}, {shipFromAddress.country}
+                                                        </Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Contact Information
+                                                        </Typography>
+                                                        {shipFromAddress.email && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                                📧 {shipFromAddress.email}
+                                                            </Typography>
+                                                        )}
+                                                        {shipFromAddress.phone && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                                📞 {shipFromAddress.phone}
+                                                            </Typography>
+                                                        )}
+                                                        {!shipFromAddress.email && !shipFromAddress.phone && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                                                No contact info available
+                                                            </Typography>
+                                                        )}
+                                                    </Grid>
+                                                </Grid>
+
+                                                {/* Instructions section */}
+                                                {shipFromAddress.specialInstructions && (
+                                                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
+                                                            Special Instructions
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipFromAddress.specialInstructions}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+
+                                                {/* Action buttons */}
+                                                <Box sx={{
+                                                    position: 'absolute',
+                                                    top: 8,
+                                                    right: 8,
+                                                    display: 'flex',
+                                                    gap: 1
+                                                }}>
+                                                    {/* Change Address Button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            console.log('Change Ship From address clicked');
+                                                            setShipFromAddress(null);
+                                                        }}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#f59e0b',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                                                    </IconButton>
+
+                                                    {/* Edit button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenEditAddress('from')}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#0ea5e9',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                                    </IconButton>
+                                                </Box>
+
+                                                {/* Country Flag in bottom right corner */}
+                                                {getCountryFlag(shipFromAddress.country) && (
+                                                    <Box sx={{
+                                                        position: 'absolute',
+                                                        bottom: 8,
+                                                        right: 8,
+                                                        fontSize: '20px',
+                                                        opacity: 0.7
+                                                    }}>
+                                                        {getCountryFlag(shipFromAddress.country)}
+                                                    </Box>
+                                                )}
                                             </Box>
-                                        </Box>
-                                    )}
+                                        )}
+                                    </CardContent>
+                                </Card >
 
-                                    {/* Rate status message */}
-                                    {!canFetchRates() && (
-                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, mb: 2 }}>
-                                            <Typography variant="body2" sx={{ color: '#6b7280' }}>
-                                                Complete shipment details to get rates
+                                {/* Ship To Section */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                Ship To
                                             </Typography>
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => handleOpenAddAddress('to')}
+                                                startIcon={<AddIcon />}
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                New Address
+                                            </Button>
                                         </Box>
-                                    )}
 
-                                    {/* Initial Loading State - Only show when no rates are available yet */}
-                                    {isLoadingRates && rates.length === 0 && (
-                                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                                            <CarrierLoadingDisplay
-                                                loadingCarriers={loadingCarriers}
-                                                completedCarriers={completedCarriers}
-                                                failedCarriers={failedCarriers}
-                                                isLoading={isLoadingRates}
-                                            />
-                                        </Box>
-                                    )}
-
-                                    {/* Error State - Only show if no rates available */}
-                                    {ratesError && rates.length === 0 && (
-                                        <Box sx={{
-                                            textAlign: 'center',
-                                            py: 6,
-                                            px: 3,
-                                            bgcolor: '#f8fafc',
-                                            borderRadius: 2,
-                                            border: '1px solid #e5e7eb'
-                                        }}>
-                                            <Box sx={{ mb: 3 }}>
-                                                <Typography
-                                                    variant="h6"
+                                        <Autocomplete
+                                            fullWidth
+                                            options={availableAddresses}
+                                            getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
+                                            value={shipToAddress}
+                                            onChange={(event, newValue) => handleAddressSelect(newValue, 'to')}
+                                            loading={loadingAddresses}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Select Ship To Address"
+                                                    placeholder="Search addresses..."
+                                                    size="small"
+                                                    required
+                                                    error={!!formErrors.shipTo}
+                                                    helperText={formErrors.shipTo}
+                                                    autoComplete="off"
                                                     sx={{
-                                                        fontSize: '16px',
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                    }}
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        endAdornment: (
+                                                            <>
+                                                                {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                {params.InputProps.endAdornment}
+                                                            </>
+                                                        ),
+                                                    }}
+                                                />
+                                            )}
+                                            renderOption={(props, option) => (
+                                                <Box component="li" {...props} sx={{
+                                                    fontSize: '12px',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'flex-start !important',
+                                                    py: 1,
+                                                    textAlign: 'left !important',
+                                                    justifyContent: 'flex-start !important',
+                                                    display: 'flex !important'
+                                                }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
+                                                        {option.companyName}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
+                                                        {formatAddressForDisplay(option)}
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                            sx={{
+                                                '& .MuiAutocomplete-option': {
+                                                    fontSize: '12px !important',
+                                                    textAlign: 'left !important',
+                                                    justifyContent: 'flex-start !important',
+                                                    alignItems: 'flex-start !important',
+                                                    display: 'flex !important'
+                                                }
+                                            }}
+                                        />
+
+                                        {shipToAddress && (
+                                            <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd', position: 'relative' }}>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Company & Contact
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#0ea5e9', fontWeight: 600 }}>
+                                                            {shipToAddress.companyName}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipToAddress.firstName} {shipToAddress.lastName}
+                                                        </Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Street Address
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                            {shipToAddress.street}
+                                                        </Typography>
+                                                        {shipToAddress.street2 && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                                {shipToAddress.street2}
+                                                            </Typography>
+                                                        )}
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Location
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                            {shipToAddress.city}, {shipToAddress.state}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipToAddress.postalCode}, {shipToAddress.country}
+                                                        </Typography>
+                                                    </Grid>
+                                                    <Grid item xs={12} md={3}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                            Contact Information
+                                                        </Typography>
+                                                        {shipToAddress.email && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', mb: 0.5, color: '#075985' }}>
+                                                                📧 {shipToAddress.email}
+                                                            </Typography>
+                                                        )}
+                                                        {shipToAddress.phone && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                                📞 {shipToAddress.phone}
+                                                            </Typography>
+                                                        )}
+                                                        {!shipToAddress.email && !shipToAddress.phone && (
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                                                No contact info available
+                                                            </Typography>
+                                                        )}
+                                                    </Grid>
+                                                </Grid>
+
+                                                {/* Instructions section */}
+                                                {shipToAddress.specialInstructions && (
+                                                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #bae6fd' }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 0.5 }}>
+                                                            Special Instructions
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                                            {shipToAddress.specialInstructions}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+
+                                                {/* Action buttons */}
+                                                <Box sx={{
+                                                    position: 'absolute',
+                                                    top: 8,
+                                                    right: 8,
+                                                    display: 'flex',
+                                                    gap: 1
+                                                }}>
+                                                    {/* Change Address Button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            console.log('Change Ship To address clicked');
+                                                            setShipToAddress(null);
+                                                        }}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#f59e0b',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                                                    </IconButton>
+
+                                                    {/* Edit button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenEditAddress('to')}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#0ea5e9',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                                    </IconButton>
+                                                </Box>
+
+                                                {/* Country Flag in bottom right corner */}
+                                                {getCountryFlag(shipToAddress.country) && (
+                                                    <Box sx={{
+                                                        position: 'absolute',
+                                                        bottom: 8,
+                                                        right: 8,
+                                                        fontSize: '20px',
+                                                        opacity: 0.7
+                                                    }}>
+                                                        {getCountryFlag(shipToAddress.country)}
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        )}
+                                    </CardContent>
+                                </Card>
+
+                                {/* Packages Section */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                Package Information
+                                            </Typography>
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<AddIcon />}
+                                                onClick={addPackage}
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                Add Package
+                                            </Button>
+                                        </Box>
+
+                                        {packages.map((pkg, index) => (
+                                            <Box
+                                                key={`${pkg.id}`}
+                                                component="fieldset"
+                                                sx={{
+                                                    border: '1px solid #e5e7eb',
+                                                    borderRadius: 2,
+                                                    p: 2,
+                                                    mb: 2,
+                                                    position: 'relative'
+                                                }}
+                                            >
+                                                <Box
+                                                    component="legend"
+                                                    sx={{
+                                                        px: 1,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 2,
+                                                        fontSize: '12px',
                                                         fontWeight: 600,
-                                                        color: '#374151',
-                                                        mb: 1
+                                                        color: 'text.primary'
                                                     }}
                                                 >
-                                                    No rates available
-                                                </Typography>
-                                                <Typography
-                                                    variant="body2"
-                                                    sx={{
-                                                        fontSize: '14px',
-                                                        color: '#6b7280',
-                                                        mb: 3
-                                                    }}
-                                                >
-                                                    We couldn't find any shipping rates for your current shipment details.
-                                                </Typography>
-                                            </Box>
-
-                                            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-                                                <Button
-                                                    variant="outlined"
-                                                    size="small"
-                                                    onClick={() => {
-                                                        setRatesError(null);
-                                                        fetchRates(true);
-                                                    }}
-                                                    sx={{
-                                                        fontSize: '12px',
-                                                        textTransform: 'none',
-                                                        borderColor: '#d1d5db',
-                                                        color: '#374151'
-                                                    }}
-                                                >
-                                                    Try Again
-                                                </Button>
-                                                <Button
-                                                    variant="text"
-                                                    size="small"
-                                                    onClick={() => {
-                                                        setShowRates(false);
-                                                        setRatesError(null);
-                                                    }}
-                                                    sx={{
-                                                        fontSize: '12px',
-                                                        textTransform: 'none',
-                                                        color: '#6366f1'
-                                                    }}
-                                                >
-                                                    Modify Shipment
-                                                </Button>
-                                            </Box>
-
-                                            <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid #e5e7eb' }}>
-                                                <Typography
-                                                    variant="caption"
-                                                    sx={{
-                                                        fontSize: '12px',
-                                                        color: '#9ca3af',
-                                                        fontStyle: 'italic'
-                                                    }}
-                                                >
-                                                    Try adjusting your addresses, package dimensions, or shipment type
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    )}
-
-                                    {/* Rates Display - Show whenever we have rates, even during loading */}
-                                    {rates.length > 0 && (
-                                        <Box>
-                                            {/* Rate Filtering and Sorting Controls */}
-                                            <Box sx={{ mb: 3 }}>
-                                                <Grid container spacing={3} alignItems="center">
-                                                    <Grid item xs={12} sm={6} md={3}>
-                                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                            Sort By
-                                                        </Typography>
-                                                        <select
-                                                            value={sortBy}
-                                                            onChange={(e) => setSortBy(e.target.value)}
-                                                            style={{
-                                                                width: '100%',
-                                                                padding: '8px 12px',
-                                                                fontSize: '12px',
-                                                                border: '1px solid #d1d5db',
-                                                                borderRadius: '6px',
-                                                                backgroundColor: '#fff',
-                                                                color: '#374151'
+                                                    Package {index + 1}
+                                                    {packages.length > 1 && (
+                                                        <Button
+                                                            variant="outlined"
+                                                            color="error"
+                                                            size="small"
+                                                            onClick={() => removePackage(pkg.id)}
+                                                            sx={{
+                                                                fontSize: '10px',
+                                                                textTransform: 'none',
+                                                                minWidth: 'auto',
+                                                                px: 1.5,
+                                                                py: 0.25,
+                                                                minHeight: '24px'
                                                             }}
                                                         >
-                                                            <option value="price">Price (Lowest First)</option>
-                                                            <option value="transit">Transit Time (Fastest First)</option>
-                                                            <option value="carrier">Carrier (A-Z)</option>
-                                                        </select>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6} md={3}>
-                                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                            Service Type
-                                                        </Typography>
-                                                        <select
-                                                            value={serviceFilter}
-                                                            onChange={(e) => setServiceFilter(e.target.value)}
-                                                            style={{
-                                                                width: '100%',
-                                                                padding: '8px 12px',
-                                                                fontSize: '12px',
-                                                                border: '1px solid #d1d5db',
-                                                                borderRadius: '6px',
-                                                                backgroundColor: '#fff',
-                                                                color: '#374151'
+                                                            Remove
+                                                        </Button>
+                                                    )}
+                                                </Box>
+
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={12} md={5}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Item Description"
+                                                            value={pkg.itemDescription || ''}
+                                                            onChange={(e) => updatePackage(pkg.id, 'itemDescription', e.target.value)}
+                                                            required
+                                                            error={!!formErrors[`package_${index}_itemDescription`]}
+                                                            helperText={formErrors[`package_${index}_itemDescription`]}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
                                                             }}
-                                                        >
-                                                            <option value="any">ANY</option>
-                                                            <option value="guaranteed">Guaranteed Only</option>
-                                                            <option value="economy">Economy</option>
-                                                            <option value="express">Express</option>
-                                                        </select>
+                                                        />
                                                     </Grid>
-                                                    <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1 }}>
-                                                            <CarrierStatsPopover rawRateApiResponseData={rawRateApiResponseData} />
-                                                            <Button
-                                                                variant="text"
-                                                                onClick={() => setShowRateDetails(!showRateDetails)}
+
+                                                    {/* Packaging Type */}
+                                                    <Grid item xs={12} md={4}>
+                                                        <FormControl fullWidth required size="small">
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Packaging Type</InputLabel>
+                                                            <Select
+                                                                value={pkg.packagingType || 262}
+                                                                onChange={(e) => updatePackage(pkg.id, 'packagingType', e.target.value)}
+                                                                label="Packaging Type"
                                                                 sx={{
-                                                                    fontSize: '12px',
-                                                                    textTransform: 'none',
-                                                                    px: 2,
-                                                                    py: 1,
-                                                                    color: '#6366f1',
-                                                                    '&:hover': {
-                                                                        backgroundColor: 'rgba(99, 102, 241, 0.1)'
-                                                                    }
+                                                                    '& .MuiSelect-select': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
                                                                 }}
                                                             >
-                                                                {showRateDetails ? 'Hide Details' : 'Show Details'}
-                                                            </Button>
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', ml: 2 }}>
-                                                                {filteredRates.length} of {rates.length} rates
-                                                                {isLoadingRates && (
-                                                                    <span style={{ color: '#0ea5e9', fontWeight: 500 }}> (loading...)</span>
+                                                                {PACKAGING_TYPES.map(type => (
+                                                                    <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
+                                                                        {type.label}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Grid>
+
+                                                    <Grid item xs={12} md={3}>
+                                                        <FormControl fullWidth required size="small">
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Qty</InputLabel>
+                                                            <Select
+                                                                value={pkg.packagingQuantity || 1}
+                                                                onChange={(e) => updatePackage(pkg.id, 'packagingQuantity', e.target.value)}
+                                                                label="Qty"
+                                                                sx={{
+                                                                    '& .MuiSelect-select': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            >
+                                                                {[...Array(30)].map((_, i) => (
+                                                                    <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
+                                                                        {i + 1}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Grid>
+
+                                                    <Grid item xs={12} md={2.4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Weight"
+                                                            type="number"
+                                                            value={pkg.weight || ''}
+                                                            onChange={(e) => updatePackage(pkg.id, 'weight', e.target.value)}
+                                                            required
+                                                            error={!!formErrors[`package_${index}_weight`]}
+                                                            helperText={formErrors[`package_${index}_weight`]}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                            }}
+                                                            InputProps={{
+                                                                endAdornment: (
+                                                                    <InputAdornment position="end">
+                                                                        <Box
+                                                                            sx={{
+                                                                                bgcolor: 'grey.800',
+                                                                                color: 'white',
+                                                                                px: 1,
+                                                                                py: 0.5,
+                                                                                borderRadius: 1,
+                                                                                fontSize: '0.875rem'
+                                                                            }}
+                                                                        >
+                                                                            {(pkg.unitSystem || 'imperial') === 'metric' ? 'kg' : 'lbs'}
+                                                                        </Box>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    <Grid item xs={12} md={2.4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Length"
+                                                            type="number"
+                                                            value={pkg.length || ''}
+                                                            onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)}
+                                                            required
+                                                            error={!!formErrors[`package_${index}_length`]}
+                                                            helperText={formErrors[`package_${index}_length`]}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                            }}
+                                                            InputProps={{
+                                                                endAdornment: (
+                                                                    <InputAdornment position="end">
+                                                                        <Box
+                                                                            sx={{
+                                                                                bgcolor: 'grey.800',
+                                                                                color: 'white',
+                                                                                px: 1,
+                                                                                py: 0.5,
+                                                                                borderRadius: 1,
+                                                                                fontSize: '0.875rem'
+                                                                            }}
+                                                                        >
+                                                                            {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
+                                                                        </Box>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    <Grid item xs={12} md={2.4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Width"
+                                                            type="number"
+                                                            value={pkg.width || ''}
+                                                            onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)}
+                                                            required
+                                                            error={!!formErrors[`package_${index}_width`]}
+                                                            helperText={formErrors[`package_${index}_width`]}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                            }}
+                                                            InputProps={{
+                                                                endAdornment: (
+                                                                    <InputAdornment position="end">
+                                                                        <Box
+                                                                            sx={{
+                                                                                bgcolor: 'grey.800',
+                                                                                color: 'white',
+                                                                                px: 1,
+                                                                                py: 0.5,
+                                                                                borderRadius: 1,
+                                                                                fontSize: '0.875rem'
+                                                                            }}
+                                                                        >
+                                                                            {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
+                                                                        </Box>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    <Grid item xs={12} md={2.4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Height"
+                                                            type="number"
+                                                            value={pkg.height || ''}
+                                                            onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)}
+                                                            required
+                                                            error={!!formErrors[`package_${index}_height`]}
+                                                            helperText={formErrors[`package_${index}_height`]}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                            }}
+                                                            InputProps={{
+                                                                endAdornment: (
+                                                                    <InputAdornment position="end">
+                                                                        <Box
+                                                                            sx={{
+                                                                                bgcolor: 'grey.800',
+                                                                                color: 'white',
+                                                                                px: 1,
+                                                                                py: 0.5,
+                                                                                borderRadius: 1,
+                                                                                fontSize: '0.875rem'
+                                                                            }}
+                                                                        >
+                                                                            {(pkg.unitSystem || 'imperial') === 'metric' ? 'cm' : 'in'}
+                                                                        </Box>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    {/* Declared Value */}
+                                                    <Grid item xs={12} md={3}>
+                                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                                            <TextField
+                                                                size="small"
+                                                                label="Declared Value"
+                                                                type="number"
+                                                                value={pkg.declaredValue || ''}
+                                                                onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
+                                                                autoComplete="off"
+                                                                sx={{
+                                                                    flex: 1,
+                                                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                                placeholder="0.00"
+                                                            />
+                                                            <FormControl size="small" sx={{ minWidth: '70px' }}>
+                                                                <Select
+                                                                    value={pkg.declaredValueCurrency || 'CAD'}
+                                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
+                                                                    }}
+                                                                >
+                                                                    <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
+                                                                    <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
+                                                                </Select>
+                                                            </FormControl>
+                                                        </Box>
+                                                    </Grid>
+
+                                                    {/* Unit System Toggle - show for each package */}
+                                                    <Grid item xs={12} md={2.4}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '40px', justifyContent: 'center' }}>
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Imperial</Typography>
+                                                            <Switch
+                                                                checked={(pkg.unitSystem || 'imperial') === 'metric'}
+                                                                onChange={(e) => handlePackageUnitChange(pkg.id, e.target.checked ? 'metric' : 'imperial')}
+                                                                sx={{
+                                                                    '& .MuiSwitch-switchBase.Mui-checked': {
+                                                                        color: 'primary.main',
+                                                                        '&:hover': {
+                                                                            backgroundColor: 'primary.light'
+                                                                        }
+                                                                    },
+                                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                                        backgroundColor: 'primary.main'
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>Metric</Typography>
+                                                        </Box>
+                                                    </Grid>
+
+                                                    {/* Freight Class - Only show for freight shipments */}
+                                                    {shipmentInfo.shipmentType === 'freight' && (
+                                                        <Grid item xs={12}>
+                                                            <FormControl fullWidth size="small">
+                                                                <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
+                                                                <Select
+                                                                    value={pkg.freightClass || ''}
+                                                                    onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
+                                                                    label="Freight Class (Optional)"
+                                                                    sx={{
+                                                                        '& .MuiSelect-select': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                    renderValue={(value) => {
+                                                                        if (!value) return '';
+                                                                        const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
+                                                                        return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                                                    }}
+                                                                >
+                                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                                        <em>No freight class selected</em>
+                                                                    </MenuItem>
+                                                                    {FREIGHT_CLASSES.map((fc) => (
+                                                                        <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
+                                                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
+                                                                                Class {fc.class} - {fc.description}
+                                                                            </Typography>
+                                                                        </MenuItem>
+                                                                    ))}
+                                                                </Select>
+                                                                <FormHelperText sx={{ fontSize: '11px' }}>
+                                                                    Optional: Select freight class if applicable for your shipment
+                                                                </FormHelperText>
+                                                            </FormControl>
+                                                        </Grid>
+                                                    )}
+                                                </Grid>
+                                            </Box>
+                                        ))}
+                                    </CardContent>
+                                </Card>
+
+                                {/* Additional Options Section */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                cursor: 'pointer',
+                                                mb: serviceOptionsExpanded ? 3 : 0
+                                            }}
+                                            onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
+                                        >
+                                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', flex: 1 }}>
+                                                Additional Options
+                                            </Typography>
+                                            {serviceOptionsExpanded ? (
+                                                <ExpandLessIcon sx={{ color: '#666' }} />
+                                            ) : (
+                                                <ExpandMoreIcon sx={{ color: '#666' }} />
+                                            )}
+                                        </Box>
+
+                                        <Collapse in={serviceOptionsExpanded}>
+                                            <Grid container spacing={3}>
+                                                {/* Delivery & Pickup Options */}
+                                                <Grid item xs={12} md={6}>
+                                                    <Box sx={{ mb: 1 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                            Delivery & Pickup Options
+                                                        </Typography>
+                                                        <FormControl fullWidth size="small">
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
+                                                            <Select
+                                                                value={additionalOptions.deliveryPickupOption || ''}
+                                                                onChange={(e) => handleAdditionalOptionsChange('deliveryPickupOption', e.target.value)}
+                                                                label="Delivery Options"
+                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                            >
+                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                                    Standard Delivery
+                                                                </MenuItem>
+                                                                <MenuItem value="residential" sx={{ fontSize: '12px' }}>
+                                                                    Residential Delivery
+                                                                </MenuItem>
+                                                                <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
+                                                                    Hold for Pickup
+                                                                </MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Box>
+                                                </Grid>
+
+                                                {/* Hazardous Goods */}
+                                                <Grid item xs={12} md={6}>
+                                                    <Box sx={{ mb: 1 }}>
+                                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                            Hazardous Materials
+                                                        </Typography>
+                                                        <FormControl fullWidth size="small">
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
+                                                            <Select
+                                                                value={additionalOptions.hazardousGoods || ''}
+                                                                onChange={(e) => handleAdditionalOptionsChange('hazardousGoods', e.target.value)}
+                                                                label="Hazardous Goods"
+                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                            >
+                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                                                                <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
+                                                                <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
+                                                                <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Box>
+                                                </Grid>
+
+                                                {/* Courier-specific options */}
+                                                {shipmentInfo.shipmentType === 'courier' && (
+                                                    <>
+                                                        {/* Priority Delivery */}
+                                                        <Grid item xs={12} md={6}>
+                                                            <Box sx={{ mb: 1 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                    Priority Delivery
+                                                                </Typography>
+                                                                <FormControl fullWidth size="small">
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
+                                                                    <Select
+                                                                        value={additionalOptions.priorityDelivery || ''}
+                                                                        onChange={(e) => handleAdditionalOptionsChange('priorityDelivery', e.target.value)}
+                                                                        label="Priority Options"
+                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                    >
+                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
+                                                                        <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
+                                                                        <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
+                                                                        <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Signature Options */}
+                                                        <Grid item xs={12} md={6}>
+                                                            <Box sx={{ mb: 1 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                    Signature Requirements
+                                                                </Typography>
+                                                                <FormControl fullWidth size="small">
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
+                                                                    <Select
+                                                                        value={additionalOptions.signatureOptions || ''}
+                                                                        onChange={(e) => handleAdditionalOptionsChange('signatureOptions', e.target.value)}
+                                                                        label="Signature Options"
+                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                    >
+                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
+                                                                        <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
+                                                                        <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+                                                    </>
+                                                )}
+
+                                                {/* Freight-specific options */}
+                                                {shipmentInfo.shipmentType === 'freight' && (
+                                                    <>
+                                                        {/* Liftgate Service */}
+                                                        <Grid item xs={12} md={6}>
+                                                            <Box sx={{ mb: 1 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                    Liftgate Service
+                                                                </Typography>
+                                                                <FormControl fullWidth size="small">
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Liftgate Options</InputLabel>
+                                                                    <Select
+                                                                        value={additionalOptions.liftgateService || ''}
+                                                                        onChange={(e) => handleAdditionalOptionsChange('liftgateService', e.target.value)}
+                                                                        label="Liftgate Options"
+                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                    >
+                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>No Liftgate Required</MenuItem>
+                                                                        <MenuItem value="pickup" sx={{ fontSize: '12px' }}>Liftgate at Pickup</MenuItem>
+                                                                        <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Liftgate at Delivery</MenuItem>
+                                                                        <MenuItem value="both" sx={{ fontSize: '12px' }}>Liftgate at Both</MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+
+                                                        {/* Inside Delivery */}
+                                                        <Grid item xs={12} md={6}>
+                                                            <Box sx={{ mb: 1 }}>
+                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                    Inside Delivery
+                                                                </Typography>
+                                                                <FormControl fullWidth size="small">
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Inside Delivery</InputLabel>
+                                                                    <Select
+                                                                        value={additionalOptions.insideDelivery || ''}
+                                                                        onChange={(e) => handleAdditionalOptionsChange('insideDelivery', e.target.value)}
+                                                                        label="Inside Delivery"
+                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                    >
+                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
+                                                                        <MenuItem value="inside" sx={{ fontSize: '12px' }}>Inside Delivery</MenuItem>
+                                                                        <MenuItem value="threshold" sx={{ fontSize: '12px' }}>Threshold Delivery</MenuItem>
+                                                                    </Select>
+                                                                </FormControl>
+                                                            </Box>
+                                                        </Grid>
+                                                    </>
+                                                )}
+                                            </Grid>
+                                        </Collapse>
+                                    </CardContent>
+                                </Card>
+
+                                {/* Rates Section */}
+                                {
+                                    showRates && (
+                                        <Card sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', mb: 3 }}>
+                                            <CardContent sx={{ p: 3 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                                    <Box>
+                                                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
+                                                            Shipping Rates
+                                                        </Typography>
+                                                    </Box>
+                                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            onClick={() => fetchRates(true)}
+                                                            disabled={isLoadingRates}
+                                                            startIcon={<RefreshIcon />}
+                                                            sx={{ fontSize: '12px' }}
+                                                        >
+                                                            Refresh Rates
+                                                        </Button>
+                                                    </Box>
+                                                </Box>
+
+                                                {/* Progressive Loading Indicator - Show when rates are loading but we already have some */}
+                                                {isLoadingRates && rates.length > 0 && (
+                                                    <Box sx={{
+                                                        mb: 2,
+                                                        p: 2,
+                                                        bgcolor: '#f0f9ff',
+                                                        borderRadius: 1,
+                                                        border: '1px solid #bae6fd',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 2
+                                                    }}>
+                                                        <CircularProgress size={20} sx={{ color: '#0ea5e9' }} />
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e' }}>
+                                                                Loading additional rates...
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                                {rates.length} rates loaded • {loadingCarriers.length - completedCarriers.length} carriers remaining
+                                                                {loadingCarriers.filter(c => c === 'eShip Plus').length > 0 && completedCarriers.filter(c => c.name === 'eShip Plus').length === 0 && (
+                                                                    <span style={{ fontWeight: 600 }}> • eShip Plus starting up...</span>
                                                                 )}
                                                             </Typography>
                                                         </Box>
-                                                    </Grid>
-                                                </Grid>
-                                            </Box>
+                                                    </Box>
+                                                )}
 
-                                            {/* Enhanced Rate Cards */}
-                                            <Grid container spacing={3}>
-                                                {filteredRates.map((rate) => (
-                                                    <Grid item xs={12} md={6} lg={4} key={rate.quoteId || rate.id}>
-                                                        <EnhancedRateCard
-                                                            rate={rate}
-                                                            isSelected={selectedRate?.quoteId === (rate.quoteId || rate.rateId)}
-                                                            onSelect={handleRateSelect}
-                                                            showDetails={showRateDetails}
-                                                            onGuaranteeChange={handleGuaranteeChange}
+                                                {/* Rate status message */}
+                                                {!canFetchRates() && (
+                                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, mb: 2 }}>
+                                                        <Typography variant="body2" sx={{ color: '#6b7280' }}>
+                                                            Complete shipment details to get rates
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+
+                                                {/* Initial Loading State - Only show when no rates are available yet */}
+                                                {isLoadingRates && rates.length === 0 && (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                                                        <CarrierLoadingDisplay
+                                                            loadingCarriers={loadingCarriers}
+                                                            completedCarriers={completedCarriers}
+                                                            failedCarriers={failedCarriers}
+                                                            isLoading={isLoadingRates}
                                                         />
-                                                    </Grid>
-                                                ))}
-                                            </Grid>
-                                        </Box>
-                                    )}
+                                                    </Box>
+                                                )}
 
-                                    {/* No rates message - Only show when completely done loading and no rates */}
-                                    {!isLoadingRates && !ratesError && showRates && rates.length === 0 && canFetchRates() && (
-                                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                                            <Typography variant="body1" sx={{ color: '#6b7280' }}>
-                                                No rates available. Try refreshing or adjusting your shipment details.
+                                                {/* Error State - Only show if no rates available */}
+                                                {ratesError && rates.length === 0 && (
+                                                    <Box sx={{
+                                                        textAlign: 'center',
+                                                        py: 6,
+                                                        px: 3,
+                                                        bgcolor: '#f8fafc',
+                                                        borderRadius: 2,
+                                                        border: '1px solid #e5e7eb'
+                                                    }}>
+                                                        <Box sx={{ mb: 3 }}>
+                                                            <Typography
+                                                                variant="h6"
+                                                                sx={{
+                                                                    fontSize: '16px',
+                                                                    fontWeight: 600,
+                                                                    color: '#374151',
+                                                                    mb: 1
+                                                                }}
+                                                            >
+                                                                No rates available
+                                                            </Typography>
+                                                            <Typography
+                                                                variant="body2"
+                                                                sx={{
+                                                                    fontSize: '14px',
+                                                                    color: '#6b7280',
+                                                                    mb: 3
+                                                                }}
+                                                            >
+                                                                We couldn't find any shipping rates for your current shipment details.
+                                                            </Typography>
+                                                        </Box>
+
+                                                        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                            <Button
+                                                                variant="outlined"
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    setRatesError(null);
+                                                                    fetchRates(true);
+                                                                }}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    borderColor: '#d1d5db',
+                                                                    color: '#374151'
+                                                                }}
+                                                            >
+                                                                Try Again
+                                                            </Button>
+                                                            <Button
+                                                                variant="text"
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    setShowRates(false);
+                                                                    setRatesError(null);
+                                                                }}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    color: '#6366f1'
+                                                                }}
+                                                            >
+                                                                Modify Shipment
+                                                            </Button>
+                                                        </Box>
+
+                                                        <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid #e5e7eb' }}>
+                                                            <Typography
+                                                                variant="caption"
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    color: '#9ca3af',
+                                                                    fontStyle: 'italic'
+                                                                }}
+                                                            >
+                                                                Try adjusting your addresses, package dimensions, or shipment type
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                )}
+
+                                                {/* Rates Display - Show whenever we have rates, even during loading */}
+                                                {rates.length > 0 && (
+                                                    <Box>
+                                                        {/* Rate Filtering and Sorting Controls */}
+                                                        <Box sx={{ mb: 3 }}>
+                                                            <Grid container spacing={3} alignItems="center">
+                                                                <Grid item xs={12} sm={6} md={3}>
+                                                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                        Sort By
+                                                                    </Typography>
+                                                                    <select
+                                                                        value={sortBy}
+                                                                        onChange={(e) => setSortBy(e.target.value)}
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '8px 12px',
+                                                                            fontSize: '12px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: '6px',
+                                                                            backgroundColor: '#fff',
+                                                                            color: '#374151'
+                                                                        }}
+                                                                    >
+                                                                        <option value="price">Price (Lowest First)</option>
+                                                                        <option value="transit">Transit Time (Fastest First)</option>
+                                                                        <option value="carrier">Carrier (A-Z)</option>
+                                                                    </select>
+                                                                </Grid>
+                                                                <Grid item xs={12} sm={6} md={3}>
+                                                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                        Service Type
+                                                                    </Typography>
+                                                                    <select
+                                                                        value={serviceFilter}
+                                                                        onChange={(e) => setServiceFilter(e.target.value)}
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '8px 12px',
+                                                                            fontSize: '12px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: '6px',
+                                                                            backgroundColor: '#fff',
+                                                                            color: '#374151'
+                                                                        }}
+                                                                    >
+                                                                        <option value="any">ANY</option>
+                                                                        <option value="guaranteed">Guaranteed Only</option>
+                                                                        <option value="economy">Economy</option>
+                                                                        <option value="express">Express</option>
+                                                                    </select>
+                                                                </Grid>
+                                                                <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1 }}>
+                                                                        <CarrierStatsPopover rawRateApiResponseData={rawRateApiResponseData} />
+                                                                        <Button
+                                                                            variant="text"
+                                                                            onClick={() => setShowRateDetails(!showRateDetails)}
+                                                                            sx={{
+                                                                                fontSize: '12px',
+                                                                                textTransform: 'none',
+                                                                                px: 2,
+                                                                                py: 1,
+                                                                                color: '#6366f1',
+                                                                                '&:hover': {
+                                                                                    backgroundColor: 'rgba(99, 102, 241, 0.1)'
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {showRateDetails ? 'Hide Details' : 'Show Details'}
+                                                                        </Button>
+                                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', ml: 2 }}>
+                                                                            {filteredRates.length} of {rates.length} rates
+                                                                            {isLoadingRates && (
+                                                                                <span style={{ color: '#0ea5e9', fontWeight: 500 }}> (loading...)</span>
+                                                                            )}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </Box>
+
+                                                        {/* Enhanced Rate Cards */}
+                                                        <Grid container spacing={3}>
+                                                            {filteredRates.map((rate) => (
+                                                                <Grid item xs={12} md={6} lg={4} key={rate.quoteId || rate.id}>
+                                                                    <EnhancedRateCard
+                                                                        rate={rate}
+                                                                        isSelected={selectedRate?.quoteId === (rate.quoteId || rate.rateId)}
+                                                                        onSelect={handleRateSelect}
+                                                                        showDetails={showRateDetails}
+                                                                        onGuaranteeChange={handleGuaranteeChange}
+                                                                    />
+                                                                </Grid>
+                                                            ))}
+                                                        </Grid>
+                                                    </Box>
+                                                )}
+
+                                                {/* No rates message - Only show when completely done loading and no rates */}
+                                                {!isLoadingRates && !ratesError && showRates && rates.length === 0 && canFetchRates() && (
+                                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                                        <Typography variant="body1" sx={{ color: '#6b7280' }}>
+                                                            No rates available. Try refreshing or adjusting your shipment details.
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    )
+                                }
+
+                                {/* Combined Total and Action Section */}
+                                <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
+                                        {/* Left side - Total cost */}
+                                        <Box sx={{ textAlign: 'left' }}>
+                                            <Typography variant="h4" sx={{
+                                                fontSize: '24px',
+                                                fontWeight: 700,
+                                                color: '#1f2937',
+                                                mb: 0.5
+                                            }}>
+                                                Total: {selectedRate ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                {selectedRate ? 'Selected Rate Total' : 'No Rate Selected'}
                                             </Typography>
                                         </Box>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        )
-                    }
 
-                    {/* Combined Total and Action Section */}
-                    <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-                            {/* Left side - Total cost */}
-                            <Box sx={{ textAlign: 'left' }}>
-                                <Typography variant="h4" sx={{
-                                    fontSize: '24px',
-                                    fontWeight: 700,
-                                    color: '#1f2937',
-                                    mb: 0.5
-                                }}>
-                                    Total: {selectedRate ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                    {selectedRate ? 'Selected Rate Total' : 'No Rate Selected'}
-                                </Typography>
-                            </Box>
+                                        {/* Right side - Ready to Ship text and buttons */}
+                                        <Box sx={{ textAlign: 'right' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                    Ready to Ship?
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', gap: 2 }}>
+                                                    <Button
+                                                        variant="outlined"
+                                                        startIcon={<SaveIcon />}
+                                                        onClick={handleSaveAsDraft}
+                                                        disabled={isSavingDraft}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            textTransform: 'none',
+                                                            minWidth: 120,
+                                                            borderColor: '#d1d5db',
+                                                            color: '#374151',
+                                                            '&:hover': {
+                                                                borderColor: '#9ca3af',
+                                                                backgroundColor: '#f9fafb'
+                                                            }
+                                                        }}
+                                                    >
+                                                        {isSavingDraft ? 'Saving...' : 'Ship Later'}
+                                                    </Button>
+                                                    <Button
+                                                        variant="contained"
+                                                        color="primary"
+                                                        startIcon={<ShippingIcon />}
+                                                        onClick={handleBookShipment}
+                                                        disabled={!selectedRate || isBooking || isSavingDraft}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            textTransform: 'none',
+                                                            minWidth: 120,
+                                                            backgroundColor: '#1976d2',
+                                                            '&:hover': {
+                                                                backgroundColor: '#1565c0'
+                                                            }
+                                                        }}
+                                                    >
+                                                        {isBooking ? 'Booking...' : 'Book Shipment'}
+                                                    </Button>
+                                                </Box>
+                                            </Box>
 
-                            {/* Right side - Ready to Ship text and buttons */}
-                            <Box sx={{ textAlign: 'right' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                        Ready to Ship?
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', gap: 2 }}>
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<SaveIcon />}
-                                            onClick={handleSaveAsDraft}
-                                            disabled={isSavingDraft}
-                                            sx={{
-                                                fontSize: '12px',
-                                                textTransform: 'none',
-                                                minWidth: 120,
-                                                borderColor: '#d1d5db',
-                                                color: '#374151',
-                                                '&:hover': {
-                                                    borderColor: '#9ca3af',
-                                                    backgroundColor: '#f9fafb'
-                                                }
-                                            }}
-                                        >
-                                            {isSavingDraft ? 'Saving...' : 'Ship Later'}
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            color="primary"
-                                            startIcon={<ShippingIcon />}
-                                            onClick={handleBookShipment}
-                                            disabled={!selectedRate || isBooking || isSavingDraft}
-                                            sx={{
-                                                fontSize: '12px',
-                                                textTransform: 'none',
-                                                minWidth: 120,
-                                                backgroundColor: '#1976d2',
-                                                '&:hover': {
-                                                    backgroundColor: '#1565c0'
-                                                }
-                                            }}
-                                        >
-                                            {isBooking ? 'Booking...' : 'Book Shipment'}
-                                        </Button>
+                                            {/* Helper text below the buttons on the right */}
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
+                                                Save as draft to complete later, or book now to proceed with shipping.
+                                            </Typography>
+                                        </Box>
                                     </Box>
                                 </Box>
-
-                                {/* Helper text below the buttons on the right */}
-                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
-                                    Save as draft to complete later, or book now to proceed with shipping.
-                                </Typography>
-                            </Box>
-                        </Box>
-                    </Box>
-                </Box >
+                            </form>
+                        )}
+                </Box>
             )}
 
             {/* Snackbar for messages */}
@@ -3484,7 +3660,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
             {/* Address Form Modal */}
             <Suspense fallback={<div>Loading...</div>}>
-                <QuickShipAddressDialog
+                <AddressFormDialog
                     open={currentView === 'addaddress'}
                     onClose={handleBackToCreateShipment}
                     onSuccess={handleAddressCreated}
@@ -3645,7 +3821,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
             {/* Address Edit Dialog */}
             <Suspense fallback={<CircularProgress />}>
-                <QuickShipAddressDialog
+                <AddressFormDialog
                     open={showAddressDialog}
                     onClose={() => setShowAddressDialog(false)}
                     onSuccess={handleAddressUpdated}

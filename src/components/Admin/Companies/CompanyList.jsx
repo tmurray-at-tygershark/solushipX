@@ -17,9 +17,7 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
-    Tabs,
-    Tab,
-    Badge,
+
     Stack,
     Collapse,
     FormControl,
@@ -37,6 +35,7 @@ import {
     Search as SearchIcon,
     Add as AddIcon,
     Delete as DeleteIcon,
+    Edit as EditIcon,
     Visibility as ViewIcon,
     MoreVert as MoreVertIcon,
     FilterList as FilterListIcon,
@@ -53,6 +52,7 @@ import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Link as MuiLink } from '@mui/material';
 import { useCompany } from '../../../contexts/CompanyContext';
+import { useAuth } from '../../../contexts/AuthContext';
 
 // Import reusable components that match ShipmentsX patterns
 import ModalHeader from '../../common/ModalHeader';
@@ -67,13 +67,13 @@ const CompaniesTableSkeleton = () => {
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Checkbox disabled />
-                            Company
+                            Business Name
                         </Box>
                     </TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company ID</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company ID</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Customers</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carriers</TableCell>
                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                 </TableRow>
@@ -101,10 +101,15 @@ const CompaniesTableSkeleton = () => {
                                 <Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
                             </Box>
                         </TableCell>
+                        <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                <Box sx={{ width: 32, height: 32, bgcolor: '#e5e7eb', borderRadius: '50%' }} />
+                                <Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
+                            </Box>
+                        </TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
-                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
-                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '90px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '60px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '60px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell>
                             <IconButton size="small" disabled>
@@ -208,11 +213,11 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     const [companies, setCompanies] = useState([]);
     const [allCompanies, setAllCompanies] = useState([]);
     const [owners, setOwners] = useState({});
+    const [customerCounts, setCustomerCounts] = useState({});
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
-    // Tab and filter states
-    const [selectedTab, setSelectedTab] = useState('all');
+    // Pagination and filter states
     const [page, setPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [selected, setSelected] = useState([]);
@@ -244,6 +249,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     const navigate = useNavigate();
     const location = useLocation();
     const { setCompanyContext } = useCompany();
+    const { user } = useAuth();
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -254,28 +260,9 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
         });
     }, []);
 
-    // Calculate stats
-    const stats = useMemo(() => {
-        const total = allCompanies.length;
-        const active = allCompanies.filter(c => c.status === 'active').length;
-        const inactive = allCompanies.filter(c => c.status === 'inactive').length;
-        const withCarriers = allCompanies.filter(c => c.connectedCarriers && c.connectedCarriers.length > 0).length;
-        const withoutCarriers = total - withCarriers;
 
-        return {
-            total,
-            active,
-            inactive,
-            withCarriers,
-            withoutCarriers
-        };
-    }, [allCompanies]);
 
-    // Tab change handler
-    const handleTabChange = (event, newValue) => {
-        setSelectedTab(newValue);
-        setPage(1); // Reset to first page when tab changes
-    };
+
 
     // Selection handlers
     const handleSelectAll = (event) => {
@@ -349,6 +336,8 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
         }
     };
 
+
+
     // Fetch owners for name lookup
     const fetchOwners = async () => {
         try {
@@ -362,6 +351,28 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
             setOwners(ownersMap);
         } catch (error) {
             console.error('Error fetching owners:', error);
+        }
+    };
+
+    // Fetch customer counts for each company
+    const fetchCustomerCounts = async () => {
+        try {
+            const customersRef = collection(db, 'customers');
+            const querySnapshot = await getDocs(customersRef);
+            const counts = {};
+
+            querySnapshot.forEach(doc => {
+                const customer = doc.data();
+                // Use companyID (capital ID) which is the business identifier field
+                const companyID = customer.companyID;
+                if (companyID) {
+                    counts[companyID] = (counts[companyID] || 0) + 1;
+                }
+            });
+
+            setCustomerCounts(counts);
+        } catch (error) {
+            console.error('Error fetching customer counts:', error);
         }
     };
 
@@ -391,39 +402,34 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
     useEffect(() => {
         let filtered = [...allCompanies];
 
-        // Apply tab filter
-        if (selectedTab !== 'all') {
-            switch (selectedTab) {
-                case 'active':
-                    filtered = filtered.filter(c => c.status === 'active');
-                    break;
-                case 'inactive':
-                    filtered = filtered.filter(c => c.status === 'inactive');
-                    break;
-                case 'with-carriers':
-                    filtered = filtered.filter(c => c.connectedCarriers && c.connectedCarriers.length > 0);
-                    break;
-                case 'without-carriers':
-                    filtered = filtered.filter(c => !c.connectedCarriers || c.connectedCarriers.length === 0);
-                    break;
-            }
+        // Apply unified search filter (main search box)
+        if (searchFields.companyName) {
+            const searchTerm = searchFields.companyName.toLowerCase();
+            filtered = filtered.filter(c => {
+                const companyName = c.name.toLowerCase();
+                const companyId = c.companyID?.toLowerCase() || '';
+                const ownerName = (owners[c.ownerID] || '').toLowerCase();
+
+                return companyName.includes(searchTerm) ||
+                    companyId.includes(searchTerm) ||
+                    ownerName.includes(searchTerm);
+            });
         }
 
-        // Apply search filters
-        if (searchFields.companyName) {
-            filtered = filtered.filter(c =>
-                c.name.toLowerCase().includes(searchFields.companyName.toLowerCase())
-            );
-        }
-        if (searchFields.companyId) {
-            filtered = filtered.filter(c =>
-                c.companyID.toLowerCase().includes(searchFields.companyId.toLowerCase())
-            );
-        }
-        if (searchFields.ownerName) {
+        // Apply individual filter fields (advanced filters)
+        if (searchFields.companyId && searchFields.companyId !== searchFields.companyName) {
+            const searchTerm = searchFields.companyId.toLowerCase();
             filtered = filtered.filter(c => {
-                const ownerName = owners[c.ownerID] || '';
-                return ownerName.toLowerCase().includes(searchFields.ownerName.toLowerCase());
+                const companyId = c.companyID?.toLowerCase() || '';
+                return companyId.includes(searchTerm);
+            });
+        }
+
+        if (searchFields.ownerName && searchFields.ownerName !== searchFields.companyName) {
+            const searchTerm = searchFields.ownerName.toLowerCase();
+            filtered = filtered.filter(c => {
+                const ownerName = (owners[c.ownerID] || '').toLowerCase();
+                return ownerName.includes(searchTerm);
             });
         }
 
@@ -446,12 +452,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
 
         setCompanies(paginatedCompanies);
         setTotalCount(filtered.length);
-    }, [allCompanies, selectedTab, searchFields, filters, page, rowsPerPage, owners]);
+    }, [allCompanies, searchFields, filters, page, rowsPerPage, owners]);
 
     // Load data on component mount
     useEffect(() => {
         loadCompanies();
         fetchOwners();
+        fetchCustomerCounts();
     }, []);
 
     // Get status chip color
@@ -507,31 +514,28 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                     </Box>
                 </Box>
 
-                {/* Tabs and Filters Row */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Tabs
-                        value={selectedTab}
-                        onChange={handleTabChange}
-                        sx={{
-                            '& .MuiTab-root': {
-                                fontSize: '11px',
-                                minHeight: '36px',
-                                textTransform: 'none',
-                                fontWeight: 500,
-                                padding: '6px 12px'
-                            }
-                        }}
-                    >
-                        <Tab label={`All (${stats.total})`} value="all" />
-                        <Tab label={`Active (${stats.active})`} value="active" />
-                        <Tab label={
-                            <Badge badgeContent={stats.inactive} color="error" sx={{ '& .MuiBadge-badge': { fontSize: '10px' } }}>
-                                Inactive
-                            </Badge>
-                        } value="inactive" />
-                        <Tab label={`With Carriers (${stats.withCarriers})`} value="with-carriers" />
-                        <Tab label={`No Carriers (${stats.withoutCarriers})`} value="without-carriers" />
-                    </Tabs>
+                {/* Search Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, maxWidth: '60%' }}>
+                        <TextField
+                            size="small"
+                            placeholder="Search companies, IDs, owners..."
+                            value={searchFields.companyName}
+                            onChange={(e) => setSearchFields(prev => ({
+                                ...prev,
+                                companyName: e.target.value
+                            }))}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                    </InputAdornment>
+                                ),
+                                sx: { fontSize: '12px' }
+                            }}
+                            sx={{ width: '100%', maxWidth: '500px' }}
+                        />
+                    </Box>
 
                     <Button
                         variant="outlined"
@@ -598,6 +602,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                 onClick={() => {
                                     setSearchFields({ companyName: '', companyId: '', ownerName: '' });
                                     setFilters({ status: 'all', hasCarriers: 'all', dateRange: [null, null] });
+                                    setPage(1); // Reset to first page when clearing filters
                                 }}
                                 sx={{ fontSize: '12px' }}
                             >
@@ -625,13 +630,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                 onChange={handleSelectAll}
                                                 size="small"
                                             />
-                                            Company
+                                            Business Name
                                         </Box>
                                     </TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company ID</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Owner</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company ID</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Customers</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carriers</TableCell>
                                     <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
                                 </TableRow>
@@ -695,12 +700,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                         to={`/admin/companies/${company.id}`}
                                                         sx={{
                                                             textDecoration: 'none',
-                                                            color: '#1f2937',
-                                                            fontWeight: 500,
+                                                            color: '#3b82f6',
+                                                            fontWeight: 700,
                                                             fontSize: '12px',
+                                                            cursor: 'pointer',
                                                             '&:hover': {
-                                                                textDecoration: 'underline',
-                                                                color: '#3b82f6'
+                                                                textDecoration: 'none',
+                                                                color: '#1d4ed8'
                                                             }
                                                         }}
                                                     >
@@ -716,6 +722,27 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                         </Typography>
                                                     )}
                                                 </Box>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Avatar
+                                                    sx={{
+                                                        width: 32,
+                                                        height: 32,
+                                                        bgcolor: '#3b82f6',
+                                                        fontSize: '12px',
+                                                        fontWeight: 500
+                                                    }}
+                                                >
+                                                    {owners[company.ownerID] ?
+                                                        owners[company.ownerID].split(' ').map(n => n[0]).join('').toUpperCase() :
+                                                        'NA'
+                                                    }
+                                                </Avatar>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {owners[company.ownerID] || 'No owner assigned'}
+                                                </Typography>
                                             </Box>
                                         </TableCell>
                                         <TableCell>
@@ -738,25 +765,12 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                         </TableCell>
                                         <TableCell>
                                             <Typography sx={{ fontSize: '12px' }}>
-                                                {owners[company.ownerID] || 'No owner assigned'}
+                                                {company.createdAt ? format(company.createdAt.toDate(), 'MMM d, yyyy') : 'N/A'}
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
-                                            <Chip
-                                                label={company.status}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: getStatusColor(company.status).bgcolor,
-                                                    color: getStatusColor(company.status).color,
-                                                    fontWeight: 500,
-                                                    fontSize: '11px',
-                                                    '& .MuiChip-label': { px: 1.5 }
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
                                             <Typography sx={{ fontSize: '12px' }}>
-                                                {company.createdAt ? format(company.createdAt.toDate(), 'MMM d, yyyy') : 'N/A'}
+                                                {customerCounts[company.companyID] || 0}
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
@@ -841,14 +855,14 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                     </ListItemText>
                 </MenuItem>
                 <MenuItem onClick={() => {
-                    // Handle delete
+                    navigate(`/admin/companies/${selectedCompany.id}/edit`);
                     handleActionMenuClose();
                 }}>
                     <ListItemIcon>
-                        <DeleteIcon fontSize="small" />
+                        <EditIcon fontSize="small" />
                     </ListItemIcon>
                     <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Delete Company</Typography>
+                        <Typography sx={{ fontSize: '12px' }}>Edit Company</Typography>
                     </ListItemText>
                 </MenuItem>
             </Menu>
@@ -896,6 +910,8 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                     }
                 }}
             />
+
+
         </Box>
     );
 };

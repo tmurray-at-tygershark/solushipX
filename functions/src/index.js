@@ -79,6 +79,9 @@ const { sendTestReportNotification } = require('./sendTestReportNotification');
 // Import invoice generation function
 const { generateInvoicePDFAndEmail } = require('./generateInvoicePDFAndEmail');
 
+// Import file upload functions
+const fileUploadFunctions = require('./fileUpload');
+
 // Initialize Express app
 const app = express();
 app.use(cors({ origin: true }));
@@ -332,6 +335,23 @@ console.log('LOG-MAIN-INDEX: exports.sendTestReportNotification defined.');
 // Export invoice generation function
 exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
 console.log('LOG-MAIN-INDEX: exports.generateInvoicePDFAndEmail defined.');
+
+// Export file upload functions
+if (fileUploadFunctions && fileUploadFunctions.uploadFile) {
+    exports.uploadFile = fileUploadFunctions.uploadFile;
+    console.log('LOG-MAIN-INDEX: exports.uploadFile defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: uploadFile not found in fileUploadFunctions.');
+}
+
+if (fileUploadFunctions && fileUploadFunctions.uploadFileBase64) {
+    exports.uploadFileBase64 = fileUploadFunctions.uploadFileBase64;
+    console.log('LOG-MAIN-INDEX: exports.uploadFileBase64 defined.');
+} else {
+    console.warn('LOG-MAIN-INDEX: uploadFileBase64 not found in fileUploadFunctions.');
+}
+
+
 
 // Import and export sales commission functions
 const salesCommissionFunctions = require('./salesCommissions');

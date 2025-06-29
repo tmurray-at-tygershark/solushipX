@@ -41,7 +41,7 @@ import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 
-const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false }) => {
+const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, initialData = {} }) => {
     const { companyIdForAddress } = useCompany();
     const { currentUser } = useAuth();
 
@@ -75,7 +75,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
             friday: { open: '', close: '', closed: false },
             saturday: { open: '', close: '', closed: false },
             sunday: { open: '', close: '', closed: false }
-        }
+        },
+        // Include initial data for customer-specific fields
+        ...initialData
     });
 
     // UI state
@@ -282,23 +284,47 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
             return;
         }
 
-        const request = {
-            input: searchText,
-            types: ['address'],
-            componentRestrictions: { country: formData.country === 'US' ? 'us' : 'ca' }
-        };
+        // Make two separate requests since 'address' cannot be mixed with other types
+        const allPredictions = [];
+        let completedRequests = 0;
+        const totalRequests = 2;
 
-        autocompleteService.current.getPlacePredictions(request, (predictions, status) => {
+        const handlePredictionsResponse = (predictions, status) => {
             if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-                setAddressSuggestions(predictions.map(prediction => ({
+                allPredictions.push(...predictions.map(prediction => ({
                     id: prediction.place_id,
                     description: prediction.description,
-                    structured_formatting: prediction.structured_formatting
+                    structured_formatting: prediction.structured_formatting,
+                    types: prediction.types
                 })));
-            } else {
-                setAddressSuggestions([]);
             }
-        });
+
+            completedRequests++;
+            if (completedRequests === totalRequests) {
+                // Remove duplicates based on place_id and sort by relevance
+                const uniquePredictions = allPredictions.filter((prediction, index, self) =>
+                    index === self.findIndex(p => p.id === prediction.id)
+                );
+                setAddressSuggestions(uniquePredictions);
+            }
+        };
+
+        // Request 1: Search for establishments (businesses)
+        const establishmentRequest = {
+            input: searchText,
+            types: ['establishment'],
+            componentRestrictions: { country: ['us', 'ca'] }
+        };
+
+        // Request 2: Search for addresses (geocode type works better than address)
+        const addressRequest = {
+            input: searchText,
+            types: ['geocode'],
+            componentRestrictions: { country: ['us', 'ca'] }
+        };
+
+        autocompleteService.current.getPlacePredictions(establishmentRequest, handlePredictionsResponse);
+        autocompleteService.current.getPlacePredictions(addressRequest, handlePredictionsResponse);
     };
 
     const handlePlaceSelect = (place) => {
@@ -331,8 +357,14 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                 const streetName = getComponent(['route']);
                 const street = `${streetNumber} ${streetName}`.trim();
 
+                // If this is a business establishment, use the business name as company name
+                const businessName = placeDetails.name;
+                const isBusiness = place.types?.includes('establishment');
+
                 setFormData(prev => ({
                     ...prev,
+                    // If it's a business and no company name is set, use the business name
+                    companyName: (isBusiness && !prev.companyName.trim()) ? businessName : prev.companyName,
                     street: street,
                     city: getComponent(['locality', 'administrative_area_level_3']),
                     state: getShortComponent(['administrative_area_level_1']),
@@ -354,20 +386,11 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
         if (!formData.companyName.trim()) {
             newErrors.companyName = 'Company name is required';
         }
-        if (!formData.firstName.trim()) {
-            newErrors.firstName = 'First name is required';
-        }
-        if (!formData.lastName.trim()) {
-            newErrors.lastName = 'Last name is required';
-        }
-        if (!formData.email.trim()) {
-            newErrors.email = 'Email is required';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        // Email validation - only validate format if provided
+        if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
             newErrors.email = 'Please enter a valid email address';
         }
-        if (!formData.phone.trim()) {
-            newErrors.phone = 'Phone number is required';
-        }
+        // Phone is no longer required
         if (!formData.street.trim()) {
             newErrors.street = 'Street address is required';
         }
@@ -442,6 +465,10 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                 companyID: companyIdForAddress,
                 createdBy: currentUser?.uid || 'system',
                 updatedAt: Timestamp.now(),
+                // Include customer-specific fields from initialData
+                addressClass: formData.addressClass || 'company',
+                addressClassID: formData.addressClassID || companyIdForAddress,
+                addressType: formData.addressType || 'contact',
                 ...(isEditing ? {} : { createdAt: Timestamp.now() })
             };
 
@@ -594,11 +621,10 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                 {/* Contact Information */}
                                 <Grid item xs={12} md={6}>
                                     <TextField
-                                        label="First Name"
+                                        label="First Name (Optional)"
                                         value={formData.firstName}
                                         onChange={(e) => handleInputChange('firstName', e.target.value)}
                                         fullWidth
-                                        required
                                         size="small"
                                         error={!!errors.firstName}
                                         helperText={errors.firstName}
@@ -611,11 +637,10 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <TextField
-                                        label="Last Name"
+                                        label="Last Name (Optional)"
                                         value={formData.lastName}
                                         onChange={(e) => handleInputChange('lastName', e.target.value)}
                                         fullWidth
-                                        required
                                         size="small"
                                         error={!!errors.lastName}
                                         helperText={errors.lastName}
@@ -628,12 +653,11 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <TextField
-                                        label="Email"
+                                        label="Email (Optional)"
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => handleInputChange('email', e.target.value)}
                                         fullWidth
-                                        required
                                         size="small"
                                         error={!!errors.email}
                                         helperText={errors.email}
@@ -653,11 +677,10 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <TextField
-                                        label="Phone"
+                                        label="Phone (Optional)"
                                         value={formData.phone}
                                         onChange={(e) => handleInputChange('phone', e.target.value)}
                                         fullWidth
-                                        required
                                         size="small"
                                         error={!!errors.phone}
                                         helperText={errors.phone}
@@ -676,72 +699,74 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                     />
                                 </Grid>
 
-                                {/* Address Search and Manual Entry Toggle */}
+                                {/* Address Search */}
                                 <Grid item xs={12}>
                                     {googleApiLoaded && !isEditing ? (
-                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                            <Autocomplete
-                                                sx={{ flex: 1 }}
-                                                options={addressSuggestions}
-                                                getOptionLabel={(option) => option.description}
-                                                onInputChange={(event, value) => {
-                                                    handleGooglePlaceSearch(value);
-                                                }}
-                                                onChange={(event, value) => {
-                                                    if (value) {
-                                                        handlePlaceSelect(value);
-                                                    }
-                                                }}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Search Address"
-                                                        placeholder="Start typing an address..."
-                                                        size="small"
-                                                        InputProps={{
-                                                            ...params.InputProps,
-                                                            startAdornment: (
-                                                                <InputAdornment position="start">
-                                                                    <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                                </InputAdornment>
-                                                            ),
-                                                            sx: { fontSize: '12px' }
-                                                        }}
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                        }}
-                                                    />
-                                                )}
-                                                renderOption={(props, option) => (
+                                        <Autocomplete
+                                            options={addressSuggestions}
+                                            getOptionLabel={(option) => option.description}
+                                            onInputChange={(event, value) => {
+                                                handleGooglePlaceSearch(value);
+                                            }}
+                                            onChange={(event, value) => {
+                                                if (value) {
+                                                    handlePlaceSelect(value);
+                                                }
+                                            }}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Search Address or Business (Optional)"
+                                                    placeholder="Start typing an address or business name..."
+                                                    size="small"
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        startAdornment: (
+                                                            <InputAdornment position="start">
+                                                                <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                            </InputAdornment>
+                                                        ),
+                                                        sx: { fontSize: '12px' }
+                                                    }}
+                                                    sx={{
+                                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                    }}
+                                                />
+                                            )}
+                                            renderOption={(props, option) => {
+                                                const isBusiness = option.types?.includes('establishment');
+                                                return (
                                                     <Box component="li" {...props} sx={{ fontSize: '12px' }}>
-                                                        <LocationIcon sx={{ mr: 1, fontSize: '16px', color: '#6b7280' }} />
-                                                        <Box>
+                                                        {isBusiness ? (
+                                                            <BusinessIcon sx={{ mr: 1, fontSize: '16px', color: '#3b82f6' }} />
+                                                        ) : (
+                                                            <LocationIcon sx={{ mr: 1, fontSize: '16px', color: '#6b7280' }} />
+                                                        )}
+                                                        <Box sx={{ flex: 1 }}>
                                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                                                 {option.structured_formatting?.main_text}
                                                             </Typography>
                                                             <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px' }}>
                                                                 {option.structured_formatting?.secondary_text}
                                                             </Typography>
+                                                            {isBusiness && (
+                                                                <Typography variant="caption" sx={{
+                                                                    color: '#3b82f6',
+                                                                    fontSize: '10px',
+                                                                    fontWeight: 500,
+                                                                    ml: 1
+                                                                }}>
+                                                                    Business
+                                                                </Typography>
+                                                            )}
                                                         </Box>
                                                     </Box>
-                                                )}
-                                                noOptionsText="No addresses found"
-                                            />
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => setShowManualEntry(!showManualEntry)}
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    minWidth: 'auto',
-                                                    px: 2
-                                                }}
-                                            >
-                                                {showManualEntry ? 'Hide Manual' : 'Manual Entry'}
-                                            </Button>
-                                        </Box>
+                                                );
+                                            }}
+                                            noOptionsText="No addresses or businesses found"
+                                        />
                                     ) : (
                                         <Alert severity="info" sx={{ fontSize: '12px' }}>
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
@@ -751,132 +776,128 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false })
                                     )}
                                 </Grid>
 
-                                {/* Manual Address Entry - Collapsible */}
-                                {(!googleApiLoaded || showManualEntry || isEditing) && (
-                                    <>
-                                        <Grid item xs={12}>
-                                            <TextField
-                                                label="Street Address"
-                                                value={formData.street}
-                                                onChange={(e) => handleInputChange('street', e.target.value)}
-                                                fullWidth
-                                                required
-                                                size="small"
-                                                error={!!errors.street}
-                                                helperText={errors.street}
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <TextField
-                                                label="Street Address 2 (Optional)"
-                                                value={formData.street2}
-                                                onChange={(e) => handleInputChange('street2', e.target.value)}
-                                                fullWidth
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            <TextField
-                                                label="City"
-                                                value={formData.city}
-                                                onChange={(e) => handleInputChange('city', e.target.value)}
-                                                fullWidth
-                                                required
-                                                size="small"
-                                                error={!!errors.city}
-                                                helperText={errors.city}
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            <TextField
-                                                label="State/Province"
-                                                value={formData.state}
-                                                onChange={(e) => handleInputChange('state', e.target.value)}
-                                                fullWidth
-                                                required
-                                                size="small"
-                                                error={!!errors.state}
-                                                helperText={errors.state}
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            <TextField
-                                                label="Postal/Zip Code"
-                                                value={formData.postalCode}
-                                                onChange={(e) => handleInputChange('postalCode', e.target.value)}
-                                                fullWidth
-                                                required
-                                                size="small"
-                                                error={!!errors.postalCode}
-                                                helperText={errors.postalCode}
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            <TextField
-                                                select
-                                                label="Country"
-                                                value={formData.country}
-                                                onChange={(e) => handleInputChange('country', e.target.value)}
-                                                fullWidth
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            >
-                                                {countries.map((country) => (
-                                                    <MenuItem key={country.value} value={country.value} sx={{ fontSize: '12px' }}>
-                                                        {country.label}
-                                                    </MenuItem>
-                                                ))}
-                                            </TextField>
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            <TextField
-                                                select
-                                                label="Status"
-                                                value={formData.status}
-                                                onChange={(e) => handleInputChange('status', e.target.value)}
-                                                fullWidth
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                                }}
-                                            >
-                                                <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
-                                                <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
-                                            </TextField>
-                                        </Grid>
-                                    </>
-                                )}
+                                {/* Manual Address Entry - Always Visible */}
+                                <Grid item xs={12}>
+                                    <TextField
+                                        label="Street Address"
+                                        value={formData.street}
+                                        onChange={(e) => handleInputChange('street', e.target.value)}
+                                        fullWidth
+                                        required
+                                        size="small"
+                                        error={!!errors.street}
+                                        helperText={errors.street}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        label="Street Address 2 (Optional)"
+                                        value={formData.street2}
+                                        onChange={(e) => handleInputChange('street2', e.target.value)}
+                                        fullWidth
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        label="City"
+                                        value={formData.city}
+                                        onChange={(e) => handleInputChange('city', e.target.value)}
+                                        fullWidth
+                                        required
+                                        size="small"
+                                        error={!!errors.city}
+                                        helperText={errors.city}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        label="State/Province"
+                                        value={formData.state}
+                                        onChange={(e) => handleInputChange('state', e.target.value)}
+                                        fullWidth
+                                        required
+                                        size="small"
+                                        error={!!errors.state}
+                                        helperText={errors.state}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        label="Postal/Zip Code"
+                                        value={formData.postalCode}
+                                        onChange={(e) => handleInputChange('postalCode', e.target.value)}
+                                        fullWidth
+                                        required
+                                        size="small"
+                                        error={!!errors.postalCode}
+                                        helperText={errors.postalCode}
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        select
+                                        label="Country"
+                                        value={formData.country}
+                                        onChange={(e) => handleInputChange('country', e.target.value)}
+                                        fullWidth
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    >
+                                        {countries.map((country) => (
+                                            <MenuItem key={country.value} value={country.value} sx={{ fontSize: '12px' }}>
+                                                {country.label}
+                                            </MenuItem>
+                                        ))}
+                                    </TextField>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        select
+                                        label="Status"
+                                        value={formData.status}
+                                        onChange={(e) => handleInputChange('status', e.target.value)}
+                                        fullWidth
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    >
+                                        <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                        <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
+                                    </TextField>
+                                </Grid>
                             </Grid>
                         </CardContent>
                     </Card>

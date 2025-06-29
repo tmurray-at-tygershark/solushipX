@@ -95,7 +95,7 @@ const CompanyForm = () => {
     // Logo upload state
     const [selectedLogo, setSelectedLogo] = useState(null);
     const [logoPreview, setLogoPreview] = useState(null);
-    const [logoUploading, setLogoUploading] = useState(false);
+
     const [logoError, setLogoError] = useState('');
 
     const fetchData = useCallback(async () => {
@@ -291,53 +291,18 @@ const CompanyForm = () => {
         reader.readAsDataURL(file);
     };
 
-    const handleLogoUpload = async () => {
-        if (!selectedLogo || !formData.companyID) {
-            setLogoError('Please ensure company ID is set before uploading logo');
-            return;
-        }
 
-        setLogoUploading(true);
-        setLogoError('');
-
-        try {
-            // Upload image to Firebase Storage using the same pattern as Profile
-            const firebaseApp = getApp();
-            const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
-            const fileExtension = selectedLogo.name.split('.').pop();
-            const fileName = `${formData.companyID}-${Date.now()}.${fileExtension}`;
-            const logoRef = ref(customStorage, `company-logos/${fileName}`);
-
-            // Upload file
-            const snapshot = await uploadBytes(logoRef, selectedLogo);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-
-            // Update form data with logo URL
-            setFormData(prev => ({ ...prev, logoUrl: downloadURL }));
-            setLogoPreview(downloadURL);
-            setSelectedLogo(null);
-
-            enqueueSnackbar('Logo uploaded successfully!', { variant: 'success' });
-        } catch (error) {
-            console.error('Error uploading logo:', error);
-            setLogoError('Failed to upload logo. Please try again.');
-            enqueueSnackbar('Error uploading logo: ' + error.message, { variant: 'error' });
-        } finally {
-            setLogoUploading(false);
-        }
-    };
 
     const handleLogoDelete = async () => {
-        if (!formData.logoUrl) return;
-
-        setLogoUploading(true);
         try {
-            // Delete from Firebase Storage if it's a Firebase URL
-            if (formData.logoUrl.includes('firebase')) {
-                const firebaseApp = getApp();
-                const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
-                const logoRef = ref(customStorage, formData.logoUrl);
-                await deleteObject(logoRef);
+            if (formData.logoUrl) {
+                // Delete from Firebase Storage if it's a Firebase URL
+                if (formData.logoUrl.includes('firebase')) {
+                    const firebaseApp = getApp();
+                    const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                    const logoRef = ref(customStorage, formData.logoUrl);
+                    await deleteObject(logoRef);
+                }
             }
 
             // Update form data
@@ -349,8 +314,6 @@ const CompanyForm = () => {
         } catch (error) {
             console.error('Error deleting logo:', error);
             enqueueSnackbar('Error removing logo: ' + error.message, { variant: 'error' });
-        } finally {
-            setLogoUploading(false);
         }
     };
 
@@ -398,6 +361,26 @@ const CompanyForm = () => {
                 }
             }
 
+            let logoUrl = formData.logoUrl;
+
+            // Upload logo if a new file is selected
+            if (selectedLogo && formData.companyID) {
+                try {
+                    const firebaseApp = getApp();
+                    const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                    const fileExtension = selectedLogo.name.split('.').pop();
+                    const fileName = `${formData.companyID}-${Date.now()}.${fileExtension}`;
+                    const logoRef = ref(customStorage, `company-logos/${fileName}`);
+
+                    // Upload file
+                    const snapshot = await uploadBytes(logoRef, selectedLogo);
+                    logoUrl = await getDownloadURL(snapshot.ref);
+                } catch (logoError) {
+                    console.error('Error uploading logo:', logoError);
+                    enqueueSnackbar('Warning: Logo upload failed, but company will be saved without logo', { variant: 'warning' });
+                }
+            }
+
             const now = serverTimestamp();
             const companyDocRef = isEditMode && companyFirestoreId ? doc(db, 'companies', companyFirestoreId) : doc(collection(db, 'companies'));
 
@@ -406,7 +389,7 @@ const CompanyForm = () => {
                 name: formData.name.trim(),
                 companyID: humanReadableCompanyID,
                 website: formData.website.trim(),
-                logoUrl: formData.logoUrl || '',
+                logoUrl: logoUrl || '',
                 status: formData.status,
                 ownerID: formData.ownerID,
                 updatedAt: now,
@@ -777,74 +760,36 @@ const CompanyForm = () => {
 
                                         {/* Logo Actions */}
                                         <Stack direction="row" spacing={1}>
-                                            {!logoPreview && (
-                                                <>
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        onChange={handleLogoSelect}
-                                                        style={{ display: 'none' }}
-                                                        id="logo-file-input"
-                                                    />
-                                                    <label htmlFor="logo-file-input">
-                                                        <Button
-                                                            component="span"
-                                                            variant="outlined"
-                                                            size="small"
-                                                            startIcon={<CloudUploadIcon />}
-                                                            sx={{ fontSize: '12px' }}
-                                                        >
-                                                            Select Logo
-                                                        </Button>
-                                                    </label>
-                                                </>
-                                            )}
-
-                                            {selectedLogo && !formData.logoUrl && (
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleLogoSelect}
+                                                style={{ display: 'none' }}
+                                                id="logo-file-input"
+                                            />
+                                            <label htmlFor="logo-file-input">
                                                 <Button
-                                                    variant="contained"
+                                                    component="span"
+                                                    variant="outlined"
                                                     size="small"
-                                                    onClick={handleLogoUpload}
-                                                    disabled={logoUploading || !formData.companyID}
-                                                    startIcon={logoUploading ? <CircularProgress size={16} /> : <CloudUploadIcon />}
+                                                    startIcon={<CloudUploadIcon />}
                                                     sx={{ fontSize: '12px' }}
                                                 >
-                                                    {logoUploading ? 'Uploading...' : 'Upload'}
+                                                    {logoPreview ? 'Change Logo' : 'Select Logo'}
                                                 </Button>
-                                            )}
+                                            </label>
 
                                             {logoPreview && (
-                                                <>
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        onChange={handleLogoSelect}
-                                                        style={{ display: 'none' }}
-                                                        id="logo-change-input"
-                                                    />
-                                                    <label htmlFor="logo-change-input">
-                                                        <Button
-                                                            component="span"
-                                                            variant="outlined"
-                                                            size="small"
-                                                            startIcon={<EditIcon />}
-                                                            sx={{ fontSize: '12px' }}
-                                                        >
-                                                            Change
-                                                        </Button>
-                                                    </label>
-                                                    <Button
-                                                        variant="outlined"
-                                                        color="error"
-                                                        size="small"
-                                                        onClick={handleLogoDelete}
-                                                        disabled={logoUploading}
-                                                        startIcon={<DeleteIcon />}
-                                                        sx={{ fontSize: '12px' }}
-                                                    >
-                                                        Remove
-                                                    </Button>
-                                                </>
+                                                <Button
+                                                    variant="outlined"
+                                                    color="error"
+                                                    size="small"
+                                                    onClick={handleLogoDelete}
+                                                    startIcon={<DeleteIcon />}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    Remove
+                                                </Button>
                                             )}
                                         </Stack>
                                     </Box>
@@ -873,9 +818,9 @@ const CompanyForm = () => {
                                             </Alert>
                                         )}
 
-                                        {!formData.companyID && (
-                                            <Alert severity="info" sx={{ mt: 2, fontSize: '11px' }}>
-                                                Company ID must be set before uploading logo
+                                        {selectedLogo && (
+                                            <Alert severity="success" sx={{ mt: 2, fontSize: '11px' }}>
+                                                Logo selected! It will be uploaded when you save the company.
                                             </Alert>
                                         )}
                                     </Box>
