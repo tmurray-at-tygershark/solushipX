@@ -31,7 +31,8 @@ import {
     Accordion,
     AccordionSummary,
     AccordionDetails,
-    Divider
+    Divider,
+    Avatar
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -445,12 +446,80 @@ const FixedRatesTab = () => {
                                     value={filters.carrierId}
                                     onChange={handleFilterChange}
                                     label="Carrier"
-                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                    sx={{
+                                        '& .MuiSelect-select': {
+                                            fontSize: '12px',
+                                            display: 'flex',
+                                            alignItems: 'center'
+                                        }
+                                    }}
+                                    MenuProps={{
+                                        PaperProps: {
+                                            sx: {
+                                                maxHeight: 400,
+                                                '& .MuiMenuItem-root': {
+                                                    fontSize: '12px'
+                                                }
+                                            }
+                                        }
+                                    }}
                                 >
                                     <MenuItem value="ANY" sx={{ fontSize: '12px' }}>Any Carrier</MenuItem>
                                     {carriers.map(carrier => (
-                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
-                                            {carrier.name}
+                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px', py: 1.5 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                                {/* Carrier Logo */}
+                                                <Avatar
+                                                    src={carrier.logoURL}
+                                                    sx={{
+                                                        width: 20,
+                                                        height: 20,
+                                                        border: '1px solid #e5e7eb',
+                                                        bgcolor: '#f8fafc'
+                                                    }}
+                                                >
+                                                    <LocalShippingIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                </Avatar>
+
+                                                {/* Carrier Details */}
+                                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                    <Typography
+                                                        sx={{
+                                                            fontWeight: 600,
+                                                            fontSize: '12px',
+                                                            color: '#374151',
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis'
+                                                        }}
+                                                    >
+                                                        {carrier.name}
+                                                    </Typography>
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            color: '#6b7280',
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis'
+                                                        }}
+                                                    >
+                                                        ID: {carrier.carrierID}
+                                                    </Typography>
+                                                </Box>
+
+                                                {/* Status Chip */}
+                                                <Chip
+                                                    label={carrier.enabled ? 'Active' : 'Inactive'}
+                                                    size="small"
+                                                    color={carrier.enabled ? 'success' : 'default'}
+                                                    sx={{
+                                                        height: 16,
+                                                        fontSize: '9px',
+                                                        fontWeight: 500
+                                                    }}
+                                                />
+                                            </Box>
                                         </MenuItem>
                                     ))}
                                 </Select>

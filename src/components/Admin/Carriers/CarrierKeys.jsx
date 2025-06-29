@@ -25,7 +25,8 @@ import {
     FormControl,
     InputLabel,
     InputAdornment,
-    CircularProgress
+    CircularProgress,
+    Avatar
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -35,6 +36,7 @@ import {
     VisibilityOff as VisibilityOffIcon,
     ContentCopy as ContentCopyIcon,
     Refresh as RefreshIcon,
+    LocalShipping as LocalShippingIcon,
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -379,10 +381,78 @@ const CarrierKeys = () => {
                                             carrierId: e.target.value
                                         }))}
                                         label="Carrier"
+                                        sx={{
+                                            '& .MuiSelect-select': {
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }
+                                        }}
+                                        MenuProps={{
+                                            PaperProps: {
+                                                sx: {
+                                                    maxHeight: 400,
+                                                    '& .MuiMenuItem-root': {
+                                                        fontSize: '12px'
+                                                    }
+                                                }
+                                            }
+                                        }}
                                     >
                                         {carriers.map((carrier) => (
-                                            <MenuItem key={carrier.id} value={carrier.id}>
-                                                {carrier.name}
+                                            <MenuItem key={carrier.id} value={carrier.id} sx={{ py: 1.5 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                                    {/* Carrier Logo */}
+                                                    <Avatar
+                                                        src={carrier.logoURL}
+                                                        sx={{
+                                                            width: 28,
+                                                            height: 28,
+                                                            border: '1px solid #e5e7eb',
+                                                            bgcolor: '#f8fafc'
+                                                        }}
+                                                    >
+                                                        <LocalShippingIcon sx={{ fontSize: 16, color: '#6b7280' }} />
+                                                    </Avatar>
+
+                                                    {/* Carrier Details */}
+                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                        <Typography
+                                                            sx={{
+                                                                fontWeight: 600,
+                                                                fontSize: '14px',
+                                                                color: '#374151',
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
+                                                            }}
+                                                        >
+                                                            {carrier.name}
+                                                        </Typography>
+                                                        <Typography
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                color: '#6b7280',
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
+                                                            }}
+                                                        >
+                                                            ID: {carrier.carrierID}
+                                                        </Typography>
+                                                    </Box>
+
+                                                    {/* Status Chip */}
+                                                    <Chip
+                                                        label={carrier.enabled ? 'Active' : 'Inactive'}
+                                                        size="small"
+                                                        color={carrier.enabled ? 'success' : 'default'}
+                                                        sx={{
+                                                            height: 20,
+                                                            fontSize: '10px',
+                                                            fontWeight: 500
+                                                        }}
+                                                    />
+                                                </Box>
                                             </MenuItem>
                                         ))}
                                     </Select>

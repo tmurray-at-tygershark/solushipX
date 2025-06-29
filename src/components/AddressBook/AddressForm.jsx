@@ -36,12 +36,12 @@ import {
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon
 } from '@mui/icons-material';
-import { doc, setDoc, getDoc, addDoc, collection, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, addDoc, collection, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 
-const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, initialData = {} }) => {
+const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, initialData = {}, companyId = null, customerId = null }) => {
     const { companyIdForAddress } = useCompany();
     const { currentUser } = useAuth();
 
@@ -52,6 +52,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
         lastName: '',
         email: '',
         phone: '',
+        phoneExt: '',
         street: '',
         street2: '',
         city: '',
@@ -203,6 +204,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                     lastName: data.lastName || '',
                     email: data.email || '',
                     phone: data.phone || '',
+                    phoneExt: data.phoneExt || '',
                     street: data.street || '',
                     street2: data.street2 || '',
                     city: data.city || '',
@@ -443,12 +445,37 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 customHours: formData.customHours
             };
 
+            // Determine if this is a customer address based on the props
+            const isCustomerAddress = customerId && companyId;
+
+            // Fetch company information if this is a customer address
+            let companyInfo = null;
+            if (isCustomerAddress) {
+                try {
+                    const companiesRef = collection(db, 'companies');
+                    const companyQuery = query(companiesRef, where('companyID', '==', companyId));
+                    const companySnapshot = await getDocs(companyQuery);
+
+                    if (!companySnapshot.empty) {
+                        const companyDoc = companySnapshot.docs[0];
+                        companyInfo = {
+                            id: companyDoc.id,
+                            ...companyDoc.data()
+                        };
+                        console.log('[AddressForm] Found company info:', companyInfo);
+                    }
+                } catch (error) {
+                    console.error('[AddressForm] Error fetching company info:', error);
+                }
+            }
+
             const addressData = {
                 companyName: formData.companyName,
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 email: formData.email,
                 phone: formData.phone,
+                phoneExt: formData.phoneExt,
                 street: formData.street,
                 street2: formData.street2,
                 city: formData.city,
@@ -462,15 +489,31 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 // Keep legacy fields for backward compatibility
                 openHours: formData.defaultHours.open,
                 closeHours: formData.defaultHours.close,
-                companyID: companyIdForAddress,
+                companyID: companyId || companyIdForAddress,
                 createdBy: currentUser?.uid || 'system',
                 updatedAt: Timestamp.now(),
-                // Include customer-specific fields from initialData
-                addressClass: formData.addressClass || 'company',
-                addressClassID: formData.addressClassID || companyIdForAddress,
-                addressType: formData.addressType || 'contact',
+                // Set address classification based on whether this is a customer address
+                addressClass: isCustomerAddress ? 'customer' : (formData.addressClass || 'company'),
+                addressClassID: isCustomerAddress ? customerId : (formData.addressClassID || companyId || companyIdForAddress),
+                addressType: isCustomerAddress ? 'destination' : (formData.addressType || 'contact'),
+                // Add company owner information for customer addresses
+                ...(isCustomerAddress && companyInfo ? {
+                    ownerCompanyName: companyInfo.name,
+                    ownerCompanyLogo: companyInfo.logoURL || companyInfo.logo || companyInfo.logoUrl,
+                    ownerCompanyID: companyInfo.companyID
+                } : {}),
                 ...(isEditing ? {} : { createdAt: Timestamp.now() })
             };
+
+            console.log('[AddressForm] Creating address with data:', {
+                isCustomerAddress,
+                companyId,
+                customerId,
+                addressClass: addressData.addressClass,
+                addressClassID: addressData.addressClassID,
+                addressType: addressData.addressType,
+                companyID: addressData.companyID
+            });
 
             let docRef;
             if (isEditing) {
@@ -676,27 +719,46 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                                     />
                                 </Grid>
                                 <Grid item xs={12} md={6}>
-                                    <TextField
-                                        label="Phone (Optional)"
-                                        value={formData.phone}
-                                        onChange={(e) => handleInputChange('phone', e.target.value)}
-                                        fullWidth
-                                        size="small"
-                                        error={!!errors.phone}
-                                        helperText={errors.phone}
-                                        InputProps={{
-                                            startAdornment: (
-                                                <InputAdornment position="start">
-                                                    <PhoneIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                </InputAdornment>
-                                            )
-                                        }}
-                                        sx={{
-                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' },
-                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                        }}
-                                    />
+                                    <Grid container spacing={1}>
+                                        <Grid item xs={8}>
+                                            <TextField
+                                                label="Phone (Optional)"
+                                                value={formData.phone}
+                                                onChange={(e) => handleInputChange('phone', e.target.value)}
+                                                fullWidth
+                                                size="small"
+                                                error={!!errors.phone}
+                                                helperText={errors.phone}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <PhoneIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                        </InputAdornment>
+                                                    )
+                                                }}
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={4}>
+                                            <TextField
+                                                label="EXT"
+                                                value={formData.phoneExt}
+                                                onChange={(e) => handleInputChange('phoneExt', e.target.value)}
+                                                fullWidth
+                                                size="small"
+                                                placeholder="Ext"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                    </Grid>
                                 </Grid>
 
                                 {/* Address Search */}

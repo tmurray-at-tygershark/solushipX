@@ -3666,6 +3666,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     onSuccess={handleAddressCreated}
                     addressType={addressEditMode}
                     companyId={companyIdForAddress}
+                    customerId={selectedCustomer?.customerID || selectedCustomer?.id}
                 />
             </Suspense>
 
@@ -3828,6 +3829,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     editingAddress={editingAddressData}
                     addressType={editingAddressType}
                     companyId={user?.companyId}
+                    customerId={selectedCustomer?.customerID || selectedCustomer?.id}
                 />
             </Suspense>
         </Box>

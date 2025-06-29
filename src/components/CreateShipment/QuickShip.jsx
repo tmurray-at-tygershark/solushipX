@@ -1231,6 +1231,13 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     };
 
     // Main QuickShip booking function
+    // This function prepares and sends comprehensive shipment data including:
+    // - Package details with quantities, weights, dimensions, and calculated totals
+    // - Special services (service level, dangerous goods, signature requirements)
+    // - Complete address information with validation
+    // - Manual rate entries with cost/charge breakdown
+    // - Carrier details and tracking information
+    // - All data flows to: database record, email notifications, BOL generation, carrier confirmations
     const bookQuickShipment = async () => {
         setIsBooking(true);
         setError(null);
@@ -1265,9 +1272,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 contactPhone: ''
             };
 
-            // Calculate total weight and pieces for validation
+            // Calculate total weight, pieces, and package count for validation
             const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
             const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+            const totalPackageCount = packages.length; // Number of distinct package types
 
             // Prepare shipment data with enhanced validation
             const shipmentData = {
@@ -1280,14 +1288,23 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
 
-                // Shipment details
+                // Shipment details with complete information
                 shipmentInfo: {
                     ...shipmentInfo,
                     shipmentBillType: shipmentInfo.billType,
                     actualShipDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
                     totalWeight: totalWeight,
                     totalPieces: totalPieces,
-                    unitSystem: unitSystem
+                    totalPackageCount: totalPackageCount,
+                    unitSystem: unitSystem,
+                    // Ensure special services are included
+                    serviceLevel: shipmentInfo.serviceLevel || 'any',
+                    dangerousGoodsType: shipmentInfo.dangerousGoodsType || 'none',
+                    signatureServiceType: shipmentInfo.signatureServiceType || 'none',
+                    notes: shipmentInfo.notes || '',
+                    shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
+                    bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO'
                 },
 
                 // Addresses - properly structured from address book with validation
@@ -1317,20 +1334,36 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     country: shipToAddress.country || 'CA'
                 },
 
-                // Packages with validation
-                packages: packages.map(pkg => ({
+                // Packages with complete validation and standardized structure
+                packages: packages.map((pkg, index) => ({
                     ...pkg,
+                    // Ensure stable package ID for tracking
+                    id: pkg.id || (index + 1),
+                    packageNumber: index + 1,
+                    // Required fields with validation
+                    itemDescription: pkg.itemDescription || '',
                     weight: parseFloat(pkg.weight || 0),
                     packagingQuantity: parseInt(pkg.packagingQuantity || 1),
                     length: parseFloat(pkg.length || 0),
                     width: parseFloat(pkg.width || 0),
                     height: parseFloat(pkg.height || 0),
+                    // Calculate individual package total weight (weight * quantity)
+                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    // Packaging type information
+                    packagingType: pkg.packagingType,
                     packagingTypeCode: pkg.packagingType,
                     packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
-                    unitSystem: pkg.unitSystem || 'imperial', // Include individual unit system
-                    freightClass: pkg.freightClass || '', // Include freight class
-                    declaredValue: parseFloat(pkg.declaredValue || 0), // Include parsed declared value
-                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD' // Include declared value currency
+                    // Unit and measurement information
+                    unitSystem: pkg.unitSystem || 'imperial',
+                    // Special freight information
+                    freightClass: pkg.freightClass || '',
+                    // Declared value information  
+                    declaredValue: parseFloat(pkg.declaredValue || 0),
+                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
+                    // Calculated dimensions for volume
+                    volume: parseFloat(pkg.length || 0) * parseFloat(pkg.width || 0) * parseFloat(pkg.height || 0),
+                    // Dimensions string for display
+                    dimensionsDisplay: `${pkg.length || 0} x ${pkg.width || 0} x ${pkg.height || 0} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
                 })),
 
                 // Carrier and rates
@@ -1363,12 +1396,35 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 bookingTimestamp: new Date().toISOString()
             };
 
-            console.log('QuickShip booking data prepared:', {
+            // Enhanced logging for debugging downstream issues
+            console.log('🚀 QuickShip booking data prepared:', {
                 shipmentID: finalShipmentID,
                 carrier: selectedCarrier,
                 totalWeight,
                 totalPieces,
-                totalCharges: totalCost
+                totalPackageCount,
+                totalCharges: totalCost,
+                packageDetails: packages.map(pkg => ({
+                    id: pkg.id,
+                    description: pkg.itemDescription,
+                    weight: pkg.weight,
+                    quantity: pkg.packagingQuantity,
+                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    dimensions: `${pkg.length}x${pkg.width}x${pkg.height}`,
+                    packagingType: pkg.packagingType
+                })),
+                specialServices: {
+                    serviceLevel: shipmentInfo.serviceLevel,
+                    dangerousGoodsType: shipmentInfo.dangerousGoodsType,
+                    signatureServiceType: shipmentInfo.signatureServiceType,
+                    notes: shipmentInfo.notes
+                },
+                rateBreakdown: manualRates.map(rate => ({
+                    code: rate.code,
+                    name: rate.chargeName,
+                    cost: rate.cost,
+                    charge: rate.charge
+                }))
             });
 
             // Call the QuickShip booking function with enhanced error handling
@@ -1728,6 +1784,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             const shipFromAddressFull = availableAddresses.find(addr => addr.id === shipFromAddress?.id) || shipFromAddress;
             const shipToAddressFull = availableAddresses.find(addr => addr.id === shipToAddress?.id) || shipToAddress;
 
+            // Calculate totals for draft saving
+            const draftTotalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
+            const draftTotalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+            const draftTotalPackageCount = packages.length;
+
             const draftData = {
                 // Basic shipment fields
                 shipmentID: shipmentID, // Always use the shipmentID field
@@ -1737,16 +1798,41 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 createdBy: currentUser?.uid || 'unknown',
                 updatedAt: serverTimestamp(),
 
-                // Shipment information - save whatever is entered
+                // Comprehensive shipment information - save whatever is entered
                 shipmentInfo: {
                     ...shipmentInfo,
                     shipmentType: shipmentInfo.shipmentType || 'freight',
                     unitSystem: unitSystem,
-                    carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '' // Ensure this is saved
+                    carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
+                    totalWeight: draftTotalWeight,
+                    totalPieces: draftTotalPieces,
+                    totalPackageCount: draftTotalPackageCount,
+                    // Special services
+                    serviceLevel: shipmentInfo.serviceLevel || 'any',
+                    dangerousGoodsType: shipmentInfo.dangerousGoodsType || 'none',
+                    signatureServiceType: shipmentInfo.signatureServiceType || 'none',
+                    notes: shipmentInfo.notes || '',
+                    shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
+                    bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO'
                 },
                 shipFrom: shipFromAddressFull || null, // Save null if not selected
                 shipTo: shipToAddressFull || null, // Save null if not selected
-                packages: packages,
+
+                // Enhanced package data with calculations
+                packages: packages.map((pkg, index) => ({
+                    ...pkg,
+                    id: pkg.id || (index + 1),
+                    packageNumber: index + 1,
+                    itemDescription: pkg.itemDescription || '',
+                    weight: parseFloat(pkg.weight || 0),
+                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
+                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
+                    volume: parseFloat(pkg.length || 0) * parseFloat(pkg.width || 0) * parseFloat(pkg.height || 0),
+                    dimensionsDisplay: `${pkg.length || 0} x ${pkg.width || 0} x ${pkg.height || 0} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
+                })),
+
                 selectedCarrier: selectedCarrier || '', // Save empty string if not selected
                 manualRates: manualRates,
                 unitSystem: unitSystem,
@@ -3758,6 +3844,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                         editingAddress={editingAddressData}
                                         addressType={editingAddressType}
                                         companyId={companyIdForAddress}
+                                    // Note: QuickShip doesn't use customer selection, so no customerId needed
                                     />
                                 </Suspense>
                             </form>

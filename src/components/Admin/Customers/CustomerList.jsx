@@ -899,24 +899,30 @@ const CustomerList = ({ isModal = false, onClose = null, showCloseButton = false
                                             >
                                                 {getCompanyName(customer.companyID).charAt(0).toUpperCase()}
                                             </Avatar>
-                                            <Typography
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    color: '#3b82f6',
-                                                    cursor: 'pointer',
-                                                    '&:hover': {
-                                                        textDecoration: 'underline'
-                                                    }
-                                                }}
-                                                onClick={() => {
-                                                    const company = companies.find(c => c.companyID === customer.companyID);
-                                                    if (company) {
-                                                        navigate(`/admin/companies/${company.id}`);
-                                                    }
-                                                }}
-                                            >
-                                                {getCompanyName(customer.companyID)}
-                                            </Typography>
+                                            <Box>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        color: '#3b82f6',
+                                                        cursor: 'pointer',
+                                                        fontWeight: 500,
+                                                        '&:hover': {
+                                                            textDecoration: 'underline'
+                                                        }
+                                                    }}
+                                                    onClick={() => {
+                                                        const company = companies.find(c => c.companyID === customer.companyID);
+                                                        if (company) {
+                                                            navigate(`/admin/companies/${company.id}`);
+                                                        }
+                                                    }}
+                                                >
+                                                    {getCompanyName(customer.companyID)}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                    {customer.companyID}
+                                                </Typography>
+                                            </Box>
                                         </Box>
                                     </TableCell>
 

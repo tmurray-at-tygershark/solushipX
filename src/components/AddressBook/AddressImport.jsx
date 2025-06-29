@@ -43,7 +43,7 @@ import {
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon
 } from '@mui/icons-material';
-import { collection, addDoc, writeBatch, doc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, writeBatch, doc, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -57,12 +57,19 @@ const AddressImport = ({ onClose, onImportComplete }) => {
 
     // Stepper state
     const [activeStep, setActiveStep] = useState(0);
-    const steps = ['Upload CSV', 'Review & Edit', 'Import Results'];
+    const steps = ['Upload CSV', 'Map Fields', 'Review & Edit', 'Import Results'];
 
     // File upload state
     const [selectedFile, setSelectedFile] = useState(null);
+    const [rawParsedData, setRawParsedData] = useState([]);
+    const [rawHeaders, setRawHeaders] = useState([]);
     const [parsedData, setParsedData] = useState([]);
     const [parseError, setParseError] = useState(null);
+
+    // Field mapping state
+    const [fieldMappings, setFieldMappings] = useState({});
+    const [mappingComplete, setMappingComplete] = useState(false);
+    const [autoMappingApplied, setAutoMappingApplied] = useState(false);
 
     // Validation and editing state
     const [validationResults, setValidationResults] = useState([]);
@@ -87,27 +94,33 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         defaultCountry: 'CA'
     });
 
-    // Fixed CSV template format - no mapping required
+    // Updated CSV template format for customer-address organizational structure
     const csvTemplate = {
         headers: [
-            'company_name', 'first_name', 'last_name', 'email', 'phone',
+            'company_id', 'customer_id', 'customer_name', 'address_nickname',
+            'company_name', 'first_name', 'last_name', 'email', 'phone', 'phone_ext',
             'street_address', 'address_line_2', 'city', 'state_province',
             'postal_code', 'country', 'open_time', 'close_time',
-            'special_instructions', 'is_residential'
+            'special_instructions', 'is_residential', 'address_type'
         ],
         sample: [
-            'Rosenberg Fans Canada Ltd.,Andrew,Liu,andrewliu@rosenbergcanada.com,9055651038,6685 Tomken Road,Unit 12,MISSISSAUGA,ON,L5T2C5,CA,8:00,17:00,,false',
-            'Al Tier02,Al,,alex@apollologistics.ca,416-484-9797,1881 Steeles Ave. W.,Suite 404,NORTH YORK,ON,M3H0A1,CA,9:00,18:00,,false'
+            'APL,XRISI,X Rider Simulators,Main Office,X Rider Simulators,John,Smith,john@xrider.com,416-555-0123,123,123 Main Street,Suite 100,TORONTO,ON,M5V3A8,CA,9:00,17:00,Please use rear entrance,false,destination',
+            'APL,DWSLOG,DWS Logistics,Warehouse,DWS Logistics Inc,Sarah,Johnson,sarah@dwslogistics.com,905-555-0456,,456 Industrial Ave,,MISSISSAUGA,ON,L5T2C5,CA,8:00,18:00,Loading dock #3,false,destination'
         ]
     };
 
-    // Field definitions with validation rules
+    // Field definitions with validation rules for customer-address structure
     const fieldDefinitions = {
+        company_id: { label: 'Company ID', required: true, type: 'text', width: 100 },
+        customer_id: { label: 'Customer ID', required: true, type: 'text', width: 100 },
+        customer_name: { label: 'Customer Name', required: true, type: 'text', width: 150 },
+        address_nickname: { label: 'Address Nickname', required: false, type: 'text', width: 120 },
         company_name: { label: 'Company Name', required: true, type: 'text', width: 150 },
         first_name: { label: 'First Name', required: false, type: 'text', width: 100 },
         last_name: { label: 'Last Name', required: false, type: 'text', width: 100 },
         email: { label: 'Email', required: false, type: 'email', width: 180 },
         phone: { label: 'Phone', required: false, type: 'phone', width: 130 },
+        phone_ext: { label: 'Phone Extension', required: false, type: 'text', width: 100 },
         street_address: { label: 'Street Address', required: true, type: 'text', width: 180 },
         address_line_2: { label: 'Address Line 2', required: false, type: 'text', width: 120 },
         city: { label: 'City', required: true, type: 'text', width: 120 },
@@ -117,7 +130,8 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         open_time: { label: 'Open Time', required: false, type: 'time', width: 90 },
         close_time: { label: 'Close Time', required: false, type: 'time', width: 90 },
         special_instructions: { label: 'Instructions', required: false, type: 'text', width: 150 },
-        is_residential: { label: 'Residential', required: false, type: 'boolean', width: 100 }
+        is_residential: { label: 'Residential', required: false, type: 'boolean', width: 100 },
+        address_type: { label: 'Address Type', required: true, type: 'address_type', width: 120 }
     };
 
     const parseCSVLine = (line) => {
@@ -138,6 +152,78 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         }
         result.push(current.trim());
         return result;
+    };
+
+    // Auto-detect field mappings based on common column names
+    const autoDetectFieldMappings = (headers) => {
+        const mappings = {};
+        const lowerHeaders = headers.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+        // Define mapping patterns for auto-detection
+        const detectionPatterns = {
+            company_id: ['companyid', 'company_id', 'compid', 'comp_id'],
+            customer_id: ['customerid', 'customer_id', 'custid', 'cust_id', 'clientid', 'client_id'],
+            customer_name: ['customername', 'customer_name', 'custname', 'cust_name', 'clientname', 'client_name', 'businessname', 'business_name'],
+            address_nickname: ['addressnickname', 'address_nickname', 'nickname', 'addressname', 'address_name', 'locationname', 'location_name'],
+            company_name: ['companyname', 'company_name', 'company', 'businessname', 'business_name', 'organization', 'org'],
+            first_name: ['firstname', 'first_name', 'fname', 'givenname', 'given_name'],
+            last_name: ['lastname', 'last_name', 'lname', 'surname', 'familyname', 'family_name'],
+            email: ['email', 'emailaddress', 'email_address', 'mail'],
+            phone: ['phone', 'phonenumber', 'phone_number', 'telephone', 'tel', 'mobile', 'cellphone', 'cell_phone'],
+            phone_ext: ['phoneext', 'phone_ext', 'extension', 'ext', 'phone_extension', 'phoneextension'],
+            street_address: ['streetaddress', 'street_address', 'address', 'address1', 'street', 'addressline1', 'address_line_1'],
+            address_line_2: ['addressline2', 'address_line_2', 'address2', 'suite', 'apartment', 'apt', 'unit'],
+            city: ['city', 'town', 'municipality'],
+            state_province: ['state', 'province', 'stateprovince', 'state_province', 'region'],
+            postal_code: ['postalcode', 'postal_code', 'zipcode', 'zip_code', 'zip', 'postcode'],
+            country: ['country', 'countrycode', 'country_code', 'nation'],
+            open_time: ['opentime', 'open_time', 'openhours', 'open_hours', 'starttime', 'start_time'],
+            close_time: ['closetime', 'close_time', 'closehours', 'close_hours', 'endtime', 'end_time'],
+            special_instructions: ['specialinstructions', 'special_instructions', 'instructions', 'notes', 'comments', 'remarks'],
+            is_residential: ['isresidential', 'is_residential', 'residential', 'residentialaddress', 'residential_address'],
+            address_type: ['addresstype', 'address_type', 'type', 'category', 'kind']
+        };
+
+        // Try to match each header to our required fields
+        headers.forEach((header, index) => {
+            const cleanHeader = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            // Find matching field
+            for (const [requiredField, patterns] of Object.entries(detectionPatterns)) {
+                if (patterns.includes(cleanHeader)) {
+                    mappings[requiredField] = header;
+                    break;
+                }
+            }
+        });
+
+        console.log('[AddressImport] Auto-detected mappings:', mappings);
+        return mappings;
+    };
+
+    // Apply field mappings to convert raw data to our expected format
+    const applyFieldMappings = (rawData, mappings) => {
+        return rawData.map(row => {
+            const mappedRow = {
+                _id: row._id,
+                _rowIndex: row._rowIndex,
+                _hasErrors: false,
+                _errors: {},
+                _warnings: {}
+            };
+
+            // Apply mappings
+            Object.entries(fieldDefinitions).forEach(([requiredField, config]) => {
+                const sourceField = mappings[requiredField];
+                if (sourceField && row[sourceField] !== undefined) {
+                    mappedRow[requiredField] = row[sourceField];
+                } else {
+                    mappedRow[requiredField] = ''; // Default empty value
+                }
+            });
+
+            return mappedRow;
+        });
     };
 
     const handleFileSelect = (event) => {
@@ -162,22 +248,11 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                     return;
                 }
 
-                // Parse headers and validate against template
+                // Parse headers - flexible parsing, no validation required
                 const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-                const expectedHeaders = csvTemplate.headers;
+                setRawHeaders(headers);
 
-                // Check if headers match template exactly
-                const headerMismatch = headers.length !== expectedHeaders.length ||
-                    !headers.every((header, index) => header === expectedHeaders[index]);
-
-                if (headerMismatch) {
-                    setParseError(
-                        `CSV headers don't match the required template. Expected: ${expectedHeaders.join(', ')}`
-                    );
-                    return;
-                }
-
-                // Parse data rows
+                // Parse data rows with flexible headers
                 const data = lines.slice(1).map((line, index) => {
                     const row = parseCSVLine(line);
                     const rowData = {
@@ -195,11 +270,39 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                     return rowData;
                 });
 
-                setParsedData(data);
+                setRawParsedData(data);
                 setParseError(null);
 
-                // Automatically validate data and move to next step
-                validateAllData(data);
+                // Check if headers match our template exactly (auto-detect)
+                const expectedHeaders = csvTemplate.headers;
+                const exactMatch = headers.length === expectedHeaders.length &&
+                    headers.every((header, index) => header === expectedHeaders[index]);
+
+                if (exactMatch) {
+                    // Perfect match - skip mapping step
+                    console.log('[AddressImport] Exact template match detected, skipping field mapping');
+                    const autoMappings = {};
+                    headers.forEach(header => {
+                        autoMappings[header] = header;
+                    });
+                    setFieldMappings(autoMappings);
+                    setMappingComplete(true);
+                    setAutoMappingApplied(true);
+
+                    // Apply mappings and proceed to validation
+                    const mappedData = applyFieldMappings(data, autoMappings);
+                    setParsedData(mappedData);
+                    validateAllData(mappedData);
+                } else {
+                    // Need field mapping
+                    console.log('[AddressImport] Custom CSV detected, proceeding to field mapping');
+                    setActiveStep(1); // Go to mapping step
+
+                    // Try to auto-detect common field mappings
+                    const autoMappings = autoDetectFieldMappings(headers);
+                    setFieldMappings(autoMappings);
+                    setAutoMappingApplied(Object.keys(autoMappings).length > 0);
+                }
 
             } catch (error) {
                 setParseError(`Error parsing CSV: ${error.message}`);
@@ -208,7 +311,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         reader.readAsText(file);
     };
 
-    const validateRecord = (record) => {
+    const validateRecord = async (record, existingCustomers = new Set()) => {
         const errors = {};
         const warnings = {};
 
@@ -219,6 +322,14 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             }
         });
 
+        // Validate customer exists (if we have the customer data)
+        if (record.customer_id && existingCustomers.size > 0) {
+            const customerKey = `${record.company_id}_${record.customer_id}`;
+            if (!existingCustomers.has(customerKey)) {
+                warnings.customer_id = 'Customer may not exist in the system';
+            }
+        }
+
         // Validate email format
         if (record.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.email)) {
             errors.email = 'Invalid email format';
@@ -227,6 +338,11 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         // Validate phone number (basic)
         if (record.phone && !/^[\d\s\-\+\(\)\.]+$/.test(record.phone)) {
             warnings.phone = 'Phone number format may be invalid';
+        }
+
+        // Validate phone extension (basic)
+        if (record.phone_ext && !/^[\d]+$/.test(record.phone_ext)) {
+            warnings.phone_ext = 'Phone extension should contain only numbers';
         }
 
         // Validate country code
@@ -248,32 +364,111 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             warnings.is_residential = 'Should be true/false or yes/no';
         }
 
+        // Validate address type
+        if (record.address_type && !['contact', 'destination', 'billing'].includes(record.address_type.toLowerCase())) {
+            warnings.address_type = 'Should be contact, destination, or billing';
+        }
+
+        // Validate customer ID format (basic alphanumeric check)
+        if (record.customer_id && !/^[A-Z0-9]+$/.test(record.customer_id)) {
+            warnings.customer_id = 'Customer ID should be uppercase alphanumeric';
+        }
+
+        // Validate company ID format
+        if (record.company_id && !/^[A-Z0-9]+$/.test(record.company_id)) {
+            warnings.company_id = 'Company ID should be uppercase alphanumeric';
+        }
+
         return { errors, warnings };
     };
 
-    const validateAllData = (data) => {
-        const results = data.map(record => {
-            const { errors, warnings } = validateRecord(record);
-            const hasErrors = Object.keys(errors).length > 0;
-            const hasWarnings = Object.keys(warnings).length > 0;
+    // Field mapping handlers
+    const handleFieldMapping = (requiredField, sourceField) => {
+        setFieldMappings(prev => ({
+            ...prev,
+            [requiredField]: sourceField
+        }));
+    };
 
-            return {
-                ...record,
-                _hasErrors: hasErrors,
-                _errors: errors,
-                _warnings: warnings,
-                _status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid'
-            };
+    const handleClearMapping = (requiredField) => {
+        setFieldMappings(prev => {
+            const newMappings = { ...prev };
+            delete newMappings[requiredField];
+            return newMappings;
         });
+    };
 
-        setValidationResults(results);
+    const handleApplyMappings = async () => {
+        // Check if all required fields are mapped
+        const requiredFields = Object.entries(fieldDefinitions)
+            .filter(([field, config]) => config.required)
+            .map(([field]) => field);
 
-        // Initialize all records as selected
-        const allRecordIds = new Set(results.map(r => r._id));
-        setSelectedRecords(allRecordIds);
-        setSelectAll(true);
+        const missingMappings = requiredFields.filter(field => !fieldMappings[field]);
 
-        setActiveStep(1);
+        if (missingMappings.length > 0) {
+            setParseError(`Please map all required fields: ${missingMappings.join(', ')}`);
+            return;
+        }
+
+        // Apply mappings to raw data
+        const mappedData = applyFieldMappings(rawParsedData, fieldMappings);
+        setParsedData(mappedData);
+        setMappingComplete(true);
+
+        // Proceed to validation
+        await validateAllData(mappedData);
+    };
+
+    const handleResetMappings = () => {
+        setFieldMappings({});
+        setAutoMappingApplied(false);
+        setParseError(null);
+    };
+
+    const validateAllData = async (data) => {
+        try {
+            // Fetch existing customers for validation
+            const existingCustomers = new Set();
+            try {
+                const customersSnapshot = await getDocs(collection(db, 'customers'));
+                customersSnapshot.forEach(doc => {
+                    const customerData = doc.data();
+                    if (customerData.companyID && customerData.customerID) {
+                        existingCustomers.add(`${customerData.companyID}_${customerData.customerID}`);
+                    }
+                });
+                console.log('[AddressImport] Loaded existing customers for validation:', existingCustomers.size);
+            } catch (customerError) {
+                console.warn('[AddressImport] Could not load customers for validation:', customerError);
+            }
+
+            const results = await Promise.all(data.map(async record => {
+                const { errors, warnings } = await validateRecord(record, existingCustomers);
+                const hasErrors = Object.keys(errors).length > 0;
+                const hasWarnings = Object.keys(warnings).length > 0;
+
+                return {
+                    ...record,
+                    _hasErrors: hasErrors,
+                    _errors: errors,
+                    _warnings: warnings,
+                    _status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid'
+                };
+            }));
+
+            setValidationResults(results);
+
+            // Initialize all records as selected
+            const allRecordIds = new Set(results.map(r => r._id));
+            setSelectedRecords(allRecordIds);
+            setSelectAll(true);
+
+            setActiveStep(autoMappingApplied && mappingComplete ? 2 : 3); // Skip to review step
+        } catch (error) {
+            console.error('[AddressImport] Error during validation:', error);
+            setParseError(`Validation error: ${error.message}`);
+        }
     };
 
     const handleCellClick = (recordId, field) => {
@@ -302,13 +497,13 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         }));
     };
 
-    const handleCellBlur = (recordId, field) => {
+    const handleCellBlur = async (recordId, field) => {
         // Save the changes when user clicks away or presses Enter
         const currentRecord = validationResults.find(r => r._id === recordId);
         if (!currentRecord) return;
 
         const updatedRecord = { ...currentRecord, ...editingData };
-        const { errors, warnings } = validateRecord(updatedRecord);
+        const { errors, warnings } = await validateRecord(updatedRecord);
         const hasErrors = Object.keys(errors).length > 0;
         const hasWarnings = Object.keys(warnings).length > 0;
 
@@ -434,6 +629,26 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 );
             }
 
+            if (fieldDef.type === 'address_type') {
+                return (
+                    <TableCell key={field} sx={{ minWidth: fieldDef.width }}>
+                        <FormControl size="small" fullWidth>
+                            <Select
+                                value={value}
+                                onChange={(e) => handleCellChange(record._id, field, e.target.value)}
+                                onBlur={() => handleCellBlur(record._id, field)}
+                                autoFocus
+                                sx={{ fontSize: '12px' }}
+                            >
+                                <MenuItem value="contact">Contact</MenuItem>
+                                <MenuItem value="destination">Destination</MenuItem>
+                                <MenuItem value="billing">Billing</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </TableCell>
+                );
+            }
+
             return (
                 <TableCell key={field} sx={{ minWidth: fieldDef.width }}>
                     <TextField
@@ -526,16 +741,27 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             isResidential = ['true', '1', 'yes'].includes(val);
         }
 
+        // Normalize address type
+        let addressType = record.address_type || 'destination';
+        addressType = addressType.toLowerCase();
+
         // Normalize times
         const openTime = record.open_time || '';
         const closeTime = record.close_time || '';
 
         return {
+            // Address nickname for better identification
+            nickname: record.address_nickname || '',
+
+            // Contact information
             companyName: record.company_name || '',
             firstName: record.first_name || '',
             lastName: record.last_name || '',
             email: record.email || '',
             phone: record.phone || '',
+            phoneExt: record.phone_ext || '',
+
+            // Address information
             street: record.street_address || '',
             street2: record.address_line_2 || '',
             city: record.city || '',
@@ -545,6 +771,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             specialInstructions: record.special_instructions || '',
             isResidential,
             status: importOptions.defaultStatus,
+
             // Business hours structure
             businessHours: {
                 useCustomHours: false,
@@ -562,15 +789,27 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                     sunday: { open: '', close: '', closed: false }
                 }
             },
+
             // Legacy fields for backward compatibility
             openHours: openTime,
             closeHours: closeTime,
-            // Additional required fields
+
+            // Customer-Address organizational structure
             addressClass: 'customer',
-            addressClassID: companyIdForAddress,
-            addressType: 'contact',
+            addressClassID: record.customer_id || '',
+            addressType: addressType,
+
+            // Company and customer relationship
+            companyID: record.company_id || '',
+            customerID: record.customer_id || '',
+            customerName: record.customer_name || '',
+
+            // Company owner information for proper display
+            ownerCompanyName: record.customer_name || '',
+            ownerCompanyID: record.company_id || '',
+            ownerCompanyLogo: '', // Will be populated if available
+
             // Metadata
-            companyID: companyIdForAddress,
             createdBy: currentUser?.uid || 'system',
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now()
@@ -665,10 +904,15 @@ const AddressImport = ({ onClose, onImportComplete }) => {
     const resetImport = () => {
         setActiveStep(0);
         setSelectedFile(null);
+        setRawParsedData([]);
+        setRawHeaders([]);
         setParsedData([]);
         setValidationResults([]);
         setImportResults(null);
         setParseError(null);
+        setFieldMappings({});
+        setMappingComplete(false);
+        setAutoMappingApplied(false);
         setEditingRowId(null);
         setEditingFieldId(null);
         setEditingData({});
@@ -754,7 +998,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                                         Upload CSV File
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: '12px', color: '#6b7280' }}>
-                                        Select a CSV file using the exact template format. The system will automatically validate your data.
+                                        Select any CSV file with address data. Our smart mapping system will help you match your columns to our required fields.
                                     </Typography>
 
                                     <input
@@ -792,26 +1036,204 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                             <Card>
                                 <CardContent>
                                     <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                                        Required CSV Format
+                                        Optional: Use Our Template Format
                                     </Typography>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: '12px', color: '#6b7280' }}>
-                                        Your CSV must use exactly this header format (copy and paste recommended):
+                                        If you prefer to use our exact template format, your CSV can use this header format to skip the mapping step:
                                     </Typography>
 
-                                    <Box sx={{ fontFamily: 'monospace', fontSize: '12px', bgcolor: '#f5f5f5', p: 2, borderRadius: 1, mb: 2 }}>
+                                    <Box sx={{ fontFamily: 'monospace', fontSize: '11px', bgcolor: '#f5f5f5', p: 2, borderRadius: 1, mb: 2, overflowX: 'auto' }}>
                                         {csvTemplate.headers.join(',')}
                                     </Box>
 
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                        <strong>Required fields:</strong> company_id, customer_id, customer_name, company_name, street_address, city, state_province, postal_code, country, address_type
+                                    </Typography>
+
                                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                        Required fields: company_name, street_address, city, state_province, postal_code, country
+                                        <strong>New Customer-Address Structure:</strong><br />
+                                        • <strong>company_id:</strong> Company identifier (e.g., APL)<br />
+                                        • <strong>customer_id:</strong> Unique customer identifier (e.g., XRISI)<br />
+                                        • <strong>customer_name:</strong> Customer business name<br />
+                                        • <strong>address_type:</strong> contact, destination, or billing<br />
+                                        • <strong>address_nickname:</strong> Optional friendly name for the address
                                     </Typography>
                                 </CardContent>
                             </Card>
                         </Box>
                     )}
 
-                    {/* Step 2: Review & Edit */}
+                    {/* Step 2: Field Mapping */}
                     {activeStep === 1 && (
+                        <Box>
+                            <Card sx={{ mb: 3 }}>
+                                <CardContent>
+                                    <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                                        Map Your CSV Fields
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: '12px', color: '#6b7280' }}>
+                                        Map your CSV columns to our required fields. {autoMappingApplied && 'We\'ve automatically detected some mappings for you.'}
+                                    </Typography>
+
+                                    {autoMappingApplied && (
+                                        <Alert severity="info" sx={{ mb: 3 }}>
+                                            Auto-mapping applied! We detected {Object.keys(fieldMappings).length} field mappings.
+                                            Please review and adjust as needed.
+                                        </Alert>
+                                    )}
+
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                                Your CSV Columns ({rawHeaders.length})
+                                            </Typography>
+                                            <Paper sx={{ p: 2, maxHeight: 400, overflow: 'auto', border: '1px solid #e5e7eb' }}>
+                                                {rawHeaders.map((header, index) => (
+                                                    <Chip
+                                                        key={index}
+                                                        label={header}
+                                                        variant="outlined"
+                                                        size="small"
+                                                        sx={{
+                                                            m: 0.5,
+                                                            fontSize: '11px',
+                                                            backgroundColor: Object.values(fieldMappings).includes(header) ? '#e8f5e8' : 'inherit'
+                                                        }}
+                                                    />
+                                                ))}
+                                            </Paper>
+                                        </Grid>
+
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                                Required Fields Mapping
+                                            </Typography>
+                                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                                {Object.entries(fieldDefinitions).map(([requiredField, config]) => (
+                                                    <Box key={requiredField} sx={{ mb: 2 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                            <Typography sx={{
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                                color: '#374151',
+                                                                minWidth: 150
+                                                            }}>
+                                                                {config.label}
+                                                                {config.required && <span style={{ color: 'red' }}> *</span>}
+                                                            </Typography>
+                                                        </Box>
+                                                        <FormControl size="small" fullWidth>
+                                                            <Select
+                                                                value={fieldMappings[requiredField] || ''}
+                                                                onChange={(e) => handleFieldMapping(requiredField, e.target.value)}
+                                                                displayEmpty
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                <MenuItem value="">
+                                                                    <em style={{ color: '#9ca3af' }}>Select column...</em>
+                                                                </MenuItem>
+                                                                {rawHeaders.map((header, index) => (
+                                                                    <MenuItem key={index} value={header} sx={{ fontSize: '12px' }}>
+                                                                        {header}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </FormControl>
+                                                        {fieldMappings[requiredField] && (
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleClearMapping(requiredField)}
+                                                                sx={{ mt: 0.5, fontSize: '10px' }}
+                                                            >
+                                                                Clear
+                                                            </Button>
+                                                        )}
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </Grid>
+                                    </Grid>
+
+                                    <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            onClick={handleResetMappings}
+                                            size="small"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Reset Mappings
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            onClick={handleApplyMappings}
+                                            size="small"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Apply Mappings & Continue
+                                        </Button>
+                                    </Box>
+
+                                    {parseError && (
+                                        <Alert severity="error" sx={{ mt: 2 }}>
+                                            {parseError}
+                                        </Alert>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Preview mapped data */}
+                            {Object.keys(fieldMappings).length > 0 && (
+                                <Card>
+                                    <CardContent>
+                                        <Typography variant="h6" gutterBottom sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                            Mapping Preview (First 3 Rows)
+                                        </Typography>
+                                        <TableContainer sx={{ border: '1px solid #e0e0e0' }}>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        {Object.entries(fieldDefinitions).map(([field, config]) => (
+                                                            <TableCell key={field} sx={{
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                backgroundColor: '#f8fafc',
+                                                                color: fieldMappings[field] ? '#374151' : '#9ca3af'
+                                                            }}>
+                                                                {config.label}
+                                                                {config.required && <span style={{ color: 'red' }}> *</span>}
+                                                            </TableCell>
+                                                        ))}
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {rawParsedData.slice(0, 3).map((row, index) => (
+                                                        <TableRow key={index}>
+                                                            {Object.keys(fieldDefinitions).map(field => {
+                                                                const sourceField = fieldMappings[field];
+                                                                const value = sourceField ? row[sourceField] : '';
+                                                                return (
+                                                                    <TableCell key={field} sx={{
+                                                                        fontSize: '11px',
+                                                                        color: value ? '#374151' : '#9ca3af',
+                                                                        backgroundColor: !value && fieldDefinitions[field].required ? '#fef2f2' : 'inherit'
+                                                                    }}>
+                                                                        {value || '-'}
+                                                                    </TableCell>
+                                                                );
+                                                            })}
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </CardContent>
+                                </Card>
+                            )}
+                        </Box>
+                    )}
+
+                    {/* Step 3: Review & Edit */}
+                    {activeStep === 2 && (
                         <Box>
                             <Card sx={{ mb: 3 }}>
                                 <CardContent>
@@ -976,8 +1398,8 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                         </Box>
                     )}
 
-                    {/* Step 3: Import Results */}
-                    {activeStep === 2 && importResults && (
+                    {/* Step 4: Import Results */}
+                    {activeStep === 3 && importResults && (
                         <Box>
                             <Card>
                                 <CardContent>
@@ -1046,7 +1468,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                         Cancel
                     </Button>
 
-                    {activeStep === 1 && (
+                    {activeStep === 2 && (
                         <Button
                             onClick={performImport}
                             variant="contained"
@@ -1058,7 +1480,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                         </Button>
                     )}
 
-                    {activeStep === 2 && (
+                    {activeStep === 3 && (
                         <>
                             <Button onClick={resetImport} variant="outlined" sx={{ fontSize: '12px' }}>
                                 Import More

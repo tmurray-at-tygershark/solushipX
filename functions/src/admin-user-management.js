@@ -330,7 +330,6 @@ exports.adminListAllUsers = onCall({
                 email: authUser.email,
                 emailVerified: authUser.emailVerified,
                 displayName: authUser.displayName,
-                photoURL: authUser.photoURL,
                 disabled: authUser.disabled,
                 lastSignInTime: authUser.metadata.lastSignInTime,
                 creationTime: authUser.metadata.creationTime,
@@ -342,6 +341,8 @@ exports.adminListAllUsers = onCall({
                 status: firestoreData.status || 'active',
                 phone: firestoreData.phone || '',
                 connectedCompanies: firestoreData.connectedCompanies || { companies: [] },
+                // Use Firestore photoURL if available, otherwise fall back to Auth photoURL
+                photoURL: firestoreData.photoURL || authUser.photoURL,
                 
                 // Metadata
                 hasFirestoreDocument: !!firestoreData.firstName,

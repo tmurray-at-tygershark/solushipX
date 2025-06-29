@@ -553,9 +553,14 @@ const GlobalShipmentList = () => {
                                         sx={{ fontSize: '12px' }}
                                     >
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                            <Typography sx={{ fontSize: '12px' }}>
-                                                {company.name}
-                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {company.name}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                    ({company.companyID})
+                                                </Typography>
+                                            </Box>
                                             {company.status === 'active' ? (
                                                 <Chip
                                                     label="Active"

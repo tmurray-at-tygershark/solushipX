@@ -615,6 +615,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/edi-mapping': [PERMISSIONS.MANAGE_EDI_MAPPING],
   '/admin/shipments': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
   '/admin/addresses': [PERMISSIONS.VIEW_ADDRESSES, PERMISSIONS.VIEW_ALL_ADDRESSES],
+  '/admin/profile': [PERMISSIONS.VIEW_PROFILE],
 };
 
 // Helper function to check if user can access a route

@@ -13,6 +13,8 @@ import {
     Divider,
     Button
 } from '@mui/material';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import {
     Person as PersonIcon,
     Settings as SettingsIcon,
@@ -52,6 +54,7 @@ const AdminHeader = () => {
     const [anchorEl, setAnchorEl] = useState(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [megaMenuOpen, setMegaMenuOpen] = useState(null);
+    const [userProfileData, setUserProfileData] = useState({});
     const navbarRef = useRef(null);
     const megaMenuTimeoutRef = useRef(null);
 
@@ -137,12 +140,47 @@ const AdminHeader = () => {
         setMobileMenuOpen(false);
     };
 
-    const handleMegaMenuEnter = (menuKey) => {
-        if (megaMenuTimeoutRef.current) {
-            clearTimeout(megaMenuTimeoutRef.current);
-        }
-        setMegaMenuOpen(menuKey);
-    };
+
+
+    // Load user profile data for avatar
+    useEffect(() => {
+        const loadUserProfileData = async () => {
+            if (currentUser?.uid) {
+                try {
+                    const userDocRef = doc(db, 'users', currentUser.uid);
+                    const userDoc = await getDoc(userDocRef);
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        setUserProfileData({
+                            firstName: userData.firstName || '',
+                            lastName: userData.lastName || '',
+                            photoURL: userData.photoURL || currentUser.photoURL || '',
+                            email: userData.email || currentUser.email || ''
+                        });
+                    } else {
+                        // Fallback to auth data if no Firestore document
+                        setUserProfileData({
+                            firstName: '',
+                            lastName: '',
+                            photoURL: currentUser.photoURL || '',
+                            email: currentUser.email || ''
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading user profile data:', error);
+                    // Fallback to auth data
+                    setUserProfileData({
+                        firstName: '',
+                        lastName: '',
+                        photoURL: currentUser.photoURL || '',
+                        email: currentUser.email || ''
+                    });
+                }
+            }
+        };
+
+        loadUserProfileData();
+    }, [currentUser]);
 
     // Close mega menu when clicking outside
     useEffect(() => {
@@ -240,9 +278,20 @@ const AdminHeader = () => {
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 1000,
-                    mt: 1,
+                    mt: 0, // Remove gap between button and menu
                     width: '320px',
                     maxWidth: '90vw'
+                }}
+                onMouseEnter={() => {
+                    if (megaMenuTimeoutRef.current) {
+                        clearTimeout(megaMenuTimeoutRef.current);
+                    }
+                    setMegaMenuOpen(categoryKey);
+                }}
+                onMouseLeave={() => {
+                    megaMenuTimeoutRef.current = setTimeout(() => {
+                        setMegaMenuOpen(null);
+                    }, 150);
                 }}
             >
                 <Paper
@@ -251,7 +300,8 @@ const AdminHeader = () => {
                         borderRadius: 2,
                         border: '1px solid #e5e7eb',
                         overflow: 'hidden',
-                        backgroundColor: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        mt: 1 // Add small gap back for visual separation
                     }}
                 >
                     <Box sx={{ p: 2 }}>
@@ -334,7 +384,20 @@ const AdminHeader = () => {
         if (megaMenuOpen !== 'quickActions') return null;
 
         const quickActions = [
-            { title: 'New Shipment', description: 'Create a new shipment', icon: <ShippingIcon />, path: '/admin/shipments', color: '#10b981' },
+            {
+                title: 'Quickship',
+                description: 'Create Shipments Quickly',
+                icon: <ShippingIcon />,
+                action: () => navigate('/admin/shipments?action=quickship'),
+                color: '#10b981'
+            },
+            {
+                title: 'Real-Time Rates',
+                description: 'Get Instant Shipping Rates',
+                icon: <ShippingIcon />,
+                action: () => navigate('/admin/shipments?action=rates'),
+                color: '#059669'
+            },
             { title: 'New Company', description: 'Add a new company', icon: <BusinessIcon />, path: '/admin/companies/new', color: '#3b82f6' },
             { title: 'New Address', description: 'Add a new address', icon: <LocationIcon />, path: '/admin/addresses/new', color: '#f59e0b' },
             { title: 'New User', description: 'Create a new user account', icon: <PeopleIcon />, path: '/admin/users/new', color: '#8b5cf6' }
@@ -347,9 +410,20 @@ const AdminHeader = () => {
                     top: '100%',
                     right: 0,
                     zIndex: 1000,
-                    mt: 1,
+                    mt: 0, // Remove gap between button and menu
                     width: '280px',
                     maxWidth: '90vw'
+                }}
+                onMouseEnter={() => {
+                    if (megaMenuTimeoutRef.current) {
+                        clearTimeout(megaMenuTimeoutRef.current);
+                    }
+                    setMegaMenuOpen('quickActions');
+                }}
+                onMouseLeave={() => {
+                    megaMenuTimeoutRef.current = setTimeout(() => {
+                        setMegaMenuOpen(null);
+                    }, 150);
                 }}
             >
                 <Paper
@@ -358,7 +432,8 @@ const AdminHeader = () => {
                         borderRadius: 2,
                         border: '1px solid #e5e7eb',
                         overflow: 'hidden',
-                        backgroundColor: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        mt: 1 // Add small gap back for visual separation
                     }}
                 >
                     <Box sx={{ p: 2 }}>
@@ -378,57 +453,112 @@ const AdminHeader = () => {
                             </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                            {quickActions.map((action, index) => (
-                                <Link
-                                    key={index}
-                                    to={action.path}
-                                    style={{ textDecoration: 'none' }}
-                                    onClick={() => setMegaMenuOpen(null)}
-                                >
-                                    <Box
-                                        sx={{
-                                            p: 1.5,
-                                            borderRadius: 1,
-                                            transition: 'all 0.15s ease',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            border: '1px solid transparent',
-                                            '&:hover': {
-                                                backgroundColor: `${action.color}15`,
-                                                transform: 'translateX(2px)',
-                                                border: `1px solid ${action.color}40`
-                                            }
-                                        }}
-                                    >
-                                        <Box sx={{ color: action.color, mr: 1.5, fontSize: '16px' }}>
-                                            {action.icon}
+                            {quickActions.map((action, index) => {
+                                // Handle actions with custom functions vs regular path links
+                                if (action.action) {
+                                    return (
+                                        <Box
+                                            key={index}
+                                            onClick={() => {
+                                                setMegaMenuOpen(null);
+                                                action.action();
+                                            }}
+                                            sx={{
+                                                p: 1.5,
+                                                borderRadius: 1,
+                                                transition: 'all 0.15s ease',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                border: '1px solid transparent',
+                                                '&:hover': {
+                                                    backgroundColor: `${action.color}15`,
+                                                    transform: 'translateX(2px)',
+                                                    border: `1px solid ${action.color}40`
+                                                }
+                                            }}
+                                        >
+                                            <Box sx={{ color: action.color, mr: 1.5, fontSize: '16px' }}>
+                                                {action.icon}
+                                            </Box>
+                                            <Box>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '13px',
+                                                        fontWeight: 500,
+                                                        color: '#111827',
+                                                        lineHeight: 1.2,
+                                                        mb: 0.5
+                                                    }}
+                                                >
+                                                    {action.title}
+                                                </Typography>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        color: '#6b7280',
+                                                        lineHeight: 1.3
+                                                    }}
+                                                >
+                                                    {action.description}
+                                                </Typography>
+                                            </Box>
                                         </Box>
-                                        <Box>
-                                            <Typography
+                                    );
+                                } else {
+                                    return (
+                                        <Link
+                                            key={index}
+                                            to={action.path}
+                                            style={{ textDecoration: 'none' }}
+                                            onClick={() => setMegaMenuOpen(null)}
+                                        >
+                                            <Box
                                                 sx={{
-                                                    fontSize: '13px',
-                                                    fontWeight: 500,
-                                                    color: '#111827',
-                                                    lineHeight: 1.2,
-                                                    mb: 0.5
+                                                    p: 1.5,
+                                                    borderRadius: 1,
+                                                    transition: 'all 0.15s ease',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    border: '1px solid transparent',
+                                                    '&:hover': {
+                                                        backgroundColor: `${action.color}15`,
+                                                        transform: 'translateX(2px)',
+                                                        border: `1px solid ${action.color}40`
+                                                    }
                                                 }}
                                             >
-                                                {action.title}
-                                            </Typography>
-                                            <Typography
-                                                sx={{
-                                                    fontSize: '11px',
-                                                    color: '#6b7280',
-                                                    lineHeight: 1.3
-                                                }}
-                                            >
-                                                {action.description}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                </Link>
-                            ))}
+                                                <Box sx={{ color: action.color, mr: 1.5, fontSize: '16px' }}>
+                                                    {action.icon}
+                                                </Box>
+                                                <Box>
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: '13px',
+                                                            fontWeight: 500,
+                                                            color: '#111827',
+                                                            lineHeight: 1.2,
+                                                            mb: 0.5
+                                                        }}
+                                                    >
+                                                        {action.title}
+                                                    </Typography>
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            color: '#6b7280',
+                                                            lineHeight: 1.3
+                                                        }}
+                                                    >
+                                                        {action.description}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </Link>
+                                    );
+                                }
+                            })}
                         </Box>
                     </Box>
                 </Paper>
@@ -443,7 +573,7 @@ const AdminHeader = () => {
                     <img
                         src="/images/solushipx_logo_white.png"
                         alt="SolushipX Logo"
-                        style={{ height: '39px' }}
+                        style={{ height: '52px' }}
                     />
                 </Link>
                 <IconButton
@@ -460,7 +590,21 @@ const AdminHeader = () => {
                     {/* Mega Menu */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative' }}>
                         {Object.entries(megaMenuConfig).map(([key, category]) => (
-                            <Box key={key} sx={{ position: 'relative' }}>
+                            <Box
+                                key={key}
+                                sx={{ position: 'relative' }}
+                                onMouseEnter={() => {
+                                    if (megaMenuTimeoutRef.current) {
+                                        clearTimeout(megaMenuTimeoutRef.current);
+                                    }
+                                    setMegaMenuOpen(key);
+                                }}
+                                onMouseLeave={() => {
+                                    megaMenuTimeoutRef.current = setTimeout(() => {
+                                        setMegaMenuOpen(null);
+                                    }, 150);
+                                }}
+                            >
                                 <Button
                                     onClick={() => setMegaMenuOpen(megaMenuOpen === key ? null : key)}
                                     endIcon={<ExpandMoreIcon />}
@@ -492,33 +636,21 @@ const AdminHeader = () => {
 
                     {/* Action Buttons */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {/* Settings Button */}
-                        <IconButton
-                            onClick={() => navigate('/admin/settings')}
-                            sx={{
-                                backgroundColor: '#ffffff',
-                                color: '#374151',
-                                width: 40,
-                                height: 40,
-                                borderRadius: '50%',
-                                border: '2px solid rgba(255, 255, 255, 0.9)',
-                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                    backgroundColor: '#f8fafc',
-                                    transform: 'scale(1.05)',
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
-                                },
-                                '&:active': {
-                                    transform: 'scale(0.95)'
+                        {/* Quick Actions Button */}
+                        <Box
+                            sx={{ position: 'relative' }}
+                            onMouseEnter={() => {
+                                if (megaMenuTimeoutRef.current) {
+                                    clearTimeout(megaMenuTimeoutRef.current);
                                 }
+                                setMegaMenuOpen('quickActions');
+                            }}
+                            onMouseLeave={() => {
+                                megaMenuTimeoutRef.current = setTimeout(() => {
+                                    setMegaMenuOpen(null);
+                                }, 150);
                             }}
                         >
-                            <SettingsIcon sx={{ fontSize: 20 }} />
-                        </IconButton>
-
-                        {/* Quick Actions Button */}
-                        <Box sx={{ position: 'relative' }}>
                             <IconButton
                                 onClick={() => setMegaMenuOpen(megaMenuOpen === 'quickActions' ? null : 'quickActions')}
                                 sx={{
@@ -544,6 +676,31 @@ const AdminHeader = () => {
                             </IconButton>
                             {renderQuickActionsMenu()}
                         </Box>
+
+                        {/* Settings Button */}
+                        <IconButton
+                            onClick={() => navigate('/admin/settings')}
+                            sx={{
+                                backgroundColor: '#ffffff',
+                                color: '#374151',
+                                width: 40,
+                                height: 40,
+                                borderRadius: '50%',
+                                border: '2px solid rgba(255, 255, 255, 0.9)',
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                    backgroundColor: '#f8fafc',
+                                    transform: 'scale(1.05)',
+                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                },
+                                '&:active': {
+                                    transform: 'scale(0.95)'
+                                }
+                            }}
+                        >
+                            <SettingsIcon sx={{ fontSize: 20 }} />
+                        </IconButton>
                     </Box>
                 </Box>
 
@@ -603,9 +760,33 @@ const AdminHeader = () => {
                         size="small"
                         onClick={handleMenuClick}
                         className="profile-button"
+                        sx={{
+                            p: 0, // Remove padding to make avatar fill the button
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%'
+                        }}
                     >
-                        <Avatar className="profile-avatar">
-                            {getInitials(currentUser?.displayName)}
+                        <Avatar
+                            src={userProfileData.photoURL}
+                            className="profile-avatar"
+                            sx={{
+                                width: 40,
+                                height: 40,
+                                border: '2px solid #ffffff',
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                    transform: 'scale(1.05)',
+                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                }
+                            }}
+                        >
+                            {!userProfileData.photoURL && (
+                                userProfileData.firstName && userProfileData.lastName
+                                    ? `${userProfileData.firstName[0]}${userProfileData.lastName[0]}`
+                                    : getInitials(currentUser?.displayName)
+                            )}
                         </Avatar>
                     </IconButton>
                     <Menu

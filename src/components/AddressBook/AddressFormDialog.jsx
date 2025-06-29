@@ -14,17 +14,22 @@ const AddressFormDialog = ({
     editingAddress = null,
     addressType = 'from', // 'from' or 'to' - used for dialog title context
     companyId,
+    customerId = null, // NEW: Add customerId prop for customer addresses
     initialData = {}
 }) => {
     // Determine if we're editing an existing address or creating a new one
     const isEditing = editingAddress && editingAddress.id;
 
-    // For new addresses, prepare initial data
+    // For new addresses, prepare initial data based on context
     const formInitialData = isEditing ? {} : {
         ...initialData,
-        addressClass: 'company',
-        addressClassID: companyId,
-        addressType: addressType === 'from' ? 'pickup' : 'delivery'
+        // FIXED: Use customer context if customerId is provided (shipping addresses)
+        // Otherwise use company context (company management addresses)
+        addressClass: customerId ? 'customer' : 'company',
+        addressClassID: customerId || companyId,
+        addressType: customerId
+            ? (addressType === 'from' ? 'pickup' : 'destination') // Customer addresses use pickup/destination
+            : (addressType === 'from' ? 'pickup' : 'delivery')     // Company addresses use pickup/delivery
     };
 
     const handleSuccess = (addressId) => {

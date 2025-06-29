@@ -375,6 +375,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
     // Fetch carriers data - moved up to avoid hoisting issues
     const fetchCarriers = useCallback(async () => {
+        console.log('fetchCarriers: Starting to fetch carriers from Firestore');
         setLoading(true);
         try {
             const carriersRef = collection(db, 'carriers');
@@ -385,10 +386,21 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 ...doc.data()
             }));
 
+            console.log('fetchCarriers: Raw carriers data from Firestore:', carriersData.length, 'documents');
+
             // Filter out deleted carriers
             const activeCarriers = carriersData.filter(carrier => carrier.status !== 'deleted');
+            console.log('fetchCarriers: Active carriers after filtering:', activeCarriers.length, 'documents');
+
             setAllCarriers(activeCarriers);
             setTotalCount(activeCarriers.length);
+
+            // Log logo URLs for debugging
+            activeCarriers.forEach(carrier => {
+                if (carrier.logoURL) {
+                    console.log(`fetchCarriers: ${carrier.name} - logoURL: ${carrier.logoURL}`);
+                }
+            });
         } catch (error) {
             console.error('Error loading carriers:', error);
             showSnackbar('Failed to load carriers', 'error');
@@ -740,9 +752,12 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const handleLogoChange = (e) => {
         const file = e.target.files[0];
         if (file) {
+            console.log('Logo file selected:', file.name, file.size);
+            console.log('Setting logoFile state to:', file);
             setLogoFile(file);
             setLogoPreview(URL.createObjectURL(file));
             setFormData(prev => ({ ...prev, logoFileName: file.name }));
+            console.log('Logo file state updated. New logoFile should be:', file.name);
         }
     };
 
@@ -841,6 +856,8 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     // Save carrier
     const handleSaveCarrier = async (e) => {
         e.preventDefault();
+        console.log('handleSaveCarrier called. Edit mode:', isEditMode, 'Logo file:', logoFile?.name);
+        console.log('Current formData.logoURL:', formData.logoURL);
 
         if (!validateForm()) {
             showSnackbar('Please fix the errors in the form', 'error');
@@ -849,6 +866,37 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
         setSaving(true);
         try {
+            let logoURL = formData.logoURL;
+            console.log('Before upload check - logoFile state:', logoFile);
+            console.log('Before upload check - logoFile exists:', !!logoFile);
+            console.log('Before upload check - logoFile name:', logoFile?.name);
+
+            // Upload logo to Firebase Storage if a new file is selected
+            if (logoFile) {
+                try {
+                    console.log('Starting logo upload process. File:', logoFile.name, 'Size:', logoFile.size);
+                    const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+                    const { getApp } = await import('firebase/app');
+
+                    const firebaseApp = getApp();
+                    const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                    const fileExtension = logoFile.name.split('.').pop();
+                    const fileName = `carrier-${formData.carrierID.trim().toUpperCase()}-${Date.now()}.${fileExtension}`;
+                    const logoRef = ref(customStorage, `carrier-logos/${fileName}`);
+
+                    console.log('Uploading logo to Firebase Storage with filename:', fileName);
+                    const snapshot = await uploadBytes(logoRef, logoFile);
+                    logoURL = await getDownloadURL(snapshot.ref);
+                    console.log('Logo uploaded successfully:', logoURL);
+                } catch (uploadError) {
+                    console.error('Error uploading logo:', uploadError);
+                    showSnackbar('Failed to upload logo. Saving carrier without logo.', 'warning');
+                    logoURL = formData.logoURL; // Keep existing URL if upload fails
+                }
+            } else {
+                console.log('No logo file selected, keeping existing URL:', formData.logoURL);
+            }
+
             const carrierData = {
                 name: formData.name.trim(),
                 carrierID: formData.carrierID.trim().toUpperCase(),
@@ -856,9 +904,17 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 connectionType: formData.connectionType,
                 enabled: formData.enabled,
                 logoFileName: formData.logoFileName,
-                logoURL: logoFile ? '' : formData.logoURL, // Will be updated if new logo uploaded
+                logoURL: logoURL,
                 updatedAt: serverTimestamp(),
             };
+
+            console.log('Prepared carrier data for save:', {
+                ...carrierData,
+                logoURL: logoURL,
+                logoFileName: formData.logoFileName,
+                isEditMode: isEditMode,
+                selectedCarrierId: selectedCarrier?.id
+            });
 
             // Add connection-specific data
             if (formData.connectionType === 'api') {
@@ -899,14 +955,21 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             }
 
             if (isEditMode && selectedCarrier) {
+                console.log('Updating carrier document with ID:', selectedCarrier.id);
+                console.log('Update data:', carrierData);
                 await updateDoc(doc(db, 'carriers', selectedCarrier.id), carrierData);
+                console.log('Carrier document updated successfully in Firestore');
                 enqueueSnackbar('Carrier updated successfully.', { variant: 'success' });
             } else {
-                await addDoc(collection(db, 'carriers'), carrierData);
+                console.log('Creating new carrier document');
+                const docRef = await addDoc(collection(db, 'carriers'), carrierData);
+                console.log('New carrier document created with ID:', docRef.id);
                 enqueueSnackbar('Carrier created successfully.', { variant: 'success' });
             }
 
-            fetchCarriers();
+            console.log('Refreshing carriers list...');
+            await fetchCarriers();
+            console.log('Carriers list refreshed');
             handleCloseDialog();
         } catch (err) {
             console.error('Error saving carrier:', err);

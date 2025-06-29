@@ -57,7 +57,7 @@ import {
     Mic as MicIcon,
     Send as SendIcon
 } from '@mui/icons-material';
-import { doc, getDoc, deleteDoc, collection, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc, collection, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, onSnapshot, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -184,6 +184,7 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
 
     // State management
     const [address, setAddress] = useState(null);
+    const [customerInfo, setCustomerInfo] = useState(null);
     const [loading, setLoading] = useState(true);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -268,10 +269,16 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
             const addressDoc = await getDoc(doc(db, 'addressBook', addressId));
 
             if (addressDoc.exists()) {
-                setAddress({
+                const addressData = {
                     id: addressDoc.id,
                     ...addressDoc.data()
-                });
+                };
+                setAddress(addressData);
+
+                // If this is a customer address, fetch customer information
+                if (addressData.addressClass === 'customer' && addressData.addressClassID) {
+                    await fetchCustomerInfo(addressData.addressClassID);
+                }
             } else {
                 enqueueSnackbar('Address not found', { variant: 'error' });
                 onBack();
@@ -281,6 +288,36 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
             enqueueSnackbar('Failed to load address data', { variant: 'error' });
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchCustomerInfo = async (customerID) => {
+        try {
+            console.log('[AddressDetail] Fetching customer info for:', customerID);
+
+            // Query the customers collection for the customer
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('customerID', '==', customerID),
+                limit(1)
+            );
+
+            const customersSnapshot = await getDocs(customersQuery);
+
+            if (!customersSnapshot.empty) {
+                const customerDoc = customersSnapshot.docs[0];
+                const customerData = {
+                    id: customerDoc.id,
+                    ...customerDoc.data()
+                };
+
+                console.log('[AddressDetail] Found customer info:', customerData);
+                setCustomerInfo(customerData);
+            } else {
+                console.log('[AddressDetail] No customer found for ID:', customerID);
+            }
+        } catch (error) {
+            console.error('[AddressDetail] Error fetching customer info:', error);
         }
     };
 
@@ -1236,6 +1273,72 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                     </Card>
                 </Grid>
 
+                {/* Customer Owner - NEW SECTION */}
+                {address.addressClass === 'customer' && (
+                    <Grid item xs={12} md={6}>
+                        <Card sx={{ border: '1px solid #e2e8f0', height: '100%' }}>
+                            <CardHeader
+                                title={
+                                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                        Customer Owner
+                                    </Typography>
+                                }
+                                sx={{ pb: 1 }}
+                            />
+                            <CardContent sx={{ pt: 1 }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <Box>
+                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block' }}>
+                                            Customer Name
+                                        </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+                                            <Avatar
+                                                src={customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo || ''}
+                                                sx={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    bgcolor: (customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo) ? 'transparent' : '#3b82f6',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    border: '1px solid #e5e7eb'
+                                                }}
+                                            >
+                                                {!(customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo) && (
+                                                    (customerInfo?.name || customerInfo?.customerName || address.customerName || address.companyName || address.addressClassID) ?
+                                                        (customerInfo?.name || customerInfo?.customerName || address.customerName || address.companyName || address.addressClassID).charAt(0).toUpperCase() : 'C'
+                                                )}
+                                            </Avatar>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {customerInfo?.name || customerInfo?.customerName || address.customerName || address.companyName || 'N/A'}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                    <Divider />
+                                    <Box>
+                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block' }}>
+                                            Customer ID
+                                        </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                                {address.addressClassID || address.addressType || 'N/A'}
+                                            </Typography>
+                                            {(address.addressClassID || address.addressType) && (
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleCopyToClipboard(address.addressClassID || address.addressType, 'Customer ID')}
+                                                    sx={{ p: 0.5 }}
+                                                >
+                                                    <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                </IconButton>
+                                            )}
+                                        </Box>
+                                    </Box>
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                )}
+
                 {/* Contact Information */}
                 <Grid item xs={12} md={6}>
                     <Card sx={{ border: '1px solid #e2e8f0', height: '100%' }}>
@@ -1275,12 +1378,24 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                                     </Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
                                         <Typography variant="body2" sx={{ fontSize: '12px', flex: 1 }}>
-                                            {address.phone || 'N/A'}
+                                            {address.phone ? (
+                                                <>
+                                                    {address.phone}
+                                                    {address.phoneExt && (
+                                                        <Typography component="span" sx={{ fontSize: '12px', color: '#6b7280', ml: 1 }}>
+                                                            ext. {address.phoneExt}
+                                                        </Typography>
+                                                    )}
+                                                </>
+                                            ) : 'N/A'}
                                         </Typography>
                                         {address.phone && (
                                             <IconButton
                                                 size="small"
-                                                onClick={() => handleCopyToClipboard(address.phone, 'Phone')}
+                                                onClick={() => handleCopyToClipboard(
+                                                    address.phoneExt ? `${address.phone} ext. ${address.phoneExt}` : address.phone,
+                                                    'Phone'
+                                                )}
                                                 sx={{ p: 0.5 }}
                                             >
                                                 <ContentCopyIcon sx={{ fontSize: '14px' }} />

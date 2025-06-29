@@ -44,7 +44,8 @@ import {
     FormControlLabel,
     Checkbox,
     FormHelperText,
-    AlertTitle
+    AlertTitle,
+    Avatar
 } from '@mui/material';
 import {
     Upload as UploadIcon,
@@ -67,7 +68,8 @@ import {
     CheckCircle as CheckCompleteIcon,
     Refresh as RefreshIcon,
     Visibility as ViewIcon,
-    Download as DownloadIcon
+    Download as DownloadIcon,
+    LocalShipping as LocalShippingIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useSnackbar } from 'notistack';
@@ -1488,7 +1490,24 @@ const APProcessing = () => {
                                             setSelectedCarrier(e.target.value);
                                         }}
                                         label="Select Carrier for PDF Processing"
-                                        sx={{ fontSize: '12px', backgroundColor: 'white' }}
+                                        sx={{
+                                            fontSize: '12px',
+                                            backgroundColor: 'white',
+                                            '& .MuiSelect-select': {
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }
+                                        }}
+                                        MenuProps={{
+                                            PaperProps: {
+                                                sx: {
+                                                    maxHeight: 400,
+                                                    '& .MuiMenuItem-root': {
+                                                        fontSize: '12px'
+                                                    }
+                                                }
+                                            }
+                                        }}
                                     >
                                         <MenuItem value="" sx={{ fontSize: '12px' }}>
                                             <em>None (for EDI files)</em>
@@ -1496,8 +1515,60 @@ const APProcessing = () => {
                                         {carrierTemplates
                                             .filter(carrier => carrier.supported)
                                             .map(carrier => (
-                                                <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
-                                                    {carrier.name}
+                                                <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px', py: 1.5 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                                        {/* Carrier Logo */}
+                                                        <Avatar
+                                                            src={carrier.logoURL}
+                                                            sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                border: '1px solid #e5e7eb',
+                                                                bgcolor: '#f8fafc'
+                                                            }}
+                                                        >
+                                                            <LocalShippingIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                                                        </Avatar>
+
+                                                        {/* Carrier Details */}
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography
+                                                                sx={{
+                                                                    fontWeight: 600,
+                                                                    fontSize: '12px',
+                                                                    color: '#374151',
+                                                                    whiteSpace: 'nowrap',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis'
+                                                                }}
+                                                            >
+                                                                {carrier.name}
+                                                            </Typography>
+                                                            <Typography
+                                                                sx={{
+                                                                    fontSize: '10px',
+                                                                    color: '#6b7280',
+                                                                    whiteSpace: 'nowrap',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis'
+                                                                }}
+                                                            >
+                                                                ID: {carrier.id}
+                                                            </Typography>
+                                                        </Box>
+
+                                                        {/* Status Chip */}
+                                                        <Chip
+                                                            label={carrier.supported ? 'Supported' : 'Not Supported'}
+                                                            size="small"
+                                                            color={carrier.supported ? 'success' : 'default'}
+                                                            sx={{
+                                                                height: 18,
+                                                                fontSize: '9px',
+                                                                fontWeight: 500
+                                                            }}
+                                                        />
+                                                    </Box>
                                                 </MenuItem>
                                             ))}
                                     </Select>

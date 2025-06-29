@@ -89,6 +89,10 @@ const EditCarrier = ({
         rateConfiguration: false
     });
 
+    // Logo file state - this is the missing piece!
+    const [logoFile, setLogoFile] = useState(null);
+    const [logoPreview, setLogoPreview] = useState('');
+
     const { currentUser } = useAuth();
     const { enqueueSnackbar } = useSnackbar();
 
@@ -251,7 +255,7 @@ const EditCarrier = ({
     }, [carrierId]);
 
     // Form data update handler
-    const updateFormData = useCallback((stepData) => {
+    const updateFormData = useCallback((stepData, logoFileData = null) => {
         setFormData(prev => {
             const newData = { ...prev, ...stepData };
 
@@ -275,6 +279,13 @@ const EditCarrier = ({
 
             return newData;
         });
+
+        // Handle logo file if provided
+        if (logoFileData) {
+            console.log('Logo file data received in EditCarrier:', logoFileData);
+            setLogoFile(logoFileData.file);
+            setLogoPreview(logoFileData.preview);
+        }
     }, []);
 
     // Section validation
@@ -350,6 +361,9 @@ const EditCarrier = ({
     const handleSave = useCallback(async () => {
         if (!formData) return;
 
+        console.log('EditCarrier handleSave called');
+        console.log('Form data:', formData);
+
         // Validate all sections
         const allSectionErrors = {};
         let hasErrors = false;
@@ -370,15 +384,47 @@ const EditCarrier = ({
 
         setSaving(true);
         try {
+            let logoURL = formData.logoURL;
+
+            // Upload logo to Firebase Storage if a new file is selected
+            if (logoFile) {
+                try {
+                    console.log('Starting logo upload process. File:', logoFile.name, 'Size:', logoFile.size);
+                    const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+                    const { getApp } = await import('firebase/app');
+
+                    const firebaseApp = getApp();
+                    const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
+                    const fileExtension = logoFile.name.split('.').pop();
+                    const fileName = `carrier-${formData.carrierID.trim().toUpperCase()}-${Date.now()}.${fileExtension}`;
+                    const logoRef = ref(customStorage, `carrier-logos/${fileName}`);
+
+                    console.log('Uploading logo to Firebase Storage with filename:', fileName);
+                    const snapshot = await uploadBytes(logoRef, logoFile);
+                    logoURL = await getDownloadURL(snapshot.ref);
+                    console.log('Logo uploaded successfully. New URL:', logoURL);
+                } catch (uploadError) {
+                    console.error('Error uploading logo:', uploadError);
+                    enqueueSnackbar('Failed to upload logo. Saving carrier without logo update.', { variant: 'warning' });
+                    logoURL = formData.logoURL; // Keep existing URL if upload fails
+                }
+            } else {
+                console.log('No logo file selected, keeping existing URL:', formData.logoURL);
+            }
+
             const updateData = {
                 ...formData,
                 carrierID: formData.carrierID.toUpperCase(),
+                logoURL: logoURL,
                 updatedAt: serverTimestamp(),
                 updatedBy: currentUser?.uid
             };
 
+            console.log('Updating carrier with data:', updateData);
+
             await updateDoc(doc(db, 'carriers', carrierId), updateData);
 
+            console.log('Carrier updated successfully in Firestore');
             enqueueSnackbar('Carrier updated successfully', { variant: 'success' });
 
             if (onCarrierUpdated) {

@@ -69,6 +69,11 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
         // Update form data
         handleFieldChange('logoFileName', file.name);
 
+        // Pass logo file data to parent EditCarrier component
+        if (onUpdate) {
+            onUpdate({ logoFileName: file.name }, { file: file, preview: preview });
+        }
+
         // Clear logo errors
         if (errors.logo) {
             setErrors(prev => {
@@ -114,7 +119,12 @@ const CarrierInfoStep = ({ data, onUpdate, errors, setErrors }) => {
         setLogoPreview('');
         handleFieldChange('logoFileName', '');
         handleFieldChange('logoURL', '');
-    }, [handleFieldChange]);
+
+        // Clear logo file data in parent
+        if (onUpdate) {
+            onUpdate({ logoFileName: '', logoURL: '' }, { file: null, preview: '' });
+        }
+    }, [handleFieldChange, onUpdate]);
 
     return (
         <Box sx={{ width: '100%' }}>

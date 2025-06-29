@@ -278,6 +278,7 @@ function AppRoutes() {
                     <Route path="carriers/:carrierId/edit" element={<EditCarrier />} />
                     <Route path="markups" element={<MarkupsPage />} />
                     <Route path="addresses" element={<GlobalAddressList />} />
+                    <Route path="profile" element={<Profile isModal={false} />} />
                 </Route>
 
                 {/* Fallback Route */}

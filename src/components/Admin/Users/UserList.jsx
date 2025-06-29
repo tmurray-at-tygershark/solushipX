@@ -94,7 +94,7 @@ const UsersTableSkeleton = () => {
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 <Checkbox disabled />
                                 <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
-                                    <PersonIcon sx={{ fontSize: '14px' }} />
+                                    <PersonIcon sx={{ fontSize: '14px', color: '#9ca3af' }} />
                                 </Avatar>
                                 <Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} />
                             </Box>
@@ -748,7 +748,10 @@ const UserList = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                                         onChange={() => handleSelect(user.id)}
                                                         size="small"
                                                     />
-                                                    <Avatar sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}>
+                                                    <Avatar
+                                                        src={user.photoURL}
+                                                        sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
+                                                    >
                                                         <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
                                                             {user.firstName?.charAt(0) || userEmail?.charAt(0) || '?'}
                                                         </Typography>

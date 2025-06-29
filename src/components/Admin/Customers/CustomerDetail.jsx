@@ -71,16 +71,37 @@ const CustomerDetail = () => {
         try {
             console.log('[CustomerDetail] Starting data fetch for customerFirestoreId:', customerFirestoreId);
 
-            // Fetch customer data
-            const customerDocRef = doc(db, 'customers', customerFirestoreId);
-            const customerDoc = await getDoc(customerDocRef);
+            // First try to fetch customer by document ID (for backward compatibility)
+            let customerData = null;
+            try {
+                const customerDocRef = doc(db, 'customers', customerFirestoreId);
+                const customerDoc = await getDoc(customerDocRef);
+                if (customerDoc.exists()) {
+                    customerData = { id: customerDoc.id, ...customerDoc.data() };
+                }
+            } catch (docError) {
+                console.log('[CustomerDetail] Document ID lookup failed, trying customerID lookup');
+            }
 
-            if (!customerDoc.exists()) {
+            // If not found by document ID, try to fetch by customerID field
+            if (!customerData) {
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', customerFirestoreId)
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+                if (!customerSnapshot.empty) {
+                    const customerDoc = customerSnapshot.docs[0];
+                    customerData = { id: customerDoc.id, ...customerDoc.data() };
+                }
+            }
+
+            if (!customerData) {
                 setError('Customer not found');
                 setLoading(false);
                 return;
             }
-            const customerData = { id: customerDoc.id, ...customerDoc.data() };
+
             setCustomer(customerData);
             console.log('[CustomerDetail] Customer data loaded:', customerData);
 
