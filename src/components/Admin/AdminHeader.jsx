@@ -277,7 +277,7 @@ const AdminHeader = () => {
                     top: '100%',
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    zIndex: 1000,
+                    zIndex: 999999,
                     mt: 0, // Remove gap between button and menu
                     width: '320px',
                     maxWidth: '90vw'
@@ -409,7 +409,7 @@ const AdminHeader = () => {
                     position: 'absolute',
                     top: '100%',
                     right: 0,
-                    zIndex: 1000,
+                    zIndex: 999999,
                     mt: 0, // Remove gap between button and menu
                     width: '280px',
                     maxWidth: '90vw'
@@ -713,7 +713,7 @@ const AdminHeader = () => {
                             left: 0,
                             right: 0,
                             backgroundColor: '#1e40af',
-                            zIndex: 999,
+                            zIndex: 999999,
                             borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                             display: { xs: 'block', lg: 'none' }
                         }}
