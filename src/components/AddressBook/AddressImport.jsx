@@ -292,70 +292,149 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                     return;
                 }
 
-                const lines = text.split('\n')
-                    .map(line => line.trim())
-                    .filter(line => line.length > 0);
+                // Advanced CSV parsing that handles multi-line fields and quoted content
+                const parseCSVContent = (csvText) => {
+                    const rows = [];
+                    let currentRow = [];
+                    let currentField = '';
+                    let inQuotes = false;
+                    let i = 0;
 
-                if (lines.length < 2) {
+                    while (i < csvText.length) {
+                        const char = csvText[i];
+                        const nextChar = csvText[i + 1];
+
+                        if (char === '"') {
+                            if (inQuotes && nextChar === '"') {
+                                // Escaped quote
+                                currentField += '"';
+                                i += 2;
+                                continue;
+                            } else {
+                                // Toggle quote state
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (char === ',' && !inQuotes) {
+                            // Field separator
+                            currentRow.push(currentField.trim());
+                            currentField = '';
+                        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                            // Row separator (only when not in quotes)
+                            if (currentField || currentRow.length > 0) {
+                                currentRow.push(currentField.trim());
+                                if (currentRow.some(field => field.length > 0)) {
+                                    rows.push(currentRow);
+                                }
+                                currentRow = [];
+                                currentField = '';
+                            }
+                            // Skip \r\n combinations
+                            if (char === '\r' && nextChar === '\n') {
+                                i++;
+                            }
+                        } else if (char !== '\r') {
+                            // Regular character (skip standalone \r)
+                            currentField += char;
+                        }
+                        i++;
+                    }
+
+                    // Add final field and row if needed
+                    if (currentField || currentRow.length > 0) {
+                        currentRow.push(currentField.trim());
+                        if (currentRow.some(field => field.length > 0)) {
+                            rows.push(currentRow);
+                        }
+                    }
+
+                    return rows;
+                };
+
+                const allRows = parseCSVContent(text);
+
+                if (allRows.length < 2) {
                     setParseError('CSV file must contain at least a header row and one data row.');
                     return;
                 }
 
-                // Parse headers with better error handling
-                let headers;
-                try {
-                    headers = parseCSVLine(lines[0]);
-                    if (headers.length === 0) {
-                        setParseError('Invalid CSV header row - no columns found.');
-                        return;
-                    }
-                } catch (headerError) {
-                    setParseError(`Error parsing CSV headers: ${headerError.message}`);
+                // Parse headers
+                const headers = allRows[0];
+                if (headers.length === 0) {
+                    setParseError('Invalid CSV header row - no columns found.');
                     return;
                 }
 
+                console.log(`[AddressImport] Found ${headers.length} columns: ${headers.join(', ')}`);
                 setRawHeaders(headers);
 
-                // Parse data rows with better error handling
+                // Parse data rows
                 const data = [];
                 const parseErrors = [];
+                const dataRows = allRows.slice(1);
 
-                for (let i = 1; i < lines.length; i++) {
+                dataRows.forEach((row, index) => {
                     try {
-                        const row = parseCSVLine(lines[i]);
+                        // Skip completely empty rows
+                        if (row.every(field => !field || field.trim() === '')) {
+                            return;
+                        }
+
                         const rowData = {
-                            _id: `row_${i - 1}`,
-                            _rowIndex: i + 1, // +1 because line numbers start from 1
+                            _id: `row_${index}`,
+                            _rowIndex: index + 2, // +2 because we start from line 2 (after header)
                             _hasErrors: false,
                             _errors: {},
                             _warnings: {}
                         };
 
+                        // Map each column to the corresponding header
                         headers.forEach((header, j) => {
                             rowData[header] = (row[j] || '').trim();
                         });
 
-                        data.push(rowData);
+                        // Only add rows that have some meaningful data
+                        const hasData = Object.values(rowData).some(value =>
+                            value && typeof value === 'string' && value.trim() !== '' &&
+                            !value.startsWith('_') // Exclude our internal fields
+                        );
+
+                        if (hasData) {
+                            data.push(rowData);
+                        }
                     } catch (rowError) {
-                        parseErrors.push(`Row ${i + 1}: ${rowError.message}`);
-                        console.warn(`Error parsing CSV row ${i + 1}:`, rowError);
+                        parseErrors.push(`Row ${index + 2}: ${rowError.message}`);
+                        console.warn(`Error parsing CSV row ${index + 2}:`, rowError);
                     }
-                }
+                });
 
                 if (data.length === 0) {
                     setParseError(`No valid data rows found. ${parseErrors.length > 0 ? 'Errors: ' + parseErrors.join('; ') : ''}`);
                     return;
                 }
 
-                if (parseErrors.length > 0 && parseErrors.length > data.length * 0.5) {
-                    setParseError(`Too many parsing errors (${parseErrors.length} errors for ${data.length} valid rows). Please check your CSV format.`);
+                // Filter out duplicate rows (based on key fields)
+                const uniqueData = [];
+                const seenRows = new Set();
+
+                data.forEach(row => {
+                    // Create a key based on company_id, customer_id, and street address
+                    const key = `${row.CompanyID || row.company_id || ''}_${row.customer_id || row.Customer_ID || ''}_${row.address1 || row.street_address || ''}`.toLowerCase();
+
+                    if (!seenRows.has(key) && key !== '__') {
+                        seenRows.add(key);
+                        uniqueData.push(row);
+                    }
+                });
+
+                if (parseErrors.length > 0 && parseErrors.length > uniqueData.length * 0.5) {
+                    setParseError(`Too many parsing errors (${parseErrors.length} errors for ${uniqueData.length} valid rows). Please check your CSV format.`);
                     return;
                 }
 
-                setRawParsedData(data);
+                setRawParsedData(uniqueData);
                 setParseError(null);
 
-                console.log(`[AddressImport] Successfully parsed ${data.length} rows with ${parseErrors.length} errors`);
+                console.log(`[AddressImport] Successfully parsed ${uniqueData.length} unique rows from ${allRows.length - 1} total rows with ${parseErrors.length} errors`);
 
                 // Check if headers match our template exactly (auto-detect)
                 const expectedHeaders = csvTemplate.headers;
@@ -374,7 +453,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                     setAutoMappingApplied(true);
 
                     // Apply mappings and proceed to validation
-                    const mappedData = applyFieldMappings(data, autoMappings);
+                    const mappedData = applyFieldMappings(uniqueData, autoMappings);
                     setParsedData(mappedData);
                     validateAllData(mappedData);
                 } else {
