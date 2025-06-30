@@ -862,7 +862,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     if (company.companyID) {
                         companiesMap[company.companyID] = {
                             name: company.name || company.companyName || company.companyID,
-                            logo: company.logo || company.logoURL || null,
+                            logo: company.logoUrl || company.logo || company.logoURL || null,
                             status: company.status || 'active'
                         };
                     }

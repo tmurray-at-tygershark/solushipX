@@ -560,34 +560,69 @@ const ShipmentTableRow = ({
                                     {(() => {
                                         // Enhanced logo detection - check multiple possible sources
                                         const company = companyData[shipment.companyID];
-                                        const logoUrl = company?.logo || company?.logoUrl || company?.companyLogo;
 
-                                        return logoUrl ? (
-                                            <img
-                                                src={logoUrl}
-                                                alt="Company"
-                                                style={{
-                                                    width: '100%',
-                                                    height: '100%',
-                                                    objectFit: 'contain',
-                                                    borderRadius: '3px'
-                                                }}
-                                                onError={(e) => {
-                                                    e.target.style.display = 'none';
-                                                    e.target.nextSibling.style.display = 'flex';
-                                                }}
-                                            />
-                                        ) : null;
+                                        // TEMPORARY DEBUG - Remove after fixing
+                                        console.log('🐛 FULL DEBUG:', {
+                                            shipmentCompanyID: shipment.companyID,
+                                            hasCompanyData: !!companyData,
+                                            companyDataKeys: Object.keys(companyData || {}),
+                                            companyExists: !!company,
+                                            fullCompany: company,
+                                            allFields: company ? Object.keys(company) : 'NO COMPANY'
+                                        });
+
+                                        // Check multiple possible logo field names
+                                        const logoUrl = company?.logoUrl ||
+                                            company?.logo ||
+                                            company?.companyLogo ||
+                                            company?.logoURL ||
+                                            company?.companyLogoUrl;
+
+                                        console.log('🖼️ LOGO DEBUG:', {
+                                            logoUrl: logoUrl,
+                                            logoUrlField: company?.logoUrl,
+                                            logoField: company?.logo,
+                                            companyLogoField: company?.companyLogo,
+                                            hasAnyLogo: !!logoUrl
+                                        });
+
+                                        const companyName = company?.name || company?.companyName || shipment.companyID || 'CO';
+
+                                        if (logoUrl) {
+                                            return (
+                                                <img
+                                                    src={logoUrl}
+                                                    alt="Company"
+                                                    style={{
+                                                        width: '100%',
+                                                        height: '100%',
+                                                        objectFit: 'contain',
+                                                        borderRadius: '3px'
+                                                    }}
+                                                    onError={(e) => {
+                                                        // Replace with fallback avatar on error
+                                                        const parent = e.target.parentNode;
+                                                        e.target.remove();
+                                                        parent.innerHTML = `<div style="font-size: 8px; font-weight: 600; color: #6b7280; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">${companyName[0].toUpperCase()}</div>`;
+                                                    }}
+                                                />
+                                            );
+                                        } else {
+                                            return (
+                                                <Typography sx={{
+                                                    fontSize: '8px',
+                                                    fontWeight: 600,
+                                                    color: '#6b7280',
+                                                    lineHeight: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    {companyName[0].toUpperCase()}
+                                                </Typography>
+                                            );
+                                        }
                                     })()}
-                                    <Typography sx={{
-                                        fontSize: '8px',
-                                        fontWeight: 600,
-                                        color: '#6b7280',
-                                        lineHeight: 1,
-                                        display: companyData[shipment.companyID]?.logo || companyData[shipment.companyID]?.logoUrl || companyData[shipment.companyID]?.companyLogo ? 'none' : 'flex'
-                                    }}>
-                                        {(companyData[shipment.companyID]?.name || companyData[shipment.companyID]?.companyName || shipment.companyID || 'CO')[0].toUpperCase()}
-                                    </Typography>
                                 </Box>
 
                                 {/* Company Name */}
@@ -617,44 +652,56 @@ const ShipmentTableRow = ({
                                     {(() => {
                                         // Enhanced customer logo detection - check multiple possible sources
                                         const customer = customers[shipment.shipTo?.customerID];
-                                        const customerLogoUrl = customer?.logo || customer?.logoUrl || customer?.customerLogo || customer?.companyLogo;
 
-                                        return customerLogoUrl ? (
-                                            <img
-                                                src={customerLogoUrl}
-                                                alt="Customer"
-                                                style={{
-                                                    width: '100%',
-                                                    height: '100%',
-                                                    objectFit: 'contain',
-                                                    borderRadius: '2px'
-                                                }}
-                                                onError={(e) => {
-                                                    e.target.style.display = 'none';
-                                                    e.target.nextSibling.style.display = 'flex';
-                                                }}
-                                            />
-                                        ) : null;
-                                    })()}
-                                    <Typography sx={{
-                                        fontSize: '7px',
-                                        fontWeight: 600,
-                                        color: '#9ca3af',
-                                        lineHeight: 1,
-                                        display: (() => {
-                                            const customer = customers[shipment.shipTo?.customerID];
-                                            return customer?.logo || customer?.logoUrl || customer?.customerLogo || customer?.companyLogo ? 'none' : 'flex';
-                                        })()
-                                    }}>
-                                        {(
-                                            customers[shipment.shipTo?.customerID]?.name ||
-                                            customers[shipment.shipTo?.customerID]?.companyName ||
-                                            customers[shipment.shipTo?.customerID] ||
+                                        // Check multiple possible logo field names
+                                        const customerLogoUrl = customer?.logoUrl ||
+                                            customer?.logo ||
+                                            customer?.customerLogo ||
+                                            customer?.companyLogo ||
+                                            customer?.logoURL ||
+                                            customer?.companyLogoUrl;
+                                        const customerName = customer?.name ||
+                                            customer?.companyName ||
+                                            customer ||
                                             shipment.shipTo?.companyName ||
                                             shipment.shipTo?.company ||
-                                            'CU'
-                                        )[0].toUpperCase()}
-                                    </Typography>
+                                            'CU';
+
+                                        if (customerLogoUrl) {
+                                            return (
+                                                <img
+                                                    src={customerLogoUrl}
+                                                    alt="Customer"
+                                                    style={{
+                                                        width: '100%',
+                                                        height: '100%',
+                                                        objectFit: 'contain',
+                                                        borderRadius: '2px'
+                                                    }}
+                                                    onError={(e) => {
+                                                        // Replace with fallback avatar on error
+                                                        const parent = e.target.parentNode;
+                                                        e.target.remove();
+                                                        parent.innerHTML = `<div style="font-size: 7px; font-weight: 600; color: #9ca3af; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">${String(customerName)[0].toUpperCase()}</div>`;
+                                                    }}
+                                                />
+                                            );
+                                        } else {
+                                            return (
+                                                <Typography sx={{
+                                                    fontSize: '7px',
+                                                    fontWeight: 600,
+                                                    color: '#9ca3af',
+                                                    lineHeight: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    {String(customerName)[0].toUpperCase()}
+                                                </Typography>
+                                            );
+                                        }
+                                    })()}
                                 </Box>
 
                                 {/* Customer Name */}
