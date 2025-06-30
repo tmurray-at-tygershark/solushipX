@@ -352,16 +352,20 @@ const GlobalShipmentList = () => {
         setCreateShipmentOpen(false);
         setQuickShipOpen(false);
 
-        // Set deep link params to open the shipment detail
-        console.log('🎯 Setting deep link params for direct to detail');
-        setShipmentsDeepLinkParams({
-            directToDetail: true,
-            selectedShipmentId: shipmentId
-        });
+        // REFRESH SHIPMENTS LIST FIRST to ensure newly created shipment is loaded
+        console.log('🔄 Refreshing shipments list to include newly created shipment');
+        setRefreshKey(prev => prev + 1);
 
-        // IMPORTANT: Don't auto-clear here - let the navigation handle the clearing
-        // The problem was this auto-clear was interfering with the navigation timing
-        console.log('🎯 Deep link params set, letting ShipmentsX handle the clearing');
+        // Set deep link params to open the shipment detail (with a small delay to allow refresh)
+        setTimeout(() => {
+            console.log('🎯 Setting deep link params for direct to detail');
+            setShipmentsDeepLinkParams({
+                directToDetail: true,
+                selectedShipmentId: shipmentId
+            });
+            console.log('🎯 Deep link params set, letting ShipmentsX handle the clearing');
+        }, 100); // Small delay to ensure refresh is processed first
+
     }, []);
 
     // Handle return to shipments from create shipment
@@ -622,7 +626,7 @@ const GlobalShipmentList = () => {
                         deepLinkParams={shipmentsDeepLinkParams}
                         onOpenCreateShipment={handleOpenCreateShipment}
                         onClearDeepLinkParams={() => {
-                            console.log('💀 GlobalShipmentList: KILLING deep link params');
+                            console.log('💀 GlobalShipmentList: KILLING deep link params and refreshing shipments');
 
                             // KILL THE DEEP LINK - SIMPLE AND EFFECTIVE
                             setShipmentsDeepLinkParams(null);
@@ -639,7 +643,12 @@ const GlobalShipmentList = () => {
                                 setSearchTimer(null);
                             }
 
-                            console.log('💀 Deep link KILLED - clean and simple');
+                            // REFRESH SHIPMENTS LIST when returning from shipment detail
+                            // This ensures newly created shipments appear in the list
+                            console.log('🔄 Triggering shipments refresh after returning from detail view');
+                            setRefreshKey(prev => prev + 1);
+
+                            console.log('💀 Deep link KILLED and refresh triggered');
                         }}
                         adminViewMode={viewMode}
                         adminCompanyIds={viewMode === 'all' ? (userRole === 'superadmin' ? 'all' : availableCompanies.map(c => c.companyID)) : null}
