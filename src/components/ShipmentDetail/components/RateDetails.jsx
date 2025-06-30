@@ -3,7 +3,15 @@ import {
     Grid,
     Paper,
     Typography,
-    Box
+    Box,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Chip,
+    Divider
 } from '@mui/material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canSeeActualRates, getMarkupSummary } from '../../../utils/markupEngine';
@@ -145,6 +153,172 @@ const RateDetails = ({
 
     const { totalCost, totalCharge } = calculateTotals();
 
+    // Get rate breakdown data for table
+    const getRateBreakdown = () => {
+        const breakdown = [];
+
+        if (quickShipData && quickShipData.charges.length > 0) {
+            // QuickShip manual rates
+            quickShipData.charges.forEach(charge => {
+                breakdown.push({
+                    description: charge.name,
+                    amount: charge.amount,
+                    cost: charge.cost
+                });
+            });
+        } else if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
+            // Regular shipment rates with billingDetails
+            const validDetails = getBestRateInfo.billingDetails.filter(detail =>
+                detail &&
+                detail.name &&
+                (detail.amount !== undefined && detail.amount !== null)
+            );
+
+            validDetails.forEach(detail => {
+                breakdown.push({
+                    description: detail.name,
+                    amount: safeNumber(detail.amount),
+                    cost: safeNumber(detail.actualAmount || detail.amount)
+                });
+            });
+        } else {
+            // Fallback to basic rate structure
+            const getActualVsMarkupAmount = (field) => {
+                if (shipment?.actualRates?.billingDetails && shipment?.markupRates?.billingDetails) {
+                    const actualDetail = shipment.actualRates.billingDetails.find(detail =>
+                        detail.name && (
+                            detail.name.toLowerCase().includes(field.toLowerCase()) ||
+                            detail.category === field
+                        )
+                    );
+                    const markupDetail = shipment.markupRates.billingDetails.find(detail =>
+                        detail.name && (
+                            detail.name.toLowerCase().includes(field.toLowerCase()) ||
+                            detail.category === field
+                        )
+                    );
+
+                    if (actualDetail && markupDetail) {
+                        return {
+                            actual: actualDetail.amount,
+                            markup: markupDetail.amount
+                        };
+                    }
+                }
+
+                // Fallback to same amount for both
+                const fallbackAmount = safeNumber(getBestRateInfo?.pricing?.[field] || getBestRateInfo?.[field + 'Charge'] || getBestRateInfo?.[field + 'Charges']);
+                return {
+                    actual: fallbackAmount,
+                    markup: fallbackAmount
+                };
+            };
+
+            const freight = getActualVsMarkupAmount('freight');
+            if (freight.markup > 0) {
+                breakdown.push({
+                    description: 'Freight Charges',
+                    amount: freight.markup,
+                    cost: freight.actual
+                });
+            }
+
+            const fuel = getActualVsMarkupAmount('fuel');
+            if (fuel.markup > 0) {
+                breakdown.push({
+                    description: 'Fuel Charges',
+                    amount: fuel.markup,
+                    cost: fuel.actual
+                });
+            }
+
+            const service = getActualVsMarkupAmount('service');
+            if (service.markup > 0) {
+                breakdown.push({
+                    description: 'Service Charges',
+                    amount: service.markup,
+                    cost: service.actual
+                });
+            }
+
+            const accessorial = getActualVsMarkupAmount('accessorial');
+            if (accessorial.markup > 0) {
+                breakdown.push({
+                    description: 'Accessorial Charges',
+                    amount: accessorial.markup,
+                    cost: accessorial.actual
+                });
+            }
+
+            if (getBestRateInfo?.guaranteed) {
+                const guarantee = getActualVsMarkupAmount('guarantee');
+                if (guarantee.markup > 0) {
+                    breakdown.push({
+                        description: 'Guarantee Charge',
+                        amount: guarantee.markup,
+                        cost: guarantee.actual
+                    });
+                }
+            }
+        }
+
+        // Add markup as separate line item for admin users
+        if (enhancedIsAdmin && markupSummary?.hasMarkup) {
+            breakdown.push({
+                description: 'Platform Markup',
+                amount: markupSummary.markupAmount,
+                cost: 0,
+                isMarkup: true
+            });
+        }
+
+        return breakdown;
+    };
+
+    const rateBreakdown = getRateBreakdown();
+
+    // Get service information
+    const getServiceInfo = () => {
+        const info = {};
+
+        info.carrier = quickShipData?.carrier || getBestRateInfo?.carrier?.name || getBestRateInfo?.carrier || 'N/A';
+        info.service = !isQuickShip && getBestRateInfo?.service ? getBestRateInfo.service : 'N/A';
+        info.transitTime = !isQuickShip && getBestRateInfo?.transitDays ?
+            `${getBestRateInfo.transitDays} ${getBestRateInfo.transitDays === 1 ? 'day' : 'days'}` : 'N/A';
+
+        // Get delivery date
+        if (!isQuickShip) {
+            const deliveryDate =
+                shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                getBestRateInfo?.transit?.estimatedDelivery ||
+                getBestRateInfo?.estimatedDeliveryDate;
+
+            if (deliveryDate) {
+                try {
+                    const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
+                    info.estimatedDelivery = date.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                } catch (error) {
+                    info.estimatedDelivery = 'Invalid Date';
+                }
+            } else {
+                info.estimatedDelivery = 'N/A';
+            }
+        } else {
+            info.estimatedDelivery = 'N/A';
+        }
+
+        info.isIntegrationCarrier = !isQuickShip && (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus');
+
+        return info;
+    };
+
+    const serviceInfo = getServiceInfo();
+
     return (
         <Grid item xs={12} sx={{ mb: 1 }}>
             <Paper>
@@ -178,346 +352,132 @@ const RateDetails = ({
                         </Box>
                     )}
 
-                    <Grid container spacing={3}>
-                        {/* Left Column - Service Details */}
-                        <Grid item xs={12} md={4}>
-                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                <Box>
-                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                        Carrier & Service
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                                        <CarrierDisplay
-                                            carrierName={quickShipData?.carrier || getBestRateInfo?.carrier?.name || getBestRateInfo?.carrier}
-                                            carrierData={carrierData}
-                                            size="small"
-                                            isIntegrationCarrier={!isQuickShip && (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus')}
-                                        />
-                                        {!isQuickShip && getBestRateInfo?.service && (
-                                            <>
-                                                <Typography variant="body2" color="text.secondary">-</Typography>
-                                                <Typography variant="body1" sx={{ fontWeight: 500, fontSize: '12px' }}>
-                                                    {getBestRateInfo.service}
-                                                </Typography>
-                                            </>
+                    {/* Service Information Table */}
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                            Service Information
+                        </Typography>
+                        <TableContainer>
+                            <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '30%', bgcolor: '#f8fafc' }}>
+                                            Carrier
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <CarrierDisplay
+                                                carrierName={serviceInfo.carrier}
+                                                carrierData={carrierData}
+                                                size="small"
+                                                isIntegrationCarrier={serviceInfo.isIntegrationCarrier}
+                                            />
+                                        </TableCell>
+                                    </TableRow>
+                                    {serviceInfo.service !== 'N/A' && (
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                                Service
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {serviceInfo.service}
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                    {serviceInfo.transitTime !== 'N/A' && (
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                                Transit Time
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {serviceInfo.transitTime}
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                    {serviceInfo.estimatedDelivery !== 'N/A' && (
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                                Estimated Delivery
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {serviceInfo.estimatedDelivery}
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </Box>
+
+                    {/* Rate Breakdown Table */}
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                            Rate Breakdown
+                        </Typography>
+                        <TableContainer>
+                            <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                            Description
+                                        </TableCell>
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'right' }}>
+                                                Cost
+                                            </TableCell>
                                         )}
-                                    </Box>
-                                </Box>
-                                {!isQuickShip && (
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                            Transit Time
-                                        </Typography>
-                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                            {getBestRateInfo?.transitDays || 0} {getBestRateInfo?.transitDays === 1 ? 'day' : 'days'}
-                                        </Typography>
-                                    </Box>
-                                )}
-                                {!isQuickShip && (
-                                    <Box>
-                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                            Estimated Delivery Date
-                                        </Typography>
-                                        <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                            {(() => {
-                                                const deliveryDate =
-                                                    shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                                    getBestRateInfo?.transit?.estimatedDelivery ||
-                                                    getBestRateInfo?.estimatedDeliveryDate;
-
-                                                if (deliveryDate) {
-                                                    try {
-                                                        const date = deliveryDate.toDate ? deliveryDate.toDate() : new Date(deliveryDate);
-                                                        return date.toLocaleDateString('en-US', {
-                                                            weekday: 'short',
-                                                            year: 'numeric',
-                                                            month: 'short',
-                                                            day: 'numeric'
-                                                        });
-                                                    } catch (error) {
-                                                        console.error('Error formatting delivery date:', error);
-                                                        return 'Invalid Date';
-                                                    }
-                                                }
-                                                return 'N/A';
-                                            })()}
-                                        </Typography>
-                                    </Box>
-                                )}
-                            </Box>
-                        </Grid>
-
-                        {/* Middle Column - Charges */}
-                        <Grid item xs={12} md={4}>
-                            {(() => {
-                                // QuickShip manual rates
-                                if (quickShipData && quickShipData.charges.length > 0) {
-                                    return (
-                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                            {quickShipData.charges.map((charge, index) => (
-                                                <Box key={index}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        {charge.name}
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                        <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                            ${charge.amount.toFixed(2)}
-                                                        </Typography>
-                                                        {enhancedIsAdmin && (
-                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                                (Cost: ${charge.cost.toFixed(2)})
-                                                            </Typography>
-                                                        )}
-                                                    </Box>
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    );
-                                }
-
-                                // Regular shipment rates
-                                if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
-                                    const validDetails = getBestRateInfo.billingDetails.filter(detail =>
-                                        detail &&
-                                        detail.name &&
-                                        (detail.amount !== undefined && detail.amount !== null)
-                                    );
-
-                                    if (validDetails.length > 0) {
-                                        return (
-                                            <Box sx={{ display: 'grid', gap: 2 }}>
-                                                {validDetails.map((detail, index) => (
-                                                    <Box key={index}>
-                                                        <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                            {detail.name}
-                                                            {detail.hasMarkup && (
-                                                                <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
-                                                                    (plus {detail.markupPercentage}%)
-                                                                </Typography>
-                                                            )}
-                                                        </Typography>
-                                                        <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 'bold' }}>
-                                                            ${safeNumber(detail.amount).toFixed(2)}
-                                                        </Typography>
-                                                        {enhancedIsAdmin && (
-                                                            <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                                (Cost: ${safeNumber(detail.actualAmount || detail.amount).toFixed(2)})
-                                                            </Typography>
-                                                        )}
-                                                    </Box>
-                                                ))}
-                                            </Box>
-                                        );
-                                    }
-                                }
-
-                                // Get actual vs markup rates for breakdown calculation
-                                const getActualVsMarkupAmount = (field) => {
-                                    // Debug logging to see the dual rate storage data
-                                    console.log('🔍 getActualVsMarkupAmount Debug:', {
-                                        field,
-                                        hasActualRates: !!shipment?.actualRates,
-                                        hasMarkupRates: !!shipment?.markupRates,
-                                        hasActualBillingDetails: !!shipment?.actualRates?.billingDetails,
-                                        hasMarkupBillingDetails: !!shipment?.markupRates?.billingDetails,
-                                        actualBillingDetails: shipment?.actualRates?.billingDetails,
-                                        markupBillingDetails: shipment?.markupRates?.billingDetails,
-                                        actualTotalCharges: shipment?.actualRates?.totalCharges,
-                                        markupTotalCharges: shipment?.markupRates?.totalCharges
-                                    });
-
-                                    if (shipment?.actualRates?.billingDetails && shipment?.markupRates?.billingDetails) {
-                                        const actualDetail = shipment.actualRates.billingDetails.find(detail =>
-                                            detail.name && (
-                                                detail.name.toLowerCase().includes(field.toLowerCase()) ||
-                                                detail.category === field
-                                            )
-                                        );
-                                        const markupDetail = shipment.markupRates.billingDetails.find(detail =>
-                                            detail.name && (
-                                                detail.name.toLowerCase().includes(field.toLowerCase()) ||
-                                                detail.category === field
-                                            )
-                                        );
-
-                                        console.log(`🔍 Looking for ${field}:`, {
-                                            actualDetail,
-                                            markupDetail,
-                                            foundBoth: !!(actualDetail && markupDetail)
-                                        });
-
-                                        if (actualDetail && markupDetail) {
-                                            console.log(`✅ Found dual rate data for ${field}:`, {
-                                                actual: actualDetail.amount,
-                                                markup: markupDetail.amount
-                                            });
-                                            return {
-                                                actual: actualDetail.amount,
-                                                markup: markupDetail.amount
-                                            };
-                                        }
-                                    }
-
-                                    // Fallback to same amount for both
-                                    const fallbackAmount = safeNumber(getBestRateInfo?.pricing?.[field] || getBestRateInfo?.[field + 'Charge'] || getBestRateInfo?.[field + 'Charges']);
-                                    console.log(`⚠️ Using fallback for ${field}:`, fallbackAmount);
-                                    return {
-                                        actual: fallbackAmount,
-                                        markup: fallbackAmount
-                                    };
-                                };
-
-                                const breakdownItems = [];
-                                const freight = getActualVsMarkupAmount('freight');
-                                if (freight.markup > 0) {
-                                    breakdownItems.push({ name: 'Freight Charges', amount: freight.markup, actualAmount: freight.actual });
-                                }
-
-                                const fuel = getActualVsMarkupAmount('fuel');
-                                if (fuel.markup > 0) {
-                                    breakdownItems.push({ name: 'Fuel Charges', amount: fuel.markup, actualAmount: fuel.actual });
-                                }
-
-                                const service = getActualVsMarkupAmount('service');
-                                if (service.markup > 0) {
-                                    breakdownItems.push({ name: 'Service Charges', amount: service.markup, actualAmount: service.actual });
-                                }
-
-                                const accessorial = getActualVsMarkupAmount('accessorial');
-                                if (accessorial.markup > 0) {
-                                    breakdownItems.push({ name: 'Accessorial Charges', amount: accessorial.markup, actualAmount: accessorial.actual });
-                                }
-
-                                if (getBestRateInfo?.guaranteed) {
-                                    const guarantee = getActualVsMarkupAmount('guarantee');
-                                    if (guarantee.markup > 0) {
-                                        breakdownItems.push({ name: 'Guarantee Charge', amount: guarantee.markup, actualAmount: guarantee.actual });
-                                    }
-                                }
-
-                                if (markupSummary?.hasMarkup) {
-                                    breakdownItems.push({
-                                        name: 'Platform Markup',
-                                        amount: markupSummary.markupAmount,
-                                        isMarkup: true
-                                    });
-                                }
-
-                                if (breakdownItems.length > 0) {
-                                    return (
-                                        <Box sx={{ display: 'grid', gap: 2 }}>
-                                            {breakdownItems.map((item, index) => (
-                                                <Box key={index}>
-                                                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                        {item.name}
-                                                        {item.hasMarkup && (
-                                                            <Typography component="span" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500, ml: 1 }}>
-                                                                (plus {item.markupPercentage || item.value}%)
-                                                            </Typography>
-                                                        )}
-                                                    </Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 'bold' }}>
-                                                        ${safeNumber(item.amount).toFixed(2)}
-                                                    </Typography>
-                                                    {enhancedIsAdmin && !item.isMarkup && (
-                                                        <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                            (Cost: ${(item.actualAmount || item.amount).toFixed(2)})
-                                                        </Typography>
-                                                    )}
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    );
-                                }
-
-                                return (
-                                    <Box sx={{ display: 'grid', gap: 2 }}>
-                                        <Box>
-                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                Freight Charges
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                    ${(getBestRateInfo?.pricing?.freight ||
-                                                        getBestRateInfo?.freightCharge ||
-                                                        getBestRateInfo?.freightCharges || 0).toFixed(2)}
-                                                </Typography>
-                                                {enhancedIsAdmin && (
-                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                        (Cost: ${(getBestRateInfo?.pricing?.freight ||
-                                                            getBestRateInfo?.freightCharge ||
-                                                            getBestRateInfo?.freightCharges || 0).toFixed(2)})
-                                                    </Typography>
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'right' }}>
+                                            {enhancedIsAdmin ? 'Charge' : 'Amount'}
+                                        </TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {rateBreakdown.map((item, index) => (
+                                        <TableRow key={index}>
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                {item.description}
+                                                {item.isMarkup && (
+                                                    <Chip
+                                                        label="Markup"
+                                                        size="small"
+                                                        sx={{
+                                                            ml: 1,
+                                                            fontSize: '10px',
+                                                            height: '20px',
+                                                            backgroundColor: '#3b82f6',
+                                                            color: 'white'
+                                                        }}
+                                                    />
                                                 )}
-                                            </Box>
-                                        </Box>
-                                        <Box>
-                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                Fuel Charges
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                    ${(getBestRateInfo?.pricing?.fuel ||
-                                                        getBestRateInfo?.fuelCharge ||
-                                                        getBestRateInfo?.fuelCharges || 0).toFixed(2)}
-                                                </Typography>
-                                                {enhancedIsAdmin && (
-                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                        (Cost: ${(getBestRateInfo?.pricing?.fuel ||
-                                                            getBestRateInfo?.fuelCharge ||
-                                                            getBestRateInfo?.fuelCharges || 0).toFixed(2)})
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                        <Box>
-                                            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                                Service Charges
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                    ${(getBestRateInfo?.pricing?.service ||
-                                                        getBestRateInfo?.serviceCharges || 0).toFixed(2)}
-                                                </Typography>
-                                                {enhancedIsAdmin && (
-                                                    <Typography variant="body1" sx={{ fontSize: '11px', color: '#059669', fontWeight: 500 }}>
-                                                        (Cost: ${(getBestRateInfo?.pricing?.service ||
-                                                            getBestRateInfo?.serviceCharges || 0).toFixed(2)})
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                    </Box>
-                                );
-                            })()}
-                        </Grid>
+                                            </TableCell>
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'right', color: '#059669', fontWeight: 500 }}>
+                                                    {!item.isMarkup ? `$${safeNumber(item.cost).toFixed(2)}` : '-'}
+                                                </TableCell>
+                                            )}
+                                            <TableCell sx={{ fontSize: '12px', textAlign: 'right', fontWeight: 600 }}>
+                                                ${safeNumber(item.amount).toFixed(2)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
 
-                        {/* Right Column - Total */}
-                        <Grid item xs={12} md={4}>
-                            <Paper elevation={1} sx={{ p: 2, textAlign: 'center', border: '1px solid #e5e7eb' }}>
-                                <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 500, mb: 1 }}>
-                                    Total
-                                </Typography>
-                                {enhancedIsAdmin ? (
-                                    <Box>
-                                        <Typography variant="body1" sx={{ fontSize: '14px', color: '#059669', fontWeight: 500, mb: 1 }}>
-                                            Cost: ${safeNumber(totalCost).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="h6" sx={{ fontSize: '20px', fontWeight: 'bold', mb: 0.5 }}>
+                                    {/* Total Row */}
+                                    <TableRow sx={{ borderTop: '2px solid #e0e0e0' }}>
+                                        <TableCell sx={{ fontSize: '14px', fontWeight: 700 }}>
+                                            TOTAL
+                                        </TableCell>
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
+                                                ${safeNumber(totalCost).toFixed(2)}
+                                            </TableCell>
+                                        )}
+                                        <TableCell sx={{ fontSize: '14px', textAlign: 'right', fontWeight: 700 }}>
                                             ${safeNumber(totalCharge).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '14px', color: 'text.secondary' }}>
-                                            Customer Charge
-                                        </Typography>
-                                    </Box>
-                                ) : (
-                                    <Typography variant="h6" sx={{ fontSize: '20px', fontWeight: 'bold' }}>
-                                        ${safeNumber(totalCharge).toFixed(2)}
-                                    </Typography>
-                                )}
-                            </Paper>
-                        </Grid>
-                    </Grid>
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </Box>
 
                     {/* Additional Services Section */}
                     {(() => {
@@ -582,54 +542,26 @@ const RateDetails = ({
                         }
 
                         return additionalServices.length > 0 ? (
-                            <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid #e0e0e0' }}>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '16px' }}>
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
                                     Additional Services
                                 </Typography>
-                                <Box component="ul" sx={{
-                                    margin: 0,
-                                    paddingLeft: 2,
-                                    '& li': {
-                                        fontSize: '12px',
-                                        marginBottom: 0.5,
-                                        color: 'text.primary'
-                                    }
-                                }}>
-                                    {additionalServices.map((service, index) => (
-                                        <li key={index}>{service}</li>
-                                    ))}
-                                </Box>
+                                <TableContainer>
+                                    <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
+                                        <TableBody>
+                                            {additionalServices.map((service, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell sx={{ fontSize: '12px', py: 1 }}>
+                                                        {service}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
                             </Box>
                         ) : null;
                     })()}
-
-                    {/* Service Options Section */}
-                    {getBestRateInfo?.serviceOptions && getBestRateInfo.serviceOptions.length > 0 && (
-                        <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid #e0e0e0' }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '16px' }}>
-                                Service Options
-                            </Typography>
-                            <Grid container spacing={2}>
-                                {getBestRateInfo.serviceOptions.map((option, index) => (
-                                    <Grid item xs={12} sm={6} md={4} key={index}>
-                                        <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1, bgcolor: 'background.default' }}>
-                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                                                {option.name || option.serviceName || 'Service Option'}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                                {option.description || 'No description available'}
-                                            </Typography>
-                                            {option.price && (
-                                                <Typography variant="body1" sx={{ mt: 1, fontWeight: 500, fontSize: '12px' }}>
-                                                    ${safeNumber(option.price).toFixed(2)}
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                        </Box>
-                    )}
                 </Box>
             </Paper>
         </Grid>
