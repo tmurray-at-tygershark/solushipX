@@ -131,7 +131,7 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         close_time: { label: 'Close Time', required: false, type: 'time', width: 90 },
         special_instructions: { label: 'Instructions', required: false, type: 'text', width: 150 },
         is_residential: { label: 'Residential', required: false, type: 'boolean', width: 100 },
-        address_type: { label: 'Address Type', required: true, type: 'address_type', width: 120 }
+        address_type: { label: 'Address Type', required: false, type: 'address_type', width: 120 }
     };
 
     const parseCSVLine = (line) => {
@@ -225,13 +225,18 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 _warnings: {}
             };
 
-            // Apply mappings
+            // Apply mappings with smart defaults for address imports
             Object.entries(fieldDefinitions).forEach(([requiredField, config]) => {
                 const sourceField = mappings[requiredField];
                 if (sourceField && row[sourceField] !== undefined) {
                     mappedRow[requiredField] = row[sourceField];
                 } else {
-                    mappedRow[requiredField] = ''; // Default empty value
+                    // Set smart defaults for address imports
+                    if (requiredField === 'address_type') {
+                        mappedRow[requiredField] = 'destination'; // Default all imports to destination
+                    } else {
+                        mappedRow[requiredField] = ''; // Default empty value
+                    }
                 }
             });
 
@@ -446,6 +451,11 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         // Validate address type
         if (record.address_type && !['contact', 'destination', 'billing'].includes(record.address_type.toLowerCase())) {
             warnings.address_type = 'Should be contact, destination, or billing';
+        }
+
+        // Auto-set address_type to destination if empty (for imports)
+        if (!record.address_type || record.address_type === '') {
+            record.address_type = 'destination';
         }
 
         // Validate customer ID format (basic alphanumeric check)
@@ -877,10 +887,15 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             isResidential = ['true', '1', 'yes', 'y'].includes(val);
         }
 
-        // Normalize address type
+        // Normalize address type - default all imports to destination for immediate ship-from/ship-to availability
         let addressType = (record.address_type || 'destination').toString().toLowerCase().trim();
         if (!['contact', 'destination', 'billing'].includes(addressType)) {
             console.warn(`[AddressImport] Invalid address type '${addressType}' for record ${record._rowIndex}, defaulting to destination`);
+            addressType = 'destination';
+        }
+
+        // Ensure all imported addresses default to destination for shipping availability
+        if (!record.address_type || record.address_type === '') {
             addressType = 'destination';
         }
 
@@ -1272,16 +1287,19 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                                     </Box>
 
                                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
-                                        <strong>Required fields:</strong> company_id, customer_id, customer_name, company_name, street_address, city, state_province, postal_code, country, address_type
+                                        <strong>Required fields:</strong> company_id, customer_id, customer_name, company_name, street_address, city, state_province, postal_code, country<br />
+                                        <strong>Optional fields:</strong> address_type (defaults to "destination"), phone, email, address_nickname, etc.
                                     </Typography>
 
                                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                        <strong>New Customer-Address Structure:</strong><br />
+                                        <strong>Customer-Address Structure:</strong><br />
                                         • <strong>company_id:</strong> Company identifier (e.g., APL)<br />
                                         • <strong>customer_id:</strong> Unique customer identifier (e.g., XRISI)<br />
                                         • <strong>customer_name:</strong> Customer business name<br />
-                                        • <strong>address_type:</strong> contact, destination, or billing<br />
-                                        • <strong>address_nickname:</strong> Optional friendly name for the address
+                                        • <strong>address_type:</strong> contact, destination, or billing (defaults to "destination")<br />
+                                        • <strong>address_nickname:</strong> Optional friendly name for the address<br />
+                                        <br />
+                                        <strong>📍 Import Note:</strong> All imported addresses default to "destination" type and are immediately available for ship-from and ship-to selection in shipment creation.
                                     </Typography>
                                 </CardContent>
                             </Card>
@@ -1306,6 +1324,10 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                                             Please review and adjust as needed.
                                         </Alert>
                                     )}
+
+                                    <Alert severity="success" sx={{ mb: 3 }}>
+                                        📍 <strong>Address Import:</strong> All imported addresses will be set as "destination" type by default, making them immediately available for ship-from and ship-to selection in shipment creation.
+                                    </Alert>
 
                                     <Grid container spacing={2}>
                                         <Grid item xs={12} md={6}>
