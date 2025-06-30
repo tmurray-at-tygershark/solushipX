@@ -138,19 +138,32 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         const result = [];
         let current = '';
         let inQuotes = false;
+        let escapeNext = false;
 
         for (let i = 0; i < line.length; i++) {
             const char = line[i];
-            if (char === '"') {
-                inQuotes = !inQuotes;
+
+            if (escapeNext) {
+                current += char;
+                escapeNext = false;
+            } else if (char === '\\' && inQuotes) {
+                escapeNext = true;
+            } else if (char === '"') {
+                // Handle escaped quotes
+                if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"';
+                    i++; // Skip the next quote
+                } else {
+                    inQuotes = !inQuotes;
+                }
             } else if (char === ',' && !inQuotes) {
-                result.push(current.trim());
+                result.push(current.trim().replace(/^"(.*)"$/, '$1')); // Remove surrounding quotes
                 current = '';
             } else {
                 current += char;
             }
         }
-        result.push(current.trim());
+        result.push(current.trim().replace(/^"(.*)"$/, '$1')); // Remove surrounding quotes
         return result;
     };
 
@@ -228,12 +241,40 @@ const AddressImport = ({ onClose, onImportComplete }) => {
 
     const handleFileSelect = (event) => {
         const file = event.target.files[0];
-        if (file && file.type === 'text/csv') {
-            setSelectedFile(file);
-            parseCSV(file);
-        } else {
-            setParseError('Please select a valid CSV file.');
+
+        // Reset previous state
+        setParseError(null);
+        setRawParsedData([]);
+        setValidationResults([]);
+        setSelectedRecords(new Set());
+        setFieldMappings({});
+        setActiveStep(0);
+
+        if (!file) {
+            setParseError('No file selected.');
+            return;
         }
+
+        // Check file size (limit to 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            setParseError('File size too large. Please select a CSV file smaller than 10MB.');
+            return;
+        }
+
+        // Check file type
+        const validTypes = ['text/csv', 'application/csv', 'text/plain'];
+        const validExtensions = ['.csv', '.txt'];
+        const fileName = file.name.toLowerCase();
+        const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+
+        if (!validTypes.includes(file.type) && !hasValidExtension) {
+            setParseError('Please select a valid CSV file (.csv extension).');
+            return;
+        }
+
+        console.log(`[AddressImport] Processing file: ${file.name} (${Math.round(file.size / 1024)}KB)`);
+        setSelectedFile(file);
+        parseCSV(file);
     };
 
     const parseCSV = (file) => {
@@ -241,37 +282,75 @@ const AddressImport = ({ onClose, onImportComplete }) => {
         reader.onload = (e) => {
             try {
                 const text = e.target.result;
-                const lines = text.split('\n').filter(line => line.trim());
+                if (!text || text.trim() === '') {
+                    setParseError('CSV file is empty or could not be read.');
+                    return;
+                }
+
+                const lines = text.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0);
 
                 if (lines.length < 2) {
                     setParseError('CSV file must contain at least a header row and one data row.');
                     return;
                 }
 
-                // Parse headers - flexible parsing, no validation required
-                const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                // Parse headers with better error handling
+                let headers;
+                try {
+                    headers = parseCSVLine(lines[0]);
+                    if (headers.length === 0) {
+                        setParseError('Invalid CSV header row - no columns found.');
+                        return;
+                    }
+                } catch (headerError) {
+                    setParseError(`Error parsing CSV headers: ${headerError.message}`);
+                    return;
+                }
+
                 setRawHeaders(headers);
 
-                // Parse data rows with flexible headers
-                const data = lines.slice(1).map((line, index) => {
-                    const row = parseCSVLine(line);
-                    const rowData = {
-                        _id: `row_${index}`,
-                        _rowIndex: index + 2, // +2 because we start from line 2 (after header)
-                        _hasErrors: false,
-                        _errors: {},
-                        _warnings: {}
-                    };
+                // Parse data rows with better error handling
+                const data = [];
+                const parseErrors = [];
 
-                    headers.forEach((header, i) => {
-                        rowData[header] = (row[i] || '').trim();
-                    });
+                for (let i = 1; i < lines.length; i++) {
+                    try {
+                        const row = parseCSVLine(lines[i]);
+                        const rowData = {
+                            _id: `row_${i - 1}`,
+                            _rowIndex: i + 1, // +1 because line numbers start from 1
+                            _hasErrors: false,
+                            _errors: {},
+                            _warnings: {}
+                        };
 
-                    return rowData;
-                });
+                        headers.forEach((header, j) => {
+                            rowData[header] = (row[j] || '').trim();
+                        });
+
+                        data.push(rowData);
+                    } catch (rowError) {
+                        parseErrors.push(`Row ${i + 1}: ${rowError.message}`);
+                        console.warn(`Error parsing CSV row ${i + 1}:`, rowError);
+                    }
+                }
+
+                if (data.length === 0) {
+                    setParseError(`No valid data rows found. ${parseErrors.length > 0 ? 'Errors: ' + parseErrors.join('; ') : ''}`);
+                    return;
+                }
+
+                if (parseErrors.length > 0 && parseErrors.length > data.length * 0.5) {
+                    setParseError(`Too many parsing errors (${parseErrors.length} errors for ${data.length} valid rows). Please check your CSV format.`);
+                    return;
+                }
 
                 setRawParsedData(data);
                 setParseError(null);
+
+                console.log(`[AddressImport] Successfully parsed ${data.length} rows with ${parseErrors.length} errors`);
 
                 // Check if headers match our template exactly (auto-detect)
                 const expectedHeaders = csvTemplate.headers;
@@ -427,11 +506,24 @@ const AddressImport = ({ onClose, onImportComplete }) => {
     };
 
     const validateAllData = async (data) => {
+        if (!data || data.length === 0) {
+            setParseError('No data to validate.');
+            return;
+        }
+
         try {
-            // Fetch existing customers for validation
+            console.log(`[AddressImport] Starting validation for ${data.length} records`);
+
+            // Fetch existing customers for validation with timeout
             const existingCustomers = new Set();
             try {
-                const customersSnapshot = await getDocs(collection(db, 'customers'));
+                const customersSnapshot = await Promise.race([
+                    getDocs(collection(db, 'customers')),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Customer data fetch timeout')), 10000)
+                    )
+                ]);
+
                 customersSnapshot.forEach(doc => {
                     const customerData = doc.data();
                     if (customerData.companyID && customerData.customerID) {
@@ -441,21 +533,49 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 console.log('[AddressImport] Loaded existing customers for validation:', existingCustomers.size);
             } catch (customerError) {
                 console.warn('[AddressImport] Could not load customers for validation:', customerError);
+                // Continue without customer validation
             }
 
-            const results = await Promise.all(data.map(async record => {
-                const { errors, warnings } = await validateRecord(record, existingCustomers);
-                const hasErrors = Object.keys(errors).length > 0;
-                const hasWarnings = Object.keys(warnings).length > 0;
+            // Validate records in batches to prevent overwhelming the system
+            const batchSize = 50;
+            const results = [];
 
-                return {
-                    ...record,
-                    _hasErrors: hasErrors,
-                    _errors: errors,
-                    _warnings: warnings,
-                    _status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid'
-                };
-            }));
+            for (let i = 0; i < data.length; i += batchSize) {
+                const batch = data.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(async (record, index) => {
+                        try {
+                            const { errors, warnings } = await validateRecord(record, existingCustomers);
+                            const hasErrors = Object.keys(errors).length > 0;
+                            const hasWarnings = Object.keys(warnings).length > 0;
+
+                            return {
+                                ...record,
+                                _hasErrors: hasErrors,
+                                _errors: errors,
+                                _warnings: warnings,
+                                _status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid'
+                            };
+                        } catch (validationError) {
+                            console.error(`[AddressImport] Error validating record ${i + index + 1}:`, validationError);
+                            return {
+                                ...record,
+                                _hasErrors: true,
+                                _errors: { general: `Validation error: ${validationError.message}` },
+                                _warnings: {},
+                                _status: 'error'
+                            };
+                        }
+                    })
+                );
+                results.push(...batchResults);
+                console.log(`[AddressImport] Validated batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(data.length / batchSize)}`);
+            }
+
+            if (results.length === 0) {
+                setParseError('No records could be validated.');
+                return;
+            }
 
             setValidationResults(results);
 
@@ -464,10 +584,11 @@ const AddressImport = ({ onClose, onImportComplete }) => {
             setSelectedRecords(allRecordIds);
             setSelectAll(true);
 
-            setActiveStep(autoMappingApplied && mappingComplete ? 2 : 3); // Skip to review step
+            console.log(`[AddressImport] Validation complete: ${results.length} records processed`);
+            setActiveStep(2); // Always go to review step after validation
         } catch (error) {
             console.error('[AddressImport] Error during validation:', error);
-            setParseError(`Validation error: ${error.message}`);
+            setParseError(`Validation error: ${error.message}. Please try again or contact support.`);
         }
     };
 
@@ -729,25 +850,53 @@ const AddressImport = ({ onClose, onImportComplete }) => {
     };
 
     const normalizeRecord = (record) => {
+        if (!record) {
+            throw new Error('Record is null or undefined');
+        }
+
+        // Validate required fields exist
+        if (!record.company_id || !record.customer_id || !record.street_address) {
+            throw new Error('Missing required fields: company_id, customer_id, or street_address');
+        }
+
         // Normalize country codes
         let country = record.country || importOptions.defaultCountry;
-        if (['USA', 'United States'].includes(country)) country = 'US';
-        if (['CAN', 'Canada'].includes(country)) country = 'CA';
+        if (['USA', 'United States', 'UNITED STATES'].includes(country.toUpperCase())) country = 'US';
+        if (['CAN', 'Canada', 'CANADA'].includes(country.toUpperCase())) country = 'CA';
+
+        // Validate country
+        if (!['US', 'CA'].includes(country)) {
+            console.warn(`[AddressImport] Invalid country code '${country}' for record ${record._rowIndex}, defaulting to CA`);
+            country = 'CA';
+        }
 
         // Normalize boolean values
         let isResidential = false;
         if (record.is_residential) {
-            const val = record.is_residential.toLowerCase();
-            isResidential = ['true', '1', 'yes'].includes(val);
+            const val = record.is_residential.toString().toLowerCase().trim();
+            isResidential = ['true', '1', 'yes', 'y'].includes(val);
         }
 
         // Normalize address type
-        let addressType = record.address_type || 'destination';
-        addressType = addressType.toLowerCase();
+        let addressType = (record.address_type || 'destination').toString().toLowerCase().trim();
+        if (!['contact', 'destination', 'billing'].includes(addressType)) {
+            console.warn(`[AddressImport] Invalid address type '${addressType}' for record ${record._rowIndex}, defaulting to destination`);
+            addressType = 'destination';
+        }
 
-        // Normalize times
-        const openTime = record.open_time || '';
-        const closeTime = record.close_time || '';
+        // Normalize and validate times
+        const normalizeTime = (time) => {
+            if (!time) return '';
+            const timeStr = time.toString().trim();
+            // Basic time validation - accept HH:MM format
+            if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeStr)) {
+                return ''; // Return empty string for invalid times
+            }
+            return timeStr;
+        };
+
+        const openTime = normalizeTime(record.open_time);
+        const closeTime = normalizeTime(record.close_time);
 
         return {
             // Address nickname for better identification
@@ -817,10 +966,22 @@ const AddressImport = ({ onClose, onImportComplete }) => {
     };
 
     const performImport = async () => {
+        if (!validationResults || validationResults.length === 0) {
+            enqueueSnackbar('No data to import', { variant: 'error' });
+            return;
+        }
+
+        if (selectedRecords.size === 0) {
+            enqueueSnackbar('Please select at least one record to import', { variant: 'error' });
+            return;
+        }
+
         setImporting(true);
         setImportProgress(0);
 
         try {
+            console.log(`[AddressImport] Starting import process for ${selectedRecords.size} selected records`);
+
             // Only import selected records
             const selectedValidationResults = validationResults.filter(record =>
                 selectedRecords.has(record._id)
@@ -830,38 +991,89 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 ? selectedValidationResults.filter(record => record._status !== 'error')
                 : selectedValidationResults;
 
-            const batch = writeBatch(db);
-            const successRecords = [];
-            const failedRecords = [];
-
-            for (let i = 0; i < recordsToImport.length; i++) {
-                try {
-                    const record = recordsToImport[i];
-
-                    // Skip records with errors if option is enabled
-                    if (importOptions.skipErrorRecords && record._hasErrors) {
-                        continue;
-                    }
-
-                    const normalizedRecord = normalizeRecord(record);
-                    const docRef = doc(collection(db, 'addressBook'));
-                    batch.set(docRef, normalizedRecord);
-
-                    successRecords.push({
-                        ...record,
-                        docId: docRef.id
-                    });
-
-                    setImportProgress(Math.round(((i + 1) / recordsToImport.length) * 100));
-                } catch (error) {
-                    failedRecords.push({
-                        ...recordsToImport[i],
-                        error: error.message
-                    });
-                }
+            if (recordsToImport.length === 0) {
+                enqueueSnackbar('No valid records to import after filtering', { variant: 'warning' });
+                setImporting(false);
+                return;
             }
 
-            await batch.commit();
+            console.log(`[AddressImport] Importing ${recordsToImport.length} records (skip errors: ${importOptions.skipErrorRecords})`);
+
+            const successRecords = [];
+            const failedRecords = [];
+            const batchSize = 25; // Smaller batches for better reliability
+
+            // Process records in batches
+            for (let batchStart = 0; batchStart < recordsToImport.length; batchStart += batchSize) {
+                const batchEnd = Math.min(batchStart + batchSize, recordsToImport.length);
+                const batchRecords = recordsToImport.slice(batchStart, batchEnd);
+
+                try {
+                    const batch = writeBatch(db);
+                    const batchSuccessRecords = [];
+
+                    for (let i = 0; i < batchRecords.length; i++) {
+                        try {
+                            const record = batchRecords[i];
+
+                            // Skip records with errors if option is enabled
+                            if (importOptions.skipErrorRecords && record._hasErrors) {
+                                console.log(`[AddressImport] Skipping record ${record._rowIndex} due to errors`);
+                                continue;
+                            }
+
+                            // Validate record before normalization
+                            if (!record.company_id || !record.customer_id || !record.street_address) {
+                                throw new Error('Missing required fields: company_id, customer_id, or street_address');
+                            }
+
+                            const normalizedRecord = normalizeRecord(record);
+
+                            // Additional validation on normalized record
+                            if (!normalizedRecord.companyID || !normalizedRecord.customerID || !normalizedRecord.street) {
+                                throw new Error('Record normalization failed - missing critical data');
+                            }
+
+                            const docRef = doc(collection(db, 'addressBook'));
+                            batch.set(docRef, normalizedRecord);
+
+                            batchSuccessRecords.push({
+                                ...record,
+                                docId: docRef.id,
+                                normalizedRecord
+                            });
+
+                        } catch (recordError) {
+                            console.error(`[AddressImport] Error processing record ${batchRecords[i]._rowIndex}:`, recordError);
+                            failedRecords.push({
+                                ...batchRecords[i],
+                                error: recordError.message
+                            });
+                        }
+                    }
+
+                    // Commit batch if there are records to commit
+                    if (batchSuccessRecords.length > 0) {
+                        await batch.commit();
+                        successRecords.push(...batchSuccessRecords);
+                        console.log(`[AddressImport] Successfully committed batch ${Math.floor(batchStart / batchSize) + 1} with ${batchSuccessRecords.length} records`);
+                    }
+
+                } catch (batchError) {
+                    console.error(`[AddressImport] Error committing batch ${Math.floor(batchStart / batchSize) + 1}:`, batchError);
+                    // Mark all records in this batch as failed
+                    batchRecords.forEach(record => {
+                        failedRecords.push({
+                            ...record,
+                            error: `Batch commit failed: ${batchError.message}`
+                        });
+                    });
+                }
+
+                // Update progress
+                const progress = Math.round((batchEnd / recordsToImport.length) * 100);
+                setImportProgress(progress);
+            }
 
             const errorCount = validationResults.filter(r => r._status === 'error').length;
             const warningCount = validationResults.filter(r => r._status === 'warning').length;
@@ -876,14 +1088,27 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 failedRecords
             });
 
-            setActiveStep(2);
-            enqueueSnackbar(`Successfully imported ${successRecords.length} addresses`, { variant: 'success' });
+            console.log(`[AddressImport] Import complete: ${successRecords.length} successful, ${failedRecords.length} failed`);
+
+            setActiveStep(3); // Go to results step after import
+
+            if (successRecords.length > 0) {
+                enqueueSnackbar(`Successfully imported ${successRecords.length} addresses`, { variant: 'success' });
+            }
+
+            if (failedRecords.length > 0) {
+                enqueueSnackbar(`${failedRecords.length} records failed to import`, { variant: 'warning' });
+            }
 
         } catch (error) {
-            console.error('Import error:', error);
-            enqueueSnackbar(`Import failed: ${error.message}`, { variant: 'error' });
+            console.error('[AddressImport] Critical import error:', error);
+            enqueueSnackbar(`Import failed: ${error.message}. Please try again.`, { variant: 'error' });
+
+            // Reset to review step so user can try again
+            setActiveStep(2);
         } finally {
             setImporting(false);
+            setImportProgress(0);
         }
     };
 
@@ -1464,20 +1689,44 @@ const AddressImport = ({ onClose, onImportComplete }) => {
                 </DialogContent>
 
                 <DialogActions>
-                    <Button onClick={onClose} sx={{ fontSize: '12px' }}>
+                    <Button
+                        onClick={onClose}
+                        sx={{ fontSize: '12px' }}
+                        disabled={importing}
+                    >
                         Cancel
                     </Button>
 
-                    {activeStep === 2 && (
+                    {activeStep === 1 && (
                         <Button
-                            onClick={performImport}
-                            variant="contained"
-                            disabled={importing || selectedRecords.size === 0 || (importOptions.skipErrorRecords && statusCounts.valid === 0)}
-                            startIcon={importing ? <CircularProgress size={20} /> : <UploadIcon />}
+                            onClick={() => setActiveStep(0)}
+                            variant="outlined"
                             sx={{ fontSize: '12px' }}
                         >
-                            {importing ? 'Importing...' : `Import ${importOptions.skipErrorRecords ? statusCounts.valid + statusCounts.warnings : statusCounts.total} Records`}
+                            Back
                         </Button>
+                    )}
+
+                    {activeStep === 2 && (
+                        <>
+                            <Button
+                                onClick={() => setActiveStep(1)}
+                                variant="outlined"
+                                sx={{ fontSize: '12px' }}
+                                disabled={importing}
+                            >
+                                Back to Mapping
+                            </Button>
+                            <Button
+                                onClick={performImport}
+                                variant="contained"
+                                disabled={importing || selectedRecords.size === 0 || (importOptions.skipErrorRecords && statusCounts.valid === 0)}
+                                startIcon={importing ? <CircularProgress size={20} /> : <UploadIcon />}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                {importing ? `Importing... ${importProgress}%` : `Import ${importOptions.skipErrorRecords ? statusCounts.valid + statusCounts.warnings : statusCounts.total} Records`}
+                            </Button>
+                        </>
                     )}
 
                     {activeStep === 3 && (
