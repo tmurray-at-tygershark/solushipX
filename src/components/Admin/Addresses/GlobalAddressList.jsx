@@ -1874,15 +1874,15 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     {/* Pagination */}
                     <Box sx={{ flexShrink: 0, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa', mt: 2, mx: 2 }}>
                         <ShipmentsPagination
-                            totalItems={filteredAddresses.length}
-                            itemsPerPage={rowsPerPage}
-                            currentPage={page}
-                            onPageChange={(newPage) => setPage(newPage)}
-                            onItemsPerPageChange={(newRowsPerPage) => {
+                            totalCount={filteredAddresses.length}
+                            rowsPerPage={rowsPerPage}
+                            page={page}
+                            onPageChange={(event, newPage) => setPage(newPage)}
+                            onRowsPerPageChange={(event) => {
+                                const newRowsPerPage = event.target.value;
                                 setRowsPerPage(newRowsPerPage);
                                 setPage(0);
                             }}
-                            itemName="addresses"
                         />
                     </Box>
 
