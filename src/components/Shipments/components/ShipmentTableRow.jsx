@@ -57,26 +57,54 @@ const ShipmentTableRow = ({
 
         // Fallback to legacy approach for older shipments
         let cost = 0;
+        let companyCharge = 0;
 
-        // Check various places where the cost might be stored
-        if (shipment.totalCost) {
-            cost = shipment.totalCost;
-        } else if (shipment.cost) {
-            cost = shipment.cost;
-        } else if (shipment.selectedRate?.totalCharges) {
-            cost = shipment.selectedRate.totalCharges;
-        } else if (shipment.selectedRate?.price) {
-            cost = shipment.selectedRate.price;
-        } else if (shipment.selectedRateRef?.totalCharges) {
-            cost = shipment.selectedRateRef.totalCharges;
-        } else if (shipment.selectedRateRef?.price) {
-            cost = shipment.selectedRateRef.price;
-        } else if (shipment.totalCharges) {
-            cost = shipment.totalCharges;
+        // For QuickShip shipments, extract cost and charge from manual rates
+        if (shipment.creationMethod === 'quickship' && shipment.manualRates) {
+            const totalCost = shipment.manualRates.reduce((sum, rate) =>
+                sum + (parseFloat(rate.cost) || 0), 0);
+            const totalCharge = shipment.manualRates.reduce((sum, rate) =>
+                sum + (parseFloat(rate.charge) || 0), 0);
+
+            if (totalCost > 0 || totalCharge > 0) {
+                cost = totalCost;
+                companyCharge = totalCharge;
+            }
         }
 
-        // For legacy shipments without markup data, show the same value for both
-        const companyCharge = cost;
+        // If not QuickShip or no manual rates, check for dual rate fields
+        if (cost === 0 && companyCharge === 0) {
+            // Try to find separate cost and charge values
+            cost = shipment.actualCost ||
+                shipment.carrierCost ||
+                shipment.originalAmount ||
+                shipment.totalCost ||
+                shipment.cost || 0;
+
+            companyCharge = shipment.customerCharge ||
+                shipment.finalAmount ||
+                shipment.totalCharges ||
+                shipment.selectedRate?.totalCharges ||
+                shipment.selectedRate?.price ||
+                shipment.selectedRateRef?.totalCharges ||
+                shipment.selectedRateRef?.price || 0;
+        }
+
+        // Final fallback - if we still don't have values, use any available amount
+        if (cost === 0 && companyCharge === 0) {
+            const fallbackAmount = shipment.totalCharges ||
+                shipment.selectedRate?.totalCharges ||
+                shipment.selectedRate?.price ||
+                shipment.selectedRateRef?.totalCharges ||
+                shipment.selectedRateRef?.price || 0;
+
+            // For true legacy shipments without cost/charge separation, 
+            // estimate cost as 85% of charge (common markup scenario)
+            if (fallbackAmount > 0) {
+                companyCharge = fallbackAmount;
+                cost = fallbackAmount * 0.85; // Estimate 15% markup
+            }
+        }
 
         // Enhanced currency detection - check multiple possible locations
         let currency = 'USD'; // Default fallback

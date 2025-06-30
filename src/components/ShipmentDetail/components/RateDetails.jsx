@@ -123,6 +123,19 @@ const RateDetails = ({
         return null;
     }
 
+    // Get currency from multiple sources with CAD as default
+    const getCurrency = () => {
+        // Priority order for currency detection
+        return quickShipData?.currency ||
+            getBestRateInfo?.currency ||
+            shipment?.currency ||
+            shipment?.billingCurrency ||
+            'CAD'; // Default to CAD
+    };
+
+    const currency = getCurrency();
+    const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+
     // Calculate total cost and charge for admin display
     const calculateTotals = () => {
         if (quickShipData) {
@@ -343,11 +356,11 @@ const RateDetails = ({
                             borderRadius: 1
                         }}>
                             <Typography sx={{ fontWeight: 600, fontSize: '14px', mb: 1, color: '#1e40af' }}>
-                                Markup Applied: ${markupSummary.markupAmount.toFixed(2)} ({markupSummary.markupPercentage.toFixed(1)}%)
+                                Markup Applied: {currencySymbol}{markupSummary.markupAmount.toFixed(2)} ({markupSummary.markupPercentage.toFixed(1)}%)
                             </Typography>
                             <Typography sx={{ fontSize: '13px', color: '#374151' }}>
-                                Original Cost: ${markupSummary.originalAmount.toFixed(2)} →
-                                Customer Charge: ${markupSummary.finalAmount.toFixed(2)}
+                                Original Cost: {currencySymbol}{markupSummary.originalAmount.toFixed(2)} →
+                                Customer Charge: {currencySymbol}{markupSummary.finalAmount.toFixed(2)}
                             </Typography>
                         </Box>
                     )}
@@ -451,11 +464,11 @@ const RateDetails = ({
                                             </TableCell>
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'right', color: '#059669', fontWeight: 500 }}>
-                                                    {!item.isMarkup ? `$${safeNumber(item.cost).toFixed(2)}` : '-'}
+                                                    {!item.isMarkup ? `${currencySymbol}${safeNumber(item.cost).toFixed(2)}` : '-'}
                                                 </TableCell>
                                             )}
                                             <TableCell sx={{ fontSize: '12px', textAlign: 'right', fontWeight: 600 }}>
-                                                ${safeNumber(item.amount).toFixed(2)}
+                                                {currencySymbol}{safeNumber(item.amount).toFixed(2)}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -467,11 +480,11 @@ const RateDetails = ({
                                         </TableCell>
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
-                                                ${safeNumber(totalCost).toFixed(2)}
+                                                {currencySymbol}{safeNumber(totalCost).toFixed(2)}
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'right', fontWeight: 700 }}>
-                                            ${safeNumber(totalCharge).toFixed(2)}
+                                            {currencySymbol}{safeNumber(totalCharge).toFixed(2)}
                                         </TableCell>
                                     </TableRow>
                                 </TableBody>
@@ -528,7 +541,7 @@ const RateDetails = ({
                                 return total + (parseFloat(pkg.declaredValue) || 0);
                             }, 0);
                             if (totalDeclaredValue > 0) {
-                                additionalServices.push(`Insurance Coverage ($${totalDeclaredValue.toFixed(2)})`);
+                                additionalServices.push(`Insurance Coverage (${currencySymbol}${totalDeclaredValue.toFixed(2)})`);
                             }
                         }
 

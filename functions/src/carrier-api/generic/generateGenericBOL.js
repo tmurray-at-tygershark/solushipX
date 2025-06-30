@@ -1376,28 +1376,32 @@ function drawExactFreightTable(doc, bolData) {
        .fontSize(8)
        .fillColor('#000000');
     
-    // Draw totals in a clean, separate area with proper alignment
-    const totalsStartX = 400; // Right-aligned position
-    const totalsLabelWidth = 80;
-    const totalsValueWidth = 80;
+    // Draw totals side by side in a clean, separate area
+    const totalsStartX = 350; // Position for side-by-side layout
+    const piecesLabelWidth = 70;
+    const piecesValueWidth = 30;
+    const spaceBetween = 80; // Space between pieces and weight sections
+    const weightLabelWidth = 70;
+    const weightValueWidth = 60;
     
-    // Total Pieces line
+    // Total Pieces (left side)
     doc.text('TOTAL PIECES:', totalsStartX, totalsY, {
-           width: totalsLabelWidth,
+           width: piecesLabelWidth,
            align: 'left'
        })
-       .text(calculatedTotalPieces.toString(), totalsStartX + totalsLabelWidth + 10, totalsY, {
-           width: totalsValueWidth,
+       .text(calculatedTotalPieces.toString(), totalsStartX + piecesLabelWidth + 10, totalsY, {
+           width: piecesValueWidth,
            align: 'left'
        });
     
-    // Total Weight line
-    doc.text('TOTAL WEIGHT:', totalsStartX, totalsY + 12, {
-           width: totalsLabelWidth,
+    // Total Weight (right side, same Y position)
+    const weightStartX = totalsStartX + piecesLabelWidth + piecesValueWidth + spaceBetween;
+    doc.text('TOTAL WEIGHT:', weightStartX, totalsY, {
+           width: weightLabelWidth,
            align: 'left'
        })
-       .text(`${calculatedTotalWeight.toFixed(0)} LBS`, totalsStartX + totalsLabelWidth + 10, totalsY + 12, {
-           width: totalsValueWidth,
+       .text(`${calculatedTotalWeight.toFixed(0)} LBS`, weightStartX + weightLabelWidth + 10, totalsY, {
+           width: weightValueWidth,
            align: 'left'
        });
 }

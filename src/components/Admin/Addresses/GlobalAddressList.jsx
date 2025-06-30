@@ -30,7 +30,8 @@ import {
     Avatar,
     Menu,
     ListItemIcon,
-    ListItemText
+    ListItemText,
+    Skeleton
 } from '@mui/material';
 import {
     Business as BusinessIcon,
@@ -216,8 +217,69 @@ const GlobalAddressList = () => {
     // Loading state
     if (authLoading || companyLoading || loadingCompanies) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
-                <CircularProgress />
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%'
+            }}>
+                {/* Header Section Skeleton */}
+                <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                    {/* Title Row Skeleton */}
+                    <Box sx={{ mb: 2 }}>
+                        <Skeleton variant="text" width={200} height={32} sx={{ mb: 0.5 }} />
+                        <Skeleton variant="text" width={400} height={16} />
+                    </Box>
+
+                    {/* Breadcrumb and Filter Row Skeleton */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Skeleton variant="text" width={150} height={20} />
+                        <Skeleton variant="rectangular" width={300} height={40} sx={{ borderRadius: 1 }} />
+                    </Box>
+                </Box>
+
+                {/* Main Content Area Skeleton */}
+                <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                    <Paper sx={{
+                        height: '100%',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        boxShadow: 'none',
+                        p: 2
+                    }}>
+                        {/* Toolbar Skeleton */}
+                        <Box sx={{ mb: 2 }}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} md={6}>
+                                    <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        </Box>
+
+                        {/* Table Skeleton */}
+                        <Box sx={{ flex: 1 }}>
+                            {Array.from({ length: 8 }).map((_, index) => (
+                                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, p: 1 }}>
+                                    <Skeleton variant="rectangular" width={20} height={20} />
+                                    <Skeleton variant="text" width={150} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                    <Skeleton variant="text" width={120} />
+                                    <Skeleton variant="text" width={140} />
+                                    <Skeleton variant="text" width={100} />
+                                    <Skeleton variant="text" width={180} />
+                                    <Skeleton variant="circular" width={24} height={24} />
+                                </Box>
+                            ))}
+                        </Box>
+                    </Paper>
+                </Box>
             </Box>
         );
     }
@@ -1039,8 +1101,174 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
 
     if (loading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress />
+            <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Sliding Container */}
+                <Box sx={{
+                    width: '400%',
+                    height: '100%',
+                    display: 'flex',
+                    transform: 'translateX(0%)'
+                }}>
+                    {/* Table View Skeleton */}
+                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        {/* Toolbar Skeleton */}
+                        <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8fafc' }}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} md={6}>
+                                    <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        </Box>
+
+                        {/* Super Admin Section Skeleton */}
+                        {userRole === 'superadmin' && (
+                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e0e0e0' }}>
+                                <Skeleton variant="text" width={300} height={20} sx={{ mb: 2 }} />
+                                <Grid container spacing={2} alignItems="center">
+                                    <Grid item xs={12} md={4}>
+                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
+                                    </Grid>
+                                    <Grid item xs={12} md={4}>
+                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
+                                    </Grid>
+                                    <Grid item xs={12} md={4}>
+                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
+                                    </Grid>
+                                </Grid>
+                            </Box>
+                        )}
+
+                        {/* Table Skeleton */}
+                        <Box sx={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: 0 }}>
+                            <Box sx={{ width: '100%', px: 2 }}>
+                                <Table stickyHeader>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
+                                                <Skeleton variant="rectangular" width={20} height={20} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={100} />
+                                            </TableCell>
+                                            {viewMode === 'all' && (
+                                                <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                    <Skeleton variant="text" width={120} />
+                                                </TableCell>
+                                            )}
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={100} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={80} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={100} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={80} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                                <Skeleton variant="text" width={120} />
+                                            </TableCell>
+                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px', width: 80 }}>
+                                                <Skeleton variant="text" width={60} />
+                                            </TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {Array.from({ length: 10 }).map((_, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
+                                                    <Skeleton variant="rectangular" width={20} height={20} />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Skeleton variant="text" width={150} />
+                                                </TableCell>
+                                                {viewMode === 'all' && (
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                            <Skeleton variant="circular" width={32} height={32} />
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                                <Skeleton variant="text" width={120} />
+                                                                <Skeleton variant="text" width={80} />
+                                                            </Box>
+                                                        </Box>
+                                                    </TableCell>
+                                                )}
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                        <Skeleton variant="circular" width={32} height={32} />
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                            <Skeleton variant="text" width={100} />
+                                                            <Skeleton variant="text" width={60} />
+                                                        </Box>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Skeleton variant="text" width={120} />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Skeleton variant="text" width={140} />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Skeleton variant="text" width={100} />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box>
+                                                        <Skeleton variant="text" width={180} />
+                                                        <Skeleton variant="text" width={140} />
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Skeleton variant="circular" width={24} height={24} />
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Box>
+                        </Box>
+
+                        {/* Pagination Skeleton */}
+                        <Box sx={{ flexShrink: 0, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa', mt: 2, mx: 2, p: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Skeleton variant="text" width={120} />
+                                    <Skeleton variant="rectangular" width={60} height={30} />
+                                </Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Skeleton variant="text" width={80} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                </Box>
+                            </Box>
+                        </Box>
+                    </Box>
+
+                    {/* Detail View Placeholder */}
+                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        {/* Empty for now */}
+                    </Box>
+
+                    {/* Edit View Placeholder */}
+                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        {/* Empty for now */}
+                    </Box>
+
+                    {/* Add View Placeholder */}
+                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        {/* Empty for now */}
+                    </Box>
+                </Box>
             </Box>
         );
     }
@@ -1801,8 +2029,13 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                         {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
                                                     </Typography>
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                <TableCell sx={{ fontSize: '12px', maxWidth: '200px' }}>
+                                                    <Typography variant="body2" sx={{
+                                                        fontSize: '12px',
+                                                        wordBreak: 'break-all',
+                                                        whiteSpace: 'normal',
+                                                        lineHeight: 1.3
+                                                    }}>
                                                         {address.email || 'N/A'}
                                                     </Typography>
                                                 </TableCell>
