@@ -131,8 +131,31 @@ async function bookQuickShipmentInternal(data, auth = null) {
             documentResults.push({ success: false, error: error.message });
         }
         
-        // 2. Generate Carrier Confirmation (if carrier has email)
+        // 2. Generate Carrier Confirmation (if carrier has any email contacts)
+        let shouldGenerateCarrierConfirmation = false;
+        
+        // Check for legacy email structure
         if (carrierDetails?.contactEmail) {
+            shouldGenerateCarrierConfirmation = true;
+            logger.info('Carrier confirmation will be generated - found legacy contactEmail');
+        }
+        // Check for new terminal-based email structure
+        else if (carrierDetails?.emailContacts && Array.isArray(carrierDetails.emailContacts)) {
+            // Check if any terminal has any emails
+            const hasAnyEmails = carrierDetails.emailContacts.some(terminal => {
+                const contactTypes = terminal.contactTypes || {};
+                return Object.values(contactTypes).some(emails => 
+                    Array.isArray(emails) && emails.length > 0 && emails.some(email => email && email.trim())
+                );
+            });
+            
+            if (hasAnyEmails) {
+                shouldGenerateCarrierConfirmation = true;
+                logger.info('Carrier confirmation will be generated - found emails in terminal structure');
+            }
+        }
+        
+        if (shouldGenerateCarrierConfirmation) {
             try {
                 const { generateCarrierConfirmationCore } = require('./generateCarrierConfirmation');
                 const confirmationResult = await generateCarrierConfirmationCore(shipmentData.shipmentID, firestoreDocId, carrierDetails);
@@ -148,7 +171,12 @@ async function bookQuickShipmentInternal(data, auth = null) {
                 documentResults.push({ success: false, error: error.message });
             }
         } else {
-            logger.info('No carrier email provided, skipping Carrier Confirmation generation');
+            logger.info('No carrier email found in either legacy or terminal structure, skipping Carrier Confirmation generation', {
+                hasCarrierDetails: !!carrierDetails,
+                hasContactEmail: !!carrierDetails?.contactEmail,
+                hasEmailContacts: !!carrierDetails?.emailContacts,
+                emailContactsCount: carrierDetails?.emailContacts?.length || 0
+            });
         }
 
         logger.info('Document generation completed successfully - sending notifications directly with document results');

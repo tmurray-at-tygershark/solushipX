@@ -96,11 +96,85 @@ async function sendQuickShipNotifications({ shipmentData, carrierDetails, docume
 
         // 2. Send carrier notification
         try {
-            if (carrierDetails?.contactEmail) {
-                notifications.push(sendCarrierNotification(shipmentData, carrierDetails, documentResults));
-                logger.info('Queued carrier notification for:', carrierDetails.contactEmail);
+            // Handle both old and new carrier email structures
+            let carrierEmail = null;
+            
+            if (carrierDetails?.emailContacts && shipmentData.creationMethod === 'quickship') {
+                // NEW STRUCTURE: Terminal-based email management (QuickShip carriers only)
+                logger.info('Extracting carrier email from new terminal-based structure');
+                
+                // Get the selected terminal ID from shipment data
+                let selectedTerminalId = shipmentData.selectedCarrierContactId || 'default';
+                
+                // Extract terminal from selectedCarrierContactId (format: terminalId_contactType_index)
+                if (selectedTerminalId.includes('_')) {
+                    selectedTerminalId = selectedTerminalId.split('_')[0];
+                }
+                
+                // Find the selected terminal or use default
+                const terminals = carrierDetails.emailContacts || [];
+                let selectedTerminal = terminals.find(terminal => terminal.id === selectedTerminalId);
+                
+                // If no specific terminal found, use the first one or default
+                if (!selectedTerminal && terminals.length > 0) {
+                    selectedTerminal = terminals.find(terminal => terminal.isDefault) || terminals[0];
+                }
+                
+                if (selectedTerminal) {
+                    logger.info('Using terminal for carrier notification email:', selectedTerminal.name);
+                    
+                    // Get emails for carrier confirmation - prioritize dispatch emails
+                    const contactTypes = selectedTerminal.contactTypes || {};
+                    const dispatchEmails = contactTypes.dispatch || [];
+                    const customerServiceEmails = contactTypes.customer_service || [];
+                    const allEmails = [
+                        ...dispatchEmails,
+                        ...customerServiceEmails,
+                        ...(contactTypes.quotes || []),
+                        ...(contactTypes.billing_adjustments || []),
+                        ...(contactTypes.claims || []),
+                        ...(contactTypes.sales_reps || []),
+                        ...(contactTypes.customs || []),
+                        ...(contactTypes.other || [])
+                    ].filter(email => email && email.trim());
+                    
+                    // Use the first available email (usually dispatch)
+                    carrierEmail = allEmails[0] || null;
+                    
+                    logger.info('Extracted carrier email from terminal:', {
+                        terminal: selectedTerminal.name,
+                        email: carrierEmail,
+                        totalEmails: allEmails.length
+                    });
+                }
             } else {
-                logger.warn('No carrier email found, skipping carrier notification');
+                // OLD STRUCTURE: Legacy contactEmail field (API carriers and fallback)
+                logger.info('Using legacy carrier email structure');
+                carrierEmail = carrierDetails?.contactEmail;
+            }
+            
+            // If still no email found, try other legacy fallbacks
+            if (!carrierEmail) {
+                carrierEmail = carrierDetails?.email || carrierDetails?.billingEmail;
+            }
+            
+            if (carrierEmail) {
+                // Update carrierDetails to include the extracted email for compatibility
+                const updatedCarrierDetails = {
+                    ...carrierDetails,
+                    contactEmail: carrierEmail
+                };
+                
+                notifications.push(sendCarrierNotification(shipmentData, updatedCarrierDetails, documentResults));
+                logger.info('Queued carrier notification for:', carrierEmail);
+            } else {
+                logger.warn('No carrier email found in either new or legacy structure, skipping carrier notification', {
+                    hasEmailContacts: !!carrierDetails?.emailContacts,
+                    hasContactEmail: !!carrierDetails?.contactEmail,
+                    hasEmail: !!carrierDetails?.email,
+                    creationMethod: shipmentData.creationMethod,
+                    selectedCarrierContactId: shipmentData.selectedCarrierContactId
+                });
             }
         } catch (error) {
             logger.error('Error queuing carrier notification:', error);
@@ -1012,10 +1086,12 @@ ${rateBreakdown ? `RATE DETAILS\n${rateBreakdown}\nTotal: $${shipmentData.totalC
 
 ADDRESSES
 Ship From:
-${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}\n` : ''}${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
+${shipmentData.shipFrom?.companyName ? `${shipmentData.shipFrom.companyName}\n` : ''}${shipmentData.shipFrom?.firstName || shipmentData.shipFrom?.lastName ? `${shipmentData.shipFrom.firstName || ''} ${shipmentData.shipFrom.lastName || ''}<br>` : ''}
+${shipmentData.shipFrom?.street ? `${shipmentData.shipFrom.street}\n` : ''}${shipmentData.shipFrom?.street2 ? `${shipmentData.shipFrom.street2}\n` : ''}${shipmentData.shipFrom ? `${shipmentData.shipFrom.city}, ${shipmentData.shipFrom.state} ${shipmentData.shipFrom.postalCode}\n` : ''}${shipmentData.shipFrom?.country ? shipmentData.shipFrom.country : ''}${shipmentData.shipFrom?.phone ? `\nPhone: ${shipmentData.shipFrom.phone}` : ''}
 
 Ship To:
-${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}\n` : ''}${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
+${shipmentData.shipTo?.companyName ? `${shipmentData.shipTo.companyName}\n` : ''}${shipmentData.shipTo?.firstName || shipmentData.shipTo?.lastName ? `${shipmentData.shipTo.firstName || ''} ${shipmentData.shipTo.lastName || ''}<br>` : ''}
+${shipmentData.shipTo?.street ? `${shipmentData.shipTo.street}\n` : ''}${shipmentData.shipTo?.street2 ? `${shipmentData.shipTo.street2}\n` : ''}${shipmentData.shipTo ? `${shipmentData.shipTo.city}, ${shipmentData.shipTo.state} ${shipmentData.shipTo.postalCode}\n` : ''}${shipmentData.shipTo?.country ? shipmentData.shipTo.country : ''}${shipmentData.shipTo?.phone ? `\nPhone: ${shipmentData.shipTo.phone}` : ''}
 
 ✅ BOOKING CONFIRMED
 Your QuickShip booking has been processed successfully! You should receive your BOL document as an attachment to this email.

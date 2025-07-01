@@ -28,8 +28,8 @@ import {
     Security as SecurityIcon,
     Timer as TimerIcon
 } from '@mui/icons-material';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../firebase';
+import { httpsCallable, connectAuthEmulator } from 'firebase/functions';
+import { functions } from '../../firebase/firebase';
 
 const SetPassword = () => {
     const [searchParams] = useSearchParams();
@@ -161,6 +161,7 @@ const SetPassword = () => {
             const verifyInviteAndSetPassword = httpsCallable(functions, 'verifyInviteAndSetPassword');
             const result = await verifyInviteAndSetPassword({
                 token: token,
+                email: userEmail,
                 newPassword: formData.password
             });
 

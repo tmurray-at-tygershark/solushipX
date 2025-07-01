@@ -34,7 +34,9 @@ import {
     Switch,
     FormHelperText,
     AlertTitle,
-    Snackbar
+    Snackbar,
+    Avatar,
+    Collapse
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -42,8 +44,10 @@ import {
     LocalShipping as LocalShippingIcon,
     FlashOn as FlashOnIcon,
     CheckCircle as CheckCircleIcon,
-    Edit as EditIcon,
+
     SwapHoriz as SwapHorizIcon,
+    Edit as EditIcon,
+    Clear as ClearIcon,
     Person as PersonIcon,
     Phone as PhoneIcon,
     Email as EmailIcon,
@@ -62,6 +66,7 @@ import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
+import EmailSelectorDropdown from '../common/EmailSelectorDropdown';
 
 // Lazy load other components
 const QuickShipCarrierDialog = lazy(() => import('./QuickShipCarrierDialog'));
@@ -343,7 +348,12 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         serviceLevel: 'any',
         dangerousGoodsType: 'none',
         signatureServiceType: 'none',
-        notes: ''
+        notes: '',
+        // ADD TIMING FIELDS - URGENT FIX for BOL open/close times
+        earliestPickup: '09:00',
+        latestPickup: '17:00',
+        earliestDelivery: '09:00',
+        latestDelivery: '17:00'
     });
 
     // Address state - simplified to use AddressBook
@@ -360,6 +370,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Quick Ship Carriers state - Enhanced version
     const [quickShipCarriers, setQuickShipCarriers] = useState([]);
     const [selectedCarrier, setSelectedCarrier] = useState('');
+    const [selectedCarrierContactId, setSelectedCarrierContactId] = useState('');
     const [showCarrierDialog, setShowCarrierDialog] = useState(false);
     const [editingCarrier, setEditingCarrier] = useState(null);
     const [loadingCarriers, setLoadingCarriers] = useState(false);
@@ -446,8 +457,48 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
 
+    // Customer selection state for super admins  
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
+
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
+
+    // Load customers for selected company (super admin)
+    const loadCustomersForCompany = useCallback(async (companyId) => {
+        if (!companyId || companyId === 'all') {
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+            return;
+        }
+
+        setLoadingCustomers(true);
+        try {
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyID', '==', companyId)
+            );
+
+            const customersSnapshot = await getDocs(customersQuery);
+            const customers = customersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Sort customers by name
+            customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            setAvailableCustomers(customers);
+            setSelectedCustomerId('all'); // Reset to "All Customers"
+        } catch (error) {
+            console.error('Error loading customers:', error);
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+        } finally {
+            setLoadingCustomers(false);
+        }
+    }, []);
 
     // Handle company selection for super admins
     const handleCompanySelection = useCallback(async (companyId) => {
@@ -480,6 +531,15 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     setShipToAddress(null);
                     setAvailableAddresses([]); // Clear available addresses as they're for the old company
 
+                    // CLEAR CARRIERS when company changes - they belong to the previous company
+                    setQuickShipCarriers([]); // Clear carrier list
+                    setSelectedCarrier(''); // Clear selected carrier
+                    setSelectedCarrierContactId(''); // Clear selected carrier contact
+                    setLoadingCarriers(true); // Show loading state for new carrier fetch
+
+                    // LOAD CUSTOMERS for the selected company
+                    await loadCustomersForCompany(companyId);
+
                     // Clear form sections as well
                     updateFormSection('shipFrom', {});
                     updateFormSection('shipTo', {});
@@ -487,8 +547,15 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     // Switch company context
                     await setCompanyContext(targetCompanyData);
 
+                    // CRITICAL: Force reload addresses after company context switch
+                    // Small delay to ensure context is fully updated
+                    setTimeout(() => {
+                        console.log('🔄 Force reloading addresses after company switch');
+                        loadAddresses();
+                    }, 100);
+
                     console.log('✅ Super admin switched to company context:', targetCompanyData.name);
-                    console.log('🧹 Cleared ship from/to addresses for new company');
+                    console.log('🧹 Cleared ship from/to addresses and carriers for new company');
                     // Show success message
                     showSuccess(`Switched to ${targetCompanyData.name || companyId}`);
                 } else {
@@ -502,6 +569,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 setShipFromAddress(null);
                 setShipToAddress(null);
                 setAvailableAddresses([]);
+                // Clear carriers when no company is selected
+                setQuickShipCarriers([]);
+                setSelectedCarrier('');
+                setSelectedCarrierContactId('');
                 updateFormSection('shipFrom', {});
                 updateFormSection('shipTo', {});
             }
@@ -647,7 +718,21 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                         shipmentType: 'freight',
                         shipmentDate: new Date().toISOString().split('T')[0],
                         shipperReferenceNumber: shipmentID, // Use shipment ID as default reference
-                        unitSystem: unitSystem
+                        unitSystem: unitSystem,
+                        // ADD TIMING FIELDS for BOL generation
+                        earliestPickup: '09:00',
+                        latestPickup: '17:00',
+                        earliestDelivery: '09:00',
+                        latestDelivery: '17:00',
+                        // Default service options
+                        billType: 'third_party',
+                        serviceLevel: 'any',
+                        dangerousGoodsType: 'none',
+                        signatureServiceType: 'none',
+                        notes: '',
+                        carrierTrackingNumber: '',
+                        bookingReferenceNumber: '',
+                        bookingReferenceType: 'PO'
                     },
                     packages: [{
                         id: 1,
@@ -744,8 +829,22 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     };
 
     const handleEditCarrier = (carrier) => {
+        console.log('✏️ EDIT CARRIER BUTTON CLICKED!');
+        console.log('✏️ handleEditCarrier called with:', carrier);
+        console.log('✏️ Current showCarrierDialog state:', showCarrierDialog);
+        console.log('✏️ Current editingCarrier state:', editingCarrier);
+        console.log('📝 Setting editingCarrier to:', carrier);
+        console.log('📝 Setting showCarrierDialog to: true');
+
+        // Set the states
         setEditingCarrier(carrier);
         setShowCarrierDialog(true);
+
+        // Verify the states were set
+        setTimeout(() => {
+            console.log('📝 AFTER setState - showCarrierDialog should be true');
+            console.log('📝 AFTER setState - editingCarrier should be set');
+        }, 100);
     };
 
     const handleDeleteCarrier = async (carrier) => {
@@ -783,6 +882,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 c.id === savedCarrier.id ? savedCarrier : c
             ));
             setCarrierSuccessMessage(`Carrier "${savedCarrier.name}" has been updated successfully.`);
+
+            // Reset email contact selection to force refresh of EmailSelectorDropdown
+            setSelectedCarrierContactId('');
         } else {
             // Add new carrier to local state
             setQuickShipCarriers(prev => [...prev, savedCarrier]);
@@ -811,6 +913,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Handle carrier selection change
     const handleCarrierChange = (newCarrier) => {
         setSelectedCarrier(newCarrier);
+
+        // Reset email contact selection when carrier changes
+        setSelectedCarrierContactId('');
+
         // Update all manual rates with the new carrier
         setManualRates(prev => prev.map(rate => ({
             ...rate,
@@ -1280,13 +1386,21 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 }
             }
 
-            // Get selected carrier details
-            const carrierDetails = quickShipCarriers.find(c => c.name === selectedCarrier) || {
+            // Get selected carrier details - include full carrier object for new email structure
+            const selectedCarrierObject = quickShipCarriers.find(c => c.name === selectedCarrier);
+            const carrierDetails = selectedCarrierObject || {
                 name: selectedCarrier,
                 contactName: '',
                 contactEmail: '',
                 contactPhone: ''
             };
+
+            console.log('🏢 Carrier details for booking:', {
+                carrierName: carrierDetails.name,
+                hasEmailContacts: !!carrierDetails.emailContacts,
+                selectedTerminal: selectedCarrierContactId,
+                isNewStructure: !!selectedCarrierObject?.emailContacts
+            });
 
             // Calculate total weight, pieces, and package count for validation
             const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
@@ -1386,6 +1500,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 carrier: selectedCarrier,
                 carrierType: 'manual',
                 carrierDetails: carrierDetails,
+                selectedCarrierContactId: selectedCarrierContactId, // Include selected terminal for new email system
                 manualRates: manualRates.map(rate => ({
                     ...rate,
                     cost: parseFloat(rate.cost || 0),
@@ -1606,6 +1721,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             setSelectedCarrier(draftData.selectedCarrier);
                         }
 
+                        // Load selected carrier contact ID
+                        if (draftData.selectedCarrierContactId) {
+                            setSelectedCarrierContactId(draftData.selectedCarrierContactId);
+                        }
+
                         // Load packages with proper structure check and validation
                         if (draftData.packages && Array.isArray(draftData.packages) && draftData.packages.length > 0) {
                             console.log('Loading packages data:', draftData.packages);
@@ -1710,6 +1830,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             // Load carrier
                             if (draftData.selectedCarrier) {
                                 setSelectedCarrier(draftData.selectedCarrier);
+                            }
+
+                            // Load selected carrier contact ID
+                            if (draftData.selectedCarrierContactId) {
+                                setSelectedCarrierContactId(draftData.selectedCarrierContactId);
                             }
 
                             // Load packages with proper structure check and validation
@@ -1850,6 +1975,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 })),
 
                 selectedCarrier: selectedCarrier || '', // Save empty string if not selected
+                selectedCarrierContactId: selectedCarrierContactId || '', // Save selected email contact
                 manualRates: manualRates,
                 unitSystem: unitSystem,
                 totalCost: totalCost,
@@ -1911,22 +2037,47 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         }
     };
 
-    // Load addresses from AddressBook
+    // Load addresses from AddressBook with customer filtering
     const loadAddresses = useCallback(async () => {
-        if (!companyIdForAddress) return;
+        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+        if (!currentCompanyId) {
+            console.log('📍 No company ID available for address loading:', { selectedCompanyId, companyIdForAddress });
+            return;
+        }
 
+        console.log('📍 Loading addresses for company:', currentCompanyId);
         setLoadingAddresses(true);
         try {
-            const addressQuery = query(
+            let addressQuery = query(
                 collection(db, 'addressBook'),
-                where('companyID', '==', companyIdForAddress),
+                where('companyID', '==', currentCompanyId),
                 where('status', '==', 'active')
             );
+
+            // Add customer filter for super admins if specific customer is selected
+            if (userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all') {
+                addressQuery = query(
+                    collection(db, 'addressBook'),
+                    where('companyID', '==', currentCompanyId),
+                    where('status', '==', 'active'),
+                    where('addressClassID', '==', selectedCustomerId)
+                );
+            }
+
             const addressSnapshot = await getDocs(addressQuery);
             const addresses = addressSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
+
+            console.log('📍 QuickShip Address Loading Debug:', {
+                currentCompanyId,
+                selectedCustomerId,
+                userRole,
+                addressCount: addresses.length,
+                isFiltered: userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all'
+            });
+
             setAvailableAddresses(addresses);
         } catch (error) {
             console.error('Error loading addresses:', error);
@@ -1934,12 +2085,49 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         } finally {
             setLoadingAddresses(false);
         }
-    }, [companyIdForAddress]);
+    }, [companyIdForAddress, selectedCompanyId, selectedCustomerId, userRole, setError]);
 
     // Load addresses on component mount
     useEffect(() => {
         loadAddresses();
     }, [loadAddresses]);
+
+    // Reload addresses when customer filter changes (for super admins)
+    useEffect(() => {
+        if (userRole === 'superadmin') {
+            loadAddresses();
+        }
+    }, [selectedCustomerId, userRole, loadAddresses]);
+
+    // CRITICAL: Reload addresses when company context changes
+    useEffect(() => {
+        console.log('🔄 Company context changed, reloading addresses:', {
+            selectedCompanyId,
+            companyIdForAddress,
+            userRole
+        });
+
+        // Load addresses whenever the company context changes
+        if (selectedCompanyId || companyIdForAddress) {
+            loadAddresses();
+        }
+    }, [selectedCompanyId, companyIdForAddress, loadAddresses]);
+
+    // ADDITIONAL: Force address loading when company context becomes available for super admins
+    useEffect(() => {
+        // Check if we're a super admin and just got a company context
+        if (userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress)) {
+            console.log('🎯 Super admin company context available, ensuring addresses load:', {
+                selectedCompanyId,
+                companyIdForAddress
+            });
+            // Add a small delay to ensure the company context is fully set
+            const timer = setTimeout(() => {
+                loadAddresses();
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [userRole, selectedCompanyId, companyIdForAddress, loadAddresses]);
 
     // Debug address state changes
     useEffect(() => {
@@ -2280,6 +2468,137 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             />
                         )}
 
+                    {/* Customer Filter for Super Admins - Show when company is selected */}
+                    {userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
+                        <Box sx={{ mb: 3 }}>
+                            <Autocomplete
+                                options={[{ id: 'all', name: 'All Customers', customerID: 'all' }, ...availableCustomers]}
+                                getOptionLabel={(option) => {
+                                    if (option.customerID === 'all' || option.id === 'all') {
+                                        return 'All Customers';
+                                    }
+                                    return option.name || 'Unknown Customer';
+                                }}
+                                value={(() => {
+                                    if (selectedCustomerId === 'all') {
+                                        return { id: 'all', name: 'All Customers', customerID: 'all' };
+                                    }
+                                    return availableCustomers.find(customer =>
+                                        (customer.customerID || customer.id) === selectedCustomerId
+                                    ) || null;
+                                })()}
+                                onChange={(event, newValue) => {
+                                    if (newValue) {
+                                        setSelectedCustomerId(newValue.customerID || newValue.id || 'all');
+                                    } else {
+                                        setSelectedCustomerId('all');
+                                    }
+                                }}
+                                disabled={loadingCustomers}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label={
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <PersonIcon sx={{ fontSize: '16px' }} />
+                                                Filter by Customer
+                                            </Box>
+                                        }
+                                        placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                        helperText={
+                                            loadingCustomers ? 'Loading customers...' :
+                                                !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
+                                                    'No customers found for selected company' : ''
+                                        }
+                                        FormHelperTextProps={{
+                                            sx: { fontSize: '11px', color: '#6b7280' }
+                                        }}
+                                    />
+                                )}
+                                renderOption={(props, option) => (
+                                    <Box component="li" {...props} sx={{ p: 1.5 }}>
+                                        {option.customerID === 'all' || option.id === 'all' ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <PersonIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                                <Box>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        All Customers
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Show addresses for all customers
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Avatar
+                                                    src={option.logo || option.logoUrl}
+                                                    sx={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        bgcolor: '#059669',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600
+                                                    }}
+                                                >
+                                                    {!option.logo && !option.logoUrl && (option.name || 'C').charAt(0).toUpperCase()}
+                                                </Avatar>
+                                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                    <Typography sx={{
+                                                        fontSize: '12px',
+                                                        fontWeight: 500,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {option.name || 'Unknown Customer'}
+                                                    </Typography>
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        color: '#6b7280',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        ID: {option.customerID || option.id}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                )}
+                                isOptionEqualToValue={(option, value) => {
+                                    const optionId = option.customerID || option.id;
+                                    const valueId = value.customerID || value.id;
+                                    return optionId === valueId;
+                                }}
+                                filterOptions={(options, { inputValue }) => {
+                                    if (!inputValue) return options;
+
+                                    const filtered = options.filter(option => {
+                                        if (option.customerID === 'all' || option.id === 'all') {
+                                            return 'all customers'.includes(inputValue.toLowerCase());
+                                        }
+                                        const name = (option.name || '').toLowerCase();
+                                        const customerId = (option.customerID || option.id || '').toLowerCase();
+                                        const searchTerm = inputValue.toLowerCase();
+
+                                        return name.includes(searchTerm) || customerId.includes(searchTerm);
+                                    });
+
+                                    return filtered;
+                                }}
+                                sx={{ width: '100%' }}
+                                size="small"
+                            />
+                        </Box>
+                    )}
+
                     {/* Show form only when company is selected or user is not super admin */}
                     {(() => {
                         const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyIdForAddress));
@@ -2336,224 +2655,300 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'stretch' }}>
-                                                    <Autocomplete
-                                                        fullWidth
-                                                        size="small"
-                                                        options={quickShipCarriers}
-                                                        getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
-                                                        value={quickShipCarriers.find(c => c.name === selectedCarrier) || null}
-                                                        onChange={(event, newValue) => {
-                                                            const carrierName = newValue ? (typeof newValue === 'string' ? newValue : newValue.name) : '';
-                                                            handleCarrierChange(carrierName);
-                                                        }}
-                                                        loading={loadingCarriers}
-                                                        disabled={currentView === 'addaddress'}
-                                                        renderInput={(params) => (
-                                                            <TextField
-                                                                {...params}
-                                                                label="Select Carrier"
-                                                                required
-                                                                disabled={currentView === 'addaddress'}
-                                                                sx={{
-                                                                    '& .MuiInputBase-input': {
-                                                                        fontSize: '12px',
-                                                                        '&::placeholder': { fontSize: '12px' }
-                                                                    },
-                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                }}
-                                                                InputProps={{
-                                                                    ...params.InputProps,
-                                                                    endAdornment: (
-                                                                        <>
-                                                                            {loadingCarriers ? <CircularProgress color="inherit" size={20} /> : null}
-                                                                            {params.InputProps.endAdornment}
-                                                                        </>
-                                                                    ),
-                                                                }}
-                                                            />
-                                                        )}
-                                                        renderOption={(props, option) => (
-                                                            <Box component="li" {...props} sx={{
-                                                                fontSize: '12px',
-                                                                display: 'flex !important',
-                                                                alignItems: 'center !important',
-                                                                py: 1.5,
-                                                                px: 2,
-                                                                gap: 2
-                                                            }}>
-                                                                {/* Carrier Logo - Circular */}
-                                                                <Box sx={{
-                                                                    width: 40,
-                                                                    height: 40,
-                                                                    borderRadius: '50%',
-                                                                    overflow: 'hidden',
-                                                                    border: '2px solid #e5e7eb',
-                                                                    bgcolor: '#f8fafc',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    flexShrink: 0
-                                                                }}>
-                                                                    {option.logoURL ? (
-                                                                        <img
-                                                                            src={option.logoURL}
-                                                                            alt={option.name}
-                                                                            style={{
-                                                                                width: '100%',
-                                                                                height: '100%',
-                                                                                objectFit: 'cover'
-                                                                            }}
-                                                                        />
-                                                                    ) : (
-                                                                        <LocalShippingIcon sx={{ fontSize: 20, color: '#9ca3af' }} />
-                                                                    )}
-                                                                </Box>
+                                        </Grid>
+                                    </CardContent>
+                                </Card>
 
-                                                                {/* Carrier Name Only */}
-                                                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px' }}>
-                                                                        {option.name}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Box>
-                                                        )}
+                                {/* Enhanced Carrier Selection Section */}
+                                <Card sx={{ mb: 2, border: '1px solid #e0e0e0' }}>
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Box display="flex" alignItems="center" mb={2}>
+                                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                Carrier Information
+                                            </Typography>
+                                            {selectedCarrier && selectedCarrierContactId && (
+                                                <Chip
+                                                    label="Complete"
+                                                    size="small"
+                                                    color="success"
+                                                    sx={{ ml: 2, height: '20px', fontSize: '10px' }}
+                                                />
+                                            )}
+                                        </Box>
+
+                                        {/* Step 1: Carrier Selection */}
+                                        <Box sx={{
+                                            border: selectedCarrier ? '2px solid #4caf50' : '2px solid #e0e0e0',
+                                            borderRadius: '8px',
+                                            p: 2,
+                                            mb: 2,
+                                            backgroundColor: selectedCarrier ? '#f8fff8' : '#ffffff',
+                                            transition: 'all 0.3s ease'
+                                        }}>
+                                            <Box display="flex" alignItems="center" mb={1}>
+                                                <Box sx={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
+                                                    color: 'white',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    mr: 1,
+                                                    transition: 'all 0.3s ease'
+                                                }}>
+                                                    {selectedCarrier ? '✓' : '1'}
+                                                </Box>
+                                                <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+                                                    Select Carrier
+                                                </Typography>
+                                                {selectedCarrier && (
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setSelectedCarrier('');
+                                                            setSelectedCarrierContactId('');
+                                                        }}
+                                                        sx={{ ml: 'auto' }}
+                                                    >
+                                                        <ClearIcon sx={{ fontSize: '16px' }} />
+                                                    </IconButton>
+                                                )}
+                                            </Box>
+
+                                            {/* Carrier Dropdown */}
+                                            <Autocomplete
+                                                options={quickShipCarriers}
+                                                getOptionLabel={(option) => option.name || ''}
+                                                value={quickShipCarriers.find(carrier => carrier.name === selectedCarrier) || null}
+                                                onChange={(event, newValue) => {
+                                                    setSelectedCarrier(newValue ? newValue.name : '');
+                                                    setSelectedCarrierContactId(''); // Reset terminal selection
+                                                }}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        placeholder={selectedCarrier ? "Change carrier..." : "Choose a carrier..."}
+                                                        size="small"
                                                         sx={{
-                                                            '& .MuiAutocomplete-option': {
-                                                                fontSize: '12px'
-                                                            },
-                                                            '& .MuiAutocomplete-popper': {
-                                                                zIndex: currentView === 'addaddress' ? 800 : 1200,
-                                                                display: currentView === 'addaddress' ? 'none' : 'block'
-                                                            }
+                                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
                                                         }}
                                                     />
-                                                    <Tooltip title="Add New Carrier">
-                                                        <Button
-                                                            variant="outlined"
-                                                            size="small"
-                                                            onClick={handleAddCarrier}
-                                                            sx={{
-                                                                minWidth: '40px',
-                                                                fontSize: '12px',
-                                                                height: '40px',
-                                                                px: 1
-                                                            }}
-                                                        >
-                                                            <AddIcon fontSize="small" />
-                                                        </Button>
-                                                    </Tooltip>
-                                                </Box>
+                                                )}
+                                                renderOption={(props, option) => (
+                                                    <Box component="li" {...props} sx={{ p: 1 }}>
+                                                        <Box display="flex" alignItems="center" width="100%">
+                                                            {option.logo ? (
+                                                                <Avatar
+                                                                    src={option.logo}
+                                                                    sx={{ width: 24, height: 24, mr: 1 }}
+                                                                />
+                                                            ) : (
+                                                                <Avatar sx={{ width: 24, height: 24, mr: 1, fontSize: '10px' }}>
+                                                                    {option.name?.charAt(0)}
+                                                                </Avatar>
+                                                            )}
+                                                            <Box flex={1}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                                    {option.name}
+                                                                </Typography>
+                                                                {option.contactEmail && (
+                                                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
+                                                                        {option.contactEmail}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
 
-                                                {/* Enhanced Carrier info display when selected */}
-                                                {selectedCarrier && quickShipCarriers.find(c => c.name === selectedCarrier) && (
-                                                    <Box sx={{
-                                                        mt: 1,
-                                                        p: 2,
-                                                        bgcolor: '#f0f9ff',
-                                                        borderRadius: 2,
-                                                        border: '1px solid #bae6fd',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 2,
-                                                        position: 'relative'
-                                                    }}>
-                                                        {(() => {
-                                                            const carrier = quickShipCarriers.find(c => c.name === selectedCarrier);
-                                                            return (
-                                                                <>
-                                                                    {/* Edit Button - Top Right */}
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => handleEditCarrier(carrier)}
-                                                                        sx={{
-                                                                            position: 'absolute',
-                                                                            top: 8,
-                                                                            right: 8,
-                                                                            bgcolor: 'rgba(255, 255, 255, 0.9)',
-                                                                            border: '1px solid #bae6fd',
-                                                                            '&:hover': {
-                                                                                bgcolor: 'white',
-                                                                                borderColor: '#0ea5e9'
-                                                                            },
-                                                                            width: 28,
-                                                                            height: 28
-                                                                        }}
-                                                                    >
-                                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
-                                                                    </IconButton>
-
-                                                                    {/* Carrier Logo */}
-                                                                    <Box sx={{
-                                                                        width: 50,
-                                                                        height: 50,
-                                                                        borderRadius: 2,
-                                                                        overflow: 'hidden',
-                                                                        border: '2px solid #bae6fd',
-                                                                        bgcolor: 'white',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        flexShrink: 0
-                                                                    }}>
-                                                                        {carrier.logoURL ? (
-                                                                            <img
-                                                                                src={carrier.logoURL}
-                                                                                alt={carrier.name}
-                                                                                style={{
-                                                                                    width: '100%',
-                                                                                    height: '100%',
-                                                                                    objectFit: 'contain'
-                                                                                }}
-                                                                            />
-                                                                        ) : (
-                                                                            <LocalShippingIcon sx={{ fontSize: 28, color: '#0ea5e9' }} />
-                                                                        )}
-                                                                    </Box>
-
-                                                                    {/* Carrier Details */}
-                                                                    <Box sx={{ flex: 1, pr: 4 }}>
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                                                            <Typography variant="body2" sx={{ fontSize: '13px', color: '#0ea5e9', fontWeight: 600 }}>
-                                                                                {carrier.name}
-                                                                            </Typography>
-                                                                            <Chip
-                                                                                label={carrier.carrierType?.charAt(0).toUpperCase() + carrier.carrierType?.slice(1) || 'Freight'}
-                                                                                size="small"
-                                                                                sx={{
-                                                                                    fontSize: '10px',
-                                                                                    height: 18,
-                                                                                    bgcolor: '#0ea5e9',
-                                                                                    color: 'white'
-                                                                                }}
-                                                                            />
-                                                                        </Box>
-                                                                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                                                                            <Typography variant="caption" sx={{ fontSize: '11px' }}>
-                                                                                <strong>Contact:</strong> {carrier.contactName}
-                                                                            </Typography>
-                                                                            <Typography variant="caption" sx={{ fontSize: '11px' }}>
-                                                                                <strong>Email:</strong> {carrier.contactEmail}
-                                                                            </Typography>
-                                                                            {carrier.contactPhone && (
-                                                                                <Typography variant="caption" sx={{ fontSize: '11px' }}>
-                                                                                    <strong>Phone:</strong> {carrier.contactPhone}
-                                                                                </Typography>
-                                                                            )}
-                                                                            {carrier.accountNumber && (
-                                                                                <Typography variant="caption" sx={{ fontSize: '11px' }}>
-                                                                                    <strong>Account:</strong> {carrier.accountNumber}
-                                                                                </Typography>
-                                                                            )}
-                                                                        </Box>
-                                                                    </Box>
-                                                                </>
-                                                            );
-                                                        })()}
+                                                        </Box>
                                                     </Box>
                                                 )}
-                                            </Grid>
+                                                sx={{ width: '100%' }}
+                                            />
+
+                                            {/* Carrier Action Buttons */}
+                                            <Box sx={{ mt: 1, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                                {/* Edit Selected Carrier Button - Only show when carrier is selected */}
+                                                {selectedCarrier && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        startIcon={<EditIcon />}
+                                                        onClick={() => {
+                                                            console.log('✏️ EDIT BUTTON CLICKED! Selected carrier:', selectedCarrier);
+                                                            const carrierToEdit = quickShipCarriers.find(c => c.name === selectedCarrier);
+                                                            console.log('✏️ Found carrier data:', carrierToEdit);
+                                                            if (carrierToEdit) {
+                                                                handleEditCarrier(carrierToEdit);
+                                                            }
+                                                        }}
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            borderColor: '#2196f3',
+                                                            color: '#2196f3',
+                                                            '&:hover': {
+                                                                borderColor: '#1976d2',
+                                                                backgroundColor: '#f3f8ff'
+                                                            }
+                                                        }}
+                                                    >
+                                                        Edit Carrier
+                                                    </Button>
+                                                )}
+
+                                                {/* Add New Carrier Button */}
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    startIcon={<AddIcon />}
+                                                    onClick={handleAddCarrier}
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        borderColor: '#e0e0e0',
+                                                        color: '#666'
+                                                    }}
+                                                >
+                                                    Add New Carrier
+                                                </Button>
+                                            </Box>
+                                        </Box>
+
+                                        {/* Step 2: Terminal Selection - Only show when carrier is selected */}
+                                        {selectedCarrier && (
+                                            <Collapse in={Boolean(selectedCarrier)} timeout={300}>
+                                                <Box sx={{
+                                                    border: selectedCarrierContactId ? '2px solid #4caf50' : '2px solid #2196f3',
+                                                    borderRadius: '8px',
+                                                    p: 2,
+                                                    backgroundColor: selectedCarrierContactId ? '#f8fff8' : '#f3f8ff',
+                                                    transition: 'all 0.3s ease'
+                                                }}>
+                                                    <Box display="flex" alignItems="center" mb={1}>
+                                                        <Box sx={{
+                                                            width: '24px',
+                                                            height: '24px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: selectedCarrierContactId ? '#4caf50' : '#2196f3',
+                                                            color: 'white',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            mr: 1,
+                                                            transition: 'all 0.3s ease'
+                                                        }}>
+                                                            {selectedCarrierContactId ? '✓' : '2'}
+                                                        </Box>
+                                                        <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+                                                            Select Terminal & Contact
+                                                        </Typography>
+                                                        {selectedCarrierContactId && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setSelectedCarrierContactId('')}
+                                                                sx={{ ml: 'auto' }}
+                                                            >
+                                                                <ClearIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        )}
+                                                    </Box>
+
+                                                    {/* Enhanced Email Contact Selector */}
+                                                    {(() => {
+                                                        const selectedCarrierData = quickShipCarriers.find(c => c.name === selectedCarrier);
+                                                        console.log('🔍 Selected carrier for email dropdown:', {
+                                                            selectedCarrier,
+                                                            carrierData: selectedCarrierData,
+                                                            emailContacts: selectedCarrierData?.emailContacts,
+                                                            hasEmailContacts: Boolean(selectedCarrierData?.emailContacts)
+                                                        });
+
+                                                        if (!selectedCarrierData?.emailContacts || !Array.isArray(selectedCarrierData.emailContacts)) {
+                                                            return (
+                                                                <Box sx={{
+                                                                    p: 2,
+                                                                    border: '1px dashed #e0e0e0',
+                                                                    borderRadius: 1,
+                                                                    textAlign: 'center',
+                                                                    backgroundColor: '#fafafa'
+                                                                }}>
+                                                                    <Typography sx={{ fontSize: '12px', color: '#666', mb: 1 }}>
+                                                                        📧 No email contacts configured for this carrier
+                                                                    </Typography>
+                                                                    <Button
+                                                                        size="small"
+                                                                        variant="outlined"
+                                                                        startIcon={<EditIcon />}
+                                                                        onClick={() => handleEditCarrier(selectedCarrierData)}
+                                                                        sx={{ fontSize: '11px' }}
+                                                                    >
+                                                                        Configure Email Contacts
+                                                                    </Button>
+                                                                </Box>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <EmailSelectorDropdown
+                                                                key={`${selectedCarrierData.id}-${selectedCarrierData.emailContacts?.length || 0}`}
+                                                                carrier={selectedCarrierData}
+                                                                value={selectedCarrierContactId}
+                                                                onChange={(terminalId, terminalData) => {
+                                                                    console.log('📧 Terminal selected:', { terminalId, terminalData });
+                                                                    setSelectedCarrierContactId(terminalId);
+                                                                }}
+                                                                label="Select Terminal"
+                                                                size="small"
+                                                                fullWidth={true}
+                                                            />
+                                                        );
+                                                    })()}
+
+
+                                                </Box>
+                                            </Collapse>
+                                        )}
+
+                                        {/* Progress Indicator */}
+                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0' }}>
+                                            <Box display="flex" alignItems="center" justifyContent="space-between">
+                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
+                                                    {!selectedCarrier ? 'Step 1 of 2: Select your carrier' :
+                                                        !selectedCarrierContactId ? 'Step 2 of 2: Choose terminal and contact' :
+                                                            'Carrier configuration complete ✓'}
+                                                </Typography>
+                                                <Box display="flex" gap={0.5}>
+                                                    <Box sx={{
+                                                        width: '8px',
+                                                        height: '8px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
+                                                        transition: 'all 0.3s ease'
+                                                    }} />
+                                                    <Box sx={{
+                                                        width: '8px',
+                                                        height: '8px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: selectedCarrierContactId ? '#4caf50' : (selectedCarrier ? '#2196f3' : '#e0e0e0'),
+                                                        transition: 'all 0.3s ease'
+                                                    }} />
+                                                </Box>
+                                            </Box>
+                                        </Box>
+                                    </CardContent>
+                                </Card>
+
+                                {/* Rest of form continues here */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
+                                            Additional Information
+                                        </Typography>
+                                        <Grid container spacing={3}>
                                             <Grid item xs={12} md={6}>
                                                 <TextField
                                                     fullWidth
@@ -2605,6 +3000,102 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                         <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
                                                     </Select>
                                                 </FormControl>
+                                            </Grid>
+                                        </Grid>
+                                    </CardContent>
+                                </Card>
+
+                                {/* URGENT FIX: Pickup and Delivery Times for BOL Generation */}
+                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                    <CardContent sx={{ p: 3 }}>
+                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
+                                            Pickup & Delivery Times
+                                        </Typography>
+                                        <Grid container spacing={3}>
+                                            {/* Pickup Times */}
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '14px', mb: 2, color: '#374151', fontWeight: 600 }}>
+                                                    📦 Pickup Window
+                                                </Typography>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={6}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Earliest Pickup"
+                                                            type="time"
+                                                            value={shipmentInfo.earliestPickup}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, earliestPickup: e.target.value }))}
+                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Latest Pickup"
+                                                            type="time"
+                                                            value={shipmentInfo.latestPickup}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, latestPickup: e.target.value }))}
+                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+
+                                            {/* Delivery Times */}
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '14px', mb: 2, color: '#374151', fontWeight: 600 }}>
+                                                    🚚 Delivery Window
+                                                </Typography>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={6}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Earliest Delivery"
+                                                            type="time"
+                                                            value={shipmentInfo.earliestDelivery}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, earliestDelivery: e.target.value }))}
+                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Latest Delivery"
+                                                            type="time"
+                                                            value={shipmentInfo.latestDelivery}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, latestDelivery: e.target.value }))}
+                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                </Grid>
                                             </Grid>
                                         </Grid>
                                     </CardContent>
@@ -2772,28 +3263,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-                                                    {/* Edit Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => {
-                                                            console.log('Edit Ship From button clicked');
-                                                            handleOpenEditAddress('from');
-                                                        }}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#0ea5e9',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
-                                                    </IconButton>
+
                                                 </Box>
 
                                                 {/* Address Icon */}
@@ -3069,28 +3539,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-                                                    {/* Edit Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => {
-                                                            console.log('Edit Ship To button clicked');
-                                                            handleOpenEditAddress('to');
-                                                        }}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#0ea5e9',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
-                                                    </IconButton>
+
                                                 </Box>
 
                                                 {/* Address Icon */}
@@ -3837,15 +4286,37 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
                                 {/* Enhanced QuickShip Carrier Dialog */}
                                 <Suspense fallback={<CircularProgress />}>
-                                    <QuickShipCarrierDialog
-                                        open={showCarrierDialog}
-                                        onClose={() => setShowCarrierDialog(false)}
-                                        onSuccess={handleCarrierSuccess}
-                                        editingCarrier={editingCarrier}
-                                        isEditMode={!!editingCarrier}
-                                        existingCarriers={quickShipCarriers}
-                                        companyId={companyIdForAddress}
-                                    />
+                                    {(() => {
+                                        console.log('🔍 Rendering QuickShipCarrierDialog:', {
+                                            showCarrierDialog,
+                                            editingCarrier,
+                                            isEditMode: !!editingCarrier,
+                                            companyId: companyIdForAddress,
+                                            dialogShouldOpen: Boolean(showCarrierDialog)
+                                        });
+                                        if (showCarrierDialog) {
+                                            console.log('🎯 DIALOG SHOULD BE VISIBLE NOW! Props passed to dialog:', {
+                                                open: showCarrierDialog,
+                                                editingCarrier: editingCarrier,
+                                                companyId: companyIdForAddress
+                                            });
+                                        }
+                                        return (
+                                            <QuickShipCarrierDialog
+                                                open={showCarrierDialog}
+                                                onClose={() => {
+                                                    console.log('📝 Closing carrier dialog');
+                                                    setShowCarrierDialog(false);
+                                                    setEditingCarrier(null);
+                                                }}
+                                                onSuccess={handleCarrierSuccess}
+                                                editingCarrier={editingCarrier}
+                                                isEditMode={!!editingCarrier}
+                                                existingCarriers={quickShipCarriers}
+                                                companyId={companyIdForAddress}
+                                            />
+                                        );
+                                    })()}
                                 </Suspense>
 
                                 {/* Address Edit Dialog */}
@@ -3863,6 +4334,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     // Note: QuickShip doesn't use customer selection, so no customerId needed
                                     />
                                 </Suspense>
+
+                                {/* Duplicate carrier selection removed - using the main one above */}
                             </form>
                         )}
                 </Box>
@@ -4024,6 +4497,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     )}
                 </DialogContent>
             </Dialog>
+
+
 
             {/* Error Snackbar */}
             <Snackbar

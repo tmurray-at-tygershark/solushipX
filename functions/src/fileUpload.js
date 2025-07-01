@@ -158,10 +158,11 @@ exports.uploadFileBase64 = onCall({
             throw new Error('File size exceeds 50MB limit');
         }
 
-        // Generate unique file path
+        // Generate unique file path - use carrier-logos for carrier uploads
         const timestamp = Date.now();
         const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const filePath = `ap-processing/${timestamp}_${sanitizedFileName}`;
+        const isCarrierLogo = fileName.toLowerCase().includes('carrier') || sanitizedFileName.includes('CARRIER');
+        const filePath = isCarrierLogo ? `carrier-logos/${sanitizedFileName}` : `uploads/${timestamp}_${sanitizedFileName}`;
 
         // Convert base64 to buffer
         const buffer = Buffer.from(fileData, 'base64');

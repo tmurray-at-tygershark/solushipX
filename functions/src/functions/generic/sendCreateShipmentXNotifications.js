@@ -400,13 +400,78 @@ async function sendCustomerNotification(shipmentData, documentResults) {
  */
 async function sendCarrierNotification(shipmentData, documentResults) {
     try {
-        // Get carrier email from selectedCarrier or fallback
-        const carrierEmail = shipmentData.selectedCarrier?.contactEmail ||
-                           shipmentData.carrierEmail ||
-                           'tyler@tygershark.com'; // Fallback for testing
+        // Handle both old and new carrier email structures
+        let carrierEmail = null;
+        
+        // Check for new terminal-based structure (QuickShip carriers)
+        if (shipmentData.selectedCarrier?.emailContacts && shipmentData.creationMethod === 'quickship') {
+            // NEW STRUCTURE: Terminal-based email management (QuickShip carriers only)
+            logger.info('Extracting carrier email from new terminal-based structure for CreateShipmentX');
+            
+            // Get the selected terminal ID from shipment data
+            let selectedTerminalId = shipmentData.selectedCarrierContactId || 'default';
+            
+            // Extract terminal from selectedCarrierContactId (format: terminalId_contactType_index)
+            if (selectedTerminalId.includes('_')) {
+                selectedTerminalId = selectedTerminalId.split('_')[0];
+            }
+            
+            // Find the selected terminal or use default
+            const terminals = shipmentData.selectedCarrier.emailContacts || [];
+            let selectedTerminal = terminals.find(terminal => terminal.id === selectedTerminalId);
+            
+            // If no specific terminal found, use the first one or default
+            if (!selectedTerminal && terminals.length > 0) {
+                selectedTerminal = terminals.find(terminal => terminal.isDefault) || terminals[0];
+            }
+            
+            if (selectedTerminal) {
+                logger.info('Using terminal for CreateShipmentX carrier notification email:', selectedTerminal.name);
+                
+                // Get emails for carrier confirmation - prioritize dispatch emails
+                const contactTypes = selectedTerminal.contactTypes || {};
+                const dispatchEmails = contactTypes.dispatch || [];
+                const customerServiceEmails = contactTypes.customer_service || [];
+                const allEmails = [
+                    ...dispatchEmails,
+                    ...customerServiceEmails,
+                    ...(contactTypes.quotes || []),
+                    ...(contactTypes.billing_adjustments || []),
+                    ...(contactTypes.claims || []),
+                    ...(contactTypes.sales_reps || []),
+                    ...(contactTypes.customs || []),
+                    ...(contactTypes.other || [])
+                ].filter(email => email && email.trim());
+                
+                // Use the first available email (usually dispatch)
+                carrierEmail = allEmails[0] || null;
+                
+                logger.info('Extracted CreateShipmentX carrier email from terminal:', {
+                    terminal: selectedTerminal.name,
+                    email: carrierEmail,
+                    totalEmails: allEmails.length
+                });
+            }
+        } else {
+            // OLD STRUCTURE: Legacy contactEmail field (API carriers and fallback)
+            logger.info('Using legacy carrier email structure for CreateShipmentX');
+            carrierEmail = shipmentData.selectedCarrier?.contactEmail || shipmentData.carrierEmail;
+        }
+        
+        // If still no email found, use fallback for testing only
+        if (!carrierEmail) {
+            carrierEmail = 'tyler@tygershark.com'; // Fallback for testing
+            logger.warn('No carrier email found in either structure, using fallback email for testing', {
+                hasSelectedCarrier: !!shipmentData.selectedCarrier,
+                hasEmailContacts: !!shipmentData.selectedCarrier?.emailContacts,
+                hasContactEmail: !!shipmentData.selectedCarrier?.contactEmail,
+                creationMethod: shipmentData.creationMethod,
+                selectedCarrierContactId: shipmentData.selectedCarrierContactId
+            });
+        }
         
         if (!carrierEmail) {
-            logger.warn('No carrier email found, skipping carrier notification');
+            logger.warn('No carrier email found and no fallback available, skipping carrier notification');
             return;
         }
         

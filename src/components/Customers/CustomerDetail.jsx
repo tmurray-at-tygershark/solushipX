@@ -476,6 +476,7 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
 
     // Basic state
     const [customer, setCustomer] = useState(null);
+    const [resolvedCustomerDocId, setResolvedCustomerDocId] = useState(null); // Track the actual Firestore document ID
     const [mainContactDetails, setMainContactDetails] = useState(null);
     const [destinationAddresses, setDestinationAddresses] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -598,15 +599,21 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
 
     // Initialize component with enterprise features
     useEffect(() => {
-        let notesUnsubscribe = null;
-
         if (id) {
             fetchCustomerData();
+            fetchAvailableUsers();
+        }
+    }, [id]);
+
+    // Fetch notes and tags when resolved customer document ID becomes available
+    useEffect(() => {
+        let notesUnsubscribe = null;
+
+        if (resolvedCustomerDocId) {
             fetchNotes().then(unsubscribe => {
                 notesUnsubscribe = unsubscribe;
             });
-            fetchAvailableUsers();
-            fetchAvailableTags();
+            fetchAvailableTags(); // Fetch tags once we have the resolved customer doc ID
         }
 
         // Cleanup function
@@ -614,11 +621,17 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
             if (notesUnsubscribe) {
                 notesUnsubscribe();
             }
+        };
+    }, [resolvedCustomerDocId]);
+
+    // Cleanup recording on unmount
+    useEffect(() => {
+        return () => {
             if (recordingIntervalRef.current) {
                 clearInterval(recordingIntervalRef.current);
             }
         };
-    }, [id]);
+    }, []);
 
     // Filter notes based on search and filters
     useEffect(() => {
@@ -722,15 +735,38 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
             setLoading(true);
             setError(null);
 
-            // Fetch customer data
+            let customerData = null;
+
+            // First try to fetch by document ID
             const customerDocRef = doc(db, 'customers', id);
             const customerDoc = await getDoc(customerDocRef);
-            if (!customerDoc.exists()) {
-                throw new Error('Customer not found');
+
+            if (customerDoc.exists()) {
+                customerData = { id: customerDoc.id, ...customerDoc.data() };
+                setResolvedCustomerDocId(customerDoc.id); // Set the resolved document ID
+                console.log('[CustomerDetail] Customer found by document ID:', customerData);
+            } else {
+                // If not found by document ID, try to find by customerID field
+                console.log('[CustomerDetail] Customer not found by document ID, trying customerID field:', id);
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', id),
+                    where('companyID', '==', companyIdForAddress) // Ensure we only get customers from the current company
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (!customerSnapshot.empty) {
+                    const customerDocFromQuery = customerSnapshot.docs[0];
+                    customerData = { id: customerDocFromQuery.id, ...customerDocFromQuery.data() };
+                    setResolvedCustomerDocId(customerDocFromQuery.id); // Set the resolved document ID
+                    console.log('[CustomerDetail] Customer found by customerID field:', customerData);
+                } else {
+                    throw new Error('Customer not found');
+                }
             }
-            const customerData = { id: customerDoc.id, ...customerDoc.data() };
+
             setCustomer(customerData);
-            console.log('Fetched customer data:', customerData);
+            console.log('[CustomerDetail] Customer data loaded:', customerData);
 
             // Fetch main contact and destination addresses from addressBook if customerID exists
             if (customerData.customerID) {
@@ -749,14 +785,14 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
                 const destinations = addresses.filter(addr => addr.addressType === 'destination');
 
                 if (mainContact) {
-                    console.log('Main contact found:', mainContact);
+                    console.log('[CustomerDetail] Main contact found:', mainContact);
                     setMainContactDetails(mainContact);
                 } else {
-                    console.log('No main contact found for customerID:', customerData.customerID);
+                    console.log('[CustomerDetail] No main contact found for customerID:', customerData.customerID);
                     setMainContactDetails(null); // Explicitly set to null if not found
                 }
 
-                console.log('Destination addresses found:', destinations);
+                console.log('[CustomerDetail] Destination addresses found:', destinations);
                 setDestinationAddresses(destinations);
             } else {
                 console.warn('Customer document is missing customerID field. Cannot fetch addresses.');
@@ -775,11 +811,14 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
 
     // Fetch notes with enhanced enterprise features
     const fetchNotes = async () => {
-        if (!id) return;
+        if (!resolvedCustomerDocId) {
+            console.log('fetchNotes: No resolved customer document ID available yet');
+            return;
+        }
 
         try {
-            // Fetch notes from the customer's subcollection
-            const customerRef = doc(db, 'customers', id);
+            // Fetch notes from the customer's subcollection using the resolved document ID
+            const customerRef = doc(db, 'customers', resolvedCustomerDocId);
             const notesRef = collection(customerRef, 'notes');
             const qNotes = query(
                 notesRef,
@@ -845,10 +884,10 @@ const CustomerDetail = React.forwardRef(({ customerId = null, onBackToTable = nu
     // Fetch available tags
     const fetchAvailableTags = async () => {
         try {
-            if (!companyIdForAddress) return;
+            if (!companyIdForAddress || !resolvedCustomerDocId) return;
 
-            // Get tags from existing notes
-            const customerRef = doc(db, 'customers', id);
+            // Get tags from existing notes using the resolved customer document ID
+            const customerRef = doc(db, 'customers', resolvedCustomerDocId);
             const notesRef = collection(customerRef, 'notes');
             const notesSnapshot = await getDocs(notesRef);
 

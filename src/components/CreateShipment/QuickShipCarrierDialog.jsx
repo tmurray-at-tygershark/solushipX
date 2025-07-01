@@ -1,105 +1,202 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
-    TextField,
     Button,
+    TextField,
     Box,
     Typography,
     Grid,
     IconButton,
-    Alert,
-    Paper,
-    CircularProgress,
     FormControl,
     InputLabel,
     Select,
     MenuItem,
-    Avatar
+    Alert,
+    Divider
 } from '@mui/material';
 import {
     Close as CloseIcon,
-    Save as SaveIcon,
-    CloudUpload as CloudUploadIcon,
+    CloudUpload as UploadIcon,
     Delete as DeleteIcon
 } from '@mui/icons-material';
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db, storage } from '../../firebase/firebase';
-import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
-import { getApp } from 'firebase/app';
-
-const carrierTypes = [
-    { value: 'courier', label: 'Courier' },
-    { value: 'freight', label: 'Freight' },
-    { value: 'hybrid', label: 'Hybrid' },
-];
+import { db, functions } from '../../firebase/firebase';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import EmailContactsManager from '../common/EmailContactsManager';
 
 const QuickShipCarrierDialog = ({
     open,
     onClose,
+    onSave,
     onSuccess,
-    onCarrierSaved, // Keep for backward compatibility
-    companyId,
     editingCarrier = null,
-    isEditMode = false,
-    existingCarriers = []
+    existingCarriers = [],
+    companyId
 }) => {
-    const [formData, setFormData] = useState({
-        name: '',
-        contactName: '',
-        contactEmail: '',
-        contactPhone: '',
-        accountNumber: '',
-        carrierType: 'courier',
-        billingEmail: '',
-        logoURL: ''
+    // DEBUG: Log prop changes
+    console.log('🚪 QuickShipCarrierDialog props:', {
+        open,
+        editingCarrier: !!editingCarrier,
+        companyId,
+        receivedOpen: open
     });
+
+    if (open) {
+        console.log('🎯 DIALOG RECEIVED OPEN=TRUE!');
+    }
+    const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState({});
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState('');
-    const [uploadingLogo, setUploadingLogo] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const fileInputRef = useRef();
+    const [uploading, setUploading] = useState(false);
 
+    // Form data state
+    const [formData, setFormData] = useState({
+        name: '',
+        carrierId: '',
+        accountNumber: '',
+        phone: '',
+        emailContacts: [], // New terminal-based structure
+        // Legacy fields for backward compatibility
+        contactEmail: '',
+        billingEmail: '',
+        logo: '',
+        enabled: true
+    });
+
+    // Initialize form data when editing
     useEffect(() => {
-        if (isEditMode && editingCarrier) {
+        if (editingCarrier) {
+            // Handle both new format and legacy format
+            let emailContacts = [];
+
+            if (editingCarrier.emailContacts && Array.isArray(editingCarrier.emailContacts)) {
+                // New terminal format
+                emailContacts = editingCarrier.emailContacts;
+            } else {
+                // Legacy format - migrate to new structure
+                const defaultTerminal = {
+                    id: 'default',
+                    name: 'Default Terminal',
+                    isDefault: true,
+                    contacts: [
+                        { type: 'dispatch', emails: editingCarrier.contactEmail ? [editingCarrier.contactEmail] : [] },
+                        { type: 'customer_service', emails: [] },
+                        { type: 'quotes', emails: [] },
+                        { type: 'billing_adjustments', emails: editingCarrier.billingEmail ? [editingCarrier.billingEmail] : [] },
+                        { type: 'claims', emails: [] },
+                        { type: 'sales_reps', emails: [] },
+                        { type: 'customs', emails: [] },
+                        { type: 'other', emails: [] }
+                    ]
+                };
+                emailContacts = [defaultTerminal];
+            }
+
             setFormData({
                 name: editingCarrier.name || '',
-                contactName: editingCarrier.contactName || '',
-                contactEmail: editingCarrier.contactEmail || '',
-                contactPhone: editingCarrier.contactPhone || '',
+                carrierId: editingCarrier.carrierId || '',
                 accountNumber: editingCarrier.accountNumber || '',
-                carrierType: editingCarrier.carrierType || 'courier',
+                phone: editingCarrier.phone || '',
+                emailContacts: emailContacts,
+                // Maintain legacy fields for backward compatibility
+                contactEmail: editingCarrier.contactEmail || '',
                 billingEmail: editingCarrier.billingEmail || '',
-                logoURL: editingCarrier.logoURL || ''
+                logo: editingCarrier.logo || '',
+                enabled: editingCarrier.enabled !== false
             });
-            setLogoPreview(editingCarrier.logoURL || '');
+
+            if (editingCarrier.logo) {
+                setLogoPreview(editingCarrier.logo);
+            }
         } else {
-            // Reset form for new carrier
+            // Initialize new carrier with default terminal
+            const defaultTerminal = {
+                id: 'default',
+                name: 'Default Terminal',
+                isDefault: true,
+                contacts: [
+                    { type: 'dispatch', emails: [] },
+                    { type: 'customer_service', emails: [] },
+                    { type: 'quotes', emails: [] },
+                    { type: 'billing_adjustments', emails: [] },
+                    { type: 'claims', emails: [] },
+                    { type: 'sales_reps', emails: [] },
+                    { type: 'customs', emails: [] },
+                    { type: 'other', emails: [] }
+                ]
+            };
+
             setFormData({
                 name: '',
-                contactName: '',
-                contactEmail: '',
-                contactPhone: '',
+                carrierId: '',
                 accountNumber: '',
-                carrierType: 'courier',
+                phone: '',
+                emailContacts: [defaultTerminal],
+                contactEmail: '',
                 billingEmail: '',
-                logoURL: ''
+                logo: '',
+                enabled: true
             });
-            setLogoPreview('');
         }
-        setLogoFile(null);
-        setError('');
-    }, [isEditMode, editingCarrier, open]);
+    }, [editingCarrier]);
 
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
+    const handleInputChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+
+        // Clear errors when user starts typing
+        if (errors[field]) {
+            setErrors(prev => ({ ...prev, [field]: null }));
+        }
+
+        // Auto-generate carrier ID from name
+        if (field === 'name' && !editingCarrier) {
+            const generatedId = value
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s]/g, '')
+                .replace(/\s+/g, '')
+                .substring(0, 20);
+            setFormData(prev => ({ ...prev, carrierId: generatedId }));
+        }
+    };
+
+    const handleEmailContactsChange = (newEmailContacts) => {
+        console.log('📧 EmailContactsManager onChange called with:', newEmailContacts);
+
+        // Update legacy fields for backward compatibility
+        const primaryDispatchEmail = getLegacyContactEmail(newEmailContacts, 'dispatch');
+        const primaryBillingEmail = getLegacyContactEmail(newEmailContacts, 'billing_adjustments');
+
+        // Update all fields in a single call to prevent race conditions
         setFormData(prev => ({
             ...prev,
-            [name]: value
+            emailContacts: newEmailContacts,
+            contactEmail: primaryDispatchEmail,
+            billingEmail: primaryBillingEmail
         }));
+
+        console.log('📧 Updated formData with emailContacts:', {
+            emailContactsLength: newEmailContacts.length,
+            primaryDispatchEmail,
+            primaryBillingEmail
+        });
+    };
+
+    // Helper to extract primary email for legacy compatibility
+    const getLegacyContactEmail = (emailContacts, contactType) => {
+        if (!emailContacts || !Array.isArray(emailContacts)) return '';
+
+        // Find from default terminal first
+        const defaultTerminal = emailContacts.find(terminal => terminal.isDefault);
+        const terminal = defaultTerminal || emailContacts[0];
+
+        if (!terminal || !terminal.contacts) return '';
+
+        const contact = terminal.contacts.find(c => c.type === contactType);
+        return contact && contact.emails && contact.emails.length > 0 ? contact.emails[0] : '';
     };
 
     const handleLogoUpload = async (event) => {
@@ -108,423 +205,380 @@ const QuickShipCarrierDialog = ({
 
         // Validate file type
         if (!file.type.startsWith('image/')) {
-            setError('Please select a valid image file (PNG, JPG, GIF, etc.)');
+            setErrors(prev => ({ ...prev, logo: 'Please select an image file' }));
             return;
         }
 
-        // Validate file size (max 2MB)
+        // Validate file size (2MB limit)
         if (file.size > 2 * 1024 * 1024) {
-            setError('Logo file size must be less than 2MB');
+            setErrors(prev => ({ ...prev, logo: 'Image must be less than 2MB' }));
             return;
         }
 
-        setError('');
-        setUploadingLogo(true);
+        setLogoFile(file);
 
-        try {
-            // Upload image to Firebase Storage using the same pattern as CompanyForm
-            const firebaseApp = getApp();
-            const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
-            const fileExtension = file.name.split('.').pop();
-            const fileName = `quickship-${companyId}-${Date.now()}.${fileExtension}`;
-            const logoRef = ref(customStorage, `quickship-carrier-logos/${fileName}`);
+        // Create preview
+        const reader = new FileReader();
+        reader.onload = (e) => setLogoPreview(e.target.result);
+        reader.readAsDataURL(file);
 
-            // Upload file
-            const snapshot = await uploadBytes(logoRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-
-            // Update form data and preview with the actual Firebase Storage URL
-            setFormData(prev => ({ ...prev, logoURL: downloadURL }));
-            setLogoPreview(downloadURL);
-            setLogoFile(null);
-
-            console.log('Logo uploaded successfully to:', downloadURL);
-        } catch (error) {
-            console.error('Error uploading logo:', error);
-            setError('Failed to upload logo. Please try again.');
-        } finally {
-            setUploadingLogo(false);
-        }
+        // Clear logo error
+        setErrors(prev => ({ ...prev, logo: null }));
     };
 
-    const handleRemoveLogo = () => {
+    const handleLogoDelete = () => {
         setLogoFile(null);
         setLogoPreview('');
-        setFormData(prev => ({ ...prev, logoURL: '' }));
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        setFormData(prev => ({ ...prev, logo: '' }));
     };
 
     const validateForm = () => {
+        const newErrors = {};
+
         if (!formData.name.trim()) {
-            setError('Carrier name is required');
-            return false;
+            newErrors.name = 'Carrier name is required';
         }
-        if (!formData.contactName.trim()) {
-            setError('Contact name is required');
-            return false;
+
+        if (!formData.carrierId.trim()) {
+            newErrors.carrierId = 'Carrier ID is required';
         }
-        if (!formData.contactEmail.trim()) {
-            setError('Contact email is required');
-            return false;
+
+        // Check for duplicate carrier ID (excluding current carrier when editing)
+        const isDuplicate = existingCarriers.some(carrier =>
+            carrier.carrierId === formData.carrierId &&
+            (!editingCarrier || carrier.id !== editingCarrier.id)
+        );
+        if (isDuplicate) {
+            newErrors.carrierId = 'Carrier ID already exists';
         }
-        if (formData.contactEmail && !/\S+@\S+\.\S+/.test(formData.contactEmail)) {
-            setError('Please enter a valid email address');
-            return false;
-        }
-        if (formData.billingEmail && !/\S+@\S+\.\S+/.test(formData.billingEmail)) {
-            setError('Please enter a valid billing email address');
-            return false;
-        }
-        return true;
+
+        // Email contacts are now optional - no validation required
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
     };
 
     const handleSave = async () => {
         if (!validateForm()) return;
 
-        setSaving(true);
-        setError('');
-
+        setLoading(true);
         try {
+            let logoUrl = formData.logo;
+
+            // Upload logo if a new file was selected
+            if (logoFile) {
+                setUploading(true);
+                try {
+                    // Convert file to base64 for cloud function upload
+                    const fileReader = new FileReader();
+                    const base64Promise = new Promise((resolve, reject) => {
+                        fileReader.onload = () => {
+                            const result = fileReader.result;
+                            // Remove data:image/jpeg;base64, prefix
+                            const base64Data = result.split(',')[1];
+                            resolve(base64Data);
+                        };
+                        fileReader.onerror = reject;
+                    });
+
+                    fileReader.readAsDataURL(logoFile);
+                    const base64Data = await base64Promise;
+
+                    // Use cloud function for upload
+                    const uploadFunction = httpsCallable(functions, 'uploadFileBase64');
+                    const uploadResult = await uploadFunction({
+                        fileName: `carrier-${formData.carrierId}-${Date.now()}.${logoFile.name.split('.').pop()}`,
+                        fileData: base64Data,
+                        fileType: logoFile.type,
+                        fileSize: logoFile.size
+                    });
+
+                    if (uploadResult.data.success) {
+                        logoUrl = uploadResult.data.downloadURL;
+                        console.log('✅ Logo uploaded successfully:', logoUrl);
+                    } else {
+                        throw new Error(uploadResult.data.error || 'Upload failed');
+                    }
+                } catch (uploadError) {
+                    console.error('❌ Logo upload failed:', uploadError);
+                    setErrors(prev => ({ ...prev, logo: 'Failed to upload logo. Please try again.' }));
+                    setUploading(false);
+                    setLoading(false);
+                    return;
+                }
+            }
+
             const carrierData = {
                 name: formData.name.trim(),
-                contactName: formData.contactName.trim(),
-                contactEmail: formData.contactEmail.trim(),
-                contactPhone: formData.contactPhone.trim(),
+                carrierId: formData.carrierId.trim(),
                 accountNumber: formData.accountNumber.trim(),
-                carrierType: formData.carrierType,
-                billingEmail: formData.billingEmail.trim(),
-                logoURL: formData.logoURL,
-                companyID: companyId,
-                updatedAt: serverTimestamp()
+                phone: formData.phone.trim(),
+                emailContacts: formData.emailContacts,
+                // Maintain legacy fields for backward compatibility
+                contactEmail: formData.contactEmail,
+                billingEmail: formData.billingEmail,
+                logo: logoUrl,
+                enabled: formData.enabled,
+                companyID: companyId, // CRITICAL: Add companyID so carrier shows up in list
+                updatedAt: new Date().toISOString()
             };
 
-            let savedCarrier;
-            if (isEditMode && editingCarrier) {
+            console.log('💾 About to save carrier data:', {
+                carrierName: carrierData.name,
+                emailContactsLength: carrierData.emailContacts?.length,
+                emailContacts: carrierData.emailContacts,
+                firstTerminalContactCount: carrierData.emailContacts?.[0]?.contacts?.length
+            });
+
+            if (editingCarrier) {
+                // Update existing carrier
                 await updateDoc(doc(db, 'quickshipCarriers', editingCarrier.id), carrierData);
-                savedCarrier = { id: editingCarrier.id, ...carrierData };
+                console.log('✅ QuickShip Carrier updated successfully');
             } else {
-                carrierData.createdAt = serverTimestamp();
+                // Create new carrier
+                carrierData.createdAt = new Date().toISOString();
                 const docRef = await addDoc(collection(db, 'quickshipCarriers'), carrierData);
-                savedCarrier = { id: docRef.id, ...carrierData };
+                carrierData.id = docRef.id;
+                console.log('✅ QuickShip Carrier created successfully');
             }
 
+            // Call success callbacks
+            if (onSave) {
+                onSave(carrierData);
+            }
             if (onSuccess) {
-                onSuccess(savedCarrier, isEditMode);
-            } else if (onCarrierSaved) {
-                onCarrierSaved(savedCarrier);
+                onSuccess(carrierData, !!editingCarrier);
             }
 
-            onClose();
+            handleClose();
         } catch (error) {
-            console.error('Error saving carrier:', error);
-            setError('Failed to save carrier. Please try again.');
+            console.error('❌ Error saving carrier:', error);
+            setErrors({ submit: 'Failed to save carrier. Please try again.' });
         } finally {
-            setSaving(false);
+            setLoading(false);
+            setUploading(false);
         }
+    };
+
+    const handleClose = () => {
+        setFormData({
+            name: '',
+            carrierId: '',
+            accountNumber: '',
+            phone: '',
+            emailContacts: [{
+                id: 'default',
+                name: 'Default Terminal',
+                isDefault: true,
+                contacts: [
+                    { type: 'dispatch', emails: [] },
+                    { type: 'customer_service', emails: [] },
+                    { type: 'quotes', emails: [] },
+                    { type: 'billing_adjustments', emails: [] },
+                    { type: 'claims', emails: [] },
+                    { type: 'sales_reps', emails: [] },
+                    { type: 'customs', emails: [] },
+                    { type: 'other', emails: [] }
+                ]
+            }],
+            contactEmail: '',
+            billingEmail: '',
+            logo: '',
+            enabled: true
+        });
+        setLogoFile(null);
+        setLogoPreview('');
+        setErrors({});
+        if (onClose) onClose();
+    };
+
+    const getTotalEmailCount = () => {
+        return formData.emailContacts.reduce((total, terminal) => {
+            return total + terminal.contacts.reduce((terminalTotal, contact) => {
+                return terminalTotal + contact.emails.filter(email => email.trim()).length;
+            }, 0);
+        }, 0);
     };
 
     return (
         <Dialog
             open={open}
-            onClose={onClose}
-            maxWidth="sm"
+            onClose={handleClose}
+            maxWidth="lg"
             fullWidth
             PaperProps={{
-                sx: {
-                    borderRadius: 2,
-                    maxHeight: '90vh'
-                }
+                sx: { maxHeight: '90vh' }
             }}
         >
-            <DialogTitle sx={{
-                pb: 2,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                borderBottom: '1px solid #e5e7eb'
-            }}>
-                <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                    {isEditMode ? 'Edit QuickShip Carrier' : 'Add QuickShip Carrier'}
-                </Typography>
-                <IconButton
-                    onClick={onClose}
-                    size="small"
-                    sx={{ color: '#6b7280' }}
-                >
-                    <CloseIcon />
-                </IconButton>
+            <DialogTitle>
+                <Box display="flex" justifyContent="space-between" alignItems="center">
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                        {editingCarrier ? 'Edit Carrier' : 'Add New Carrier'}
+                    </Typography>
+                    <IconButton onClick={handleClose} size="small">
+                        <CloseIcon />
+                    </IconButton>
+                </Box>
             </DialogTitle>
 
-            <DialogContent sx={{ pt: 4, p: 3 }}>
-                {error && (
-                    <Alert severity="error" sx={{ mb: 2, fontSize: '12px' }}>
-                        {error}
-                    </Alert>
-                )}
+            <DialogContent>
+                <Box sx={{ mt: 1 }}>
+                    {/* Basic Information */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        Basic Information
+                    </Typography>
+                    <Grid container spacing={2} sx={{ mb: 3 }}>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Carrier Name *"
+                                value={formData.name}
+                                onChange={(e) => handleInputChange('name', e.target.value)}
+                                error={!!errors.name}
+                                helperText={errors.name}
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Carrier ID *"
+                                value={formData.carrierId}
+                                onChange={(e) => handleInputChange('carrierId', e.target.value.toUpperCase())}
+                                error={!!errors.carrierId}
+                                helperText={errors.carrierId || 'Unique identifier for this carrier'}
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Account Number"
+                                value={formData.accountNumber}
+                                onChange={(e) => handleInputChange('accountNumber', e.target.value)}
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Phone Number"
+                                value={formData.phone}
+                                onChange={(e) => handleInputChange('phone', e.target.value)}
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                    </Grid>
 
-                <Grid container spacing={3}>
-                    {/* Logo Upload Section - Enhanced */}
-                    <Grid item xs={12}>
+                    {/* Logo Upload */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        Carrier Logo
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
                         <input
-                            ref={fileInputRef}
-                            type="file"
                             accept="image/*"
-                            onChange={handleLogoUpload}
                             style={{ display: 'none' }}
+                            id="logo-upload"
+                            type="file"
+                            onChange={handleLogoUpload}
                         />
-                        <Box
-                            sx={{
-                                border: '2px dashed #d1d5db',
-                                borderRadius: 2,
-                                p: 4,
-                                textAlign: 'center',
-                                cursor: uploadingLogo ? 'default' : 'pointer',
-                                bgcolor: uploadingLogo ? '#f3f4f6' : '#f8fafc',
-                                transition: 'all 0.2s',
-                                minHeight: '160px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                position: 'relative',
-                                '&:hover': !uploadingLogo ? {
-                                    borderColor: '#9ca3af',
-                                    bgcolor: '#f3f4f6'
-                                } : {}
-                            }}
-                            onClick={!uploadingLogo ? () => fileInputRef.current?.click() : undefined}
-                        >
-                            {uploadingLogo ? (
-                                <>
-                                    <CircularProgress size={48} sx={{ mb: 2, color: '#6b7280' }} />
-                                    <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
-                                        Uploading logo...
-                                    </Typography>
-                                    <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                        Please wait while we upload your carrier logo
-                                    </Typography>
-                                </>
-                            ) : logoPreview ? (
-                                <>
-                                    <Box sx={{
-                                        width: '120px',
-                                        height: '80px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        mb: 2,
-                                        border: '1px solid #e5e7eb',
-                                        borderRadius: 1,
-                                        bgcolor: 'white'
-                                    }}>
-                                        <img
-                                            src={logoPreview}
-                                            alt="Logo preview"
-                                            style={{
-                                                maxWidth: '100%',
-                                                maxHeight: '100%',
-                                                objectFit: 'contain'
-                                            }}
-                                        />
-                                    </Box>
-                                    <Typography sx={{ fontSize: '14px', color: '#374151', mb: 1, fontWeight: 500 }}>
-                                        Logo uploaded successfully
-                                    </Typography>
-                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
-                                        Click to change logo
-                                    </Typography>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleRemoveLogo();
-                                        }}
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Remove Logo
-                                    </Button>
-                                </>
-                            ) : (
-                                <>
-                                    <CloudUploadIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 2 }} />
-                                    <Typography sx={{ fontSize: '16px', color: '#374151', mb: 1, fontWeight: 500 }}>
-                                        Upload Carrier Logo
-                                    </Typography>
-                                    <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
-                                        Click to browse or drag and drop
-                                    </Typography>
-                                    <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                        PNG, JPG, GIF up to 2MB
-                                    </Typography>
-                                </>
-                            )}
-                        </Box>
-                    </Grid>
-
-                    {/* Carrier Name */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Carrier Name"
-                            value={formData.name}
-                            onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                            required
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
-
-                    {/* Account Number */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Account Number"
-                            value={formData.accountNumber}
-                            onChange={(e) => setFormData(prev => ({ ...prev, accountNumber: e.target.value }))}
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
-
-                    {/* Carrier Type */}
-                    <Grid item xs={12} sm={6}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel shrink sx={{ fontSize: '12px' }}>Carrier Type</InputLabel>
-                            <Select
-                                value={formData.carrierType}
-                                onChange={(e) => setFormData(prev => ({ ...prev, carrierType: e.target.value }))}
-                                label="Carrier Type"
-                                sx={{
-                                    fontSize: '12px',
-                                    '& .MuiSelect-select': { fontSize: '12px' }
-                                }}
+                        <label htmlFor="logo-upload">
+                            <Button
+                                variant="outlined"
+                                component="span"
+                                startIcon={<UploadIcon />}
+                                size="small"
+                                sx={{ fontSize: '12px' }}
                             >
-                                {carrierTypes.map(type => (
-                                    <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                        {type.label}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
+                                {logoPreview ? 'Change Logo' : 'Upload Logo'}
+                            </Button>
+                        </label>
 
-                    {/* Billing Email */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Billing Email"
-                            type="email"
-                            value={formData.billingEmail}
-                            onChange={(e) => setFormData(prev => ({ ...prev, billingEmail: e.target.value }))}
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
+                        {logoPreview && (
+                            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <img
+                                    src={logoPreview}
+                                    alt="Logo preview"
+                                    style={{
+                                        width: 100,
+                                        height: 60,
+                                        objectFit: 'contain',
+                                        border: '1px solid #e0e0e0',
+                                        borderRadius: 4
+                                    }}
+                                />
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={handleLogoDelete}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Remove
+                                </Button>
+                            </Box>
+                        )}
 
-                    {/* Contact Name */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Contact Name"
-                            value={formData.contactName}
-                            onChange={(e) => setFormData(prev => ({ ...prev, contactName: e.target.value }))}
-                            required
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
+                        {errors.logo && (
+                            <Typography variant="caption" color="error" sx={{ fontSize: '11px', mt: 1, display: 'block' }}>
+                                {errors.logo}
+                            </Typography>
+                        )}
+                    </Box>
 
-                    {/* Contact Email */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Contact Email"
-                            type="email"
-                            value={formData.contactEmail}
-                            onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
-                            required
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
+                    <Divider sx={{ my: 3 }} />
 
-                    {/* Contact Phone */}
-                    <Grid item xs={12} sm={6}>
-                        <TextField
-                            fullWidth
-                            label="Contact Phone"
-                            type="tel"
-                            value={formData.contactPhone}
-                            onChange={(e) => setFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
-                            size="small"
-                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                            sx={{
-                                '& .MuiInputBase-input': {
-                                    fontSize: '12px',
-                                    '&::placeholder': { fontSize: '12px' }
-                                }
-                            }}
-                        />
-                    </Grid>
-                </Grid>
+                    {/* Email Contacts */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
+                        Email Contacts
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Organize carrier contacts by terminal and function. {getTotalEmailCount()} contact{getTotalEmailCount() !== 1 ? 's' : ''} configured.
+                    </Typography>
+
+                    <EmailContactsManager
+                        value={formData.emailContacts}
+                        onChange={handleEmailContactsChange}
+                        mode="full"
+                        maxTerminals={10}
+                        maxEmailsPerType={5}
+                    />
+
+                    {errors.emailContacts && (
+                        <Alert severity="error" sx={{ mt: 2, fontSize: '12px' }}>
+                            {errors.emailContacts}
+                        </Alert>
+                    )}
+
+                    {/* Submit Error */}
+                    {errors.submit && (
+                        <Alert severity="error" sx={{ mt: 2 }}>
+                            {errors.submit}
+                        </Alert>
+                    )}
+                </Box>
             </DialogContent>
 
-            <DialogActions sx={{
-                px: 3,
-                pb: 2,
-                borderTop: '1px solid #e5e7eb',
-                justifyContent: 'flex-end',
-                gap: 1
-            }}>
-                <Button
-                    onClick={onClose}
-                    size="small"
-                    sx={{ fontSize: '12px' }}
-                >
+            <DialogActions sx={{ p: 2, borderTop: '1px solid #e0e0e0' }}>
+                <Button onClick={handleClose} sx={{ fontSize: '12px' }}>
                     Cancel
                 </Button>
                 <Button
                     onClick={handleSave}
                     variant="contained"
-                    size="small"
-                    disabled={saving}
-                    startIcon={saving ? <CircularProgress size={14} /> : <SaveIcon />}
-                    sx={{ fontSize: '12px', minWidth: '100px' }}
+                    disabled={loading || uploading}
+                    sx={{ fontSize: '12px' }}
                 >
-                    {saving ? 'Saving...' : (isEditMode ? 'Update' : 'Add Carrier')}
+                    {loading ? 'Saving...' : editingCarrier ? 'Update Carrier' : 'Add Carrier'}
                 </Button>
             </DialogActions>
         </Dialog>

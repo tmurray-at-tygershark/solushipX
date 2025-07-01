@@ -139,6 +139,9 @@ const { processPdfFile, getPdfResults, retryPdfProcessing, exportPdfResults, pro
 // Import file upload functions
 const { uploadFile, uploadFileBase64 } = require('./src/fileUpload');
 
+// Import address book update function
+const { updateAddressBookOwnerCompanyID } = require('./src/updateAddressBookOwnerCompanyID');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -253,6 +256,9 @@ exports.processPdfBatch = processPdfBatch;
 // Export file upload functions
 exports.uploadFile = uploadFile;
 exports.uploadFileBase64 = uploadFileBase64;
+
+// Export address book update function
+exports.updateAddressBookOwnerCompanyID = updateAddressBookOwnerCompanyID;
 
 // Export invoice generation functions
 exports.onInvoiceCreated = onInvoiceCreated;

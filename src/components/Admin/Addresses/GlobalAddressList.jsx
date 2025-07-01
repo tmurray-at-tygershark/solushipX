@@ -45,12 +45,13 @@ import {
     LocationOn as LocationIcon,
     SearchOff as SearchOffIcon,
     FilterAlt as FilterAltIcon,
-    Add,
+    Add as AddIcon,
     ArrowBack,
     Edit as EditIcon,
     CloudUpload as UploadIcon,
     MoreVert as MoreVertIcon,
-    Visibility as ViewIcon
+    Visibility as VisibilityIcon,
+    Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
@@ -84,6 +85,11 @@ const GlobalAddressList = () => {
     const [loadingCompanies, setLoadingCompanies] = useState(false);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
     const [viewMode, setViewMode] = useState('all'); // 'all' or 'single'
+
+    // State for customer selection
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     // State for refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
@@ -170,6 +176,42 @@ const GlobalAddressList = () => {
         loadCompanies();
     }, [user, userRole, authLoading]);
 
+    // Load customers for selected company
+    const loadCustomersForCompany = useCallback(async (companyId) => {
+        if (!companyId || companyId === 'all') {
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+            return;
+        }
+
+        setLoadingCustomers(true);
+        try {
+            const customersRef = collection(db, 'customers');
+            const q = query(
+                customersRef,
+                where('companyID', '==', companyId)
+            );
+            const customersSnapshot = await getDocs(q);
+            const customers = customersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Sort customers by name
+            customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            console.log(`Loaded ${customers.length} customers for company ${companyId}`);
+            setAvailableCustomers(customers);
+            setSelectedCustomerId('all'); // Reset customer selection when company changes
+        } catch (error) {
+            console.error('Error loading customers:', error);
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+        } finally {
+            setLoadingCustomers(false);
+        }
+    }, []);
+
     // Handle company selection change
     const handleCompanyChange = useCallback((event) => {
         const companyId = event.target.value;
@@ -192,6 +234,9 @@ const GlobalAddressList = () => {
                 companyIds: connectedIds
             };
             setSelectedCompanyData(allCompaniesContext);
+            // Clear customers when "all" is selected
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
             // Don't set company context for "all" mode to prevent the AddressBook 
             // component from filtering to a single company
         } else {
@@ -203,6 +248,9 @@ const GlobalAddressList = () => {
             console.log('[GlobalAddressList] Found company data:', company);
             setSelectedCompanyData(company);
 
+            // Load customers for this company
+            loadCustomersForCompany(companyId);
+
             // Update the company context for AddressBook
             if (company) {
                 console.log('[GlobalAddressList] Setting company context:', company.companyID);
@@ -212,7 +260,17 @@ const GlobalAddressList = () => {
 
         // Trigger refresh of AddressBook
         setRefreshKey(prev => prev + 1);
-    }, [availableCompanies, setCompanyContext, userRole]);
+    }, [availableCompanies, setCompanyContext, userRole, loadCustomersForCompany]);
+
+    // Handle customer selection change
+    const handleCustomerChange = useCallback((event) => {
+        const customerId = event.target.value;
+        console.log('[GlobalAddressList] Customer changed to:', customerId);
+        setSelectedCustomerId(customerId);
+
+        // Trigger refresh of AddressBook
+        setRefreshKey(prev => prev + 1);
+    }, []);
 
     // Loading state
     if (authLoading || companyLoading || loadingCompanies) {
@@ -320,113 +378,214 @@ const GlobalAddressList = () => {
                     {/* Breadcrumb */}
                     <AdminBreadcrumb currentPage="Addresses" />
 
-                    {/* Company Selector */}
-                    <FormControl
-                        size="small"
-                        sx={{
-                            minWidth: 300,
-                            '& .MuiInputLabel-root': { fontSize: '12px' },
-                            '& .MuiSelect-select': { fontSize: '12px' }
-                        }}
-                    >
-                        <InputLabel id="company-select-label">
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <BusinessIcon sx={{ fontSize: 16 }} />
-                                Filter by Company
-                            </Box>
-                        </InputLabel>
-                        <Select
-                            labelId="company-select-label"
-                            value={selectedCompanyId}
-                            onChange={handleCompanyChange}
-                            label={
+                    {/* Filter Controls */}
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        {/* Company Selector */}
+                        <FormControl
+                            size="small"
+                            sx={{
+                                minWidth: 250,
+                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                '& .MuiSelect-select': { fontSize: '12px' }
+                            }}
+                        >
+                            <InputLabel id="company-select-label">
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                     <BusinessIcon sx={{ fontSize: 16 }} />
                                     Filter by Company
                                 </Box>
-                            }
-                        >
-                            {/* All Companies Option */}
-                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                    <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
-                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                        All Companies
-                                    </Typography>
-                                    <Chip
-                                        label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
-                                        size="small"
-                                        color="primary"
-                                        sx={{
-                                            height: 20,
-                                            fontSize: '10px',
-                                            ml: 'auto'
-                                        }}
-                                    />
-                                </Box>
-                            </MenuItem>
-
-                            {/* Individual Companies */}
-                            {availableCompanies.map(company => (
-                                <MenuItem
-                                    key={company.companyID}
-                                    value={company.companyID}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                                        <Avatar
-                                            src={company.logoURL || company.logo || company.logoUrl}
+                            </InputLabel>
+                            <Select
+                                labelId="company-select-label"
+                                value={selectedCompanyId}
+                                onChange={handleCompanyChange}
+                                label={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <BusinessIcon sx={{ fontSize: 16 }} />
+                                        Filter by Company
+                                    </Box>
+                                }
+                            >
+                                {/* All Companies Option */}
+                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            All Companies
+                                        </Typography>
+                                        <Chip
+                                            label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                            size="small"
+                                            color="primary"
                                             sx={{
-                                                width: 32,
-                                                height: 32,
-                                                bgcolor: company.logoURL || company.logo || company.logoUrl ? 'transparent' : '#1976d2',
-                                                fontSize: '12px',
-                                                fontWeight: 600,
-                                                border: '1px solid #e5e7eb'
+                                                height: 20,
+                                                fontSize: '10px',
+                                                ml: 'auto'
                                             }}
-                                        >
-                                            {(!company.logoURL && !company.logo && !company.logoUrl) && (
-                                                <BusinessIcon sx={{ fontSize: '16px', color: 'white' }} />
-                                            )}
-                                        </Avatar>
-                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                {company.name}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                {company.companyID}
-                                            </Typography>
-                                        </Box>
-                                        {company.status === 'active' ? (
-                                            <Chip
-                                                label="Active"
-                                                size="small"
-                                                color="success"
+                                        />
+                                    </Box>
+                                </MenuItem>
+
+                                {/* Individual Companies */}
+                                {availableCompanies.map(company => (
+                                    <MenuItem
+                                        key={company.companyID}
+                                        value={company.companyID}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                            <Avatar
+                                                src={company.logoURL || company.logo || company.logoUrl}
                                                 sx={{
-                                                    height: 20,
-                                                    fontSize: '10px'
+                                                    width: 32,
+                                                    height: 32,
+                                                    bgcolor: company.logoURL || company.logo || company.logoUrl ? 'transparent' : '#1976d2',
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    border: '1px solid #e5e7eb'
                                                 }}
-                                            />
-                                        ) : (
+                                            >
+                                                {(!company.logoURL && !company.logo && !company.logoUrl) && (
+                                                    <BusinessIcon sx={{ fontSize: '16px', color: 'white' }} />
+                                                )}
+                                            </Avatar>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {company.name}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    {company.companyID}
+                                                </Typography>
+                                            </Box>
+                                            {company.status === 'active' ? (
+                                                <Chip
+                                                    label="Active"
+                                                    size="small"
+                                                    color="success"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: '10px'
+                                                    }}
+                                                />
+                                            ) : (
+                                                <Chip
+                                                    label="Inactive"
+                                                    size="small"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: '10px'
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        {/* Customer Selector */}
+                        <FormControl
+                            size="small"
+                            disabled={selectedCompanyId === 'all' || loadingCustomers}
+                            sx={{
+                                minWidth: 200,
+                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                '& .MuiSelect-select': { fontSize: '12px' }
+                            }}
+                        >
+                            <InputLabel id="customer-select-label">
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <PersonIcon sx={{ fontSize: 16 }} />
+                                    Filter by Customer
+                                </Box>
+                            </InputLabel>
+                            <Select
+                                labelId="customer-select-label"
+                                value={selectedCustomerId}
+                                onChange={handleCustomerChange}
+                                label={
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <PersonIcon sx={{ fontSize: 16 }} />
+                                        Filter by Customer
+                                    </Box>
+                                }
+                            >
+                                {/* All Customers Option */}
+                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        <ViewListIcon sx={{ fontSize: 18, color: '#059669' }} />
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            All Customers
+                                        </Typography>
+                                        {availableCustomers.length > 0 && (
                                             <Chip
-                                                label="Inactive"
+                                                label={`${availableCustomers.length} Total`}
                                                 size="small"
+                                                color="primary"
                                                 sx={{
                                                     height: 20,
-                                                    fontSize: '10px'
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
                                                 }}
                                             />
                                         )}
                                     </Box>
                                 </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+
+                                {/* Individual Customers */}
+                                {availableCustomers.map(customer => (
+                                    <MenuItem
+                                        key={customer.customerID}
+                                        value={customer.customerID}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                            <Avatar
+                                                src={customer.logoURL || customer.logo || customer.logoUrl || customer.companyLogo}
+                                                sx={{
+                                                    width: 28,
+                                                    height: 28,
+                                                    bgcolor: (customer.logoURL || customer.logo || customer.logoUrl || customer.companyLogo) ? 'transparent' : '#059669',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    border: '1px solid #e5e7eb'
+                                                }}
+                                            >
+                                                {(!customer.logoURL && !customer.logo && !customer.logoUrl && !customer.companyLogo) && (customer.name || customer.customerID).charAt(0).toUpperCase()}
+                                            </Avatar>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {customer.name || customer.customerID}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    {customer.customerID}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+
+                                {/* Empty state when no customers available */}
+                                {selectedCompanyId !== 'all' && !loadingCustomers && availableCustomers.length === 0 && (
+                                    <MenuItem disabled sx={{ fontSize: '12px' }}>
+                                        <Typography sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                            No customers found for this company
+                                        </Typography>
+                                    </MenuItem>
+                                )}
+
+                                {/* Loading state */}
+                                {loadingCustomers && (
+                                    <MenuItem disabled sx={{ fontSize: '12px' }}>
+                                        <Typography sx={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                            Loading customers...
+                                        </Typography>
+                                    </MenuItem>
+                                )}
+                            </Select>
+                        </FormControl>
+                    </Box>
                 </Box>
-
-
-
-
             </Box>
 
             {/* Main Content Area - Use consistent sliding navigation for both views */}
@@ -444,16 +603,18 @@ const GlobalAddressList = () => {
                         companies={viewMode === 'all' ? availableCompanies : availableCompanies.filter(c => c.companyID === selectedCompanyId)}
                         userRole={userRole}
                         selectedCompanyId={selectedCompanyId}
+                        selectedCustomerId={selectedCustomerId}
                         viewMode={viewMode}
                     />
                 </Paper>
             </Box>
+
         </Box>
     );
 };
 
 // Custom component to show addresses from all companies with full table functionality
-const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all', viewMode = 'all' }) => {
+const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all', selectedCustomerId = 'all', viewMode = 'all' }) => {
     const navigate = useNavigate();
     const [addresses, setAddresses] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -483,37 +644,59 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     // Selection state for export
     const [selectedAddresses, setSelectedAddresses] = useState(new Set());
 
-    // Sliding navigation state
-    const [currentView, setCurrentView] = useState('table'); // 'table', 'detail', 'edit', 'add'
-    const [selectedAddress, setSelectedAddress] = useState(null);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
-    const [isSliding, setIsSliding] = useState(false);
+    // Enhanced filter function with comprehensive logic
+    const filteredAddresses = React.useMemo(() => {
+        let filtered = addresses;
 
-    // Import state
-    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+        // Apply global search
+        if (globalSearchQuery) {
+            filtered = filtered.filter(address => {
+                const term = globalSearchQuery.toLowerCase();
+                const searchableFields = [
+                    address.companyName,
+                    address.ownerCompanyName,
+                    address.firstName,
+                    address.lastName,
+                    address.email,
+                    address.phone,
+                    address.street,
+                    address.street2,
+                    address.city,
+                    address.state,
+                    address.postalCode,
+                    address.country,
+                    // Concatenated fields
+                    `${address.firstName || ''} ${address.lastName || ''}`.trim(),
+                    `${address.street || ''} ${address.street2 ? `, ${address.street2}` : ''}`.trim(),
+                    `${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`.trim(),
+                ];
+                return searchableFields.some(field =>
+                    field && String(field).toLowerCase().includes(term)
+                );
+            });
+        }
 
-    // Actions menu state
-    const [actionsMenuAnchor, setActionsMenuAnchor] = useState(null);
-    const [selectedAddressForActions, setSelectedAddressForActions] = useState(null);
+        // Apply customer filter
+        if (selectedCustomerId && selectedCustomerId !== 'all') {
+            filtered = filtered.filter(address =>
+                address.addressClassID === selectedCustomerId ||
+                address.customerOwnerCompanyID === selectedCustomerId
+            );
+        }
 
-    // Add address state for super admins
-    const [selectedCompanyForAdd, setSelectedCompanyForAdd] = useState('');
-    const [selectedCustomerForAdd, setSelectedCustomerForAdd] = useState('');
-    const [customersForSelectedCompany, setCustomersForSelectedCompany] = useState([]);
+        return filtered;
+    }, [addresses, globalSearchQuery, selectedCustomerId]);
 
+    // Fetch addresses effect
     useEffect(() => {
         const fetchAllAddresses = async () => {
             setLoading(true);
             try {
                 const allAddresses = [];
 
-                // Fetch addresses for each company - ONLY CUSTOMER ADDRESSES (shipping addresses)
+                // Fetch addresses for each company - ONLY CUSTOMER ADDRESSES
                 for (const company of companies) {
                     const addressesRef = collection(db, 'addressBook');
-
-                    // First, let's get all addresses for debugging
-                    console.log(`[GlobalAddressList] Fetching addresses for company: ${company.name} (${company.companyID})`);
-
                     const q = query(
                         addressesRef,
                         where('companyID', '==', company.companyID),
@@ -524,72 +707,29 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     const rawAddresses = querySnapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data(),
-                        ownerCompanyName: company.name, // Add company name for display
-                        ownerCompanyLogo: company.logo || company.logoUrl // Add company logo for display
+                        ownerCompanyName: company.name,
+                        ownerCompanyLogo: company.logo || company.logoUrl
                     }));
 
-                    console.log(`[GlobalAddressList] Found ${rawAddresses.length} total addresses for ${company.name}`);
-
                     // Filter for customer addresses only
-                    const customerAddresses = rawAddresses.filter(addr => {
-                        const isCustomerAddress = addr.addressClass === 'customer';
-                        if (!isCustomerAddress) {
-                            console.log(`[GlobalAddressList] Filtering out non-customer address:`, {
-                                id: addr.id,
-                                addressClass: addr.addressClass,
-                                companyName: addr.companyName
-                            });
-                        }
-                        return isCustomerAddress;
-                    });
-
-                    console.log(`[GlobalAddressList] Found ${customerAddresses.length} customer addresses for ${company.name}`);
+                    const customerAddresses = rawAddresses.filter(addr => addr.addressClass === 'customer');
                     allAddresses.push(...customerAddresses);
                 }
 
-                // Now fetch customer owner information for customer addresses
+                // Enrich with customer data
                 const enrichedAddresses = await Promise.all(
-                    allAddresses.map(async (address, index) => {
-
-                        // Check for customer addresses - try multiple conditions
-                        const isCustomerAddress = address.addressClass === 'customer' ||
-                            address.companyName; // If it has a business name, it might be a customer
-
-                        if (isCustomerAddress && (address.addressClassID || address.companyName)) {
+                    allAddresses.map(async (address) => {
+                        if (address.addressClassID) {
                             try {
-                                let customerData = null;
+                                const customerQuery = query(
+                                    collection(db, 'customers'),
+                                    where('customerID', '==', address.addressClassID),
+                                    limit(1)
+                                );
+                                const customerSnapshot = await getDocs(customerQuery);
 
-                                // First try to find by addressClassID
-                                if (address.addressClassID) {
-                                    const customerQuery = query(
-                                        collection(db, 'customers'),
-                                        where('customerID', '==', address.addressClassID),
-                                        limit(1)
-                                    );
-                                    const customerSnapshot = await getDocs(customerQuery);
-
-                                    if (!customerSnapshot.empty) {
-                                        customerData = customerSnapshot.docs[0].data();
-                                    }
-                                }
-
-                                // If not found by addressClassID, try to find by company name
-                                if (!customerData && address.companyName) {
-                                    const customerByNameQuery = query(
-                                        collection(db, 'customers'),
-                                        where('name', '==', address.companyName),
-                                        limit(1)
-                                    );
-                                    const customerByNameSnapshot = await getDocs(customerByNameQuery);
-
-                                    if (!customerByNameSnapshot.empty) {
-                                        customerData = customerByNameSnapshot.docs[0].data();
-                                        if (index < 3) console.log(`✅ Found customer by name:`, customerData.name);
-                                    }
-                                }
-
-                                if (customerData) {
-                                    // Show the customer name instead of the master company
+                                if (!customerSnapshot.empty) {
+                                    const customerData = customerSnapshot.docs[0].data();
                                     return {
                                         ...address,
                                         customerOwnerName: customerData.name || customerData.customerID,
@@ -598,7 +738,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                     };
                                 }
                             } catch (error) {
-                                console.error('Error fetching customer owner data:', error);
+                                console.error('Error fetching customer data:', error);
                             }
                         }
                         return address;
@@ -612,7 +752,6 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     return (a.companyName || '').localeCompare(b.companyName || '');
                 });
 
-                console.log(`[GlobalAddressList] Final result: ${enrichedAddresses.length} customer addresses total`);
                 setAddresses(enrichedAddresses);
                 setTotalCount(enrichedAddresses.length);
             } catch (error) {
@@ -627,1548 +766,381 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
         }
     }, [companies]);
 
-    // Enhanced comprehensive search function
-    const searchAddress = (address, searchTerm) => {
-        if (!searchTerm) return true;
-
-        const term = searchTerm.toLowerCase();
-        const searchableFields = [
-            address.companyName,
-            address.ownerCompanyName,
-            address.firstName,
-            address.lastName,
-            address.email,
-            address.phone,
-            address.street,
-            address.street2,
-            address.city,
-            address.state,
-            address.postalCode,
-            address.country,
-            address.specialInstructions,
-            address.status,
-            // Concatenated fields
-            `${address.firstName || ''} ${address.lastName || ''}`.trim(),
-            `${address.street || ''} ${address.street2 ? `, ${address.street2}` : ''}`.trim(),
-            `${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`.trim(),
-        ];
-
-        return searchableFields.some(field =>
-            field && String(field).toLowerCase().includes(term)
-        );
-    };
-
-    // Enhanced filter function with comprehensive logic
-    const filteredAddresses = React.useMemo(() => {
-        let filtered = addresses;
-
-        // Apply global search
-        if (globalSearchQuery) {
-            filtered = filtered.filter(address => searchAddress(address, globalSearchQuery));
-        }
-
-        // Apply specific field searches
-        if (searchFields.companyName) {
-            filtered = filtered.filter(address =>
-                address.companyName?.toLowerCase().includes(searchFields.companyName.toLowerCase()) ||
-                address.ownerCompanyName?.toLowerCase().includes(searchFields.companyName.toLowerCase())
-            );
-        }
-
-        if (searchFields.contactName) {
-            const contactSearch = searchFields.contactName.toLowerCase();
-            filtered = filtered.filter(address => {
-                const fullName = `${address.firstName || ''} ${address.lastName || ''}`.trim().toLowerCase();
-                const firstName = (address.firstName || '').toLowerCase();
-                const lastName = (address.lastName || '').toLowerCase();
-                return fullName.includes(contactSearch) ||
-                    firstName.includes(contactSearch) ||
-                    lastName.includes(contactSearch);
-            });
-        }
-
-        if (searchFields.email) {
-            filtered = filtered.filter(address =>
-                address.email?.toLowerCase().includes(searchFields.email.toLowerCase())
-            );
-        }
-
-        if (searchFields.street) {
-            const streetSearch = searchFields.street.toLowerCase();
-            filtered = filtered.filter(address => {
-                const street1 = (address.street || '').toLowerCase();
-                const street2 = (address.street2 || '').toLowerCase();
-                return street1.includes(streetSearch) || street2.includes(streetSearch);
-            });
-        }
-
-        if (searchFields.city) {
-            filtered = filtered.filter(address =>
-                address.city?.toLowerCase().includes(searchFields.city.toLowerCase())
-            );
-        }
-
-        if (searchFields.state) {
-            filtered = filtered.filter(address =>
-                address.state?.toLowerCase().includes(searchFields.state.toLowerCase())
-            );
-        }
-
-        if (searchFields.postalCode) {
-            filtered = filtered.filter(address =>
-                address.postalCode?.toLowerCase().includes(searchFields.postalCode.toLowerCase())
-            );
-        }
-
-        if (searchFields.country) {
-            filtered = filtered.filter(address =>
-                address.country?.toLowerCase().includes(searchFields.country.toLowerCase())
-            );
-        }
-
-        // Apply filters
-        if (filters.country !== 'all') {
-            filtered = filtered.filter(address => address.country === filters.country);
-        }
-
-        return filtered;
-    }, [addresses, globalSearchQuery, searchFields, filters]);
-
     // Pagination
     const paginatedAddresses = React.useMemo(() => {
         const start = page * rowsPerPage;
         return filteredAddresses.slice(start, start + rowsPerPage);
     }, [filteredAddresses, page, rowsPerPage]);
 
-    // Get unique countries for filter dropdown
-    const availableCountries = React.useMemo(() => {
-        const countries = [...new Set(addresses.map(addr => addr.country).filter(Boolean))];
-        return countries.sort();
-    }, [addresses]);
-
-
-
-    // Function to refresh all addresses
-    const fetchAllAddresses = React.useCallback(async () => {
-        setLoading(true);
-        try {
-            const allAddresses = [];
-
-            // Fetch addresses for each company - ONLY CUSTOMER ADDRESSES (shipping addresses)
-            for (const company of companies) {
-                const addressesRef = collection(db, 'addressBook');
-                const q = query(
-                    addressesRef,
-                    where('companyID', '==', company.companyID),
-                    where('status', '!=', 'deleted')
-                );
-
-                const querySnapshot = await getDocs(q);
-                const rawAddresses = querySnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    ownerCompanyName: company.name, // Add company name for display
-                    ownerCompanyLogo: company.logo || company.logoUrl // Add company logo for display
-                }));
-
-                // Filter for customer addresses only
-                const customerAddresses = rawAddresses.filter(addr => addr.addressClass === 'customer');
-                allAddresses.push(...customerAddresses);
-            }
-
-            // Now fetch customer owner information for customer addresses
-            const enrichedAddresses = await Promise.all(
-                allAddresses.map(async (address, index) => {
-                    // Check for customer addresses - try multiple conditions
-                    const isCustomerAddress = address.addressClass === 'customer' ||
-                        address.companyName; // If it has a business name, it might be a customer
-
-                    if (isCustomerAddress && (address.addressClassID || address.companyName)) {
-                        try {
-                            let customerData = null;
-
-                            // First try to find by addressClassID
-                            if (address.addressClassID) {
-                                const customerQuery = query(
-                                    collection(db, 'customers'),
-                                    where('customerID', '==', address.addressClassID),
-                                    limit(1)
-                                );
-                                const customerSnapshot = await getDocs(customerQuery);
-
-                                if (!customerSnapshot.empty) {
-                                    customerData = customerSnapshot.docs[0].data();
-                                }
-                            }
-
-                            // If not found by addressClassID, try to find by company name
-                            if (!customerData && address.companyName) {
-                                const customerByNameQuery = query(
-                                    collection(db, 'customers'),
-                                    where('name', '==', address.companyName),
-                                    limit(1)
-                                );
-                                const customerByNameSnapshot = await getDocs(customerByNameQuery);
-
-                                if (!customerByNameSnapshot.empty) {
-                                    customerData = customerByNameSnapshot.docs[0].data();
-                                }
-                            }
-
-                            if (customerData) {
-                                // Show the customer name instead of the master company
-                                return {
-                                    ...address,
-                                    customerOwnerName: customerData.name || customerData.customerID,
-                                    customerOwnerLogo: customerData.logo || customerData.logoUrl || null,
-                                    customerOwnerCompanyID: customerData.customerID
-                                };
-                            }
-                        } catch (error) {
-                            console.error('Error fetching customer owner data:', error);
-                        }
-                    }
-                    return address;
-                })
-            );
-
-            // Sort by company name, then by address company name
-            enrichedAddresses.sort((a, b) => {
-                const companyCompare = (a.ownerCompanyName || '').localeCompare(b.ownerCompanyName || '');
-                if (companyCompare !== 0) return companyCompare;
-                return (a.companyName || '').localeCompare(b.companyName || '');
-            });
-
-            setAddresses(enrichedAddresses);
-            setTotalCount(enrichedAddresses.length);
-        } catch (error) {
-            console.error('Error fetching addresses:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, [companies]);
-
-    // Search handlers
-    const handleGlobalSearchChange = (event) => {
-        setGlobalSearchQuery(event.target.value);
-        setPage(0);
-    };
-
-    const handleSearchFieldChange = (field, value) => {
-        setSearchFields(prev => ({
-            ...prev,
-            [field]: value
-        }));
-        setPage(0);
-    };
-
-    const handleFilterChange = (filterName, value) => {
-        setFilters(prev => ({
-            ...prev,
-            [filterName]: value
-        }));
-        setPage(0);
-    };
-
-    const clearAllFilters = () => {
-        setGlobalSearchQuery('');
-        setSearchFields({
-            companyName: '',
-            contactName: '',
-            email: '',
-            street: '',
-            city: '',
-            state: '',
-            postalCode: '',
-            country: ''
-        });
-        setFilters({
-            country: 'all'
-        });
-        setPage(0);
-    };
-
-    // Check if any filters are active
-    const hasActiveFilters = React.useMemo(() => {
-        return globalSearchQuery ||
-            Object.values(searchFields).some(value => value.trim()) ||
-            Object.values(filters).some(value => value !== 'all');
-    }, [globalSearchQuery, searchFields, filters]);
-
-    // Selection handlers
-    const handleSelectAll = (event) => {
-        if (event.target.checked) {
-            const newSelected = new Set(filteredAddresses.map(address => address.id));
-            setSelectedAddresses(newSelected);
-        } else {
-            setSelectedAddresses(new Set());
-        }
-    };
-
-    const handleSelectAddress = (addressId, event) => {
-        event.stopPropagation();
-        const newSelected = new Set(selectedAddresses);
-        if (newSelected.has(addressId)) {
-            newSelected.delete(addressId);
-        } else {
-            newSelected.add(addressId);
-        }
-        setSelectedAddresses(newSelected);
-    };
-
-    const isSelected = (addressId) => selectedAddresses.has(addressId);
-
-    // Sliding navigation handlers
-    const handleViewAddress = (address) => {
-        setIsSliding(true);
-        setTimeout(() => {
-            setSelectedAddress(address);
-            setSelectedAddressId(address.id);
-            setCurrentView('detail');
-            setIsSliding(false);
-        }, 150);
-    };
-
-    const handleEditAddress = (address) => {
-        setIsSliding(true);
-        setTimeout(() => {
-            setSelectedAddress(address);
-            setSelectedAddressId(address.id);
-            setCurrentView('edit');
-            setIsSliding(false);
-        }, 150);
-    };
-
-    const handleAddAddress = () => {
-        setIsSliding(true);
-        setTimeout(() => {
-            setSelectedAddress(null);
-            setSelectedAddressId(null);
-            setCurrentView('add');
-            setIsSliding(false);
-        }, 150);
-    };
-
-    const handleBackToTable = () => {
-        setIsSliding(true);
-        setTimeout(() => {
-            setCurrentView('table');
-            setSelectedAddress(null);
-            setSelectedAddressId(null);
-            setIsSliding(false);
-            // Refresh data when returning to table
-            fetchAllAddresses();
-        }, 150);
-    };
-
-    const handleBackToDetail = () => {
-        setIsSliding(true);
-        setTimeout(() => {
-            setCurrentView('detail');
-            setIsSliding(false);
-        }, 150);
-    };
-
-    const handleAddressDeleted = () => {
-        handleBackToTable();
-    };
-
-    const handleAddressUpdated = () => {
-        // Refresh the address data and go back to detail view
-        setIsSliding(true);
-        setTimeout(() => {
-            setCurrentView('detail');
-            setIsSliding(false);
-            // Refresh data
-            fetchAllAddresses();
-        }, 150);
-    };
-
-    const handleAddressCreated = (newAddressId) => {
-        // Navigate to the new address detail view
-        setIsSliding(true);
-        setTimeout(async () => {
-            // Fetch the new address data
-            try {
-                const addressDoc = await getDoc(doc(db, 'addressBook', newAddressId));
-                if (addressDoc.exists()) {
-                    const newAddress = { id: addressDoc.id, ...addressDoc.data() };
-                    setSelectedAddress(newAddress);
-                    setSelectedAddressId(newAddressId);
-                    setCurrentView('detail');
-                }
-            } catch (error) {
-                console.error('Error fetching new address:', error);
-                setCurrentView('table');
-            }
-            setIsSliding(false);
-            // Refresh table data
-            fetchAllAddresses();
-        }, 150);
-    };
-
-    // Import handlers
-    const handleImportOpen = () => {
-        setIsImportDialogOpen(true);
-    };
-
-    const handleImportClose = () => {
-        setIsImportDialogOpen(false);
-    };
-
-    const handleImportComplete = () => {
-        fetchAllAddresses(); // Refresh the address list
-        setIsImportDialogOpen(false);
-    };
-
-    // Actions menu handlers
-    const handleActionsMenuOpen = (event, address) => {
-        event.stopPropagation();
-        setActionsMenuAnchor(event.currentTarget);
-        setSelectedAddressForActions(address);
-    };
-
-    const handleActionsMenuClose = () => {
-        setActionsMenuAnchor(null);
-        setSelectedAddressForActions(null);
-    };
-
-    const handleActionsView = () => {
-        if (selectedAddressForActions) {
-            handleViewAddress(selectedAddressForActions);
-        }
-        handleActionsMenuClose();
-    };
-
-    const handleActionsEdit = () => {
-        if (selectedAddressForActions) {
-            handleEditAddress(selectedAddressForActions);
-        }
-        handleActionsMenuClose();
-    };
-
-    // Navigation handlers
-    const handleNavigateToCustomer = (customerOwnerCompanyID) => {
-        if (customerOwnerCompanyID) {
-            navigate(`/admin/customers/${customerOwnerCompanyID}`);
-        }
-    };
-
-    const handleNavigateToCompany = (companyID) => {
-        if (companyID) {
-            // Find the company document ID from the companyID
-            const company = companies.find(c => c.companyID === companyID);
-            if (company) {
-                navigate(`/admin/companies/${company.id}`);
-            }
-        }
-    };
-
-    // Load customers for selected company
-    const loadCustomersForCompany = async (companyID) => {
-        if (!companyID) {
-            setCustomersForSelectedCompany([]);
-            return;
-        }
-
-        try {
-            const customersRef = collection(db, 'customers');
-            const q = query(
-                customersRef,
-                where('companyID', '==', companyID)
-            );
-            const querySnapshot = await getDocs(q);
-            const customers = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-
-            console.log(`[GlobalAddressList] Loaded ${customers.length} customers for company ${companyID}`);
-            console.log('[GlobalAddressList] Customer data:', customers);
-            setCustomersForSelectedCompany(customers);
-        } catch (error) {
-            console.error('Error loading customers:', error);
-            setCustomersForSelectedCompany([]);
-        }
-    };
-
-    // Handle company selection for add address
-    const handleCompanySelectionForAdd = (companyID) => {
-        setSelectedCompanyForAdd(companyID);
-        setSelectedCustomerForAdd(''); // Reset customer selection
-        loadCustomersForCompany(companyID);
-    };
-
     if (loading) {
         return (
-            <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {/* Sliding Container */}
-                <Box sx={{
-                    width: '400%',
-                    height: '100%',
-                    display: 'flex',
-                    transform: 'translateX(0%)'
-                }}>
-                    {/* Table View Skeleton */}
-                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        {/* Toolbar Skeleton */}
-                        <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8fafc' }}>
-                            <Grid container spacing={2} alignItems="center">
-                                <Grid item xs={12} md={6}>
-                                    <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Stack direction="row" spacing={1} justifyContent="flex-end">
-                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
-                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
-                                        <Skeleton variant="rectangular" width={80} height={32} sx={{ borderRadius: 1 }} />
-                                    </Stack>
-                                </Grid>
-                            </Grid>
-                        </Box>
-
-                        {/* Super Admin Section Skeleton */}
-                        {userRole === 'superadmin' && (
-                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e0e0e0' }}>
-                                <Skeleton variant="text" width={300} height={20} sx={{ mb: 2 }} />
-                                <Grid container spacing={2} alignItems="center">
-                                    <Grid item xs={12} md={4}>
-                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
-                                    </Grid>
-                                    <Grid item xs={12} md={4}>
-                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
-                                    </Grid>
-                                    <Grid item xs={12} md={4}>
-                                        <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 1 }} />
-                                    </Grid>
-                                </Grid>
-                            </Box>
-                        )}
-
-                        {/* Table Skeleton */}
-                        <Box sx={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: 0 }}>
-                            <Box sx={{ width: '100%', px: 2 }}>
-                                <Table stickyHeader>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
-                                                <Skeleton variant="rectangular" width={20} height={20} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={100} />
-                                            </TableCell>
-                                            {viewMode === 'all' && (
-                                                <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                    <Skeleton variant="text" width={120} />
-                                                </TableCell>
-                                            )}
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={100} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={80} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={100} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={80} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                                <Skeleton variant="text" width={120} />
-                                            </TableCell>
-                                            <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px', width: 80 }}>
-                                                <Skeleton variant="text" width={60} />
-                                            </TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {Array.from({ length: 10 }).map((_, index) => (
-                                            <TableRow key={index}>
-                                                <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
-                                                    <Skeleton variant="rectangular" width={20} height={20} />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Skeleton variant="text" width={150} />
-                                                </TableCell>
-                                                {viewMode === 'all' && (
-                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                            <Skeleton variant="circular" width={32} height={32} />
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                                                <Skeleton variant="text" width={120} />
-                                                                <Skeleton variant="text" width={80} />
-                                                            </Box>
-                                                        </Box>
-                                                    </TableCell>
-                                                )}
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                        <Skeleton variant="circular" width={32} height={32} />
-                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                                            <Skeleton variant="text" width={100} />
-                                                            <Skeleton variant="text" width={60} />
-                                                        </Box>
-                                                    </Box>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Skeleton variant="text" width={120} />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Skeleton variant="text" width={140} />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Skeleton variant="text" width={100} />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Box>
-                                                        <Skeleton variant="text" width={180} />
-                                                        <Skeleton variant="text" width={140} />
-                                                    </Box>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Skeleton variant="circular" width={24} height={24} />
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </Box>
-                        </Box>
-
-                        {/* Pagination Skeleton */}
-                        <Box sx={{ flexShrink: 0, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa', mt: 2, mx: 2, p: 1 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                    <Skeleton variant="text" width={120} />
-                                    <Skeleton variant="rectangular" width={60} height={30} />
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Skeleton variant="text" width={80} />
-                                    <Skeleton variant="circular" width={32} height={32} />
-                                    <Skeleton variant="circular" width={32} height={32} />
-                                    <Skeleton variant="circular" width={32} height={32} />
-                                    <Skeleton variant="circular" width={32} height={32} />
-                                </Box>
-                            </Box>
-                        </Box>
-                    </Box>
-
-                    {/* Detail View Placeholder */}
-                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        {/* Empty for now */}
-                    </Box>
-
-                    {/* Edit View Placeholder */}
-                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        {/* Empty for now */}
-                    </Box>
-
-                    {/* Add View Placeholder */}
-                    <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        {/* Empty for now */}
-                    </Box>
-                </Box>
+            <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+                <CircularProgress />
+                <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading addresses...</Typography>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Sliding Container */}
-            <Box sx={{
-                width: '400%',
-                height: '100%',
-                display: 'flex',
-                transform: currentView === 'table' ? 'translateX(0%)' :
-                    currentView === 'detail' ? 'translateX(-25%)' :
-                        currentView === 'edit' ? 'translateX(-50%)' : 'translateX(-75%)',
-                transition: 'transform 0.3s ease-in-out',
-                opacity: isSliding ? 0.8 : 1
-            }}>
-                {/* Table View */}
-                <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    {/* Toolbar */}
-                    <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8fafc' }}>
-                        <Grid container spacing={2} alignItems="center">
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
+        <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* Search Toolbar */}
+            <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#f8fafc' }}>
+                <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Search addresses..."
+                    value={globalSearchQuery}
+                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                    sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <SearchIcon sx={{ color: '#6b7280' }} />
+                            </InputAdornment>
+                        ),
+                        endAdornment: globalSearchQuery && (
+                            <InputAdornment position="end">
+                                <IconButton
                                     size="small"
-                                    placeholder={viewMode === 'all' ? "Search addresses across all companies..." : "Search addresses..."}
-                                    value={globalSearchQuery}
-                                    onChange={handleGlobalSearchChange}
-                                    sx={{
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                    InputProps={{
-                                        startAdornment: (
-                                            <InputAdornment position="start">
-                                                <SearchIcon sx={{ color: '#6b7280' }} />
-                                            </InputAdornment>
-                                        ),
-                                        endAdornment: globalSearchQuery && (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={clearAllFilters}
-                                                    edge="end"
-                                                >
-                                                    <ClearIcon />
-                                                </IconButton>
-                                            </InputAdornment>
-                                        )
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Stack direction="row" spacing={1} justifyContent="flex-end">
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<FilterIcon />}
-                                        onClick={() => setFiltersOpen(!filtersOpen)}
-                                        size="small"
-                                    >
-                                        Filters
-                                    </Button>
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={<ExportIcon />}
-                                        disabled={filteredAddresses.length === 0}
-                                        size="small"
-                                    >
-                                        Export
-                                    </Button>
-                                    {viewMode !== 'all' && (
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<UploadIcon />}
-                                            onClick={handleImportOpen}
-                                            size="small"
-                                            sx={{ fontSize: '12px' }}
-                                        >
-                                            Import
-                                        </Button>
-                                    )}
-                                </Stack>
-                            </Grid>
-                        </Grid>
+                                    onClick={() => setGlobalSearchQuery('')}
+                                    edge="end"
+                                >
+                                    <ClearIcon />
+                                </IconButton>
+                            </InputAdornment>
+                        )
+                    }}
+                />
+            </Box>
 
-                        {/* Enhanced Advanced Filters - AddressBook Style */}
-                        <Collapse in={filtersOpen}>
-                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                <Grid container spacing={2} alignItems="center">
-                                    {/* Company Name Search */}
-                                    <Grid item xs={12} sm={6} md={4} lg={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Company Name"
-                                            placeholder="Search by company"
-                                            value={searchFields.companyName}
-                                            onChange={(e) => handleSearchFieldChange('companyName', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <BusinessIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.companyName && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('companyName', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
+            {/* Results Info */}
+            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e0e0e0' }}>
+                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                    Showing {filteredAddresses.length} of {totalCount} customer addresses
+                    {selectedCustomerId !== 'all' && ` for selected customer`}
+                </Typography>
+            </Box>
 
-                                    {/* Contact Name Search */}
-                                    <Grid item xs={12} sm={6} md={4} lg={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Contact Name"
-                                            placeholder="Search by contact"
-                                            value={searchFields.contactName}
-                                            onChange={(e) => handleSearchFieldChange('contactName', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <PersonIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.contactName && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('contactName', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Email Search */}
-                                    <Grid item xs={12} sm={6} md={4} lg={3}>
-                                        <TextField
-                                            fullWidth
-                                            label="Email"
-                                            placeholder="Search by email"
-                                            value={searchFields.email}
-                                            onChange={(e) => handleSearchFieldChange('email', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <EmailIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.email && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('email', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-                                </Grid>
-
-                                {/* Second Row - Address Fields and Filters */}
-                                <Grid container spacing={2} alignItems="center" sx={{ mt: 1 }}>
-                                    {/* Street Address Search */}
-                                    <Grid item xs={12} sm={6} md={3} lg={2.4}>
-                                        <TextField
-                                            fullWidth
-                                            label="Street Address"
-                                            placeholder="Search by street"
-                                            value={searchFields.street}
-                                            onChange={(e) => handleSearchFieldChange('street', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <LocationIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.street && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('street', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* City Search */}
-                                    <Grid item xs={12} sm={6} md={3} lg={2.4}>
-                                        <TextField
-                                            fullWidth
-                                            label="City"
-                                            placeholder="Search by city"
-                                            value={searchFields.city}
-                                            onChange={(e) => handleSearchFieldChange('city', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.city && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('city', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* State Search */}
-                                    <Grid item xs={12} sm={6} md={3} lg={2.4}>
-                                        <TextField
-                                            fullWidth
-                                            label="State/Province"
-                                            placeholder="Search by state"
-                                            value={searchFields.state}
-                                            onChange={(e) => handleSearchFieldChange('state', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.state && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('state', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Postal Code Search */}
-                                    <Grid item xs={12} sm={6} md={1.5} lg={2.4}>
-                                        <TextField
-                                            fullWidth
-                                            label="Postal Code"
-                                            placeholder="Search by postal code"
-                                            value={searchFields.postalCode}
-                                            onChange={(e) => handleSearchFieldChange('postalCode', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchFields.postalCode && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleSearchFieldChange('postalCode', '')}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '14px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                    </Grid>
-
-                                    {/* Country Filter */}
-                                    <Grid item xs={12} sm={6} md={1.5} lg={2.4}>
-                                        <FormControl fullWidth size="small">
-                                            <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
-                                            <Select
-                                                value={filters.country}
-                                                onChange={(e) => handleFilterChange('country', e.target.value)}
-                                                label="Country"
-                                                sx={{
-                                                    '& .MuiSelect-select': { fontSize: '12px' },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                }}
-                                            >
-                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Countries</MenuItem>
-                                                {availableCountries.map((country) => (
-                                                    <MenuItem key={country} value={country} sx={{ fontSize: '12px' }}>
-                                                        {country === 'US' ? 'United States' :
-                                                            country === 'CA' ? 'Canada' : country}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
-                                        </FormControl>
-                                    </Grid>
-
-                                    {/* Clear Filters Button */}
-                                    {hasActiveFilters && (
-                                        <Grid item xs={12} sm={12} md={12} lg={12} sx={{ mt: 1 }}>
-                                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                                <Button
-                                                    variant="outlined"
-                                                    onClick={clearAllFilters}
-                                                    startIcon={<ClearIcon />}
-                                                    sx={{
-                                                        borderColor: '#e2e8f0',
-                                                        color: '#64748b',
-                                                        fontSize: '12px',
-                                                        '&:hover': {
-                                                            borderColor: '#cbd5e1',
-                                                            bgcolor: '#f8fafc'
-                                                        }
-                                                    }}
-                                                >
-                                                    Clear All
-                                                </Button>
-                                            </Box>
-                                        </Grid>
-                                    )}
-                                </Grid>
-
-                                {/* Active Filters Display */}
-                                {hasActiveFilters && (
-                                    <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                        <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
-                                            <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
-                                            Active Filters:
-                                        </Typography>
-                                        {globalSearchQuery && (
-                                            <Chip
-                                                label={`Global search: ${globalSearchQuery}`}
-                                                onDelete={() => setGlobalSearchQuery('')}
-                                                size="small"
-                                                sx={{ bgcolor: '#f1f5f9', fontSize: '11px' }}
-                                            />
-                                        )}
-                                        {Object.entries(searchFields).map(([key, value]) => value && (
-                                            <Chip
-                                                key={key}
-                                                label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
-                                                onDelete={() => handleSearchFieldChange(key, '')}
-                                                size="small"
-                                                sx={{ bgcolor: '#f1f5f9', fontSize: '11px' }}
-                                            />
-                                        ))}
-                                        {Object.entries(filters).map(([key, value]) => value !== 'all' && (
-                                            <Chip
-                                                key={key}
-                                                label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${key === 'country' && value === 'US' ? 'United States' :
-                                                    key === 'country' && value === 'CA' ? 'Canada' :
-                                                        value
-                                                    }`}
-                                                onDelete={() => handleFilterChange(key, 'all')}
-                                                size="small"
-                                                sx={{ bgcolor: '#f1f5f9', fontSize: '11px' }}
-                                            />
-                                        ))}
-                                    </Box>
-                                )}
-                            </Box>
-                        </Collapse>
+            {/* Address Table */}
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+                {filteredAddresses.length === 0 ? (
+                    <Box sx={{ p: 3, textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                            No addresses found matching your criteria
+                        </Typography>
                     </Box>
-
-                    {/* Add Address Section for Super Admins */}
-                    {userRole === 'superadmin' && (
-                        <Box sx={{
-                            p: 2,
-                            bgcolor: '#f8fafc',
-                            borderBottom: '1px solid #e0e0e0'
-                        }}>
-                            <Typography variant="h6" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 2 }}>
-                                🔑 Super Admin: Create Address for Any Customer
-                            </Typography>
-
-                            <Grid container spacing={2} alignItems="center">
-                                {/* Company Selection */}
-                                <Grid item xs={12} md={4}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Select Company</InputLabel>
-                                        <Select
-                                            value={selectedCompanyForAdd}
-                                            onChange={(e) => handleCompanySelectionForAdd(e.target.value)}
-                                            label="Select Company"
-                                            sx={{
-                                                '& .MuiSelect-select': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                ) : (
+                    <Box sx={{ width: '100%', px: 2 }}>
+                        <Table stickyHeader>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
+                                        <Checkbox
+                                            checked={selectedAddresses.size === filteredAddresses.length && filteredAddresses.length > 0}
+                                            indeterminate={selectedAddresses.size > 0 && selectedAddresses.size < filteredAddresses.length}
+                                            onChange={(event) => {
+                                                if (event.target.checked) {
+                                                    setSelectedAddresses(new Set(filteredAddresses.map(addr => addr.id)));
+                                                } else {
+                                                    setSelectedAddresses(new Set());
+                                                }
                                             }}
-                                        >
-                                            {companies.map((company) => (
-                                                <MenuItem key={company.companyID} value={company.companyID} sx={{ fontSize: '12px' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                                                        <Avatar
-                                                            src={company.logoURL || company.logo || company.logoUrl}
-                                                            sx={{
-                                                                width: 28,
-                                                                height: 28,
-                                                                bgcolor: company.logoURL || company.logo || company.logoUrl ? 'transparent' : '#1976d2',
-                                                                fontSize: '11px',
-                                                                fontWeight: 600,
-                                                                border: '1px solid #e5e7eb'
-                                                            }}
-                                                        >
-                                                            {(!company.logoURL && !company.logo && !company.logoUrl) && (
-                                                                <BusinessIcon sx={{ fontSize: '14px', color: 'white' }} />
-                                                            )}
-                                                        </Avatar>
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                {company.name}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                {company.companyID}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-
-                                {/* Customer Selection */}
-                                <Grid item xs={12} md={4}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Select Customer</InputLabel>
-                                        <Select
-                                            value={selectedCustomerForAdd}
-                                            onChange={(e) => setSelectedCustomerForAdd(e.target.value)}
-                                            label="Select Customer"
-                                            disabled={!selectedCompanyForAdd || customersForSelectedCompany.length === 0}
-                                            sx={{
-                                                '& .MuiSelect-select': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                        >
-                                            {customersForSelectedCompany.length === 0 ? (
-                                                <MenuItem disabled sx={{ fontSize: '12px' }}>
-                                                    {selectedCompanyForAdd ? 'No customers available' : 'Select company first'}
-                                                </MenuItem>
-                                            ) : (
-                                                customersForSelectedCompany.map((customer) => (
-                                                    <MenuItem key={customer.customerID} value={customer.customerID} sx={{ fontSize: '12px' }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                                                            <Avatar
-                                                                src={customer.logoURL || customer.logo || customer.logoUrl || customer.companyLogo}
-                                                                sx={{
-                                                                    width: 28,
-                                                                    height: 28,
-                                                                    bgcolor: (customer.logoURL || customer.logo || customer.logoUrl || customer.companyLogo) ? 'transparent' : '#059669',
-                                                                    fontSize: '11px',
-                                                                    fontWeight: 600,
-                                                                    border: '1px solid #e5e7eb'
-                                                                }}
-                                                            >
-                                                                {(!customer.logoURL && !customer.logo && !customer.logoUrl && !customer.companyLogo) && (customer.name || customer.customerID).charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                    {customer.name || customer.customerID}
-                                                                </Typography>
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    {customer.customerID}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </MenuItem>
-                                                ))
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-
-                                {/* Add Address Button */}
-                                <Grid item xs={12} md={4}>
-                                    <Button
-                                        variant="contained"
-                                        startIcon={<Add />}
-                                        onClick={handleAddAddress}
-                                        disabled={!selectedCompanyForAdd || !selectedCustomerForAdd}
-                                        fullWidth
-                                        size="small"
-                                        sx={{
-                                            fontSize: '12px',
-                                            height: '40px'
-                                        }}
-                                    >
-                                        Add Customer Address
-                                    </Button>
-                                </Grid>
-                            </Grid>
-
-                            {/* Info Message */}
-                            {selectedCompanyForAdd && selectedCustomerForAdd && (
-                                <Alert severity="info" sx={{ mt: 2, fontSize: '12px' }}>
-                                    <Typography sx={{ fontSize: '12px' }}>
-                                        Ready to create address for <strong>{customersForSelectedCompany.find(c => c.customerID === selectedCustomerForAdd)?.name || selectedCustomerForAdd}</strong>
-                                        {' '}in company <strong>{companies.find(c => c.companyID === selectedCompanyForAdd)?.name}</strong>.
-                                    </Typography>
-                                </Alert>
-                            )}
-                        </Box>
-                    )}
-
-                    {/* Table */}
-                    <Box sx={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: 0 }}>
-                        <Box sx={{ width: '100%', px: 2 }}>
-                            <Table stickyHeader>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
+                                            size="small"
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Company Name
+                                    </TableCell>
+                                    {viewMode === 'all' && (
+                                        <TableCell sx={{
+                                            bgcolor: '#f8fafc',
+                                            fontWeight: 600,
+                                            color: '#374151',
+                                            fontSize: '12px'
+                                        }}>
+                                            Owner Company
+                                        </TableCell>
+                                    )}
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Customer
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Contact
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Email
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Phone
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Address
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Type
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Status
+                                    </TableCell>
+                                    <TableCell sx={{
+                                        bgcolor: '#f8fafc',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        fontSize: '12px'
+                                    }}>
+                                        Actions
+                                    </TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {paginatedAddresses.map((address) => (
+                                    <TableRow key={address.id} hover>
+                                        <TableCell padding="checkbox">
                                             <Checkbox
-                                                checked={selectedAddresses.size === filteredAddresses.length && filteredAddresses.length > 0}
-                                                indeterminate={selectedAddresses.size > 0 && selectedAddresses.size < filteredAddresses.length}
-                                                onChange={handleSelectAll}
+                                                checked={selectedAddresses.has(address.id)}
+                                                onChange={(event) => {
+                                                    const newSelected = new Set(selectedAddresses);
+                                                    if (event.target.checked) {
+                                                        newSelected.add(address.id);
+                                                    } else {
+                                                        newSelected.delete(address.id);
+                                                    }
+                                                    setSelectedAddresses(newSelected);
+                                                }}
                                                 size="small"
                                             />
                                         </TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Business Name</TableCell>
-                                        {viewMode === 'all' && <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company Owner</TableCell>}
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Customer Owner</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Contact</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Email</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Phone</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Address</TableCell>
-                                        <TableCell sx={{ bgcolor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px', width: 80 }}>Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {paginatedAddresses.length === 0 && filteredAddresses.length === 0 && hasActiveFilters ? (
-                                        <TableRow>
-                                            <TableCell colSpan={viewMode === 'all' ? 9 : 8} sx={{ textAlign: 'center', py: 4 }}>
-                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                                                    <SearchOffIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
-                                                    <Typography variant="h6" sx={{ color: '#6b7280' }}>
-                                                        No addresses found
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#9ca3af' }}>
-                                                        Try adjusting your search criteria
-                                                    </Typography>
-                                                    <Button
-                                                        variant="outlined"
-                                                        onClick={clearAllFilters}
-                                                        size="small"
-                                                        sx={{ mt: 1 }}
-                                                    >
-                                                        Clear Filters
-                                                    </Button>
-                                                </Box>
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : paginatedAddresses.length === 0 && filteredAddresses.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={viewMode === 'all' ? 9 : 8} sx={{ textAlign: 'center', py: 4 }}>
-                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                                                    <BusinessIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
-                                                    <Typography variant="h6" sx={{ color: '#6b7280' }}>
-                                                        No addresses available
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#9ca3af' }}>
-                                                        Select a specific company to view and manage addresses
-                                                    </Typography>
-                                                </Box>
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        paginatedAddresses.map((address) => (
-                                            <TableRow
-                                                key={address.id}
-                                                hover
-                                                selected={isSelected(address.id)}
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    fontSize: '12px',
+                                                    fontWeight: 500,
+                                                    color: '#1976d2',
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline',
+                                                    '&:hover': {
+                                                        color: '#1565c0'
+                                                    }
+                                                }}
+                                                onClick={() => {
+                                                    // TODO: Add view address detail functionality
+                                                    console.log('View address:', address.id);
+                                                }}
                                             >
-                                                <TableCell padding="checkbox" sx={{ width: 40, maxWidth: 40, minWidth: 40 }}>
-                                                    <Checkbox
-                                                        checked={isSelected(address.id)}
-                                                        onChange={(e) => handleSelectAddress(address.id, e)}
-                                                        size="small"
-                                                    />
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography
-                                                        variant="body2"
-                                                        component="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleViewAddress(address);
-                                                        }}
+                                                {address.companyName || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        {viewMode === 'all' && (
+                                            <TableCell sx={{ fontSize: '12px' }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                                                    <Avatar
+                                                        src={address.ownerCompanyLogo}
                                                         sx={{
+                                                            width: 32,
+                                                            height: 32,
+                                                            bgcolor: '#1976d2',
                                                             fontSize: '12px',
-                                                            fontWeight: 400,
-                                                            color: '#1976d2',
-                                                            textDecoration: 'none',
-                                                            cursor: 'pointer',
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            padding: 0,
-                                                            textAlign: 'left',
-                                                            '&:hover': {
-                                                                textDecoration: 'underline'
-                                                            }
+                                                            fontWeight: 600,
+                                                            border: '1px solid #e5e7eb',
+                                                            flexShrink: 0
                                                         }}
                                                     >
-                                                        {address.companyName || 'N/A'}
-                                                    </Typography>
-                                                </TableCell>
-                                                {viewMode === 'all' && (
-                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                            <Avatar
-                                                                src={address.ownerCompanyLogo || ''}
-                                                                sx={{
-                                                                    width: 32,
-                                                                    height: 32,
-                                                                    bgcolor: address.ownerCompanyLogo ? 'transparent' : '#059669',
-                                                                    fontSize: '12px',
-                                                                    fontWeight: 600,
-                                                                    border: '1px solid #e5e7eb'
-                                                                }}
-                                                            >
-                                                                {!address.ownerCompanyLogo && (address.ownerCompanyName || 'N/A').charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                                                <Typography
-                                                                    variant="body2"
-                                                                    component="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleNavigateToCompany(address.companyID);
-                                                                    }}
-                                                                    sx={{
-                                                                        fontSize: '12px',
-                                                                        fontWeight: 500,
-                                                                        color: '#1976d2',
-                                                                        textDecoration: 'none',
-                                                                        cursor: 'pointer',
-                                                                        background: 'none',
-                                                                        border: 'none',
-                                                                        padding: 0,
-                                                                        textAlign: 'left',
-                                                                        '&:hover': {
-                                                                            textDecoration: 'underline'
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    {address.ownerCompanyName || 'N/A'}
-                                                                </Typography>
-                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {address.companyID || 'N/A'}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    </TableCell>
-                                                )}
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    {address.addressClass === 'customer' && address.customerOwnerName ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                            <Avatar
-                                                                src={address.customerOwnerLogo || ''}
-                                                                sx={{
-                                                                    width: 32,
-                                                                    height: 32,
-                                                                    bgcolor: address.customerOwnerLogo ? 'transparent' : '#1976d2',
-                                                                    fontSize: '12px',
-                                                                    fontWeight: 600,
-                                                                    border: '1px solid #e5e7eb'
-                                                                }}
-                                                            >
-                                                                {!address.customerOwnerLogo && address.customerOwnerName.charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                                                <Typography
-                                                                    variant="body2"
-                                                                    component="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleNavigateToCustomer(address.customerOwnerCompanyID);
-                                                                    }}
-                                                                    sx={{
-                                                                        fontSize: '12px',
-                                                                        fontWeight: 500,
-                                                                        color: '#1976d2',
-                                                                        textDecoration: 'none',
-                                                                        cursor: 'pointer',
-                                                                        background: 'none',
-                                                                        border: 'none',
-                                                                        padding: 0,
-                                                                        textAlign: 'left',
-                                                                        '&:hover': {
-                                                                            textDecoration: 'underline'
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    {address.customerOwnerName}
-                                                                </Typography>
-                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {address.customerOwnerID || address.addressClassID || 'N/A'}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                                            N/A
-                                                        </Typography>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                        {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
-                                                    </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px', maxWidth: '200px' }}>
-                                                    <Typography variant="body2" sx={{
+                                                        {!address.ownerCompanyLogo && (
+                                                            <BusinessIcon sx={{ fontSize: '16px', color: 'white' }} />
+                                                        )}
+                                                    </Avatar>
+                                                    <Typography sx={{
                                                         fontSize: '12px',
-                                                        wordBreak: 'break-all',
-                                                        whiteSpace: 'normal',
-                                                        lineHeight: 1.3
+                                                        fontWeight: 500,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        minWidth: 0
                                                     }}>
-                                                        {address.email || 'N/A'}
+                                                        {address.ownerCompanyName}
                                                     </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                        {address.phone || 'N/A'}
+                                                </Box>
+                                            </TableCell>
+                                        )}
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                                                <Avatar
+                                                    src={address.customerOwnerLogo}
+                                                    sx={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        bgcolor: '#059669',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        border: '1px solid #e5e7eb',
+                                                        flexShrink: 0
+                                                    }}
+                                                >
+                                                    {!address.customerOwnerLogo && (address.customerOwnerName || 'C').charAt(0).toUpperCase()}
+                                                </Avatar>
+                                                <Box sx={{ minWidth: 0 }}>
+                                                    <Typography sx={{
+                                                        fontSize: '12px',
+                                                        fontWeight: 500,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {address.customerOwnerName || 'Unknown Customer'}
                                                     </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                        {`${address.street || ''}${address.street2 ? `, ${address.street2}` : ''}`}
-                                                        <br />
-                                                        {`${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`}
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        color: '#6b7280',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {address.customerOwnerCompanyID || address.addressClassID}
                                                     </Typography>
-                                                </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(e) => handleActionsMenuOpen(e, address)}
-                                                        sx={{ color: '#6b7280' }}
-                                                    >
-                                                        <MoreVertIcon sx={{ fontSize: 18 }} />
-                                                    </IconButton>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </Box>
+                                                </Box>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {address.email || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {address.phone || 'N/A'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {`${address.street || ''}${address.street2 ? `, ${address.street2}` : ''}`}
+                                                <br />
+                                                {`${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={address.isResidential ? 'Residential' : 'Commercial'}
+                                                size="small"
+                                                color={address.isResidential ? 'warning' : 'primary'}
+                                                variant="outlined"
+                                                sx={{ fontSize: '11px' }}
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Chip
+                                                label={address.status === 'active' ? 'Active' : 'Inactive'}
+                                                size="small"
+                                                color={address.status === 'active' ? 'success' : 'default'}
+                                                variant="outlined"
+                                                sx={{ fontSize: '11px' }}
+                                            />
+                                        </TableCell>
+                                        <TableCell sx={{ fontSize: '12px' }}>
+                                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        // TODO: Add view functionality
+                                                        console.log('View address:', address.id);
+                                                    }}
+                                                    title="View Address"
+                                                >
+                                                    <VisibilityIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        // TODO: Add edit functionality
+                                                        console.log('Edit address:', address.id);
+                                                    }}
+                                                    title="Edit Address"
+                                                >
+                                                    <EditIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        // TODO: Add delete functionality
+                                                        console.log('Delete address:', address.id);
+                                                    }}
+                                                    title="Delete Address"
+                                                    color="error"
+                                                >
+                                                    <DeleteIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
                     </Box>
-
-                    {/* Actions Menu */}
-                    <Menu
-                        anchorEl={actionsMenuAnchor}
-                        open={Boolean(actionsMenuAnchor)}
-                        onClose={handleActionsMenuClose}
-                        anchorOrigin={{
-                            vertical: 'bottom',
-                            horizontal: 'right',
-                        }}
-                        transformOrigin={{
-                            vertical: 'top',
-                            horizontal: 'right',
-                        }}
-                        PaperProps={{
-                            sx: {
-                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '6px',
-                                minWidth: 120
-                            }
-                        }}
-                    >
-                        <MenuItem onClick={handleActionsView} sx={{ fontSize: '12px', py: 1 }}>
-                            <ListItemIcon>
-                                <ViewIcon sx={{ fontSize: 16 }} />
-                            </ListItemIcon>
-                            <ListItemText primary="View" sx={{ '& .MuiTypography-root': { fontSize: '12px' } }} />
-                        </MenuItem>
-                        <MenuItem onClick={handleActionsEdit} sx={{ fontSize: '12px', py: 1 }}>
-                            <ListItemIcon>
-                                <EditIcon sx={{ fontSize: 16 }} />
-                            </ListItemIcon>
-                            <ListItemText primary="Edit" sx={{ '& .MuiTypography-root': { fontSize: '12px' } }} />
-                        </MenuItem>
-                    </Menu>
-
-                    {/* Pagination */}
-                    <Box sx={{ flexShrink: 0, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa', mt: 2, mx: 2 }}>
-                        <ShipmentsPagination
-                            totalCount={filteredAddresses.length}
-                            rowsPerPage={rowsPerPage}
-                            page={page}
-                            onPageChange={(event, newPage) => setPage(newPage)}
-                            onRowsPerPageChange={(event) => {
-                                const newRowsPerPage = event.target.value;
-                                setRowsPerPage(newRowsPerPage);
-                                setPage(0);
-                            }}
-                        />
-                    </Box>
-
-                </Box>
-
-                {/* Detail View */}
-                <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    {currentView === 'detail' && selectedAddress && (
-                        <AddressDetail
-                            addressId={selectedAddressId}
-                            onEdit={() => handleEditAddress(selectedAddress)}
-                            onBack={handleBackToTable}
-                            onDelete={handleAddressDeleted}
-                            isModal={true}
-                        />
-                    )}
-                </Box>
-
-                {/* Edit View */}
-                <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    {currentView === 'edit' && selectedAddressId && (
-                        <AddressForm
-                            addressId={selectedAddressId}
-                            onCancel={handleBackToDetail}
-                            onSuccess={handleAddressUpdated}
-                            isModal={true}
-                        />
-                    )}
-                </Box>
-
-                {/* Add View */}
-                <Box sx={{ width: '25%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    {currentView === 'add' && (
-                        <AddressForm
-                            onCancel={handleBackToTable}
-                            onSuccess={handleAddressCreated}
-                            isModal={true}
-                            companyId={selectedCompanyForAdd}
-                            customerId={selectedCustomerForAdd}
-                        />
-                    )}
-                </Box>
+                )}
             </Box>
 
-            {/* Import Dialog */}
-            {isImportDialogOpen && (
-                <AddressImport
-                    onClose={handleImportClose}
-                    onImportComplete={handleImportComplete}
-                />
+            {/* Pagination */}
+            {filteredAddresses.length > 0 && (
+                <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
+                    <ShipmentsPagination
+                        count={filteredAddresses.length}
+                        page={page}
+                        rowsPerPage={rowsPerPage}
+                        onPageChange={(newPage) => setPage(newPage)}
+                        onRowsPerPageChange={(newRowsPerPage) => {
+                            setRowsPerPage(newRowsPerPage);
+                            setPage(0);
+                        }}
+                        showFirstButton
+                        showLastButton
+                    />
+                </Box>
             )}
-
-
         </Box>
     );
 };

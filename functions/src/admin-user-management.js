@@ -344,6 +344,14 @@ exports.adminListAllUsers = onCall({
                 // Use Firestore photoURL if available, otherwise fall back to Auth photoURL
                 photoURL: firestoreData.photoURL || authUser.photoURL,
                 
+                // INVITATION STATUS FIELDS - CRITICAL FIX
+                isInvited: firestoreData.isInvited || false,
+                passwordSet: firestoreData.passwordSet !== undefined ? firestoreData.passwordSet : true, // Default to true for existing users
+                invitedAt: firestoreData.invitedAt,
+                invitedBy: firestoreData.invitedBy,
+                lastInviteResent: firestoreData.lastInviteResent,
+                resentBy: firestoreData.resentBy,
+                
                 // Metadata
                 hasFirestoreDocument: !!firestoreData.firstName,
                 createdAt: firestoreData.createdAt,
@@ -751,45 +759,61 @@ exports.verifyInviteAndSetPassword = onCall({
     cors: true,
     timeoutSeconds: 60,
 }, async (request) => {
-    console.log('verifyInviteAndSetPassword called');
+    console.log('verifyInviteAndSetPassword called with data:', request.data);
 
-    const { token, newPassword } = request.data;
+    const { token, newPassword, email } = request.data;
 
-    if (!token || !newPassword) {
-        throw new HttpsError('invalid-argument', 'Token and new password are required.');
+    if (!token || !newPassword || !email) {
+        console.error('Missing required parameters:', { token: !!token, newPassword: !!newPassword, email: !!email });
+        throw new HttpsError('invalid-argument', 'Token, email, and new password are required.');
     }
 
     if (newPassword.length < 6) {
+        console.error('Password too short');
         throw new HttpsError('invalid-argument', 'Password must be at least 6 characters long.');
     }
 
     try {
-        // Verify the custom token
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        const uid = decodedToken.uid;
-
-        if (!decodedToken.invite) {
-            throw new HttpsError('invalid-argument', 'Invalid invite token.');
+        console.log('Looking up user by email:', email);
+        
+        // Find user by email in Firestore
+        const usersQuery = await db.collection('users').where('email', '==', email).limit(1).get();
+        
+        if (usersQuery.empty) {
+            console.error('User not found with email:', email);
+            throw new HttpsError('not-found', 'User not found with this email.');
         }
+        
+        const userDoc = usersQuery.docs[0];
+        const uid = userDoc.id;
+        const userData = userDoc.data();
+        
+        console.log('Found user:', uid, 'with data:', { 
+            isInvited: userData.isInvited, 
+            passwordSet: userData.passwordSet,
+            email: userData.email 
+        });
 
         // Check if user exists and is in invited state
-        const userDoc = await db.collection('users').doc(uid).get();
-        if (!userDoc.exists()) {
-            throw new HttpsError('not-found', 'User not found.');
-        }
-
-        const userData = userDoc.data();
         if (!userData.isInvited || userData.passwordSet) {
+            console.error('User not in valid state for password setup:', { 
+                isInvited: userData.isInvited, 
+                passwordSet: userData.passwordSet 
+            });
             throw new HttpsError('failed-precondition', 'This invitation has already been used or is invalid.');
         }
 
-        // Update the user's password
+        console.log('Updating password for user:', uid);
+        
+        // Update the user's password in Firebase Auth
         await admin.auth().updateUser(uid, {
             password: newPassword,
             emailVerified: true
         });
 
-        // Update user document
+        console.log('Password updated successfully, updating Firestore document');
+
+        // Update user document in Firestore
         await db.collection('users').doc(uid).update({
             passwordSet: true,
             isInvited: false,
@@ -798,7 +822,7 @@ exports.verifyInviteAndSetPassword = onCall({
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(`Password set successfully for user: ${uid}`);
+        console.log(`Password set successfully for user: ${uid} (${email})`);
 
         return {
             status: "success",
@@ -807,6 +831,13 @@ exports.verifyInviteAndSetPassword = onCall({
 
     } catch (error) {
         console.error('Error in verifyInviteAndSetPassword:', error);
-        throw error;
+        
+        // If it's already an HttpsError, just re-throw it
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        
+        // For any other error, wrap it
+        throw new HttpsError('internal', `An unexpected error occurred: ${error.message}`);
     }
 }); 

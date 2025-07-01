@@ -203,7 +203,7 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         // Parse quantity with fallback
         const quantity = parseInt(String(pkg.quantity || pkg.packagingQuantity || pkg.pieces || 1).replace(/[^\d]/g, '')) || 1;
         
-        totalWeight += weight;
+        totalWeight += (weight * quantity); // FIXED: Weight × Quantity like BOL
         totalPieces += quantity;
         
         // Count skids/pallets
@@ -248,49 +248,114 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
                        shipmentData.customerReference ||
                        booking.referenceNumber || '';
     
-    // Get open/close hours based on the booking date
-    const bookingDateObj = new Date(shipDate);
-    const dayOfWeek = bookingDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    // Carrier information with enhanced details and new email structure support
+    let carrierPhone = '';
+    let carrierEmail = '';
+    let carrierAttention = '';
     
-    // Extract business hours from address book
-    const getBusinessHours = (address, dayOfWeek) => {
-        // Check if address has businessHours object
-        if (address.businessHours) {
-            // If custom hours are enabled and exist for this day
-            if (address.businessHours.customHoursEnabled && 
-                address.businessHours.days && 
-                address.businessHours.days[dayOfWeek]) {
-                const dayHours = address.businessHours.days[dayOfWeek];
-                return {
-                    open: dayHours.open || '09:00 AM',
-                    close: dayHours.close || '05:00 PM',
-                    closed: dayHours.closed || false
-                };
-            }
-            // If not custom hours, use default
-            else if (address.businessHours.defaultOpen && address.businessHours.defaultClose) {
-                return {
-                    open: address.businessHours.defaultOpen,
-                    close: address.businessHours.defaultClose,
-                    closed: false
-                };
-            }
+    // Handle both old and new carrier data structures
+    if (carrierDetails.emailContacts && shipmentData.creationMethod === 'quickship') {
+        // NEW STRUCTURE: Terminal-based email management (QuickShip carriers only)
+        console.log('Using new terminal-based carrier structure for QuickShip carrier');
+        
+        // If selectedCarrierContactId is provided, use the specific terminal
+        let selectedTerminalId = shipmentData.selectedCarrierContactId || 'default';
+        
+        // Extract terminal from selectedCarrierContactId (format: terminalId_contactType_index)
+        if (selectedTerminalId.includes('_')) {
+            selectedTerminalId = selectedTerminalId.split('_')[0];
         }
         
-        // Fallback to standard hours
-        return {
-            open: '09:00 AM',
-            close: '05:00 PM',
-            closed: false
-        };
+        // Find the selected terminal or use default
+        const terminals = carrierDetails.emailContacts || [];
+        let selectedTerminal = terminals.find(terminal => terminal.id === selectedTerminalId);
+        
+        // If no specific terminal found, use the first one or default
+        if (!selectedTerminal && terminals.length > 0) {
+            selectedTerminal = terminals.find(terminal => terminal.isDefault) || terminals[0];
+        }
+        
+        if (selectedTerminal) {
+            console.log('Using terminal for carrier confirmation:', selectedTerminal.name);
+            
+            // Extract phone number from terminal (use phone field if available)
+            carrierPhone = selectedTerminal.phone || '';
+            
+            // Get emails for carrier confirmation - prioritize dispatch emails
+            const contactTypes = selectedTerminal.contactTypes || {};
+            const dispatchEmails = contactTypes.dispatch || [];
+            const customerServiceEmails = contactTypes.customer_service || [];
+            const allEmails = [
+                ...dispatchEmails,
+                ...customerServiceEmails,
+                ...(contactTypes.quotes || []),
+                ...(contactTypes.billing_adjustments || []),
+                ...(contactTypes.claims || []),
+                ...(contactTypes.sales_reps || []),
+                ...(contactTypes.customs || []),
+                ...(contactTypes.other || [])
+            ].filter(email => email && email.trim());
+            
+            // Use the first available email (usually dispatch)
+            carrierEmail = allEmails[0] || '';
+            
+            // Set attention to terminal contact name or terminal name
+            carrierAttention = selectedTerminal.contactName || selectedTerminal.name || '';
+            
+            console.log('Extracted QuickShip carrier contact info:', {
+                terminal: selectedTerminal.name,
+                phone: carrierPhone,
+                email: carrierEmail,
+                attention: carrierAttention,
+                totalEmails: allEmails.length
+            });
+        }
+    } else {
+        // OLD STRUCTURE: Legacy contactEmail/contactPhone fields (API carriers and fallback)
+        console.log('Using legacy carrier structure for API carrier or fallback');
+        carrierPhone = carrierDetails.contactPhone || carrierDetails.phone || '';
+        carrierEmail = carrierDetails.contactEmail || carrierDetails.email || '';
+        carrierAttention = carrierDetails.contactName || carrierDetails.attention || '';
+    }
+    
+    // If still no email found, use legacy fallback
+    if (!carrierEmail) {
+        carrierEmail = carrierDetails.contactEmail || carrierDetails.email || carrierDetails.billingEmail || '';
+    }
+    
+    // If still no phone found, use legacy fallback  
+    if (!carrierPhone) {
+        carrierPhone = carrierDetails.contactPhone || carrierDetails.phone || '';
+    }
+    
+    // If still no attention found, use legacy fallback
+    if (!carrierAttention) {
+        carrierAttention = carrierDetails.contactName || carrierDetails.attention || '';
+    }
+    
+    console.log('Final carrier contact info for confirmation:', {
+        name: carrierDetails.name,
+        phone: carrierPhone,
+        email: carrierEmail,
+        attention: carrierAttention
+    });
+
+    // FIXED: Extract actual business hours from shipment info instead of hardcoded values
+    const shipperHours = {
+        open: shipmentData.shipmentInfo?.earliestPickup || '',   // Use actual pickup times
+        close: shipmentData.shipmentInfo?.latestPickup || '',    // Use actual pickup times
+        closed: false
     };
     
-    const shipperHours = getBusinessHours(shipFrom, dayOfWeek);
-    const consigneeHours = getBusinessHours(shipTo, dayOfWeek);
+    const consigneeHours = {
+        open: shipmentData.shipmentInfo?.earliestDelivery || '', // Use actual delivery times
+        close: shipmentData.shipmentInfo?.latestDelivery || '',  // Use actual delivery times
+        closed: false
+    };
     
     return {
         // Header information
-        date: formatDateLong(bookingDateObj),
+        date: formatDateLong(now),
         refNumber: confirmationNumber,
         orderNumber: shipmentId,
         account: shipmentData.companyID || '-',
@@ -298,9 +363,9 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         
         // Carrier information with enhanced details
         carrier: carrierDetails.name || 'Integrated Carriers',
-        carrierPhone: carrierDetails.contactPhone || carrierDetails.phone || '', // Updated to include phone
-        carrierEmail: carrierDetails.contactEmail || carrierDetails.email || '', // Changed from fax to email
-        attention: carrierDetails.contactName || carrierDetails.attention || '',
+        carrierPhone: carrierPhone,
+        carrierEmail: carrierEmail, // Changed from fax to email
+        attention: carrierAttention,
         
         // Shipper information with comprehensive mapping
         shipper: {
@@ -341,6 +406,7 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         readyTime: shipperHours.closed ? 'CLOSED' : shipperHours.open,
         closeTime: shipperHours.closed ? 'CLOSED' : shipperHours.close,
         deliverOn: formatDateShort(deliveryDate),
+        deliverOpen: consigneeHours.closed ? 'CLOSED' : consigneeHours.open, // ADDED: Missing delivery open time
         deliverClose: consigneeHours.closed ? 'CLOSED' : consigneeHours.close,
         
         // Enhanced load information with detailed package breakdown
@@ -353,7 +419,8 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
             
             return {
                 pieces: quantity,
-                weight: weight.toFixed(2),
+                weight: (weight * quantity).toFixed(2), // FIXED: Total weight per line (weight × quantity)
+                individualWeight: weight.toFixed(2), // Keep individual weight for reference
                 type: getPackageTypeName(pkg.packagingType || pkg.type),
                 description: pkg.description || pkg.itemDescription || pkg.commodity || 'General Freight',
                 dimensions: formatDimensions(pkg),
@@ -713,11 +780,14 @@ function drawEnhancedCarrierSection(doc, data) {
  * Draws enhanced shipper section
  */
 function drawEnhancedShipperSection(doc, data) {
+    console.log('🚛 CARRIER CONFIRMATION DEBUG: Drawing shipper section with FIXED spacing');
+    console.log('🚛 FIXED VALUES: valueX=105 (was 145), rightValueX=395 (was 420)');
+    
     const sectionY = 195;
     const labelX = 35;
-    const valueX = 145;
+    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     const rightLabelX = 340;
-    const rightValueX = 420;
+    const rightValueX = 395; // FIXED: Reduced from 420 to 395 (25px closer)
     
     // Section background
     doc.rect(25, sectionY - 5, 562, 115)
@@ -756,16 +826,16 @@ function drawEnhancedShipperSection(doc, data) {
     // Move address section up (reduce gap)
     yPos += 12;
     
-    // Address - stacked in left column
+    // Address - FIXED: Combine address1 and address2 on same line
     doc.font('Helvetica')
        .fontSize(8)
-       .fillColor('#000000')
-       .text(data.shipper.address1, valueX, yPos);
+       .fillColor('#000000');
     
-    if (data.shipper.address2) {
-        yPos += 9;
-        doc.text(data.shipper.address2, valueX, yPos);
+    let fullAddress = data.shipper.address1;
+    if (data.shipper.address2 && data.shipper.address2.trim()) {
+        fullAddress += `, ${data.shipper.address2}`;
     }
+    doc.text(fullAddress, valueX, yPos);
     
     // City
     yPos += 9;
@@ -818,40 +888,42 @@ function drawEnhancedShipperSection(doc, data) {
            .text(data.shipper.specialInstructions, rightValueX, rightYPos, { width: 140 });
     }
     
-    // Date Ready and times at bottom
-    yPos += 20;
+    // Date Ready and times at bottom of shipper section - MOVED DOWN 20px from original position
+    yPos += 40; // CHANGED: Increased from 20 to 40 for 20px additional space from original position
+    console.log(`🚛 CARRIER CONFIRMATION DEBUG: Date Ready moved down 20px within shipper section to Y=${yPos}`);
+    
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
        .text('Date Ready', labelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 10, yPos);
+       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.dateReady, valueX, yPos);
     
-    // Ready time
+    // Ready time - FIXED: Much closer spacing
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text('Open', 240, yPos);
+       .text('Open', 180, yPos);  // FIXED: Moved left from 240 to 180
     
     doc.fillColor('#000000')
-       .text(':', 280, yPos);
+       .text(':', 205, yPos);     // FIXED: Moved left from 280 to 205
     
     doc.font('Helvetica')
-       .text(data.readyTime, 290, yPos);
+       .text(data.readyTime, 210, yPos);  // FIXED: Moved left from 290 to 210
     
-    // Close time
+    // Close time - FIXED: Much closer spacing, moved further left to avoid overlap
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text('Close', rightLabelX, yPos);
+       .text('Close', 260, yPos);  // FIXED: Moved even further left from 280 to 260
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 10, yPos);
+       .text(':', 285, yPos);      // FIXED: Moved left to 285
     
     doc.font('Helvetica')
-       .text(data.closeTime, rightValueX, yPos);
+       .text(data.closeTime, 290, yPos);  // FIXED: Moved left to 290
 }
 
 /**
@@ -860,9 +932,9 @@ function drawEnhancedShipperSection(doc, data) {
 function drawEnhancedConsigneeSection(doc, data) {
     const sectionY = 315;
     const labelX = 35;
-    const valueX = 145;
+    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     const rightLabelX = 340;
-    const rightValueX = 420;
+    const rightValueX = 395; // FIXED: Reduced from 420 to 395 (25px closer)
     
     // Section header
     doc.font('Helvetica-Bold')
@@ -897,16 +969,16 @@ function drawEnhancedConsigneeSection(doc, data) {
     // Move address section up (reduce gap)
     yPos += 12;
     
-    // Address - stacked in left column
+    // Address - FIXED: Combine address1 and address2 on same line
     doc.font('Helvetica')
        .fontSize(8)
-       .fillColor('#000000')
-       .text(data.consignee.address1, valueX, yPos);
+       .fillColor('#000000');
     
-    if (data.consignee.address2) {
-        yPos += 9;
-        doc.text(data.consignee.address2, valueX, yPos);
+    let fullAddress = data.consignee.address1;
+    if (data.consignee.address2 && data.consignee.address2.trim()) {
+        fullAddress += `, ${data.consignee.address2}`;
     }
+    doc.text(fullAddress, valueX, yPos);
     
     // City
     yPos += 9;
@@ -949,7 +1021,7 @@ function drawEnhancedConsigneeSection(doc, data) {
            .text(data.consignee.specialInstructions, rightValueX, rightYPos, { width: 140 });
     }
     
-    // Deliver On and Close time at bottom
+    // Deliver On, Open, and Close time at bottom - FIXED: Much closer spacing
     yPos += 20;
     doc.font('Helvetica-Bold')
        .fontSize(9)
@@ -957,30 +1029,41 @@ function drawEnhancedConsigneeSection(doc, data) {
        .text('Deliver On', labelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 10, yPos);
+       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.deliverOn, valueX, yPos);
     
-    // Close time
+    // ADDED: Open time for consignee - FIXED: Much closer spacing
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text('Close', rightLabelX, yPos);
+       .text('Open', 180, yPos);  // FIXED: Position similar to Date Ready section
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 10, yPos);
+       .text(':', 205, yPos);     // FIXED: Moved left to match Date Ready section
     
     doc.font('Helvetica')
-       .text(data.deliverClose, rightValueX, yPos);
+       .text(data.deliverOpen || '', 210, yPos);  // FIXED: Use deliverOpen data
+    
+    // Close time - FIXED: Much closer spacing, moved further left to avoid overlap  
+    doc.font('Helvetica-Bold')
+       .fillColor('#333333')
+       .text('Close', 260, yPos);  // FIXED: Moved even further left from 280 to 260
+    
+    doc.fillColor('#000000')
+       .text(':', 285, yPos);      // FIXED: Moved left to 285
+    
+    doc.font('Helvetica')
+       .text(data.deliverClose, 290, yPos);  // FIXED: Moved left to 290
 }
 
 /**
  * Draws enhanced special instructions
  */
 function drawEnhancedSpecialInstructions(doc, data) {
-    const sectionY = 405;
+    const sectionY = 405; // Reverted back to original position
     const labelX = 35;
-    const valueX = 145;
+    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     
     // Section background if there are instructions
     if (data.shipper.specialInstructions || data.consignee.specialInstructions) {
@@ -995,7 +1078,7 @@ function drawEnhancedSpecialInstructions(doc, data) {
        .text('Special Instructions', labelX, sectionY);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 10, sectionY);
+       .text(':', valueX - 5, sectionY);  // FIXED: Reduced gap from -10 to -5
     
     let instructions = [];
     if (data.shipper.specialInstructions) {
@@ -1019,11 +1102,11 @@ function drawEnhancedSpecialInstructions(doc, data) {
  * Draws enhanced broker section
  */
 function drawEnhancedBrokerSection(doc, data) {
-    const sectionY = 445;
+    const sectionY = 445; // Reverted back to original position
     const labelX = 35;
-    const valueX = 145;
+    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     const rightLabelX = 340;
-    const rightValueX = 450;
+    const rightValueX = 395; // FIXED: Reduced from 450 to 395 (55px closer)
     
     // Section header
     doc.font('Helvetica-Bold')
@@ -1047,7 +1130,7 @@ function drawEnhancedBrokerSection(doc, data) {
        .text('Broker', labelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 10, yPos);
+       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.broker, valueX, yPos);
@@ -1058,7 +1141,7 @@ function drawEnhancedBrokerSection(doc, data) {
        .text('Phone', rightLabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 10, yPos);
+       .text(':', rightValueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.brokerPhone, rightValueX, yPos);
@@ -1070,7 +1153,7 @@ function drawEnhancedBrokerSection(doc, data) {
        .text('Reference', labelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 10, yPos);
+       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.brokerRef, valueX, yPos);
@@ -1081,7 +1164,7 @@ function drawEnhancedBrokerSection(doc, data) {
        .text('Port', rightLabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 10, yPos);
+       .text(':', rightValueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
        .text(data.port, rightValueX, yPos);
@@ -1091,7 +1174,7 @@ function drawEnhancedBrokerSection(doc, data) {
  * Draws enhanced load information section with detailed table
  */
 function drawEnhancedLoadInfoSection(doc, data) {
-    const tableY = 495;
+    const tableY = 495; // Reverted back to original position
     
     // Table header background
     doc.rect(25, tableY, 562, 20)
@@ -1192,7 +1275,7 @@ function drawEnhancedLoadInfoSection(doc, data) {
  * Draws enhanced terms and conditions section - more compact
  */
 function drawEnhancedTermsSection(doc, data) {
-    const termsY = 650;
+    const termsY = 650; // Reverted back to original position
     
     // Terms header
     doc.rect(25, termsY, 562, 18)
@@ -1231,7 +1314,7 @@ function drawEnhancedTermsSection(doc, data) {
  * Draws enhanced signature section
  */
 function drawEnhancedSignatureSection(doc, data) {
-    const sigY = 725;
+    const sigY = 725; // Reverted back to original position
     
     // Signature area background
     doc.rect(25, sigY, 562, 40)

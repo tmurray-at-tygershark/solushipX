@@ -201,11 +201,27 @@ function extractBOLData(shipmentData, shipmentId) {
                        shipmentData.carrier || 
                        'GENERIC CARRIER';
     
-    // Extract billing type from shipment data
+    // Extract billing type from shipment data - ENHANCED for QuickShip
     const billingType = shipmentData.shipmentInfo?.billingType || 
+                       shipmentData.shipmentInfo?.shipmentBillType ||
                        shipmentData.billingType || 
                        shipmentData.paymentTerms ||
-                       '3rd Party'; // Default to 3rd Party
+                       shipmentData.billing?.type ||
+                       shipmentData.billing ||
+                       shipmentData.freightTerms ||
+                       'third_party'; // Default to third_party to match form values
+    
+    console.log(`🔍 BOL Generation - Billing type extraction:`, {
+        'shipmentInfo.billingType': shipmentData.shipmentInfo?.billingType,
+        'shipmentInfo.shipmentBillType': shipmentData.shipmentInfo?.shipmentBillType,
+        'billingType': shipmentData.billingType,
+        'paymentTerms': shipmentData.paymentTerms,
+        'billing.type': shipmentData.billing?.type,
+        'billing': shipmentData.billing,
+        'freightTerms': shipmentData.freightTerms,
+        'FINAL billingType': billingType,
+        'FINAL billingType NORMALIZED': billingType.toLowerCase()
+    });
     
     // Extract special instructions dynamically from shipment data
     const specialInstructions = [];
@@ -291,8 +307,8 @@ function extractBOLData(shipmentData, shipmentId) {
             state: shipFrom?.state || shipFrom?.province || '',
             zip: shipFrom?.postalCode || shipFrom?.zip || '',
             phone: shipFrom?.phone || '',
-            openTime: shipmentData.shipmentInfo?.earliestPickup || '09:00',
-            closeTime: shipmentData.shipmentInfo?.latestPickup || '17:00',
+            openTime: extractOpenTime(shipFrom),   // FIXED: Use address-based extraction
+            closeTime: extractCloseTime(shipFrom), // FIXED: Use address-based extraction
             specialInstructions: shipFrom?.specialInstructions || shipFrom?.instructions || ''
         },
         
@@ -306,6 +322,8 @@ function extractBOLData(shipmentData, shipmentId) {
             state: shipTo?.state || shipTo?.province || '',
             zip: shipTo?.postalCode || shipTo?.zip || '',
             phone: shipTo?.phone || '',
+            openTime: extractOpenTime(shipTo),   // FIXED: Use address-based extraction
+            closeTime: extractCloseTime(shipTo), // FIXED: Use address-based extraction
             specialInstructions: shipTo?.specialInstructions || shipTo?.instructions || ''
         },
         
@@ -572,14 +590,7 @@ function drawExactHeader(doc, bolData) {
        .lineTo(587, 85)
        .stroke();
     
-    // Add company contact information in header (optional enhancement)
-    doc.font('Helvetica')
-       .fontSize(7)
-       .fillColor('#666666')
-       .text('Tel: 1-800-XXX-XXXX | Email: support@solushipx.com', 220, 70, {
-           width: 200,
-           align: 'center'
-       });
+
 }
 
 /**
@@ -617,17 +628,19 @@ function drawExactShippingSection(doc, bolData) {
         yPos += 9;
     }
     
-    // Address lines with better spacing
+    // Address lines - FIXED: Combine address1 and address2 on same line
     doc.font('Helvetica')
        .fontSize(7);
     
     if (bolData.shipFrom.address1) {
-        doc.text(bolData.shipFrom.address1, 30, yPos);
-        yPos += 9;
-    }
-    
-    if (bolData.shipFrom.address2 && bolData.shipFrom.address2.trim()) {
-        doc.text(bolData.shipFrom.address2, 30, yPos);
+        let fullAddress = bolData.shipFrom.address1;
+        if (bolData.shipFrom.address2 && bolData.shipFrom.address2.trim()) {
+            fullAddress += `, ${bolData.shipFrom.address2}`;
+            console.log(`🏠 BOL DEBUG: Combined Ship From address: "${fullAddress}"`);
+        } else {
+            console.log(`🏠 BOL DEBUG: Ship From address (no address2): "${fullAddress}"`);
+        }
+        doc.text(fullAddress, 30, yPos);
         yPos += 9;
     }
     
@@ -657,25 +670,24 @@ function drawExactShippingSection(doc, bolData) {
            });
     }
     
-    // Ship From timing (right side) - IMPROVED extraction from address records
-    const openTime = extractOpenTime(bolData.shipFrom);
-    const closeTime = extractCloseTime(bolData.shipFrom);
+    // Ship From timing (right side) - FIXED: Use direct openTime/closeTime from extracted data
+    console.log(`⏰ BOL DEBUG: Ship From timing - Open: ${bolData.shipFrom.openTime}, Close: ${bolData.shipFrom.closeTime}, Position X=230`);
     
     doc.font('Helvetica-Bold')
        .fontSize(7)
-       .text('Open:', 210, 105);
+       .text('Open:', 230, 105); // FIXED: Moved right from 210 to 230
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(openTime, 235, 105);
+       .text(bolData.shipFrom.openTime || '', 255, 105); // FIXED: Use direct data
     
     doc.font('Helvetica-Bold')
        .fontSize(7)
-       .text('Close:', 210, 115);
+       .text('Close:', 230, 115); // FIXED: Moved right from 210 to 230
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(closeTime, 235, 115);
+       .text(bolData.shipFrom.closeTime || '', 255, 115); // FIXED: Use direct data
     
     // Ship date and carrier info (right side) - REPOSITIONED for better layout
     doc.font('Helvetica-Bold')
@@ -729,17 +741,16 @@ function drawExactShippingSection(doc, bolData) {
         shipToYPos += 9;
     }
     
-    // Address lines with better spacing
+    // Address lines - FIXED: Combine address1 and address2 on same line
     doc.font('Helvetica')
        .fontSize(7);
     
     if (bolData.shipTo.address1) {
-        doc.text(bolData.shipTo.address1, 30, shipToYPos);
-        shipToYPos += 9;
-    }
-    
-    if (bolData.shipTo.address2 && bolData.shipTo.address2.trim()) {
-        doc.text(bolData.shipTo.address2, 30, shipToYPos);
+        let fullAddress = bolData.shipTo.address1;
+        if (bolData.shipTo.address2 && bolData.shipTo.address2.trim()) {
+            fullAddress += `, ${bolData.shipTo.address2}`;
+        }
+        doc.text(fullAddress, 30, shipToYPos);
         shipToYPos += 9;
     }
     
@@ -764,10 +775,29 @@ function drawExactShippingSection(doc, bolData) {
         doc.font('Helvetica')
            .fontSize(6)
            .text(bolData.shipTo.specialInstructions, 85, shipToYPos, { 
-               width: 190, // More width for ship to instructions
+               width: 115, // Reduced width to make room for open/close times
                height: 20
            });
     }
+    
+    // FIXED: Add Ship To timing (right side) - use direct data from bolData.shipTo
+    console.log(`⏰ BOL DEBUG: Ship To timing - Open: ${bolData.shipTo.openTime}, Close: ${bolData.shipTo.closeTime}, Position X=230`);
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('Open:', 230, 195); // Position similar to Ship From
+    
+    doc.font('Helvetica')
+       .fontSize(7)
+       .text(bolData.shipTo.openTime || '', 255, 195); // FIXED: Use direct data
+    
+    doc.font('Helvetica-Bold')
+       .fontSize(7)
+       .text('Close:', 230, 205);
+    
+    doc.font('Helvetica')
+       .fontSize(7)
+       .text(bolData.shipTo.closeTime || '', 255, 205); // FIXED: Use direct data
     
     // References section (right column) - IMPROVED positioning
     doc.lineWidth(1)
@@ -820,6 +850,15 @@ function drawExactShippingSection(doc, bolData) {
  * @returns {string} - Formatted open time or empty string
  */
 function extractOpenTime(address) {
+    console.log(`🕐 BOL DEBUG: Extracting open time from address:`, {
+        hasBusinessHours: !!address?.businessHours,
+        hasLegacyOpenHours: !!address?.openHours,
+        hasOpenTime: !!address?.openTime,
+        businessHours: address?.businessHours,
+        openHours: address?.openHours,
+        openTime: address?.openTime
+    });
+    
     // Check for business hours in various formats
     if (address.businessHours) {
         // New format with business hours object
@@ -827,18 +866,25 @@ function extractOpenTime(address) {
             // For custom hours, we could show "Varies" or extract Monday hours as default
             const mondayHours = address.businessHours.customHours?.monday;
             if (mondayHours && !mondayHours.closed && mondayHours.open) {
-                return formatTime(mondayHours.open);
+                const openTime = formatTime(mondayHours.open);
+                console.log(`🕐 BOL DEBUG: Using Monday custom hours open: ${openTime}`);
+                return openTime;
             }
         } else if (address.businessHours.defaultHours?.open) {
-            return formatTime(address.businessHours.defaultHours.open);
+            const openTime = formatTime(address.businessHours.defaultHours.open);
+            console.log(`🕐 BOL DEBUG: Using default hours open: ${openTime}`);
+            return openTime;
         }
     }
     
     // Check legacy format
     if (address.openHours || address.openTime) {
-        return formatTime(address.openHours || address.openTime);
+        const openTime = formatTime(address.openHours || address.openTime);
+        console.log(`🕐 BOL DEBUG: Using legacy open hours: ${openTime}`);
+        return openTime;
     }
     
+    console.log(`🕐 BOL DEBUG: No open time found, returning empty string`);
     // Return empty string if no time found
     return '';
 }
@@ -849,6 +895,15 @@ function extractOpenTime(address) {
  * @returns {string} - Formatted close time or empty string
  */
 function extractCloseTime(address) {
+    console.log(`🕕 BOL DEBUG: Extracting close time from address:`, {
+        hasBusinessHours: !!address?.businessHours,
+        hasLegacyCloseHours: !!address?.closeHours,
+        hasCloseTime: !!address?.closeTime,
+        businessHours: address?.businessHours,
+        closeHours: address?.closeHours,
+        closeTime: address?.closeTime
+    });
+    
     // Check for business hours in various formats
     if (address.businessHours) {
         // New format with business hours object
@@ -856,18 +911,25 @@ function extractCloseTime(address) {
             // For custom hours, we could show "Varies" or extract Monday hours as default
             const mondayHours = address.businessHours.customHours?.monday;
             if (mondayHours && !mondayHours.closed && mondayHours.close) {
-                return formatTime(mondayHours.close);
+                const closeTime = formatTime(mondayHours.close);
+                console.log(`🕕 BOL DEBUG: Using Monday custom hours close: ${closeTime}`);
+                return closeTime;
             }
         } else if (address.businessHours.defaultHours?.close) {
-            return formatTime(address.businessHours.defaultHours.close);
+            const closeTime = formatTime(address.businessHours.defaultHours.close);
+            console.log(`🕕 BOL DEBUG: Using default hours close: ${closeTime}`);
+            return closeTime;
         }
     }
     
     // Check legacy format
     if (address.closeHours || address.closeTime) {
-        return formatTime(address.closeHours || address.closeTime);
+        const closeTime = formatTime(address.closeHours || address.closeTime);
+        console.log(`🕕 BOL DEBUG: Using legacy close hours: ${closeTime}`);
+        return closeTime;
     }
     
+    console.log(`🕕 BOL DEBUG: No close time found, returning empty string`);
     // Return empty string if no time found
     return '';
 }
@@ -1031,7 +1093,7 @@ function drawExactThirdPartySection(doc, bolData) {
     
     // 3rd Party checkbox with enhanced detection
     doc.rect(520, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
-    const isThirdParty = ['3rd party', 'third party', 'thirdparty', '3rdparty', 'third-party', 'bill to'].includes(normalizedBillingType) || 
+    const isThirdParty = ['3rd party', 'third party', 'thirdparty', '3rdparty', 'third-party', 'third_party', 'bill to'].includes(normalizedBillingType) || 
                         normalizedBillingType.includes('third') || 
                         normalizedBillingType.includes('3rd');
     if (isThirdParty) {
@@ -1376,32 +1438,19 @@ function drawExactFreightTable(doc, bolData) {
        .fontSize(8)
        .fillColor('#000000');
     
-    // Draw totals side by side in a clean, separate area
-    const totalsStartX = 350; // Position for side-by-side layout
-    const piecesLabelWidth = 70;
-    const piecesValueWidth = 30;
-    const spaceBetween = 80; // Space between pieces and weight sections
-    const weightLabelWidth = 70;
-    const weightValueWidth = 60;
+    // FIXED: Draw totals separately with much closer spacing to prevent cutoff
+    const totalsStartX = 30; // Start from left edge
     
-    // Total Pieces (left side)
-    doc.text('TOTAL PIECES:', totalsStartX, totalsY, {
-           width: piecesLabelWidth,
-           align: 'left'
-       })
-       .text(calculatedTotalPieces.toString(), totalsStartX + piecesLabelWidth + 10, totalsY, {
-           width: piecesValueWidth,
+    // Draw TOTAL PIECES first
+    doc.text(`TOTAL PIECES: ${calculatedTotalPieces}`, totalsStartX, totalsY, {
            align: 'left'
        });
     
-    // Total Weight (right side, same Y position)
-    const weightStartX = totalsStartX + piecesLabelWidth + piecesValueWidth + spaceBetween;
-    doc.text('TOTAL WEIGHT:', weightStartX, totalsY, {
-           width: weightLabelWidth,
-           align: 'left'
-       })
-       .text(`${calculatedTotalWeight.toFixed(0)} LBS`, weightStartX + weightLabelWidth + 10, totalsY, {
-           width: weightValueWidth,
+    // Draw TOTAL WEIGHT right after pieces with minimal spacing
+    const piecesTextWidth = doc.widthOfString(`TOTAL PIECES: ${calculatedTotalPieces}`);
+    const weightStartX = totalsStartX + piecesTextWidth + 40; // Only 40px spacing between them
+    
+    doc.text(`TOTAL WEIGHT: ${calculatedTotalWeight.toFixed(0)} LBS`, weightStartX, totalsY, {
            align: 'left'
        });
 }
