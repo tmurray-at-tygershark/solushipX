@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Box,
     Container,
@@ -46,6 +46,8 @@ import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate'; // Impo
 import QRCode from 'qrcode'; // Import QR code library
 import TrackingDetailSidebar from './TrackingDetailSidebar';
 import { Suspense } from 'react';
+import Header from '../Navigation/Header';
+import Footer from '../Footer/Footer';
 
 // Helper functions (copied from ShipmentDetail.jsx)
 const getStatusColor = (status) => {
@@ -321,51 +323,50 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
             if (isSolushipXId) {
                 console.log(`Identified ${identifier} as SolushipX ID.`);
 
-                // Query for shipment by shipmentID field
+                // Query for shipment by shipmentID field - this should work for ICAL-223VYD
                 const shipmentsRef = collection(db, 'shipments');
                 const q = query(shipmentsRef, where('shipmentID', '==', identifier));
-                const querySnapshot = await getDocs(q);
 
-                if (!querySnapshot.empty) {
-                    foundShipment = querySnapshot.docs[0];
-                    console.log(`Found SolushipX shipment with ID "${identifier}"`);
-                } else {
-                    console.log(`SolushipX ID "${identifier}" not found in Firestore.`);
-                    setDisplayError(`SolushipX shipment "${identifier}" not found. Please verify the shipment ID is correct.`);
+                try {
+                    const querySnapshot = await getDocs(q);
+                    if (!querySnapshot.empty) {
+                        foundShipment = querySnapshot.docs[0];
+                        console.log(`Found SolushipX shipment with ID "${identifier}"`);
+                    } else {
+                        console.log(`SolushipX ID "${identifier}" not found in Firestore.`);
+                        setDisplayError(`SolushipX shipment "${identifier}" not found. Please verify the shipment ID is correct.`);
+                        setLoading(false);
+                        return;
+                    }
+                } catch (queryError) {
+                    console.error(`Error querying shipmentID:`, queryError);
+                    setDisplayError(`Error searching for shipment "${identifier}". Please try again.`);
                     setLoading(false);
                     return;
                 }
             } else {
-                // For non-SolushipX IDs, try to find if this tracking number belongs to an existing shipment
+                // For non-SolushipX IDs, try simpler queries first
                 console.log(`Checking if "${identifier}" is a tracking number for an existing SolushipX shipment.`);
 
                 const shipmentsRef = collection(db, 'shipments');
 
-                // Try multiple tracking number fields that might contain this value
-                const trackingQueries = [
-                    query(shipmentsRef, where('trackingNumber', '==', identifier)),
-                    query(shipmentsRef, where('selectedRateRef.Barcode', '==', identifier)),
-                    query(shipmentsRef, where('selectedRate.Barcode', '==', identifier)),
-                    query(shipmentsRef, where('carrierBookingConfirmation.trackingNumber', '==', identifier)),
-                    query(shipmentsRef, where('selectedRateRef.trackingNumber', '==', identifier)),
-                    query(shipmentsRef, where('selectedRate.trackingNumber', '==', identifier)),
-                    query(shipmentsRef, where('bookingReferenceNumber', '==', identifier)),
-                    query(shipmentsRef, where('selectedRateRef.BookingReferenceNumber', '==', identifier)),
-                    query(shipmentsRef, where('selectedRate.BookingReferenceNumber', '==', identifier)),
-                    query(shipmentsRef, where('carrierBookingConfirmation.confirmationNumber', '==', identifier)),
-                    query(shipmentsRef, where('carrierBookingConfirmation.proNumber', '==', identifier))
+                // Try basic tracking fields first (most likely to have proper indexes)
+                const basicQueries = [
+                    { field: 'trackingNumber', value: identifier },
+                    { field: 'bookingReferenceNumber', value: identifier }
                 ];
 
-                for (const q of trackingQueries) {
+                for (const queryDef of basicQueries) {
                     try {
+                        const q = query(shipmentsRef, where(queryDef.field, '==', queryDef.value));
                         const querySnapshot = await getDocs(q);
                         if (!querySnapshot.empty) {
                             foundShipment = querySnapshot.docs[0];
-                            console.log(`Found SolushipX shipment with tracking number "${identifier}"`);
+                            console.log(`Found SolushipX shipment with ${queryDef.field} "${identifier}"`);
                             break;
                         }
                     } catch (queryError) {
-                        console.warn(`Query failed (likely due to missing index):`, queryError.message);
+                        console.warn(`Query failed for ${queryDef.field}:`, queryError.message);
                         // Continue to next query
                     }
                 }
@@ -500,6 +501,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
         // Cleanup: Unsubscribe when component unmounts or shipment ID changes
         return () => {
+            <Header />
             unsubscribe();
         };
     }, [shipmentData?.id, shipmentData?.shipmentID]); // Re-run if shipment.id or shipment.shipmentID changes
@@ -529,6 +531,32 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         if (displayError) setDisplayError(''); // Clear main display error on new input
     };
 
+    // Helper function to safely parse timestamps
+    const parseTimestamp = (timestamp) => {
+        if (!timestamp) return new Date();
+
+        try {
+            // Handle Firestore Timestamp objects
+            if (timestamp && typeof timestamp === 'object' && timestamp.toDate && typeof timestamp.toDate === 'function') {
+                return timestamp.toDate();
+            }
+            // Handle timestamp objects with seconds and nanoseconds
+            if (timestamp && typeof timestamp === 'object' && typeof timestamp.seconds === 'number') {
+                return new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+            }
+            // Handle Date objects
+            if (timestamp instanceof Date) {
+                return isNaN(timestamp.getTime()) ? new Date() : timestamp;
+            }
+            // Handle string or number timestamps
+            const date = new Date(timestamp);
+            return isNaN(date.getTime()) ? new Date() : date;
+        } catch (error) {
+            console.warn('Error parsing timestamp:', timestamp, error);
+            return new Date();
+        }
+    };
+
     // Merge tracking and shipment events, exactly like ShipmentDetail.jsx
     const mergedEvents = useMemo(() => {
         let all = [
@@ -538,7 +566,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 status: event.title,
                 description: event.description,
                 location: { city: '', state: '', postalCode: '' },
-                timestamp: new Date(event.timestamp),
+                timestamp: parseTimestamp(event.timestamp),
                 color: getStatusColor(event.eventType || event.status),
                 icon: getStatusIcon(event.eventType || event.status),
                 eventType: event.eventType,
@@ -554,7 +582,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 status: 'Created',
                 description: 'Shipment was created',
                 location: { city: '', state: '', postalCode: '' },
-                timestamp: shipmentData.createdAt.toDate ? shipmentData.createdAt.toDate() : new Date(shipmentData.createdAt),
+                timestamp: parseTimestamp(shipmentData.createdAt),
                 color: getStatusColor('created'),
                 icon: getStatusIcon('created'),
                 eventType: 'created',
@@ -886,10 +914,14 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     }
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            {MainContent}
-        </Container>
+        <>
+            <Header />
+            <Container maxWidth="lg" sx={{ py: 4, minHeight: "calc(100vh - 200px)" }}>
+                {MainContent}
+            </Container>
+            <Footer />
+        </>
     );
 };
 
-export default Tracking; 
+export default Tracking;

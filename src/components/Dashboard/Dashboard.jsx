@@ -2444,7 +2444,7 @@ const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
-    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath } = useCompany();
+    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath, clearStoredCompanyContext } = useCompany();
     const navigate = useNavigate();
     const location = useLocation();
     const { logout, userRole, currentUser } = useAuth();
@@ -3606,6 +3606,7 @@ const Dashboard = () => {
                             onClick={() => {
                                 const returnPath = getAdminReturnPath();
                                 clearAdminReturnPath();
+                                clearStoredCompanyContext(); // Clear stored company context when returning to admin
                                 navigate(returnPath);
                             }}
                             sx={{

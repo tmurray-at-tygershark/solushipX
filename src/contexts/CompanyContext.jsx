@@ -27,6 +27,27 @@ export const CompanyProvider = ({ children }) => {
             setError(null);
 
             try {
+                // For super admins, check if there's a stored company context first
+                if (ADMIN_ROLES.includes(userRole)) {
+                    const storedCompanyId = localStorage.getItem('solushipx_selected_company_id');
+                    const storedCompanyData = localStorage.getItem('solushipx_selected_company_data');
+
+                    if (storedCompanyId && storedCompanyData) {
+                        try {
+                            const parsedCompanyData = JSON.parse(storedCompanyData);
+                            console.log('🔄 Restoring stored company context for super admin:', storedCompanyId);
+                            setCompanyData(parsedCompanyData);
+                            setCompanyIdForAddress(storedCompanyId);
+                            setLoading(false);
+                            return;
+                        } catch (parseError) {
+                            console.warn('Failed to parse stored company data, falling back to default:', parseError);
+                            localStorage.removeItem('solushipx_selected_company_id');
+                            localStorage.removeItem('solushipx_selected_company_data');
+                        }
+                    }
+                }
+
                 const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
 
                 if (!userDoc.exists()) {
@@ -35,17 +56,51 @@ export const CompanyProvider = ({ children }) => {
 
                 const userData = userDoc.data();
 
+                // For super admins, if no stored context, use the first connected company as default
+                if (ADMIN_ROLES.includes(userRole)) {
+                    const defaultCompanyId = userData.connectedCompanies?.companies?.[0];
+
+                    if (defaultCompanyId) {
+                        console.log('Super admin with no stored company context - using first connected company as default:', defaultCompanyId);
+
+                        // Query for the default company document
+                        const companiesQuery = query(
+                            collection(db, 'companies'),
+                            where('companyID', '==', defaultCompanyId),
+                            limit(1)
+                        );
+
+                        const companiesSnapshot = await getDocs(companiesQuery);
+
+                        if (!companiesSnapshot.empty) {
+                            const companyDoc = companiesSnapshot.docs[0];
+                            const companyDocData = companyDoc.data();
+                            const companyDocId = companyDoc.id;
+
+                            const companyWithId = {
+                                ...companyDocData,
+                                id: companyDocId
+                            };
+
+                            setCompanyData(companyWithId);
+                            setCompanyIdForAddress(companyDocData.companyID);
+                            setLoading(false);
+                            return;
+                        }
+                    }
+
+                    // If no default company found, set no company context
+                    console.log('Super admin with no stored company context and no default company - setting no company context');
+                    setCompanyData(null);
+                    setCompanyIdForAddress(null);
+                    setLoading(false);
+                    return;
+                }
+
+                // For regular users, use the default company logic
                 const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
 
                 if (!companyIdValue) {
-                    // For admin users, missing company data is OK
-                    if (ADMIN_ROLES.includes(userRole)) {
-                        console.log('Admin user with no company data - this is normal');
-                        setCompanyData(null);
-                        setCompanyIdForAddress(null);
-                        setLoading(false);
-                        return;
-                    }
                     throw new Error('No company ID found.');
                 }
 
@@ -101,6 +156,18 @@ export const CompanyProvider = ({ children }) => {
     const clearCompanyData = () => {
         setCompanyData(null);
         setCompanyIdForAddress(null);
+
+        // Clear stored company context from localStorage
+        localStorage.removeItem('solushipx_selected_company_id');
+        localStorage.removeItem('solushipx_selected_company_data');
+        console.log('🧹 Cleared stored company context from localStorage');
+    };
+
+    // Function to clear stored company context (for returning to admin dashboard)
+    const clearStoredCompanyContext = () => {
+        localStorage.removeItem('solushipx_selected_company_id');
+        localStorage.removeItem('solushipx_selected_company_data');
+        console.log('🧹 Cleared stored company context');
     };
 
     // Function to refresh company data from Firestore
@@ -148,16 +215,52 @@ export const CompanyProvider = ({ children }) => {
             }
 
             const userData = userDoc.data();
+
+            // For super admins, if no stored context, use the first connected company as default
+            if (ADMIN_ROLES.includes(userRole)) {
+                const defaultCompanyId = userData.connectedCompanies?.companies?.[0];
+
+                if (defaultCompanyId) {
+                    console.log('Super admin force refresh with no stored company context - using first connected company as default:', defaultCompanyId);
+
+                    // Query for the default company document
+                    const companiesQuery = query(
+                        collection(db, 'companies'),
+                        where('companyID', '==', defaultCompanyId),
+                        limit(1)
+                    );
+
+                    const companiesSnapshot = await getDocs(companiesQuery);
+
+                    if (!companiesSnapshot.empty) {
+                        const companyDoc = companiesSnapshot.docs[0];
+                        const companyDocData = companyDoc.data();
+                        const companyDocId = companyDoc.id;
+
+                        const companyWithId = {
+                            ...companyDocData,
+                            id: companyDocId
+                        };
+
+                        setCompanyData(companyWithId);
+                        setCompanyIdForAddress(companyDocData.companyID);
+                        setLoading(false);
+                        return;
+                    }
+                }
+
+                // If no default company found, set no company context
+                console.log('Super admin force refresh with no stored company context and no default company - setting no company context');
+                setCompanyData(null);
+                setCompanyIdForAddress(null);
+                setLoading(false);
+                return;
+            }
+
+            // For regular users, use the default company logic
             const companyIdValue = userData.connectedCompanies?.companies?.[0] || userData.companies?.[0];
 
             if (!companyIdValue) {
-                if (ADMIN_ROLES.includes(userRole)) {
-                    console.log('Admin user with no company data - this is normal');
-                    setCompanyData(null);
-                    setCompanyIdForAddress(null);
-                    setLoading(false);
-                    return;
-                }
                 throw new Error('No company ID found.');
             }
 
@@ -208,6 +311,13 @@ export const CompanyProvider = ({ children }) => {
             setCompanyData(newCompanyData);
             setCompanyIdForAddress(newCompanyData.companyID);
 
+            // Store the selected company in localStorage for persistence
+            if (ADMIN_ROLES.includes(userRole)) {
+                localStorage.setItem('solushipx_selected_company_id', newCompanyData.companyID);
+                localStorage.setItem('solushipx_selected_company_data', JSON.stringify(newCompanyData));
+                console.log('💾 Stored company context in localStorage:', newCompanyData.companyID);
+            }
+
             return Promise.resolve();
         } catch (err) {
             console.error('Error setting company context:', err);
@@ -236,6 +346,7 @@ export const CompanyProvider = ({ children }) => {
         setCompanyContext,
         getAdminReturnPath,
         clearAdminReturnPath,
+        clearStoredCompanyContext,
         isAdmin: ADMIN_ROLES.includes(userRole)
     };
 

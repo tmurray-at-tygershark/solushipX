@@ -704,6 +704,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onBackToTable={onBackToTable}
                     onCancelShipment={() => setCancelModalOpen(true)}
                     onShowSnackbar={showSnackbar}
+                    onRefreshShipment={refreshShipment}
                     isAdmin={isAdmin}
                 />
 

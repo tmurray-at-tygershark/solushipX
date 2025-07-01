@@ -15,7 +15,8 @@ import {
     ArrowBackIosNew as ArrowBackIosNewIcon,
     QrCode as QrCodeIcon,
     ContentCopy as ContentCopyIcon,
-    NavigateNext as NavigateNextIcon
+    NavigateNext as NavigateNextIcon,
+    Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import StatusChip from '../../StatusChip/StatusChip';
@@ -35,6 +36,7 @@ const ShipmentHeader = ({
     onBackToTable,
     onCancelShipment,
     onShowSnackbar,
+    onRefreshShipment,
     isAdmin = false
 }) => {
     const navigate = useNavigate();
@@ -124,6 +126,29 @@ const ShipmentHeader = ({
                             title="Copy shipment ID"
                         >
                             <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                        </Button>
+                        <Button
+                            size="small"
+                            onClick={() => {
+                                if (onRefreshShipment) {
+                                    onRefreshShipment();
+                                    onShowSnackbar && onShowSnackbar('Refreshing shipment data...', 'info');
+                                }
+                            }}
+                            variant="text"
+                            sx={{
+                                minWidth: 'auto',
+                                width: '32px',
+                                height: '32px',
+                                padding: 0,
+                                color: '#64748b',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(100, 116, 139, 0.1)'
+                                }
+                            }}
+                            title="Refresh shipment data"
+                        >
+                            <RefreshIcon sx={{ fontSize: '14px' }} />
                         </Button>
                     </Box>
 

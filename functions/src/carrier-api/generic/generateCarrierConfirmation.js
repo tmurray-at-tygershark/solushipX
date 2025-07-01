@@ -340,16 +340,16 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         attention: carrierAttention
     });
 
-    // FIXED: Extract actual business hours from shipment info instead of hardcoded values
+    // FIXED: Extract business hours from address records like BOL does
     const shipperHours = {
-        open: shipmentData.shipmentInfo?.earliestPickup || '',   // Use actual pickup times
-        close: shipmentData.shipmentInfo?.latestPickup || '',    // Use actual pickup times
+        open: extractOpenTime(shipFrom),   // Use address-based extraction like BOL
+        close: extractCloseTime(shipFrom), // Use address-based extraction like BOL
         closed: false
     };
     
     const consigneeHours = {
-        open: shipmentData.shipmentInfo?.earliestDelivery || '', // Use actual delivery times
-        close: shipmentData.shipmentInfo?.latestDelivery || '',  // Use actual delivery times
+        open: extractOpenTime(shipTo),   // Use address-based extraction like BOL
+        close: extractCloseTime(shipTo), // Use address-based extraction like BOL
         closed: false
     };
     
@@ -453,6 +453,126 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         // Complete shipment data for reference
         shipmentData: shipmentData
     };
+}
+
+/**
+ * Extracts open time from address record with proper fallback
+ * @param {Object} address - Address object from shipment data
+ * @returns {string} - Formatted open time or empty string
+ */
+function extractOpenTime(address) {
+    console.log(`🕐 CARRIER CONFIRMATION DEBUG: Extracting open time from address:`, {
+        hasBusinessHours: !!address?.businessHours,
+        hasLegacyOpenHours: !!address?.openHours,
+        hasOpenTime: !!address?.openTime,
+        businessHours: address?.businessHours,
+        openHours: address?.openHours,
+        openTime: address?.openTime
+    });
+    
+    // Check for business hours in various formats
+    if (address.businessHours) {
+        // New format with business hours object
+        if (address.businessHours.useCustomHours) {
+            // For custom hours, we could show "Varies" or extract Monday hours as default
+            const mondayHours = address.businessHours.customHours?.monday;
+            if (mondayHours && !mondayHours.closed && mondayHours.open) {
+                const openTime = formatTime(mondayHours.open);
+                console.log(`🕐 CARRIER CONFIRMATION DEBUG: Using Monday custom hours open: ${openTime}`);
+                return openTime;
+            }
+        } else if (address.businessHours.defaultHours?.open) {
+            const openTime = formatTime(address.businessHours.defaultHours.open);
+            console.log(`🕐 CARRIER CONFIRMATION DEBUG: Using default hours open: ${openTime}`);
+            return openTime;
+        }
+    }
+    
+    // Check legacy format
+    if (address.openHours || address.openTime) {
+        const openTime = formatTime(address.openHours || address.openTime);
+        console.log(`🕐 CARRIER CONFIRMATION DEBUG: Using legacy open hours: ${openTime}`);
+        return openTime;
+    }
+    
+    console.log(`🕐 CARRIER CONFIRMATION DEBUG: No open time found, returning empty string`);
+    // Return empty string if no time found
+    return '';
+}
+
+/**
+ * Extracts close time from address record with proper fallback
+ * @param {Object} address - Address object from shipment data
+ * @returns {string} - Formatted close time or empty string
+ */
+function extractCloseTime(address) {
+    console.log(`🕕 CARRIER CONFIRMATION DEBUG: Extracting close time from address:`, {
+        hasBusinessHours: !!address?.businessHours,
+        hasLegacyCloseHours: !!address?.closeHours,
+        hasCloseTime: !!address?.closeTime,
+        businessHours: address?.businessHours,
+        closeHours: address?.closeHours,
+        closeTime: address?.closeTime
+    });
+    
+    // Check for business hours in various formats
+    if (address.businessHours) {
+        // New format with business hours object
+        if (address.businessHours.useCustomHours) {
+            // For custom hours, we could show "Varies" or extract Monday hours as default
+            const mondayHours = address.businessHours.customHours?.monday;
+            if (mondayHours && !mondayHours.closed && mondayHours.close) {
+                const closeTime = formatTime(mondayHours.close);
+                console.log(`🕕 CARRIER CONFIRMATION DEBUG: Using Monday custom hours close: ${closeTime}`);
+                return closeTime;
+            }
+        } else if (address.businessHours.defaultHours?.close) {
+            const closeTime = formatTime(address.businessHours.defaultHours.close);
+            console.log(`🕕 CARRIER CONFIRMATION DEBUG: Using default hours close: ${closeTime}`);
+            return closeTime;
+        }
+    }
+    
+    // Check legacy format
+    if (address.closeHours || address.closeTime) {
+        const closeTime = formatTime(address.closeHours || address.closeTime);
+        console.log(`🕕 CARRIER CONFIRMATION DEBUG: Using legacy close hours: ${closeTime}`);
+        return closeTime;
+    }
+    
+    console.log(`🕕 CARRIER CONFIRMATION DEBUG: No close time found, returning empty string`);
+    // Return empty string if no time found
+    return '';
+}
+
+/**
+ * Formats time string to consistent format
+ * @param {string} timeString - Time in various formats
+ * @returns {string} - Formatted time (HH:MM)
+ */
+function formatTime(timeString) {
+    if (!timeString || timeString.trim() === '') {
+        return '';
+    }
+    
+    // If already in HH:MM format, return as is
+    if (/^\d{1,2}:\d{2}$/.test(timeString)) {
+        return timeString;
+    }
+    
+    // If in HHMM format, add colon
+    if (/^\d{4}$/.test(timeString)) {
+        return `${timeString.substring(0, 2)}:${timeString.substring(2, 4)}`;
+    }
+    
+    // If in H:MM or HH:M format, normalize
+    if (/^\d{1,2}:\d{1,2}$/.test(timeString)) {
+        const [hours, minutes] = timeString.split(':');
+        return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+    }
+    
+    // Return as-is if can't parse
+    return timeString;
 }
 
 /**

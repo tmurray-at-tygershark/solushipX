@@ -349,11 +349,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         dangerousGoodsType: 'none',
         signatureServiceType: 'none',
         notes: '',
-        // ADD TIMING FIELDS - URGENT FIX for BOL open/close times
-        earliestPickup: '09:00',
-        latestPickup: '17:00',
-        earliestDelivery: '09:00',
-        latestDelivery: '17:00'
+
     });
 
     // Address state - simplified to use AddressBook
@@ -453,6 +449,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     const [showSuccessSnackbar, setShowSuccessSnackbar] = useState(false);
     const mainContentRef = useRef(null);
 
+    // Email notification toggle state
+    const [sendEmailNotifications, setSendEmailNotifications] = useState(true);
+
     // Company selection state for super admins
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
@@ -500,88 +499,87 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         }
     }, []);
 
-    // Handle company selection for super admins
+    // Atomic company context switching for super admins
     const handleCompanySelection = useCallback(async (companyId) => {
         try {
-            setSelectedCompanyId(companyId);
+            console.log('🔄 Starting atomic company switch to:', companyId);
 
-            if (companyId) {
-                // Query for the selected company data
-                const companiesQuery = query(
-                    collection(db, 'companies'),
-                    where('companyID', '==', companyId),
-                    limit(1)
-                );
-
-                const companiesSnapshot = await getDocs(companiesQuery);
-
-                if (!companiesSnapshot.empty) {
-                    const companyDoc = companiesSnapshot.docs[0];
-                    const companyDocData = companyDoc.data();
-
-                    const targetCompanyData = {
-                        ...companyDocData,
-                        id: companyDoc.id
-                    };
-
-                    setSelectedCompanyData(targetCompanyData);
-
-                    // CLEAR ADDRESSES when company changes - they belong to the previous company
-                    setShipFromAddress(null);
-                    setShipToAddress(null);
-                    setAvailableAddresses([]); // Clear available addresses as they're for the old company
-
-                    // CLEAR CARRIERS when company changes - they belong to the previous company
-                    setQuickShipCarriers([]); // Clear carrier list
-                    setSelectedCarrier(''); // Clear selected carrier
-                    setSelectedCarrierContactId(''); // Clear selected carrier contact
-                    setLoadingCarriers(true); // Show loading state for new carrier fetch
-
-                    // LOAD CUSTOMERS for the selected company
-                    await loadCustomersForCompany(companyId);
-
-                    // Clear form sections as well
-                    updateFormSection('shipFrom', {});
-                    updateFormSection('shipTo', {});
-
-                    // Switch company context
-                    await setCompanyContext(targetCompanyData);
-
-                    // CRITICAL: Force reload addresses after company context switch
-                    // Small delay to ensure context is fully updated
-                    setTimeout(() => {
-                        console.log('🔄 Force reloading addresses after company switch');
-                        loadAddresses();
-                    }, 100);
-
-                    console.log('✅ Super admin switched to company context:', targetCompanyData.name);
-                    console.log('🧹 Cleared ship from/to addresses and carriers for new company');
-                    // Show success message
-                    showSuccess(`Switched to ${targetCompanyData.name || companyId}`);
-                } else {
-                    console.warn('⚠️ Company not found:', companyId);
-                    setError(`⚠️ Warning: Company ${companyId} not found`);
-                    setTimeout(() => setError(null), 3000);
-                }
-            } else {
+            if (!companyId) {
+                // Clear everything when no company selected
+                setSelectedCompanyId(null);
                 setSelectedCompanyData(null);
-                // Clear addresses when no company is selected
-                setShipFromAddress(null);
-                setShipToAddress(null);
-                setAvailableAddresses([]);
-                // Clear carriers when no company is selected
-                setQuickShipCarriers([]);
-                setSelectedCarrier('');
-                setSelectedCarrierContactId('');
-                updateFormSection('shipFrom', {});
-                updateFormSection('shipTo', {});
+                clearDependentState();
+                return;
             }
+
+            // 1. Fetch company data first
+            const companiesQuery = query(
+                collection(db, 'companies'),
+                where('companyID', '==', companyId),
+                limit(1)
+            );
+
+            const companiesSnapshot = await getDocs(companiesQuery);
+
+            if (companiesSnapshot.empty) {
+                console.warn('⚠️ Company not found:', companyId);
+                setError(`⚠️ Warning: Company ${companyId} not found`);
+                setTimeout(() => setError(null), 3000);
+                return;
+            }
+
+            const companyDoc = companiesSnapshot.docs[0];
+            const companyDocData = companyDoc.data();
+            const targetCompanyData = {
+                ...companyDocData,
+                id: companyDoc.id
+            };
+
+            // 2. Update local state
+            setSelectedCompanyId(companyId);
+            setSelectedCompanyData(targetCompanyData);
+
+            // 3. Clear dependent state immediately
+            clearDependentState();
+
+            // 4. Switch company context atomically
+            await setCompanyContext(targetCompanyData);
+
+            // 5. Load new company data in parallel
+            await Promise.all([
+                loadCustomersForCompany(companyId),
+                loadAddressesForCompany(companyId),
+                loadCarriersForCompany(companyId)
+            ]);
+
+            console.log('✅ Atomic company switch completed:', targetCompanyData.name);
+            showSuccess(`Switched to ${targetCompanyData.name || companyId}`);
+
         } catch (error) {
-            console.error('❌ Error switching company context:', error);
+            console.error('❌ Error in atomic company switch:', error);
             setError('Error switching company context');
             setTimeout(() => setError(null), 3000);
         }
     }, [setCompanyContext, updateFormSection]);
+
+    // Helper function to clear all dependent state
+    const clearDependentState = useCallback(() => {
+        // Clear addresses
+        setShipFromAddress(null);
+        setShipToAddress(null);
+        setAvailableAddresses([]);
+
+        // Clear carriers
+        setQuickShipCarriers([]);
+        setSelectedCarrier('');
+        setSelectedCarrierContactId('');
+
+        // Clear form sections
+        updateFormSection('shipFrom', {});
+        updateFormSection('shipTo', {});
+
+        console.log('🧹 Cleared all dependent state for company switch');
+    }, [updateFormSection]);
 
     // Scroll to error function
     const scrollToError = () => {
@@ -796,31 +794,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         createInitialDraft();
     }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem]);
 
-    useEffect(() => {
-        const loadCarriers = async () => {
-            if (!companyIdForAddress) return;
-
-            setLoadingCarriers(true);
-            try {
-                const carriersQuery = query(
-                    collection(db, 'quickshipCarriers'),
-                    where('companyID', '==', companyIdForAddress)
-                );
-                const carriersSnapshot = await getDocs(carriersQuery);
-                const carriers = carriersSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                setQuickShipCarriers(carriers);
-            } catch (error) {
-                console.error('Error loading quick ship carriers:', error);
-            } finally {
-                setLoadingCarriers(false);
-            }
-        };
-
-        loadCarriers();
-    }, [companyIdForAddress]);
+    // Remove duplicate carrier loading effect - carriers are now loaded with company switching
 
     // Enhanced carrier management functions
     const handleAddCarrier = () => {
@@ -1563,7 +1537,10 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             const bookQuickShipFunction = httpsCallable(functions, 'bookQuickShipment');
 
             const result = await bookQuickShipFunction({
-                shipmentData: shipmentData,
+                shipmentData: {
+                    ...shipmentData,
+                    skipEmailNotifications: !sendEmailNotifications // Add email toggle flag
+                },
                 carrierDetails: carrierDetails
             });
 
@@ -1756,6 +1733,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                         if (draftData.unitSystem) {
                             setUnitSystem(draftData.unitSystem);
                         }
+
+                        // Load email notification preference
+                        if (typeof draftData.sendEmailNotifications === 'boolean') {
+                            setSendEmailNotifications(draftData.sendEmailNotifications);
+                        }
                     }, 50);
                 } else {
                     // If not a quickship draft, close and show error
@@ -1794,8 +1776,47 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     // Only load if it's a quickship draft
                     if (draftData.creationMethod === 'quickship') {
                         console.log('Loading QuickShip draft:', draftData);
-                        console.log('Draft shipFrom data:', draftData.shipFrom);
-                        console.log('Draft packages data:', draftData.packages);
+                        console.log('Draft company ID:', draftData.companyID);
+                        console.log('Current company context:', companyIdForAddress);
+
+                        // CRITICAL: Validate and switch company context if needed
+                        if (draftData.companyID && draftData.companyID !== companyIdForAddress) {
+                            console.log('🔄 Draft belongs to different company, switching context');
+
+                            try {
+                                // Fetch company data for the draft
+                                const companiesQuery = query(
+                                    collection(db, 'companies'),
+                                    where('companyID', '==', draftData.companyID),
+                                    limit(1)
+                                );
+                                const companiesSnapshot = await getDocs(companiesQuery);
+
+                                if (!companiesSnapshot.empty) {
+                                    const companyDoc = companiesSnapshot.docs[0];
+                                    const companyDocData = companyDoc.data();
+                                    const targetCompanyData = {
+                                        ...companyDocData,
+                                        id: companyDoc.id
+                                    };
+
+                                    // Switch company context
+                                    await setCompanyContext(targetCompanyData);
+
+                                    // Update local state for super admins
+                                    if (userRole === 'superadmin') {
+                                        setSelectedCompanyId(draftData.companyID);
+                                        setSelectedCompanyData(targetCompanyData);
+                                    }
+
+                                    console.log('✅ Switched to draft company context:', targetCompanyData.name);
+                                } else {
+                                    console.warn('⚠️ Draft company not found:', draftData.companyID);
+                                }
+                            } catch (contextError) {
+                                console.error('❌ Error switching to draft company context:', contextError);
+                            }
+                        }
 
                         // Set the shipment ID from the draft
                         if (draftData.shipmentID) {
@@ -1805,7 +1826,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             setShipmentID(draftId);
                         }
 
-                        // Load address data immediately - check flags at execution time
+                        // Load address data after company context is established
                         if (draftData.shipFrom) {
                             console.log('Loading shipFrom data:', draftData.shipFrom);
                             setShipFromAddress(draftData.shipFrom);
@@ -1866,6 +1887,11 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                             // Load unit system
                             if (draftData.unitSystem) {
                                 setUnitSystem(draftData.unitSystem);
+                            }
+
+                            // Load email notification preference
+                            if (typeof draftData.sendEmailNotifications === 'boolean') {
+                                setSendEmailNotifications(draftData.sendEmailNotifications);
                             }
                         }, 50);
                     } else {
@@ -1982,6 +2008,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 carrier: selectedCarrier || '', // Direct carrier field for table display
                 carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '', // Save at top level too
 
+                // Email notification preference
+                sendEmailNotifications: sendEmailNotifications,
+
                 // Draft specific fields
                 isDraft: true,
                 draftSavedAt: serverTimestamp(),
@@ -2037,20 +2066,21 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         }
     };
 
-    // Load addresses from AddressBook with customer filtering
-    const loadAddresses = useCallback(async () => {
-        const currentCompanyId = selectedCompanyId || companyIdForAddress;
-        if (!currentCompanyId) {
-            console.log('📍 No company ID available for address loading:', { selectedCompanyId, companyIdForAddress });
+    // Coordinated data loading functions
+    const loadAddressesForCompany = useCallback(async (companyId) => {
+        console.log('🟡 loadAddressesForCompany called with companyId:', companyId);
+        if (!companyId) {
+            console.log('📍 No company ID provided for address loading');
             return;
         }
 
-        console.log('📍 Loading addresses for company:', currentCompanyId);
+        console.log('📍 Loading addresses for company:', companyId);
         setLoadingAddresses(true);
+
         try {
             let addressQuery = query(
                 collection(db, 'addressBook'),
-                where('companyID', '==', currentCompanyId),
+                where('companyID', '==', companyId),
                 where('status', '==', 'active')
             );
 
@@ -2058,7 +2088,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             if (userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all') {
                 addressQuery = query(
                     collection(db, 'addressBook'),
-                    where('companyID', '==', currentCompanyId),
+                    where('companyID', '==', companyId),
                     where('status', '==', 'active'),
                     where('addressClassID', '==', selectedCustomerId)
                 );
@@ -2070,11 +2100,12 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 ...doc.data()
             }));
 
-            console.log('📍 QuickShip Address Loading Debug:', {
-                currentCompanyId,
+            console.log('📍 Address loading completed:', {
+                companyId,
                 selectedCustomerId,
                 userRole,
                 addressCount: addresses.length,
+                addresses,
                 isFiltered: userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all'
             });
 
@@ -2085,49 +2116,61 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         } finally {
             setLoadingAddresses(false);
         }
-    }, [companyIdForAddress, selectedCompanyId, selectedCustomerId, userRole, setError]);
+    }, [selectedCustomerId, userRole]);
 
-    // Load addresses on component mount
-    useEffect(() => {
-        loadAddresses();
-    }, [loadAddresses]);
-
-    // Reload addresses when customer filter changes (for super admins)
-    useEffect(() => {
-        if (userRole === 'superadmin') {
-            loadAddresses();
+    const loadCarriersForCompany = useCallback(async (companyId) => {
+        if (!companyId) {
+            console.log('📍 No company ID provided for carrier loading');
+            return;
         }
-    }, [selectedCustomerId, userRole, loadAddresses]);
 
-    // CRITICAL: Reload addresses when company context changes
-    useEffect(() => {
-        console.log('🔄 Company context changed, reloading addresses:', {
-            selectedCompanyId,
-            companyIdForAddress,
-            userRole
-        });
+        console.log('📍 Loading carriers for company:', companyId);
+        setLoadingCarriers(true);
 
-        // Load addresses whenever the company context changes
-        if (selectedCompanyId || companyIdForAddress) {
-            loadAddresses();
-        }
-    }, [selectedCompanyId, companyIdForAddress, loadAddresses]);
+        try {
+            const carriersQuery = query(
+                collection(db, 'quickshipCarriers'),
+                where('companyID', '==', companyId)
+            );
+            const carriersSnapshot = await getDocs(carriersQuery);
+            const carriers = carriersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
-    // ADDITIONAL: Force address loading when company context becomes available for super admins
-    useEffect(() => {
-        // Check if we're a super admin and just got a company context
-        if (userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress)) {
-            console.log('🎯 Super admin company context available, ensuring addresses load:', {
-                selectedCompanyId,
-                companyIdForAddress
+            console.log('📍 Carrier loading completed:', {
+                companyId,
+                carrierCount: carriers.length
             });
-            // Add a small delay to ensure the company context is fully set
-            const timer = setTimeout(() => {
-                loadAddresses();
-            }, 50);
-            return () => clearTimeout(timer);
+
+            setQuickShipCarriers(carriers);
+        } catch (error) {
+            console.error('Error loading carriers:', error);
+        } finally {
+            setLoadingCarriers(false);
         }
-    }, [userRole, selectedCompanyId, companyIdForAddress, loadAddresses]);
+    }, []);
+
+    // Legacy loadAddresses function for backward compatibility
+    const loadAddresses = useCallback(async () => {
+        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+        if (!currentCompanyId) {
+            console.log('📍 No company ID available for address loading:', { selectedCompanyId, companyIdForAddress });
+            return;
+        }
+        await loadAddressesForCompany(currentCompanyId);
+    }, [selectedCompanyId, companyIdForAddress, loadAddressesForCompany]);
+
+    // Simplified address loading effect - only trigger on customer filter changes
+    useEffect(() => {
+        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+
+        // Only reload addresses when customer filter changes (not company changes)
+        if (currentCompanyId && userRole === 'superadmin') {
+            console.log('🔄 Customer filter changed, reloading addresses for company:', currentCompanyId);
+            loadAddressesForCompany(currentCompanyId);
+        }
+    }, [selectedCustomerId, userRole, loadAddressesForCompany]);
 
     // Debug address state changes
     useEffect(() => {
@@ -2152,24 +2195,164 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         return parts.join(', ');
     };
 
-    // Handle address selection
+    // Time extraction helper functions
+    const extractOpenTime = (address) => {
+        if (!address) return '09:00'; // Default fallback
+
+        let openTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.open) {
+                    openTime = mondayHours.open;
+                }
+            } else if (address.businessHours.defaultHours?.open) {
+                openTime = address.businessHours.defaultHours.open;
+            }
+        }
+
+        // Check direct fields
+        if (!openTime && (address?.openTime || address?.openHours)) {
+            openTime = address.openTime || address.openHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Opening Time', 'openingTime', 'open_time', 'startTime', 'start_time', 'businessOpen'];
+        for (const field of timeFields) {
+            if (!openTime && address?.[field]) {
+                openTime = address[field];
+                break;
+            }
+        }
+
+        // Convert to 24-hour format if needed
+        return formatTimeTo24Hour(openTime) || '09:00';
+    };
+
+    const extractCloseTime = (address) => {
+        if (!address) return '17:00'; // Default fallback
+
+        let closeTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.close) {
+                    closeTime = mondayHours.close;
+                }
+            } else if (address.businessHours.defaultHours?.close) {
+                closeTime = address.businessHours.defaultHours.close;
+            }
+        }
+
+        // Check direct fields
+        if (!closeTime && (address?.closeTime || address?.closeHours)) {
+            closeTime = address.closeTime || address.closeHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Closing Time', 'closingTime', 'close_time', 'endTime', 'end_time', 'businessClose'];
+        for (const field of timeFields) {
+            if (!closeTime && address?.[field]) {
+                closeTime = address[field];
+                break;
+            }
+        }
+
+        // Convert to 24-hour format if needed
+        return formatTimeTo24Hour(closeTime) || '17:00';
+    };
+
+    const formatTimeTo24Hour = (timeString) => {
+        if (!timeString || timeString.toString().trim() === '') {
+            return null;
+        }
+
+        const str = timeString.toString().trim();
+
+        // If already in 24-hour format (HH:MM), return as-is
+        if (/^\d{1,2}:\d{2}$/.test(str)) {
+            const [hours, minutes] = str.split(':');
+            const h = parseInt(hours, 10);
+            const m = parseInt(minutes, 10);
+            if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Handle AM/PM format
+        if (/^\\d{1,2}:\\d{2}\\s*(AM|PM)$/i.test(str)) {
+            const match = str.match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/i);
+            if (match) {
+                let hours = parseInt(match[1], 10);
+                const minutes = parseInt(match[2], 10);
+                const period = match[3].toUpperCase();
+
+                if (period === 'PM' && hours !== 12) {
+                    hours += 12;
+                } else if (period === 'AM' && hours === 12) {
+                    hours = 0;
+                }
+
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Handle HHMM format
+        if (/^\\d{4}$/.test(str)) {
+            const hours = parseInt(str.substring(0, 2), 10);
+            const minutes = parseInt(str.substring(2, 4), 10);
+            if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            }
+        }
+
+        return null;
+    };
+
     const handleAddressSelect = (address, type) => {
         if (type === 'from') {
             setShipFromAddress(address);
+
+            // Extract timing from pickup address
+            const openTime = extractOpenTime(address);
+            const closeTime = extractCloseTime(address);
+
             // Update form context for compatibility with proper address structure
             updateFormSection('shipFrom', {
                 ...address,
                 addressId: address.id,
                 type: 'origin'
             });
+
+            // Update shipment info with extracted pickup times
+            updateFormSection('shipmentInfo', {
+                earliestPickup: openTime,
+                latestPickup: closeTime
+            });
+
         } else {
             setShipToAddress(address);
+
+            // Extract timing from delivery address
+            const openTime = extractOpenTime(address);
+            const closeTime = extractCloseTime(address);
+
             // Update form context for compatibility with proper address structure
             updateFormSection('shipTo', {
                 ...address,
                 addressId: address.id,
                 customerID: address.id, // Use address ID as customer reference
                 type: 'destination'
+            });
+
+            // Update shipment info with extracted delivery times
+            updateFormSection('shipmentInfo', {
+                earliestDelivery: openTime,
+                latestDelivery: closeTime
             });
         }
     };
@@ -2339,6 +2522,26 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         // All validations passed
         return true;
     };
+
+    // Always load addresses, customers, and carriers when company context changes (including first mount)
+    useEffect(() => {
+        // For super admins, prioritize selectedCompanyId over companyIdForAddress to prevent auto switchback
+        const currentCompanyId = userRole === 'superadmin' && selectedCompanyId
+            ? selectedCompanyId
+            : companyIdForAddress;
+
+        console.log('🟢 useEffect: company context changed, currentCompanyId:', currentCompanyId, 'userRole:', userRole, 'selectedCompanyId:', selectedCompanyId);
+
+        if (currentCompanyId) {
+            loadAddressesForCompany(currentCompanyId);
+            loadCustomersForCompany(currentCompanyId);
+            loadCarriersForCompany(currentCompanyId);
+        }
+    }, [companyIdForAddress, selectedCompanyId, userRole]);
+
+    // Add debug log before rendering Ship From/Ship To dropdowns
+    // (Place this right before the return statement)
+    console.log('🚚 Rendering Ship From/To dropdowns with availableAddresses:', availableAddresses);
 
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -3005,101 +3208,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                     </CardContent>
                                 </Card>
 
-                                {/* URGENT FIX: Pickup and Delivery Times for BOL Generation */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
-                                            Pickup & Delivery Times
-                                        </Typography>
-                                        <Grid container spacing={3}>
-                                            {/* Pickup Times */}
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="subtitle2" sx={{ fontSize: '14px', mb: 2, color: '#374151', fontWeight: 600 }}>
-                                                    📦 Pickup Window
-                                                </Typography>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={6}>
-                                                        <TextField
-                                                            fullWidth
-                                                            size="small"
-                                                            label="Earliest Pickup"
-                                                            type="time"
-                                                            value={shipmentInfo.earliestPickup}
-                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, earliestPickup: e.target.value }))}
-                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                                                            sx={{
-                                                                '& .MuiInputBase-input': {
-                                                                    fontSize: '12px',
-                                                                    '&::placeholder': { fontSize: '12px' }
-                                                                }
-                                                            }}
-                                                        />
-                                                    </Grid>
-                                                    <Grid item xs={6}>
-                                                        <TextField
-                                                            fullWidth
-                                                            size="small"
-                                                            label="Latest Pickup"
-                                                            type="time"
-                                                            value={shipmentInfo.latestPickup}
-                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, latestPickup: e.target.value }))}
-                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                                                            sx={{
-                                                                '& .MuiInputBase-input': {
-                                                                    fontSize: '12px',
-                                                                    '&::placeholder': { fontSize: '12px' }
-                                                                }
-                                                            }}
-                                                        />
-                                                    </Grid>
-                                                </Grid>
-                                            </Grid>
 
-                                            {/* Delivery Times */}
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="subtitle2" sx={{ fontSize: '14px', mb: 2, color: '#374151', fontWeight: 600 }}>
-                                                    🚚 Delivery Window
-                                                </Typography>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={6}>
-                                                        <TextField
-                                                            fullWidth
-                                                            size="small"
-                                                            label="Earliest Delivery"
-                                                            type="time"
-                                                            value={shipmentInfo.earliestDelivery}
-                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, earliestDelivery: e.target.value }))}
-                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                                                            sx={{
-                                                                '& .MuiInputBase-input': {
-                                                                    fontSize: '12px',
-                                                                    '&::placeholder': { fontSize: '12px' }
-                                                                }
-                                                            }}
-                                                        />
-                                                    </Grid>
-                                                    <Grid item xs={6}>
-                                                        <TextField
-                                                            fullWidth
-                                                            size="small"
-                                                            label="Latest Delivery"
-                                                            type="time"
-                                                            value={shipmentInfo.latestDelivery}
-                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, latestDelivery: e.target.value }))}
-                                                            InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
-                                                            sx={{
-                                                                '& .MuiInputBase-input': {
-                                                                    fontSize: '12px',
-                                                                    '&::placeholder': { fontSize: '12px' }
-                                                                }
-                                                            }}
-                                                        />
-                                                    </Grid>
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-                                    </CardContent>
-                                </Card>
 
                                 {/* Ship From Section */}
                                 <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
@@ -4377,6 +4486,41 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mt: 1 }}>
                         This will generate shipping documents and send notifications.
                     </Typography>
+
+                    {/* Email Notification Toggle */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 3, mb: 2 }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={sendEmailNotifications}
+                                    onChange={(e) => setSendEmailNotifications(e.target.checked)}
+                                    size="small"
+                                    sx={{
+                                        '& .MuiSwitch-switchBase.Mui-checked': {
+                                            color: '#10b981',
+                                        },
+                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                            backgroundColor: '#10b981',
+                                        },
+                                    }}
+                                />
+                            }
+                            label="Send email notifications"
+                            sx={{
+                                fontSize: '14px',
+                                '& .MuiFormControlLabel-label': {
+                                    fontSize: '14px',
+                                    color: '#374151'
+                                }
+                            }}
+                        />
+                    </Box>
+
+                    {!sendEmailNotifications && (
+                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#f59e0b', fontStyle: 'italic' }}>
+                            ⚠️ Email notifications will be disabled. Documents will still be generated.
+                        </Typography>
+                    )}
                 </DialogContent>
                 <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
                     <Button

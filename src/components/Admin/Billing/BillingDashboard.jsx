@@ -126,7 +126,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [ediProcessedItems, setEdiProcessedItems] = useState([]);
     const [ediLoading, setEdiLoading] = useState(false);
     const [ediDialogOpen, setEdiDialogOpen] = useState(false);
-    const [timeRange, setTimeRange] = useState('month');
+    const [timeRange, setTimeRange] = useState('year');
     const [revenueTrends, setRevenueTrends] = useState([]);
     const [revenueByCompany, setRevenueByCompany] = useState([]);
     const [dragActive, setDragActive] = useState(false);
@@ -230,13 +230,26 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 ...doc.data()
             }));
 
-            // Calculate uninvoiced charges from shipments
+            // Calculate uninvoiced charges from shipments with enhanced QuickShip support
             const uninvoicedCharges = shipmentsData
                 .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
                 .reduce((total, shipment) => {
-                    const charge = shipment.markupRates?.totalCharges ||
-                        shipment.totalCharges ||
-                        shipment.selectedRate?.totalCharges || 0;
+                    let charge = 0;
+
+                    // Enhanced charge extraction to handle QuickShip orders (matching table logic)
+                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                        // Sum up customer charges from manual rates
+                        charge = shipment.manualRates.reduce((sum, rate) => {
+                            return sum + (parseFloat(rate.charge) || 0);
+                        }, 0);
+
+                    } else {
+                        // Use dual rate system for regular shipments
+                        charge = shipment.markupRates?.totalCharges ||
+                            shipment.totalCharges ||
+                            shipment.selectedRate?.totalCharges || 0;
+                    }
+
                     return total + charge;
                 }, 0);
 
@@ -807,13 +820,13 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             const fetchCharges = async () => {
                 setLoading(true);
                 try {
-                    console.log('🔍 Fetching global company charges...');
+                    console.log('🔍 Fetching global company charges with timeRange:', timeRange);
 
                     // Query all shipments across companies
                     const shipmentsRef = collection(db, 'shipments');
                     let q = query(shipmentsRef, where('status', '!=', 'draft'), orderBy('createdAt', 'desc'));
 
-                    // Apply time range filter
+                    // Apply time range filter - enhanced for QuickShip compatibility
                     if (timeRange === 'week') {
                         const startDate = new Date();
                         startDate.setDate(startDate.getDate() - 7);
@@ -821,6 +834,10 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     } else if (timeRange === 'month') {
                         const startDate = new Date();
                         startDate.setMonth(startDate.getMonth() - 1);
+                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
+                    } else if (timeRange === 'year') {
+                        const startDate = new Date();
+                        startDate.setFullYear(startDate.getFullYear() - 1);
                         q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
                     }
 
@@ -847,17 +864,43 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     shipmentsSnapshot.docs.forEach(doc => {
                         const shipment = { id: doc.id, ...doc.data() };
 
-                        // Get both actual cost and customer charge from dual rate system
-                        const actualCost = shipment.actualRates?.totalCharges ||
-                            shipment.totalCharges ||
-                            shipment.selectedRate?.totalCharges || 0;
+                        // Enhanced charge extraction to handle QuickShip orders
+                        let actualCost = 0;
+                        let customerCharge = 0;
 
-                        const customerCharge = shipment.markupRates?.totalCharges ||
-                            shipment.totalCharges ||
-                            shipment.selectedRate?.totalCharges || 0;
+                        // Check if this is a QuickShip order with manual rates
+                        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                            // Sum up costs and charges from manual rates
+                            actualCost = shipment.manualRates.reduce((sum, rate) => {
+                                const cost = parseFloat(rate.cost) || 0;
+                                return sum + cost;
+                            }, 0);
+
+                            customerCharge = shipment.manualRates.reduce((sum, rate) => {
+                                const charge = parseFloat(rate.charge) || 0;
+                                return sum + charge;
+                            }, 0);
+                        } else {
+                            // Use dual rate system for regular shipments
+                            actualCost = shipment.actualRates?.totalCharges ||
+                                shipment.totalCharges ||
+                                shipment.selectedRate?.totalCharges || 0;
+
+                            customerCharge = shipment.markupRates?.totalCharges ||
+                                shipment.totalCharges ||
+                                shipment.selectedRate?.totalCharges || 0;
+                        }
 
                         if (customerCharge > 0) {
                             const company = companyMap[shipment.companyID];
+
+                            // Enhanced date handling for QuickShip vs regular shipments
+                            let shipmentDate;
+                            if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+                                shipmentDate = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+                            } else {
+                                shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+                            }
 
                             shipmentCharges.push({
                                 id: shipment.id,
@@ -869,16 +912,19 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                 customerCharge: customerCharge,
                                 actualRates: shipment.actualRates,
                                 markupRates: shipment.markupRates,
+                                manualRates: shipment.manualRates, // Include manual rates for QuickShip
+                                isQuickShip: shipment.creationMethod === 'quickship',
                                 status: shipment.invoiceStatus || 'uninvoiced',
-                                shipmentDate: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
+                                shipmentDate: shipmentDate,
                                 route: formatRoute(shipment),
                                 carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
                                 shipmentData: shipment
                             });
+
                         }
                     });
 
-                    console.log('💰 Found charges:', shipmentCharges.length);
+                    console.log('💰 Total charges found:', shipmentCharges.length);
 
                     // Apply filters
                     let filteredCharges = shipmentCharges;
@@ -936,25 +982,37 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             }).format(amount);
         };
 
-        const getChargeBreakdown = (rates) => {
+        const getChargeBreakdown = (rates, isQuickShip = false, manualRates = null) => {
+            // Handle QuickShip manual rates
+            if (isQuickShip && manualRates && Array.isArray(manualRates)) {
+                return manualRates.map(rate => ({
+                    name: rate.chargeName || rate.code || 'Unknown',
+                    amount: parseFloat(rate.charge) || 0,
+                    cost: parseFloat(rate.cost) || 0,
+                    currency: rate.chargeCurrency || rate.currency || 'CAD'
+                }));
+            }
+
+            // Handle regular shipment rates
             if (!rates || !rates.charges) return [];
 
             return rates.charges.map(charge => ({
                 name: charge.chargeName || charge.name || 'Unknown',
                 amount: charge.chargeAmount || charge.amount || 0,
+                cost: charge.actualAmount || charge.amount || 0,
                 currency: charge.currency || rates.currency || 'CAD'
             }));
         };
 
-        const ChargeTooltip = ({ amount, rates, title }) => {
-            const breakdown = getChargeBreakdown(rates);
+        const ChargeTooltip = ({ amount, rates, title, isQuickShip = false, manualRates = null }) => {
+            const breakdown = getChargeBreakdown(rates, isQuickShip, manualRates);
 
             return (
                 <Tooltip
                     title={
                         <Box sx={{ p: 1 }}>
                             <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '12px' }}>
-                                {title}
+                                {title} {isQuickShip ? '(QuickShip Manual)' : ''}
                             </Typography>
                             {breakdown.length > 0 ? (
                                 breakdown.map((charge, index) => (
@@ -978,7 +1036,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                     Total:
                                 </Typography>
                                 <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                    {formatCurrency(amount, rates?.currency || 'CAD')}
+                                    {formatCurrency(amount, rates?.currency || (manualRates?.[0]?.chargeCurrency) || 'CAD')}
                                 </Typography>
                             </Box>
                         </Box>
@@ -987,7 +1045,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     placement="top"
                 >
                     <Box sx={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-                        {formatCurrency(amount, rates?.currency || 'CAD')}
+                        {formatCurrency(amount, rates?.currency || (manualRates?.[0]?.chargeCurrency) || 'CAD')}
                     </Box>
                 </Tooltip>
             );
@@ -1163,6 +1221,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                                     amount={charge.actualCost}
                                                     rates={charge.actualRates}
                                                     title="Actual Cost Breakdown"
+                                                    isQuickShip={charge.isQuickShip}
+                                                    manualRates={charge.manualRates}
                                                 />
                                             </TableCell>
                                             <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>
@@ -1170,6 +1230,8 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                                     amount={charge.customerCharge}
                                                     rates={charge.markupRates}
                                                     title="Customer Charge Breakdown"
+                                                    isQuickShip={charge.isQuickShip}
+                                                    manualRates={charge.manualRates}
                                                 />
                                             </TableCell>
                                             <TableCell>

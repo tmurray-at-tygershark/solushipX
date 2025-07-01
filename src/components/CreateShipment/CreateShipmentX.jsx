@@ -1002,10 +1002,154 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         setFilteredRates(filtered);
     }, [rates, sortBy, serviceFilter]);
 
+    // Time extraction helper functions
+    const extractOpenTime = (address) => {
+        if (!address) return '09:00'; // Default fallback
+
+        let openTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.open) {
+                    openTime = mondayHours.open;
+                }
+            } else if (address.businessHours.defaultHours?.open) {
+                openTime = address.businessHours.defaultHours.open;
+            }
+        }
+
+        // Check direct fields
+        if (!openTime && (address?.openTime || address?.openHours)) {
+            openTime = address.openTime || address.openHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Opening Time', 'openingTime', 'open_time', 'startTime', 'start_time', 'businessOpen'];
+        for (const field of timeFields) {
+            if (!openTime && address?.[field]) {
+                openTime = address[field];
+                break;
+            }
+        }
+
+        // Convert to 24-hour format if needed
+        return formatTimeTo24Hour(openTime) || '09:00';
+    };
+
+    const extractCloseTime = (address) => {
+        if (!address) return '17:00'; // Default fallback
+
+        let closeTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.close) {
+                    closeTime = mondayHours.close;
+                }
+            } else if (address.businessHours.defaultHours?.close) {
+                closeTime = address.businessHours.defaultHours.close;
+            }
+        }
+
+        // Check direct fields
+        if (!closeTime && (address?.closeTime || address?.closeHours)) {
+            closeTime = address.closeTime || address.closeHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Closing Time', 'closingTime', 'close_time', 'endTime', 'end_time', 'businessClose'];
+        for (const field of timeFields) {
+            if (!closeTime && address?.[field]) {
+                closeTime = address[field];
+                break;
+            }
+        }
+
+        // Convert to 24-hour format if needed
+        return formatTimeTo24Hour(closeTime) || '17:00';
+    };
+
+    const formatTimeTo24Hour = (timeString) => {
+        if (!timeString || timeString.toString().trim() === '') {
+            return null;
+        }
+
+        const str = timeString.toString().trim();
+
+        // If already in 24-hour format (HH:MM), return as-is
+        if (/^\d{1,2}:\d{2}$/.test(str)) {
+            const [hours, minutes] = str.split(':');
+            const h = parseInt(hours, 10);
+            const m = parseInt(minutes, 10);
+            if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Handle AM/PM format
+        if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(str)) {
+            const match = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+            if (match) {
+                let hours = parseInt(match[1], 10);
+                const minutes = parseInt(match[2], 10);
+                const period = match[3].toUpperCase();
+
+                if (period === 'PM' && hours !== 12) {
+                    hours += 12;
+                } else if (period === 'AM' && hours === 12) {
+                    hours = 0;
+                }
+
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Handle HHMM format
+        if (/^\d{4}$/.test(str)) {
+            const hours = parseInt(str.substring(0, 2), 10);
+            const minutes = parseInt(str.substring(2, 4), 10);
+            if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            }
+        }
+
+        return null;
+    };
+
     // Handlers
     const handleAddressSelect = (address, type) => {
-        if (type === 'from') setShipFromAddress(address);
-        else setShipToAddress(address);
+        if (type === 'from') {
+            setShipFromAddress(address);
+
+            // Extract timing from pickup address
+            const openTime = extractOpenTime(address);
+            const closeTime = extractCloseTime(address);
+
+            // Update shipment info with extracted pickup times
+            setShipmentInfo(prev => ({
+                ...prev,
+                earliestPickup: openTime,
+                latestPickup: closeTime
+            }));
+
+        } else {
+            setShipToAddress(address);
+
+            // Extract timing from delivery address
+            const openTime = extractOpenTime(address);
+            const closeTime = extractCloseTime(address);
+
+            // Update shipment info with extracted delivery times
+            setShipmentInfo(prev => ({
+                ...prev,
+                earliestDelivery: openTime,
+                latestDelivery: closeTime
+            }));
+        }
     };
     const handleCustomerSelect = (customer) => {
         setSelectedCustomer(customer);

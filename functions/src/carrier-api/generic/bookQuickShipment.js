@@ -183,17 +183,22 @@ async function bookQuickShipmentInternal(data, auth = null) {
         
         // Send QuickShip notifications directly with the actual document results
         // This avoids race conditions where the onShipmentCreated trigger might run before documents are fully accessible
-        try {
-            const { sendQuickShipNotifications } = require('./sendQuickShipNotifications');
-            await sendQuickShipNotifications({
-                shipmentData: completeShipmentData,
-                carrierDetails: carrierDetails,
-                documentResults: documentResults
-            });
-            logger.info('QuickShip notifications sent successfully with direct document results');
-        } catch (notificationError) {
-            logger.error('Error sending QuickShip notifications (non-blocking):', notificationError);
-            // Don't fail the booking if notifications fail
+        // Check if email notifications are disabled
+        if (shipmentData.skipEmailNotifications) {
+            logger.info('Email notifications are disabled via skipEmailNotifications flag - skipping email sending but documents were still generated');
+        } else {
+            try {
+                const { sendQuickShipNotifications } = require('./sendQuickShipNotifications');
+                await sendQuickShipNotifications({
+                    shipmentData: completeShipmentData,
+                    carrierDetails: carrierDetails,
+                    documentResults: documentResults
+                });
+                logger.info('QuickShip notifications sent successfully with direct document results');
+            } catch (notificationError) {
+                logger.error('Error sending QuickShip notifications (non-blocking):', notificationError);
+                // Don't fail the booking if notifications fail
+            }
         }
         
         return {

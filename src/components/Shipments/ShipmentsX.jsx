@@ -1528,6 +1528,21 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <IconButton variant="outlined" onClick={() => setIsExportDialogOpen(true)} size="small" sx={{ border: '1px solid rgba(0, 0, 0, 0.23)', borderRadius: '4px' }}>
                                             <ExportIcon sx={{ fontSize: '16px' }} />
                                         </IconButton>
+                                        <IconButton
+                                            onClick={handleRefreshTable}
+                                            size="small"
+                                            sx={{
+                                                border: '1px solid rgba(0, 0, 0, 0.23)',
+                                                borderRadius: '4px',
+                                                color: '#64748b',
+                                                '&:hover': {
+                                                    backgroundColor: 'rgba(100, 116, 139, 0.1)'
+                                                }
+                                            }}
+                                            title="Refresh shipments data"
+                                        >
+                                            <RefreshIcon sx={{ fontSize: '16px' }} />
+                                        </IconButton>
 
                                         {/* Draft-specific actions */}
                                         {selectedTab === 'draft' && stats.drafts > 0 && (
@@ -2347,6 +2362,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             showSnackbar('Error creating repeat shipment', 'error');
         }
     }, [onOpenCreateShipment, showSnackbar]);
+
+    // Handle refresh table data
+    const handleRefreshTable = useCallback(() => {
+        reloadShipments();
+        showSnackbar('Refreshing shipments data...', 'info');
+    }, [reloadShipments, showSnackbar]);
 
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {

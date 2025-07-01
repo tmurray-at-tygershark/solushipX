@@ -887,20 +887,194 @@ const ShipmentInformation = ({
     const formatTimeToAMPM = (time24) => {
         if (!time24) return 'N/A';
 
-        const [hours, minutes] = time24.split(':');
-        const hour = parseInt(hours, 10);
-        const minute = minutes || '00';
+        // Handle different input formats
+        let timeStr = time24.toString().trim();
 
-        if (hour === 0) {
-            return `12:${minute} AM`;
-        } else if (hour < 12) {
-            return `${hour}:${minute} AM`;
-        } else if (hour === 12) {
-            return `12:${minute} PM`;
+        // If already in AM/PM format, return as-is
+        if (/AM|PM/i.test(timeStr)) {
+            return timeStr;
+        }
+
+        // Extract hours and minutes from various formats
+        let hours, minutes;
+
+        if (timeStr.includes(':')) {
+            // Format like "08:00", "8:30", "08:00:00"
+            const parts = timeStr.split(':');
+            hours = parseInt(parts[0], 10);
+            minutes = parts[1] ? parts[1].padStart(2, '0') : '00';
+        } else if (timeStr.length === 4 && /^\d{4}$/.test(timeStr)) {
+            // Format like "0800", "1430"
+            hours = parseInt(timeStr.substring(0, 2), 10);
+            minutes = timeStr.substring(2, 4);
+        } else if (timeStr.length <= 2 && /^\d+$/.test(timeStr)) {
+            // Format like "8", "14"
+            hours = parseInt(timeStr, 10);
+            minutes = '00';
         } else {
-            return `${hour - 12}:${minute} PM`;
+            // Invalid format, return original
+            console.log('formatTimeToAMPM: Unable to parse time format:', timeStr);
+            return timeStr;
+        }
+
+        // Validate hours and minutes
+        if (isNaN(hours) || hours < 0 || hours > 23) {
+            console.log('formatTimeToAMPM: Invalid hours:', hours, 'from input:', timeStr);
+            return timeStr;
+        }
+
+        if (isNaN(parseInt(minutes)) || parseInt(minutes) < 0 || parseInt(minutes) > 59) {
+            console.log('formatTimeToAMPM: Invalid minutes:', minutes, 'from input:', timeStr);
+            minutes = '00';
+        }
+
+        // Convert to 12-hour format
+        if (hours === 0) {
+            return `12:${minutes} AM`;
+        } else if (hours < 12) {
+            return `${hours}:${minutes} AM`;
+        } else if (hours === 12) {
+            return `12:${minutes} PM`;
+        } else {
+            return `${hours - 12}:${minutes} PM`;
         }
     };
+
+    // Add time extraction helpers
+    function formatTime(timeString) {
+        if (!timeString || timeString.toString().trim() === '') {
+            return '';
+        }
+
+        // If already in AM/PM format, return as-is
+        if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(timeString)) {
+            return timeString;
+        }
+
+        // If in 24-hour format, convert to AM/PM
+        if (/^\d{1,2}:\d{2}$/.test(timeString)) {
+            return formatTimeToAMPM(timeString);
+        }
+
+        // Handle various datetime formats
+        try {
+            // Try parsing as different formats
+            let parsedTime = null;
+
+            // Handle Firestore Timestamp
+            if (timeString && typeof timeString.toDate === 'function') {
+                parsedTime = timeString.toDate();
+            }
+            // Handle timestamp objects with seconds/nanoseconds
+            else if (timeString && typeof timeString === 'object' && (timeString.seconds || timeString.nanoseconds)) {
+                parsedTime = new Date(timeString.seconds * 1000 + (timeString.nanoseconds || 0) / 1000000);
+            }
+            // Handle Unix timestamp (milliseconds)
+            else if (typeof timeString === 'number' && timeString > 1000000000000) {
+                parsedTime = new Date(timeString);
+            }
+            // Handle Unix timestamp (seconds)
+            else if (typeof timeString === 'number' && timeString > 1000000000) {
+                parsedTime = new Date(timeString * 1000);
+            }
+            // Handle date strings
+            else if (typeof timeString === 'string') {
+                // If in HHMM format, convert to HH:MM then AM/PM
+                if (/^\d{4}$/.test(timeString)) {
+                    const formatted = `${timeString.substring(0, 2)}:${timeString.substring(2, 4)}`;
+                    return formatTimeToAMPM(formatted);
+                }
+
+                // Try parsing as date string and extract time
+                const date = new Date(timeString);
+                if (!isNaN(date.getTime())) {
+                    parsedTime = date;
+                }
+            }
+
+            // Extract time from Date object
+            if (parsedTime && !isNaN(parsedTime.getTime())) {
+                const hours = parsedTime.getHours();
+                const minutes = parsedTime.getMinutes();
+                const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                return formatTimeToAMPM(timeStr);
+            }
+        } catch (error) {
+            // Fallback to original string
+        }
+
+        return timeString;
+    }
+
+    function extractOpenTime(address) {
+        if (!address) return '';
+
+        // Check all possible sources for open time
+        let openTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.open) {
+                    openTime = mondayHours.open;
+                }
+            } else if (address.businessHours.defaultHours?.open) {
+                openTime = address.businessHours.defaultHours.open;
+            }
+        }
+
+        // Check direct fields
+        if (!openTime && (address?.openTime || address?.openHours)) {
+            openTime = address.openTime || address.openHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Opening Time', 'openingTime', 'open_time', 'startTime', 'start_time', 'businessOpen'];
+        for (const field of timeFields) {
+            if (!openTime && address?.[field]) {
+                openTime = address[field];
+                break;
+            }
+        }
+
+        return formatTime(openTime);
+    }
+
+    function extractCloseTime(address) {
+        if (!address) return '';
+
+        // Check all possible sources for close time
+        let closeTime = null;
+
+        // Check businessHours structure
+        if (address?.businessHours) {
+            if (address.businessHours.useCustomHours) {
+                const mondayHours = address.businessHours.customHours?.monday;
+                if (mondayHours && !mondayHours.closed && mondayHours.close) {
+                    closeTime = mondayHours.close;
+                }
+            } else if (address.businessHours.defaultHours?.close) {
+                closeTime = address.businessHours.defaultHours.close;
+            }
+        }
+
+        // Check direct fields
+        if (!closeTime && (address?.closeTime || address?.closeHours)) {
+            closeTime = address.closeTime || address.closeHours;
+        }
+
+        // Check various field names
+        const timeFields = ['Closing Time', 'closingTime', 'close_time', 'endTime', 'end_time', 'businessClose'];
+        for (const field of timeFields) {
+            if (!closeTime && address?.[field]) {
+                closeTime = address[field];
+                break;
+            }
+        }
+
+        return formatTime(closeTime);
+    }
 
     return (
         <Grid item xs={12}>
@@ -1021,19 +1195,15 @@ const ShipmentInformation = ({
                                 </Box>
                             )}
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Pickup Window</Typography>
+                                <Typography variant="caption" color="text.secondary">Origin Pickup</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {shipment?.shipmentInfo?.earliestPickupTime && shipment?.shipmentInfo?.latestPickupTime
-                                        ? `${formatTimeToAMPM(shipment.shipmentInfo.earliestPickupTime)} - ${formatTimeToAMPM(shipment.shipmentInfo.latestPickupTime)}`
-                                        : '9:00 AM - 5:00 PM'}
+                                    <strong>Open:</strong> {formatTime(shipment?.shipmentInfo?.earliestPickup) || 'N/A'} | <strong>Close:</strong> {formatTime(shipment?.shipmentInfo?.latestPickup) || 'N/A'}
                                 </Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Dropoff Window</Typography>
+                                <Typography variant="caption" color="text.secondary">Destination Delivery</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {shipment?.shipmentInfo?.earliestDropoffTime && shipment?.shipmentInfo?.latestDropoffTime
-                                        ? `${formatTimeToAMPM(shipment.shipmentInfo.earliestDropoffTime)} - ${formatTimeToAMPM(shipment.shipmentInfo.latestDropoffTime)}`
-                                        : '9:00 AM - 5:00 PM'}
+                                    <strong>Open:</strong> {formatTime(shipment?.shipmentInfo?.earliestDelivery) || 'N/A'} | <strong>Close:</strong> {formatTime(shipment?.shipmentInfo?.latestDelivery) || 'N/A'}
                                 </Typography>
                             </Box>
                         </Stack>
@@ -1202,39 +1372,24 @@ const ShipmentInformation = ({
                                     {(() => {
                                         const address = shipment?.shipFrom;
                                         if (!address) return <Typography variant="body2" sx={{ fontSize: '12px' }}>N/A</Typography>;
-
                                         const addressLines = [];
-
-                                        // Check multiple sources for company name
-                                        const companyName = address.company ||
-                                            address.companyName ||
-                                            address.businessName ||
-                                            shipment?.shipmentInfo?.originCompany ||
-                                            shipment?.companyName;
-
+                                        const companyName = address.company || address.companyName || address.businessName || shipment?.shipmentInfo?.originCompany || shipment?.companyName;
                                         if (companyName) addressLines.push(companyName);
                                         if (address.street) addressLines.push(address.street);
                                         if (address.street2) addressLines.push(address.street2);
-                                        if (address.city && address.state) {
-                                            addressLines.push(`${address.city}, ${address.state}`);
-                                        }
-                                        if (address.postalCode && address.country) {
-                                            addressLines.push(`${address.postalCode} ${address.country}`);
-                                        }
-
-                                        return addressLines.map((line, index) => (
-                                            <Typography
-                                                key={index}
-                                                variant="body2"
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    lineHeight: 1.3,
-                                                    color: 'primary.main'
-                                                }}
-                                            >
-                                                {line}
-                                            </Typography>
-                                        ));
+                                        if (address.city && address.state) addressLines.push(`${address.city}, ${address.state}`);
+                                        if (address.postalCode && address.country) addressLines.push(`${address.postalCode} ${address.country}`);
+                                        return <>
+                                            {addressLines.map((line, index) => (
+                                                <Typography key={index} variant="body2" sx={{ fontSize: '12px', lineHeight: 1.3, color: 'primary.main' }}>{line}</Typography>
+                                            ))}
+                                            {address.email && (
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.secondary' }}>{address.email}</Typography>
+                                            )}
+                                            {address.phone && (
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.secondary' }}>{address.phone}</Typography>
+                                            )}
+                                        </>;
                                     })()}
                                 </Box>
                             </Box>
@@ -1256,40 +1411,24 @@ const ShipmentInformation = ({
                                     {(() => {
                                         const address = shipment?.shipTo;
                                         if (!address) return <Typography variant="body2" sx={{ fontSize: '12px' }}>N/A</Typography>;
-
                                         const addressLines = [];
-
-                                        // Check multiple sources for company name
-                                        const companyName = address.company ||
-                                            address.companyName ||
-                                            address.businessName ||
-                                            shipment?.shipmentInfo?.destinationCompany ||
-                                            shipment?.customerCompany ||
-                                            address.customerName;
-
+                                        const companyName = address.company || address.companyName || address.businessName || shipment?.shipmentInfo?.destinationCompany || shipment?.customerCompany || address.customerName;
                                         if (companyName) addressLines.push(companyName);
                                         if (address.street) addressLines.push(address.street);
                                         if (address.street2) addressLines.push(address.street2);
-                                        if (address.city && address.state) {
-                                            addressLines.push(`${address.city}, ${address.state}`);
-                                        }
-                                        if (address.postalCode && address.country) {
-                                            addressLines.push(`${address.postalCode} ${address.country}`);
-                                        }
-
-                                        return addressLines.map((line, index) => (
-                                            <Typography
-                                                key={index}
-                                                variant="body2"
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    lineHeight: 1.3,
-                                                    color: 'primary.main'
-                                                }}
-                                            >
-                                                {line}
-                                            </Typography>
-                                        ));
+                                        if (address.city && address.state) addressLines.push(`${address.city}, ${address.state}`);
+                                        if (address.postalCode && address.country) addressLines.push(`${address.postalCode} ${address.country}`);
+                                        return <>
+                                            {addressLines.map((line, index) => (
+                                                <Typography key={index} variant="body2" sx={{ fontSize: '12px', lineHeight: 1.3, color: 'primary.main' }}>{line}</Typography>
+                                            ))}
+                                            {address.email && (
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.secondary' }}>{address.email}</Typography>
+                                            )}
+                                            {address.phone && (
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.secondary' }}>{address.phone}</Typography>
+                                            )}
+                                        </>;
                                     })()}
                                 </Box>
                             </Box>

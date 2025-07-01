@@ -66,6 +66,7 @@ import AddressDetail from '../../AddressBook/AddressDetail';
 import AddressForm from '../../AddressBook/AddressForm';
 import AddressImport from '../../AddressBook/AddressImport';
 import ShipmentsPagination from '../../Shipments/components/ShipmentsPagination';
+import AddressFormDialog from '../../AddressBook/AddressFormDialog';
 
 const GlobalAddressList = () => {
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
@@ -93,6 +94,9 @@ const GlobalAddressList = () => {
 
     // State for refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
+
+    // State for address form
+    const [showAddressForm, setShowAddressForm] = useState(false);
 
     // Load available companies based on user role
     useEffect(() => {
@@ -272,6 +276,23 @@ const GlobalAddressList = () => {
         setRefreshKey(prev => prev + 1);
     }, []);
 
+    // Handler to open the address form
+    const handleOpenAddressForm = () => {
+        setShowAddressForm(true);
+    };
+
+    // Handler to close the address form
+    const handleCloseAddressForm = () => {
+        setShowAddressForm(false);
+        setRefreshKey(prev => prev + 1); // Refresh address list
+    };
+
+    // Handler for successful address creation
+    const handleAddressCreated = () => {
+        setShowAddressForm(false);
+        setRefreshKey(prev => prev + 1);
+    };
+
     // Loading state
     if (authLoading || companyLoading || loadingCompanies) {
         return (
@@ -378,7 +399,7 @@ const GlobalAddressList = () => {
                     {/* Breadcrumb */}
                     <AdminBreadcrumb currentPage="Addresses" />
 
-                    {/* Filter Controls */}
+                    {/* Filter Controls and New Address Button */}
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                         {/* Company Selector */}
                         <FormControl
@@ -584,6 +605,20 @@ const GlobalAddressList = () => {
                                 )}
                             </Select>
                         </FormControl>
+
+                        {/* + New Address Button */}
+                        {selectedCompanyId !== 'all' && selectedCustomerId !== 'all' && (
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                size="small"
+                                startIcon={<AddIcon />}
+                                sx={{ fontSize: '12px', fontWeight: 600, borderRadius: 2 }}
+                                onClick={handleOpenAddressForm}
+                            >
+                                + New Address
+                            </Button>
+                        )}
                     </Box>
                 </Box>
             </Box>
@@ -609,6 +644,14 @@ const GlobalAddressList = () => {
                 </Paper>
             </Box>
 
+            {/* AddressFormDialog Modal */}
+            <AddressFormDialog
+                open={showAddressForm}
+                onClose={handleCloseAddressForm}
+                onSuccess={handleAddressCreated}
+                companyId={selectedCompanyId}
+                customerId={selectedCustomerId}
+            />
         </Box>
     );
 };
