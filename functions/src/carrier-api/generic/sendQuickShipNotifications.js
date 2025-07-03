@@ -1033,7 +1033,7 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                     <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                 </div>
             </div>
         </div>
@@ -1099,7 +1099,7 @@ Your QuickShip booking has been processed successfully! You should receive your 
 ${shipmentData.shipmentID ? `Track your shipment: https://solushipx.web.app/tracking/${shipmentData.shipmentID}` : ''}
 
 Need help? Contact us at support@integratedcarriers.com
-© 2024 SolushipX. All rights reserved.
+© 2025 SolushipX. All rights reserved.
     `;
 }
 
@@ -1242,7 +1242,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
 
                 <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                     <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                 </div>
             </div>
         </div>
@@ -1307,7 +1307,7 @@ ${shipmentData.shipmentInfo?.notes ? `SPECIAL INSTRUCTIONS\n${shipmentData.shipm
 Please coordinate pickup time with the shipper and confirm receipt of this assignment. You should receive the BOL and Carrier Confirmation documents as attachments to this email.
 
 Questions? Contact us at support@integratedcarriers.com
-© 2024 SolushipX. All rights reserved.
+© 2025 SolushipX. All rights reserved.
     `;
 }
 

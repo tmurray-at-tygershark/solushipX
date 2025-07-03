@@ -2,6 +2,9 @@ const { onCall } = require('firebase-functions/v2/https');
 const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
 
+// Import shipment events utility
+const { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } = require('../../utils/shipmentEvents');
+
 const db = admin.firestore();
 
 /**
@@ -44,6 +47,7 @@ async function bookQuickShipmentInternal(data, auth = null) {
         let shipmentDocRef;
         let firestoreDocId;
         let existingShipment = null;
+        let isNewShipment = false;
         
         // First, check if a document exists with the shipmentID as the document ID
         const existingDocWithShipmentId = await db.collection('shipments').doc(shipmentData.shipmentID).get();
@@ -72,6 +76,7 @@ async function bookQuickShipmentInternal(data, auth = null) {
                 // Create a new document with auto-generated ID
                 shipmentDocRef = db.collection('shipments').doc();
                 firestoreDocId = shipmentDocRef.id;
+                isNewShipment = true;
                 logger.info('Creating new shipment document:', firestoreDocId);
             }
         }
@@ -84,6 +89,7 @@ async function bookQuickShipmentInternal(data, auth = null) {
             bookingMethod: 'quickship_manual',
             carrierType: 'manual',
             status: 'pending', // Ensure status is set to pending
+            bookingTimestamp: new Date().toISOString(), // Add booking timestamp
             
             // Store carrier details for document generation
             quickShipCarrierDetails: carrierDetails,
@@ -111,6 +117,57 @@ async function bookQuickShipmentInternal(data, auth = null) {
             logger.info('Created new QuickShip shipment in Firestore:', firestoreDocId);
         }
 
+        // **CRITICAL FIX**: Record shipment events in timeline using Firebase document ID
+        try {
+            // Record shipment creation event (for new shipments)
+            if (isNewShipment) {
+                await recordShipmentEvent(
+                    firestoreDocId, // Use Firebase document ID, not shipmentID
+                    EVENT_TYPES.CREATED,
+                    'Shipment Created',
+                    `QuickShip shipment created with ID: ${shipmentData.shipmentID}`,
+                    EVENT_SOURCES.USER,
+                    {
+                        email: auth?.token?.email || shipmentData.createdByEmail || 'unknown',
+                        userId: auth?.uid || shipmentData.createdBy || 'unknown',
+                        userName: auth?.token?.name || auth?.token?.email?.split('@')[0] || 'Unknown User'
+                    },
+                    {
+                        shipmentType: shipmentData.shipmentInfo?.shipmentType || 'freight',
+                        carrier: shipmentData.carrier,
+                        bookingMethod: 'quickship_manual'
+                    }
+                );
+                logger.info(`Recorded shipment creation event for ${shipmentData.shipmentID} (${firestoreDocId})`);
+            }
+
+            // Record booking confirmation event (for all QuickShip bookings)
+            await recordShipmentEvent(
+                firestoreDocId, // Use Firebase document ID, not shipmentID
+                EVENT_TYPES.BOOKING_CONFIRMED,
+                'QuickShip Booking Confirmed',
+                `QuickShip booking confirmed for carrier: ${shipmentData.carrier}`,
+                EVENT_SOURCES.USER,
+                {
+                    email: auth?.token?.email || shipmentData.createdByEmail || 'unknown',
+                    userId: auth?.uid || shipmentData.createdBy || 'unknown',
+                    userName: auth?.token?.name || auth?.token?.email?.split('@')[0] || 'Unknown User'
+                },
+                {
+                    carrier: shipmentData.carrier,
+                    bookingMethod: 'quickship_manual',
+                    totalCharges: shipmentData.totalCharges,
+                    currency: shipmentData.currency,
+                    trackingNumber: shipmentData.shipmentID
+                }
+            );
+            logger.info(`Recorded booking confirmation event for ${shipmentData.shipmentID} (${firestoreDocId})`);
+
+        } catch (eventError) {
+            logger.error('Error recording QuickShip events (non-blocking):', eventError);
+            // Don't fail the booking if event recording fails
+        }
+
         // GENERATE DOCUMENTS AFTER DATABASE SAVE (so they exist regardless of email success/failure)
         logger.info('Starting document generation after successful database save...');
         const documentResults = [];
@@ -126,6 +183,27 @@ async function bookQuickShipmentInternal(data, auth = null) {
                 hasDownloadUrl: !!bolResult.data?.downloadUrl,
                 fileName: bolResult.data?.fileName
             });
+
+            // Record document generation event
+            if (bolResult.success) {
+                try {
+                    await recordShipmentEvent(
+                        firestoreDocId,
+                        EVENT_TYPES.DOCUMENT_GENERATED,
+                        'BOL Generated',
+                        `Bill of Lading document generated: ${bolResult.data?.fileName || 'BOL.pdf'}`,
+                        EVENT_SOURCES.SYSTEM,
+                        null,
+                        {
+                            documentType: 'BOL',
+                            fileName: bolResult.data?.fileName,
+                            downloadUrl: bolResult.data?.downloadUrl
+                        }
+                    );
+                } catch (docEventError) {
+                    logger.error('Error recording BOL generation event:', docEventError);
+                }
+            }
         } catch (error) {
             logger.error('Error generating QuickShip BOL:', error);
             documentResults.push({ success: false, error: error.message });
@@ -166,6 +244,28 @@ async function bookQuickShipmentInternal(data, auth = null) {
                     hasDownloadUrl: !!confirmationResult.data?.downloadUrl,
                     fileName: confirmationResult.data?.fileName
                 });
+
+                // Record carrier confirmation generation event
+                if (confirmationResult.success) {
+                    try {
+                        await recordShipmentEvent(
+                            firestoreDocId,
+                            EVENT_TYPES.DOCUMENT_GENERATED,
+                            'Carrier Confirmation Generated',
+                            `Carrier confirmation document generated: ${confirmationResult.data?.fileName || 'Confirmation.pdf'}`,
+                            EVENT_SOURCES.SYSTEM,
+                            null,
+                            {
+                                documentType: 'Carrier Confirmation',
+                                fileName: confirmationResult.data?.fileName,
+                                downloadUrl: confirmationResult.data?.downloadUrl,
+                                carrier: shipmentData.carrier
+                            }
+                        );
+                    } catch (docEventError) {
+                        logger.error('Error recording carrier confirmation generation event:', docEventError);
+                    }
+                }
             } catch (error) {
                 logger.error('Error generating QuickShip Carrier Confirmation:', error);
                 documentResults.push({ success: false, error: error.message });
@@ -218,12 +318,8 @@ async function bookQuickShipmentInternal(data, auth = null) {
         };
         
     } catch (error) {
-        logger.error('Error in bookQuickShipment:', error);
-        return {
-            success: false,
-            error: error.message,
-            data: null
-        };
+        logger.error('Error in bookQuickShipmentInternal:', error);
+        throw error;
     }
 }
 

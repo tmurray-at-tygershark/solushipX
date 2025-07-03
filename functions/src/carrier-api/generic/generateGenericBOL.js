@@ -332,7 +332,7 @@ function extractBOLData(shipmentData, shipmentId) {
             company: 'INTEGRATED CARRIERS',
             address1: '9 - 75 FIRST STREET,',
             address2: 'SUITE 209,',
-            city: 'Orangeville',
+            city: 'ORANGEVILLE',
             state: 'ON',
             zip: 'L9W 5B6',
             accountNumber: '' // Will be populated dynamically in the future
@@ -679,7 +679,7 @@ function drawExactShippingSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(bolData.shipFrom.openTime || '', 255, 105); // FIXED: Use direct data
+       .text(bolData.shipFrom.openTime, 255, 105); // FIXED: Use direct data
     
     doc.font('Helvetica-Bold')
        .fontSize(7)
@@ -687,7 +687,7 @@ function drawExactShippingSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(bolData.shipFrom.closeTime || '', 255, 115); // FIXED: Use direct data
+       .text(bolData.shipFrom.closeTime, 255, 115); // FIXED: Use direct data
     
     // Ship date and carrier info (right side) - REPOSITIONED for better layout
     doc.font('Helvetica-Bold')
@@ -789,7 +789,7 @@ function drawExactShippingSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(bolData.shipTo.openTime || '', 255, 195); // FIXED: Use direct data
+       .text(bolData.shipTo.openTime, 255, 195); // FIXED: Use direct data
     
     doc.font('Helvetica-Bold')
        .fontSize(7)
@@ -797,7 +797,7 @@ function drawExactShippingSection(doc, bolData) {
     
     doc.font('Helvetica')
        .fontSize(7)
-       .text(bolData.shipTo.closeTime || '', 255, 205); // FIXED: Use direct data
+       .text(bolData.shipTo.closeTime, 255, 205); // FIXED: Use direct data
     
     // References section (right column) - IMPROVED positioning
     doc.lineWidth(1)
@@ -937,31 +937,49 @@ function extractCloseTime(address) {
 /**
  * Formats time string to consistent format
  * @param {string} timeString - Time in various formats
- * @returns {string} - Formatted time (HH:MM)
+ * @returns {string} - Formatted time (HH:MM) or empty string for 0:00
  */
 function formatTime(timeString) {
     if (!timeString || timeString.trim() === '') {
         return '';
     }
     
+    // Convert to string and clean
+    const cleanTime = String(timeString).trim();
+    
+    // If time is 0:00, 00:00, or similar, return empty string
+    if (cleanTime === '0:00' || cleanTime === '00:00' || cleanTime === '0000' || cleanTime === '0') {
+        return '';
+    }
+    
     // If already in HH:MM format, return as is
-    if (/^\d{1,2}:\d{2}$/.test(timeString)) {
-        return timeString;
+    if (/^\d{1,2}:\d{2}$/.test(cleanTime)) {
+        return cleanTime;
     }
     
     // If in HHMM format, add colon
-    if (/^\d{4}$/.test(timeString)) {
-        return `${timeString.substring(0, 2)}:${timeString.substring(2, 4)}`;
+    if (/^\d{4}$/.test(cleanTime)) {
+        const formatted = `${cleanTime.substring(0, 2)}:${cleanTime.substring(2, 4)}`;
+        // Check if it's 00:00 after formatting
+        if (formatted === '00:00') {
+            return '';
+        }
+        return formatted;
     }
     
     // If in H:MM or HH:M format, normalize
-    if (/^\d{1,2}:\d{1,2}$/.test(timeString)) {
-        const [hours, minutes] = timeString.split(':');
-        return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+    if (/^\d{1,2}:\d{1,2}$/.test(cleanTime)) {
+        const [hours, minutes] = cleanTime.split(':');
+        const formatted = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+        // Check if it's 00:00 after formatting
+        if (formatted === '00:00') {
+            return '';
+        }
+        return formatted;
     }
     
     // Return as-is if can't parse
-    return timeString;
+    return cleanTime;
 }
 
 /**
@@ -1053,59 +1071,31 @@ function drawExactThirdPartySection(doc, bolData) {
        .fontSize(7) // Increased font size for better visibility
        .text('Freight Charges are:', 400, checkBoxY);
     
-    // IMPROVED billing type detection with more variations
-    const normalizedBillingType = (bolData.billingType || '').toLowerCase().trim();
-    console.log(`BOL Generation: Billing type detected as "${normalizedBillingType}"`);
+    // STATIC SELECTION: Always select Third Party checkbox as per business requirement
+    console.log('BOL Generation: Static Third Party billing selection applied');
     
-    // Prepaid checkbox with enhanced detection
+    // Prepaid checkbox (always unchecked)
     doc.rect(400, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
-    const isPrepaid = ['prepaid', 'prepay', 'pre-paid', 'shipper'].includes(normalizedBillingType);
-    if (isPrepaid) {
-        // Add X mark for prepaid with better positioning
-        doc.lineWidth(1.5)
-           .moveTo(401, checkBoxY + 16)
-           .lineTo(407, checkBoxY + 22)
-           .stroke()
-           .moveTo(407, checkBoxY + 16)
-           .lineTo(401, checkBoxY + 22)
-           .stroke();
-    }
     doc.font('Helvetica')
        .fontSize(7)
        .text('Prepaid', 412, checkBoxY + 17);
     
-    // Collect checkbox with enhanced detection
+    // Collect checkbox (always unchecked)
     doc.rect(460, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
-    const isCollect = ['collect', 'cod', 'c.o.d.', 'consignee', 'receiver'].includes(normalizedBillingType);
-    if (isCollect) {
-        // Add X mark for collect with better positioning
-        doc.lineWidth(1.5)
-           .moveTo(461, checkBoxY + 16)
-           .lineTo(467, checkBoxY + 22)
-           .stroke()
-           .moveTo(467, checkBoxY + 16)
-           .lineTo(461, checkBoxY + 22)
-           .stroke();
-    }
     doc.font('Helvetica')
        .fontSize(7)
        .text('Collect', 472, checkBoxY + 17);
     
-    // 3rd Party checkbox with enhanced detection
+    // 3rd Party checkbox (ALWAYS CHECKED)
     doc.rect(520, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
-    const isThirdParty = ['3rd party', 'third party', 'thirdparty', '3rdparty', 'third-party', 'third_party', 'bill to'].includes(normalizedBillingType) || 
-                        normalizedBillingType.includes('third') || 
-                        normalizedBillingType.includes('3rd');
-    if (isThirdParty) {
-        // Add X mark for 3rd party with better positioning
-        doc.lineWidth(1.5)
-           .moveTo(521, checkBoxY + 16)
-           .lineTo(527, checkBoxY + 22)
-           .stroke()
-           .moveTo(527, checkBoxY + 16)
-           .lineTo(521, checkBoxY + 22)
-           .stroke();
-    }
+    // Always add X mark for 3rd party
+    doc.lineWidth(1.5)
+       .moveTo(521, checkBoxY + 16)
+       .lineTo(527, checkBoxY + 22)
+       .stroke()
+       .moveTo(527, checkBoxY + 16)
+       .lineTo(521, checkBoxY + 22)
+       .stroke();
     doc.font('Helvetica')
        .fontSize(7)
        .text('3rd Party', 532, checkBoxY + 17);
@@ -1124,74 +1114,22 @@ function drawExactThirdPartySection(doc, bolData) {
 
 /**
  * Extracts billing address information from shipment data
+ * ALWAYS returns INTEGRATED CARRIERS address regardless of billing status
  * @param {Object} bolData - BOL data object
  * @returns {Object} - Billing address object
  */
 function getBillingAddress(bolData) {
-    // Check if there's specific billing information in the shipment data
-    const shipmentData = bolData.shipmentData || {};
-    
-    // Look for billing address in various locations
-    let billingAddress = null;
-    
-    // 1. Check for explicit billing address
-    if (shipmentData.billingAddress || shipmentData.billing) {
-        billingAddress = shipmentData.billingAddress || shipmentData.billing;
-    }
-    
-    // 2. Check for third party billing information
-    else if (shipmentData.thirdPartyBilling || shipmentData.thirdParty) {
-        billingAddress = shipmentData.thirdPartyBilling || shipmentData.thirdParty;
-    }
-    
-    // 3. Check for company billing information
-    else if (shipmentData.companyBilling || shipmentData.company) {
-        billingAddress = shipmentData.companyBilling || shipmentData.company;
-    }
-    
-    // 4. Use shipFrom as billing address for prepaid shipments
-    else if (bolData.billingType && ['prepaid', 'prepay', 'shipper'].includes(bolData.billingType.toLowerCase())) {
-        billingAddress = {
-            company: bolData.shipFrom.company,
-            address1: bolData.shipFrom.address1,
-            address2: bolData.shipFrom.address2,
-            city: bolData.shipFrom.city,
-            state: bolData.shipFrom.state,
-            zip: bolData.shipFrom.zip,
-            phone: bolData.shipFrom.phone,
-            accountNumber: ''
-        };
-    }
-    
-    // 5. Use shipTo as billing address for collect shipments
-    else if (bolData.billingType && ['collect', 'cod', 'consignee'].includes(bolData.billingType.toLowerCase())) {
-        billingAddress = {
-            company: bolData.shipTo.company,
-            address1: bolData.shipTo.address1,
-            address2: bolData.shipTo.address2,
-            city: bolData.shipTo.city,
-            state: bolData.shipTo.state,
-            zip: bolData.shipTo.zip,
-            phone: bolData.shipTo.phone,
-            accountNumber: ''
-        };
-    }
-    
-    // 6. Default to Integrated Carriers for 3rd party or unknown billing
-    if (!billingAddress) {
-        billingAddress = bolData.thirdParty; // Use existing default
-    }
-    
-    // Ensure all required fields are present with fallbacks
+    // ALWAYS use INTEGRATED CARRIERS address for Third Party Billing Charges section
+    // This is a business requirement regardless of actual billing status
     return {
-        company: billingAddress?.company || 'INTEGRATED CARRIERS',
-        address1: billingAddress?.address1 || '9 - 75 FIRST STREET,',
-        address2: billingAddress?.address2 || 'SUITE 209,',
-        city: billingAddress?.city || 'Orangeville',
-        state: billingAddress?.state || 'ON',
-        zip: billingAddress?.zip || 'L9W 5B6',
-        phone: billingAddress?.phone || '',
-        accountNumber: billingAddress?.accountNumber || billingAddress?.account || ''
+        company: 'INTEGRATED CARRIERS',
+        address1: '9 - 75 FIRST STREET, SUITE 209',
+        address2: '', // Address line 2 is empty since suite is included in address1
+        city: 'ORANGEVILLE',
+        state: 'ON',
+        zip: 'L9W 5B6',
+        phone: '', // No phone number specified
+        accountNumber: '' // No account number specified
     };
 }
 

@@ -3,6 +3,9 @@ const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
 
+// Import shipment events utility
+const { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } = require('./utils/shipmentEvents');
+
 const db = admin.firestore();
 
 /**
@@ -129,6 +132,35 @@ exports.updateManualShipmentStatus = onCall({
 
         // Execute the batch
         await batch.commit();
+
+        // **CRITICAL FIX**: Record manual status override event in shipment timeline
+        try {
+            await recordShipmentEvent(
+                shipmentId,
+                EVENT_TYPES.STATUS_UPDATE,
+                `Status Manually Updated: ${newStatus}`,
+                `Status manually changed from "${shipmentData.status}" to "${newStatus}"${reason ? `. Reason: ${reason}` : ""}`,
+                EVENT_SOURCES.USER,
+                {
+                    email: auth.token?.email || 'unknown',
+                    userId: auth.uid,
+                    userName: auth.token?.name || auth.token?.email?.split('@')[0] || 'Unknown User'
+                },
+                {
+                    statusChange: {
+                        from: shipmentData.status,
+                        to: newStatus,
+                        reason: reason || 'Manual status override'
+                    },
+                    isManualOverride: true,
+                    overrideReason: reason
+                }
+            );
+            logger.info(`Recorded manual status override event for shipment ${shipmentId}: ${shipmentData.status} -> ${newStatus}`);
+        } catch (eventError) {
+            logger.error('Error recording manual status override event:', eventError);
+            // Don't fail the main operation if event recording fails
+        }
 
         logger.info(`Manual status override completed for shipment ${shipmentId}`, {
             shipmentId,

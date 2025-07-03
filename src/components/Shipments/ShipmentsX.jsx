@@ -2007,6 +2007,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     onViewShipmentDetail={handleViewShipmentDetail}
                                     onActionMenuOpen={handleActionMenuOpen}
                                     onEditDraftShipment={handleEditDraftShipment}
+                                    onEditShipment={handleEditShipment}
                                     customers={customers}
                                     companyData={companiesData}
                                     carrierData={carrierData}
@@ -2363,6 +2364,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
     }, [onOpenCreateShipment, showSnackbar]);
 
+    // Handle editing a booked shipment
+    const handleEditShipment = useCallback((shipment) => {
+        console.log('📝 handleEditShipment called for booked shipment:', shipment.shipmentID || shipment.id);
+
+        // Navigate to the shipment detail view and trigger edit mode
+        // This will open the shipment detail and automatically open the edit modal
+        pushView({
+            component: 'shipment-detail',
+            shipmentId: shipment.id,
+            editMode: true // Flag to automatically open edit modal
+        });
+    }, [pushView]);
+
     // Handle refresh table data
     const handleRefreshTable = useCallback(() => {
         reloadShipments();
@@ -2517,6 +2531,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 onViewShipmentDetail={handleViewShipmentDetail}
                 onRepeatShipment={handleRepeatShipment}
                 onEditDraftShipment={handleEditDraftShipment}
+                onEditShipment={handleEditShipment}
                 onPrintLabel={async (shipment) => {
                     try {
                         // Get document availability using the same logic as the menu

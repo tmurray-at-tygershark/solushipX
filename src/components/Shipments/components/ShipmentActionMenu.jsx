@@ -27,6 +27,7 @@ const ShipmentActionMenu = ({
     onViewShipmentDetail,
     onRepeatShipment,
     onEditDraftShipment,
+    onEditShipment,
     documentAvailability,
     checkingDocuments
 }) => {
@@ -54,12 +55,29 @@ const ShipmentActionMenu = ({
         }
     };
 
+    const handleEditShipment = () => {
+        onClose();
+        if (onEditShipment) {
+            // Use the edit shipment callback for booked shipments
+            onEditShipment(selectedShipment);
+        } else {
+            console.error('❌ No onEditShipment callback available');
+        }
+    };
+
     const handleRepeatShipment = () => {
         onClose();
         if (onRepeatShipment) {
             onRepeatShipment(selectedShipment);
         }
     };
+
+    // Check shipment status for edit availability
+    const shipmentStatus = selectedShipment?.status?.toLowerCase() || '';
+    const isDraft = shipmentStatus === 'draft';
+    const isCancelled = ['cancelled', 'canceled', 'void', 'voided'].includes(shipmentStatus);
+    const isDelivered = shipmentStatus === 'delivered';
+    const canEditShipment = !isDraft && !isCancelled && !isDelivered;
 
     return (
         <Menu
@@ -81,6 +99,17 @@ const ShipmentActionMenu = ({
                         </ListItemIcon>
                         View Details
                     </MenuItem>
+
+                    {/* Edit Shipment - Only for non-draft, non-cancelled, non-delivered shipments */}
+                    {canEditShipment && onEditShipment && (
+                        <MenuItem onClick={handleEditShipment}>
+                            <ListItemIcon>
+                                <EditIcon sx={{ fontSize: '14px' }} />
+                            </ListItemIcon>
+                            Edit Shipment
+                        </MenuItem>
+                    )}
+
                     <MenuItem onClick={handleRepeatShipment}>
                         <ListItemIcon>
                             <RepeatIcon sx={{ fontSize: '14px' }} />

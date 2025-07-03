@@ -667,6 +667,21 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     const [globalSearchQuery, setGlobalSearchQuery] = useState('');
     const [filtersOpen, setFiltersOpen] = useState(false);
 
+    // State for view/edit dialogs
+    const [selectedAddress, setSelectedAddress] = useState(null);
+    const [showAddressDetail, setShowAddressDetail] = useState(false);
+    const [showEditAddressForm, setShowEditAddressForm] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    // Create mapping from companyID to Firebase document ID
+    const companyIdToDocId = React.useMemo(() => {
+        const mapping = {};
+        companies.forEach(company => {
+            mapping[company.companyID] = company.id;
+        });
+        return mapping;
+    }, [companies]);
+
     // Enhanced search fields matching AddressBook pattern
     const [searchFields, setSearchFields] = useState({
         companyName: '',
@@ -807,7 +822,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
         if (companies.length > 0) {
             fetchAllAddresses();
         }
-    }, [companies]);
+    }, [companies, refreshTrigger]);
 
     // Pagination
     const paginatedAddresses = React.useMemo(() => {
@@ -1007,8 +1022,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                     }
                                                 }}
                                                 onClick={() => {
-                                                    // TODO: Add view address detail functionality
-                                                    console.log('View address:', address.id);
+                                                    navigate(`/admin/companies/${companyIdToDocId[address.companyID || address.ownerCompanyID]}`);
                                                 }}
                                             >
                                                 {address.companyName || 'N/A'}
@@ -1103,7 +1117,7 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                                 {`${address.street || ''}${address.street2 ? `, ${address.street2}` : ''}`}
                                                 <br />
-                                                {`${address.city || ''}, ${address.state || ''} ${address.postalCode || ''}`}
+                                                {`${address.city || ''}, ${address.state || ''} ${address.postalCode ? address.postalCode.toUpperCase() : ''}`}
                                             </Typography>
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
@@ -1129,20 +1143,22 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                 <IconButton
                                                     size="small"
                                                     onClick={() => {
-                                                        // TODO: Add view functionality
-                                                        console.log('View address:', address.id);
+                                                        setSelectedAddress(address);
+                                                        setShowAddressDetail(true);
                                                     }}
                                                     title="View Address"
+                                                    color="primary"
                                                 >
                                                     <VisibilityIcon sx={{ fontSize: '16px' }} />
                                                 </IconButton>
                                                 <IconButton
                                                     size="small"
                                                     onClick={() => {
-                                                        // TODO: Add edit functionality
-                                                        console.log('Edit address:', address.id);
+                                                        setSelectedAddress(address);
+                                                        setShowEditAddressForm(true);
                                                     }}
                                                     title="Edit Address"
+                                                    color="primary"
                                                 >
                                                     <EditIcon sx={{ fontSize: '16px' }} />
                                                 </IconButton>
@@ -1184,6 +1200,35 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     />
                 </Box>
             )}
+
+            {/* Address Detail Dialog */}
+            <AddressDetail
+                open={showAddressDetail}
+                onClose={() => {
+                    setShowAddressDetail(false);
+                    setSelectedAddress(null);
+                }}
+                address={selectedAddress}
+                isModal={true}
+            />
+
+            {/* Address Edit Dialog */}
+            <AddressFormDialog
+                open={showEditAddressForm}
+                onClose={() => {
+                    setShowEditAddressForm(false);
+                    setSelectedAddress(null);
+                }}
+                onSuccess={() => {
+                    setShowEditAddressForm(false);
+                    setSelectedAddress(null);
+                    // Refresh address list after edit
+                    setRefreshTrigger(prev => prev + 1);
+                }}
+                editingAddress={selectedAddress}
+                companyId={selectedAddress?.companyID}
+                customerId={selectedAddress?.addressClassID}
+            />
         </Box>
     );
 };

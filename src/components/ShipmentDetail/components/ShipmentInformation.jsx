@@ -1076,6 +1076,48 @@ const ShipmentInformation = ({
         return formatTime(closeTime);
     }
 
+    // Helper function to format shipment date without timezone issues
+    const formatShipmentDate = (dateString) => {
+        if (!dateString) return 'N/A';
+
+        try {
+            // Handle different date formats
+            let date;
+
+            if (typeof dateString === 'string') {
+                // If it's a date string like "2024-01-15", parse it as local date
+                if (dateString.includes('T') || dateString.includes(' ')) {
+                    // Full datetime string
+                    date = new Date(dateString);
+                } else {
+                    // Date-only string (YYYY-MM-DD) - parse as local date to avoid timezone shift
+                    const [year, month, day] = dateString.split('-');
+                    date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                }
+            } else if (dateString.toDate) {
+                // Firestore timestamp
+                date = dateString.toDate();
+            } else {
+                // Already a Date object
+                date = new Date(dateString);
+            }
+
+            // Verify the date is valid
+            if (isNaN(date.getTime())) {
+                return 'Invalid Date';
+            }
+
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        } catch (error) {
+            console.error('Error formatting shipment date:', error);
+            return 'Invalid Date';
+        }
+    };
+
     return (
         <Grid item xs={12}>
             <Grid container spacing={3}>
@@ -1159,7 +1201,7 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {shipment?.shipmentInfo?.shipmentDate ? new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() : 'N/A'}
+                                    {formatShipmentDate(shipment?.shipmentInfo?.shipmentDate)}
                                 </Typography>
                             </Box>
                             {/* Hide Estimated Delivery for QuickShip */}
@@ -1195,15 +1237,15 @@ const ShipmentInformation = ({
                                 </Box>
                             )}
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Origin Pickup</Typography>
+                                <Typography variant="caption" color="text.secondary">Origin Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    <strong>Open:</strong> {formatTime(shipment?.shipmentInfo?.earliestPickup) || 'N/A'} | <strong>Close:</strong> {formatTime(shipment?.shipmentInfo?.latestPickup) || 'N/A'}
+                                    {extractOpenTime(shipment?.shipFrom) || 'N/A'} - {extractCloseTime(shipment?.shipFrom) || 'N/A'}
                                 </Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Destination Delivery</Typography>
+                                <Typography variant="caption" color="text.secondary">Destination Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    <strong>Open:</strong> {formatTime(shipment?.shipmentInfo?.earliestDelivery) || 'N/A'} | <strong>Close:</strong> {formatTime(shipment?.shipmentInfo?.latestDelivery) || 'N/A'}
+                                    {extractOpenTime(shipment?.shipTo) || 'N/A'} - {extractCloseTime(shipment?.shipTo) || 'N/A'}
                                 </Typography>
                             </Box>
                         </Stack>

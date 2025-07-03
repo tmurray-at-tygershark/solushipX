@@ -33,9 +33,10 @@ import {
     HelpOutline as HelpOutlineIcon,
     ContentCopy as ContentCopyIcon,
     QrCode as QrCodeIcon,
-    Refresh as RefreshIcon
+    Refresh as RefreshIcon,
+    Menu as MenuIcon
 } from '@mui/icons-material';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { db, functions } from '../../firebase'; // Firebase setup
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -46,8 +47,8 @@ import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate'; // Impo
 import QRCode from 'qrcode'; // Import QR code library
 import TrackingDetailSidebar from './TrackingDetailSidebar';
 import { Suspense } from 'react';
-import Header from '../Navigation/Header';
 import Footer from '../Footer/Footer';
+import Navigation from '../Navigation/Header';
 
 // Helper functions (copied from ShipmentDetail.jsx)
 const getStatusColor = (status) => {
@@ -317,63 +318,44 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         setTrackingRecords([]); // Clear previous tracking records
 
         try {
-            let isSolushipXId = identifier.startsWith('IC-') || identifier.startsWith('SID-');
+            // Simplified approach: Just search for the identifier as a shipmentID
+            console.log(`Searching for shipment with ID: ${identifier}`);
             let foundShipment = null;
 
-            if (isSolushipXId) {
-                console.log(`Identified ${identifier} as SolushipX ID.`);
+            // First try: Search by shipmentID field (this covers all shipment IDs regardless of format)
+            const shipmentQuery = query(
+                collection(db, 'shipments'),
+                where('shipmentID', '==', identifier)
+            );
+            const shipmentSnapshot = await getDocs(shipmentQuery);
 
-                // Query for shipment by shipmentID field - this should work for ICAL-223VYD
-                const shipmentsRef = collection(db, 'shipments');
-                const q = query(shipmentsRef, where('shipmentID', '==', identifier));
-
-                try {
-                    const querySnapshot = await getDocs(q);
-                    if (!querySnapshot.empty) {
-                        foundShipment = querySnapshot.docs[0];
-                        console.log(`Found SolushipX shipment with ID "${identifier}"`);
-                    } else {
-                        console.log(`SolushipX ID "${identifier}" not found in Firestore.`);
-                        setDisplayError(`SolushipX shipment "${identifier}" not found. Please verify the shipment ID is correct.`);
-                        setLoading(false);
-                        return;
-                    }
-                } catch (queryError) {
-                    console.error(`Error querying shipmentID:`, queryError);
-                    setDisplayError(`Error searching for shipment "${identifier}". Please try again.`);
-                    setLoading(false);
-                    return;
-                }
+            if (!shipmentSnapshot.empty) {
+                const shipmentDoc = shipmentSnapshot.docs[0];
+                foundShipment = {
+                    id: shipmentDoc.id,
+                    ...shipmentDoc.data()
+                };
+                console.log(`Found shipment by shipmentID:`, foundShipment);
             } else {
-                // For non-SolushipX IDs, try simpler queries first
-                console.log(`Checking if "${identifier}" is a tracking number for an existing SolushipX shipment.`);
+                // Second try: Search by trackingNumber field as fallback
+                console.log(`No shipment found with shipmentID ${identifier}, trying trackingNumber...`);
+                const trackingQuery = query(
+                    collection(db, 'shipments'),
+                    where('trackingNumber', '==', identifier)
+                );
+                const trackingSnapshot = await getDocs(trackingQuery);
 
-                const shipmentsRef = collection(db, 'shipments');
-
-                // Try basic tracking fields first (most likely to have proper indexes)
-                const basicQueries = [
-                    { field: 'trackingNumber', value: identifier },
-                    { field: 'bookingReferenceNumber', value: identifier }
-                ];
-
-                for (const queryDef of basicQueries) {
-                    try {
-                        const q = query(shipmentsRef, where(queryDef.field, '==', queryDef.value));
-                        const querySnapshot = await getDocs(q);
-                        if (!querySnapshot.empty) {
-                            foundShipment = querySnapshot.docs[0];
-                            console.log(`Found SolushipX shipment with ${queryDef.field} "${identifier}"`);
-                            break;
-                        }
-                    } catch (queryError) {
-                        console.warn(`Query failed for ${queryDef.field}:`, queryError.message);
-                        // Continue to next query
-                    }
-                }
-
-                if (!foundShipment) {
-                    console.log(`No SolushipX shipment found for "${identifier}".`);
-                    setDisplayError(`No tracking information found for "${identifier}". Please verify this is a valid SolushipX shipment ID or tracking number.`);
+                if (!trackingSnapshot.empty) {
+                    const shipmentDoc = trackingSnapshot.docs[0];
+                    foundShipment = {
+                        id: shipmentDoc.id,
+                        ...shipmentDoc.data()
+                    };
+                    console.log(`Found shipment by trackingNumber:`, foundShipment);
+                } else {
+                    // No shipment found with either shipmentID or trackingNumber
+                    console.log(`No shipment found for identifier: ${identifier}`);
+                    setDisplayError(`No tracking information found for "${identifier}". Please verify this is a valid shipment ID or tracking number.`);
                     setLoading(false);
                     return;
                 }
@@ -381,7 +363,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
             // If we found a shipment, set the data and fetch tracking records
             if (foundShipment) {
-                const data = { id: foundShipment.id, ...foundShipment.data() };
+                // foundShipment is already a plain object, not a Firestore document
+                const data = foundShipment;
                 setShipmentData(data);
 
                 // Extract carrier tracking number from the shipment data
@@ -419,7 +402,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         status: event.status,
                                         description: event.description,
                                         location: event.location,
-                                        timestamp: event.timestamp?.toDate() || new Date(),
+                                        timestamp: parseTimestamp(event.timestamp),
                                         color: getStatusColor(event.status),
                                         icon: getStatusIcon(event.status)
                                     }))
@@ -501,7 +484,6 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
         // Cleanup: Unsubscribe when component unmounts or shipment ID changes
         return () => {
-            <Header />
             unsubscribe();
         };
     }, [shipmentData?.id, shipmentData?.shipmentID]); // Re-run if shipment.id or shipment.shipmentID changes
@@ -631,10 +613,16 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     }, [shipmentData, mergedEvents, carrier]);
 
     const MainContent = (
-        <Box sx={{ p: isDrawer ? 2 : 4, bgcolor: isDrawer ? '#ffffff' : 'transparent', color: 'text.primary', height: '100%', overflowY: 'auto' }}>
+        <Box sx={{
+            p: isDrawer ? 2 : { xs: 2, sm: 3, md: 4 },
+            bgcolor: isDrawer ? '#ffffff' : 'transparent',
+            color: 'text.primary',
+            height: '100%',
+            overflowY: 'auto'
+        }}>
             {/* Only show search form in non-drawer mode */}
             {!isDrawer && (
-                <Box component="form" onSubmit={handleSubmit} sx={{ mb: 4 }}>
+                <Box component="form" onSubmit={handleSubmit} sx={{ mb: { xs: 3, md: 4 } }}>
                     <TextField
                         fullWidth
                         variant="outlined"
@@ -647,7 +635,14 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     <SearchIcon color="action" />
                                 </InputAdornment>
                             ),
-                            sx: { borderRadius: 2, bgcolor: 'grey.50' }
+                            sx: {
+                                borderRadius: 2,
+                                bgcolor: 'grey.50',
+                                fontSize: { xs: '14px', sm: '16px' },
+                                '& input': {
+                                    fontSize: { xs: '14px', sm: '16px' }
+                                }
+                            }
                         }}
                         sx={{ mb: 2 }}
                         autoFocus
@@ -661,25 +656,26 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                             bgcolor: 'primary.main',
                             '&:hover': { bgcolor: 'primary.dark' },
                             borderRadius: 2,
-                            py: 1.5,
+                            py: { xs: 1.5, sm: 1.5 },
                             textTransform: 'none',
-                            fontSize: '1rem'
+                            fontSize: { xs: '14px', sm: '16px', md: '1rem' },
+                            fontWeight: 600
                         }}
                         disabled={loading}
                     >
-                        {loading ? <CircularProgress size={24} color="inherit" /> : 'Track'}
+                        {loading ? <CircularProgress size={24} color="inherit" /> : 'Track Shipment'}
                     </Button>
                 </Box>
             )}
 
             {loading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: { xs: 3, md: 4 } }}>
                     <CircularProgress />
                 </Box>
             )}
 
             {displayError && !loading && (
-                <Alert severity="error" sx={{ mb: 4 }}>{displayError}</Alert>
+                <Alert severity="error" sx={{ mb: { xs: 3, md: 4 } }}>{displayError}</Alert>
             )}
 
             {/* Only show tracking details if we have shipment data or we're not in drawer mode */}
@@ -696,13 +692,26 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         onClose={onClose}
                     />
                 ) : (
-                    <Paper elevation={0} sx={{ p: isDrawer ? 2 : 3, bgcolor: '#ffffff', borderRadius: 2 }}>
-                        <Grid container spacing={3}>
+                    <Paper elevation={0} sx={{
+                        p: { xs: 2, sm: 3, md: 3 },
+                        bgcolor: '#ffffff',
+                        borderRadius: 2,
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}>
+                        <Grid container spacing={{ xs: 2, md: 3 }}>
                             {/* Left Column: Tracking Details */}
                             <Grid item xs={12} md={4}>
                                 {/* Enhanced header with smart refresh button */}
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                <Box sx={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    mb: { xs: 2, md: 2 }
+                                }}>
+                                    <Typography variant="h6" sx={{
+                                        fontWeight: 600,
+                                        fontSize: { xs: '1.1rem', sm: '1.25rem' }
+                                    }}>
                                         Shipment Details
                                     </Typography>
                                     {shipmentData?.status !== 'draft' && shipmentData?.status !== 'delivered' && (
@@ -724,15 +733,13 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     )}
                                 </Box>
 
-
-
-                                {/* QR Code Section - Moved to top and full width */}
-                                <Box sx={{ mb: 3 }}>
+                                {/* QR Code Section - Responsive sizing */}
+                                <Box sx={{ mb: { xs: 2, md: 3 } }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                                         {qrCodeLoading ? (
                                             <Box sx={{
                                                 width: '100%',
-                                                height: 200,
+                                                height: { xs: 150, sm: 180, md: 200 },
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
@@ -750,15 +757,15 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                                 border: '1px solid',
                                                 borderColor: 'divider',
                                                 borderRadius: 1,
-                                                p: 2,
+                                                p: { xs: 1, sm: 2 },
                                                 bgcolor: 'background.paper'
                                             }}>
                                                 <img
                                                     src={qrCodeUrl}
                                                     alt="Tracking QR Code"
                                                     style={{
-                                                        width: 180,
-                                                        height: 180,
+                                                        width: 'min(180px, 100%)',
+                                                        height: 'min(180px, 100%)',
                                                         display: 'block'
                                                     }}
                                                 />
@@ -766,7 +773,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         ) : (
                                             <Box sx={{
                                                 width: '100%',
-                                                height: 200,
+                                                height: { xs: 150, sm: 180, md: 200 },
                                                 display: 'flex',
                                                 flexDirection: 'column',
                                                 alignItems: 'center',
@@ -776,23 +783,31 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                                 borderRadius: 1,
                                                 bgcolor: 'grey.50'
                                             }}>
-                                                <QrCodeIcon sx={{ fontSize: '3rem', color: 'text.secondary' }} />
+                                                <QrCodeIcon sx={{ fontSize: { xs: '2rem', sm: '3rem' }, color: 'text.secondary' }} />
                                             </Box>
                                         )}
                                     </Box>
                                 </Box>
 
-                                <Box sx={{ mb: 2.5 }}>
-                                    <Typography variant="caption" color="text.secondary" display="block">SolushipX Shipment ID</Typography>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Typography variant="body1" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                                {/* Info sections with responsive typography */}
+                                <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                        SolushipX Shipment ID
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                        <Typography variant="body1" sx={{
+                                            fontWeight: 600,
+                                            color: 'primary.main',
+                                            fontSize: { xs: '0.9rem', sm: '1rem' },
+                                            wordBreak: 'break-all'
+                                        }}>
                                             {shipmentData?.shipmentID || 'N/A'}
                                         </Typography>
                                         {shipmentData?.shipmentID && shipmentData.shipmentID !== 'N/A' && (
                                             <IconButton
                                                 size="small"
                                                 onClick={() => copyToClipboard(shipmentData.shipmentID, 'SolushipX Shipment ID')}
-                                                sx={{ padding: '2px' }}
+                                                sx={{ padding: '2px', minWidth: 'auto' }}
                                                 title="Copy SolushipX Shipment ID"
                                             >
                                                 <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
@@ -801,11 +816,18 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     </Box>
                                 </Box>
 
-                                {/* Carrier Tracking Number */}
-                                <Box sx={{ mb: 2.5 }}>
-                                    <Typography variant="caption" color="text.secondary" display="block">Carrier Tracking Number</Typography>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Typography variant="body1" sx={{ fontWeight: 600, color: 'secondary.main' }}>
+                                {/* Carrier Tracking Number with mobile optimization */}
+                                <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                        Carrier Tracking Number
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                        <Typography variant="body1" sx={{
+                                            fontWeight: 600,
+                                            color: 'secondary.main',
+                                            fontSize: { xs: '0.9rem', sm: '1rem' },
+                                            wordBreak: 'break-all'
+                                        }}>
                                             {(() => {
                                                 // Use the exact same logic as ShipmentDetail.jsx
                                                 const isCanparShipment = carrier?.toLowerCase().includes('canpar');
@@ -849,45 +871,62 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                                 copyToClipboard(trackingNumberToCopy, 'Carrier confirmation number');
                                             }}
                                             title="Copy carrier confirmation number"
+                                            sx={{ minWidth: 'auto' }}
                                         >
                                             <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
                                         </IconButton>
                                     </Box>
                                 </Box>
 
-                                <Box sx={{ mb: 2.5 }}>
-                                    <Typography variant="caption" color="text.secondary" display="block">Carrier</Typography>
+                                <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                        Carrier
+                                    </Typography>
                                     <CarrierDisplay carrierName={carrier || (shipmentData?.carrier || 'Unknown')} size="small" />
                                 </Box>
 
-                                <Box sx={{ mb: 2.5 }}>
-                                    <Typography variant="caption" color="text.secondary" display="block">Status</Typography>
+                                <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                        Status
+                                    </Typography>
                                     <StatusChip status={overallStatus} />
                                 </Box>
 
-                                <Box sx={{ mb: 2.5 }}>
-                                    <Typography variant="caption" color="text.secondary" display="block">Estimated Delivery</Typography>
+                                <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                        Estimated Delivery
+                                    </Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <CalendarToday sx={{ fontSize: '1.1rem', color: 'text.secondary' }} />
-                                        <Typography variant="body1" sx={{ fontWeight: 500 }}>{estimatedDeliveryDate}</Typography>
+                                        <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: '0.9rem', sm: '1rem' } }}>
+                                            {estimatedDeliveryDate}
+                                        </Typography>
                                     </Box>
                                 </Box>
 
                                 {shipmentData?.shipFrom && (
-                                    <Box sx={{ mb: 2.5 }}>
-                                        <Typography variant="caption" color="text.secondary" display="block">Origin</Typography>
+                                    <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
+                                        <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                            Origin
+                                        </Typography>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                             <LocationOn sx={{ fontSize: '1.1rem', color: 'text.secondary' }} />
-                                            <Typography variant="body1">{formatAddressDisplay(shipmentData.shipFrom)}</Typography>
+                                            <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>
+                                                {formatAddressDisplay(shipmentData.shipFrom)}
+                                            </Typography>
                                         </Box>
                                     </Box>
                                 )}
                                 {shipmentData?.shipTo && (
                                     <Box>
-                                        <Typography variant="caption" color="text.secondary" display="block">Destination</Typography>
+                                        <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+                                            Destination
+                                        </Typography>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                             <LocationOn sx={{ fontSize: '1.1rem', color: 'text.secondary' }} />
-                                            <Typography variant="body1">{formatAddressDisplay(shipmentData.shipTo)}</Typography>
+                                            <Typography variant="body1" sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }}>
+                                                {formatAddressDisplay(shipmentData.shipTo)}
+                                            </Typography>
                                         </Box>
                                     </Box>
                                 )}
@@ -895,10 +934,21 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
                             {/* Right Column: Timeline */}
                             <Grid item xs={12} md={8}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, mt: { xs: 2, md: 0 } }}>
+                                <Typography variant="h6" sx={{
+                                    fontWeight: 600,
+                                    mb: 2,
+                                    mt: { xs: 3, md: 0 },
+                                    fontSize: { xs: '1.1rem', sm: '1.25rem' }
+                                }}>
                                     Tracking History
                                 </Typography>
-                                <Box sx={{ maxHeight: '600px', overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: '6px' }, '&::-webkit-scrollbar-thumb': { backgroundColor: 'grey.300', borderRadius: '3px' } }}>
+                                <Box sx={{
+                                    maxHeight: { xs: '400px', sm: '500px', md: '600px' },
+                                    overflowY: 'auto',
+                                    pr: 1,
+                                    '&::-webkit-scrollbar': { width: '6px' },
+                                    '&::-webkit-scrollbar-thumb': { backgroundColor: 'grey.300', borderRadius: '3px' }
+                                }}>
                                     <ShipmentTimeline events={mergedEvents} />
                                 </Box>
                             </Grid>
@@ -915,10 +965,474 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
     return (
         <>
-            <Header />
-            <Container maxWidth="lg" sx={{ py: 4, minHeight: "calc(100vh - 200px)" }}>
-                {MainContent}
-            </Container>
+            {/* Public Website Header */}
+            <Navigation />
+
+            {/* Main Content */}
+            <Box sx={{
+                minHeight: '100vh',
+                bgcolor: '#f8f9fa',
+                paddingTop: { xs: '60px', sm: '70px', md: '80px' } // Account for header height
+            }}>
+                <Container maxWidth="lg" sx={{
+                    pt: { xs: 2, sm: 3, md: 4 },
+                    pb: { xs: 4, sm: 5, md: 6 },
+                    px: { xs: 1, sm: 2, md: 3 }
+                }}>
+                    {/* Hero Section with Tracking Form */}
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            p: { xs: 3, sm: 4, md: 4 },
+                            mb: { xs: 3, sm: 4, md: 4 },
+                            borderRadius: { xs: '12px', md: '16px' },
+                            background: 'linear-gradient(135deg, #1c277d 0%, #2563eb 100%)',
+                            color: 'white',
+                            textAlign: 'center'
+                        }}
+                    >
+                        <Typography
+                            variant="h3"
+                            component="h1"
+                            gutterBottom
+                            sx={{
+                                fontWeight: 700,
+                                fontSize: { xs: '1.75rem', sm: '2.5rem', md: '3rem' },
+                                mb: { xs: 2, md: 3 }
+                            }}
+                        >
+                            Track Your Shipment
+                        </Typography>
+                        <Typography
+                            variant="h6"
+                            sx={{
+                                mb: { xs: 3, md: 4 },
+                                opacity: 0.9,
+                                fontSize: { xs: '1rem', sm: '1.1rem', md: '1.25rem' },
+                                maxWidth: '600px',
+                                mx: 'auto'
+                            }}
+                        >
+                            Enter your shipment ID or carrier tracking number to get real-time updates
+                        </Typography>
+
+                        {/* Search Form inside hero */}
+                        <Box
+                            component="form"
+                            onSubmit={handleSubmit}
+                            sx={{
+                                maxWidth: '500px',
+                                mx: 'auto'
+                            }}
+                        >
+                            <TextField
+                                fullWidth
+                                variant="outlined"
+                                placeholder="e.g., IC-DWSLOGISTICS-22OC79"
+                                value={trackingNumberInput}
+                                onChange={handleInputChange}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon color="action" />
+                                        </InputAdornment>
+                                    ),
+                                    sx: {
+                                        borderRadius: 2,
+                                        bgcolor: 'white',
+                                        fontSize: { xs: '14px', sm: '16px' },
+                                        '& input': {
+                                            fontSize: { xs: '14px', sm: '16px' },
+                                            padding: { xs: '12px 14px', sm: '16.5px 14px' }
+                                        }
+                                    }
+                                }}
+                                sx={{ mb: 2 }}
+                                autoFocus
+                            />
+                            <Button
+                                type="submit"
+                                variant="contained"
+                                fullWidth
+                                size="large"
+                                sx={{
+                                    bgcolor: 'rgba(255,255,255,0.2)',
+                                    color: 'white',
+                                    border: '1px solid rgba(255,255,255,0.3)',
+                                    '&:hover': {
+                                        bgcolor: 'rgba(255,255,255,0.3)',
+                                        borderColor: 'rgba(255,255,255,0.5)'
+                                    },
+                                    borderRadius: 2,
+                                    py: { xs: 1.5, sm: 2 },
+                                    textTransform: 'none',
+                                    fontSize: { xs: '14px', sm: '16px', md: '1rem' },
+                                    fontWeight: 600,
+                                    backdropFilter: 'blur(10px)'
+                                }}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <CircularProgress size={24} color="inherit" />
+                                ) : (
+                                    'Track Shipment'
+                                )}
+                            </Button>
+                        </Box>
+                    </Paper>
+
+                    {/* Results Section */}
+                    {loading && (
+                        <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            p: { xs: 3, md: 4 },
+                            textAlign: 'center'
+                        }}>
+                            <Box>
+                                <CircularProgress size={40} />
+                                <Typography variant="body1" sx={{ mt: 2, color: 'text.secondary' }}>
+                                    Searching for your shipment...
+                                </Typography>
+                            </Box>
+                        </Box>
+                    )}
+
+                    {displayError && !loading && (
+                        <Alert
+                            severity="error"
+                            sx={{
+                                mb: { xs: 3, md: 4 },
+                                borderRadius: 2,
+                                '& .MuiAlert-message': {
+                                    fontSize: { xs: '14px', sm: '16px' }
+                                }
+                            }}
+                        >
+                            {displayError}
+                        </Alert>
+                    )}
+
+                    {/* Tracking Details */}
+                    {shipmentData && !loading && (
+                        <Paper elevation={0} sx={{
+                            p: { xs: 2, sm: 3, md: 4 },
+                            bgcolor: '#ffffff',
+                            borderRadius: { xs: '12px', md: '16px' },
+                            boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
+                        }}>
+                            <Grid container spacing={{ xs: 3, md: 4 }}>
+                                {/* Left Column: Tracking Details */}
+                                <Grid item xs={12} lg={4}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        mb: { xs: 2, md: 3 }
+                                    }}>
+                                        <Typography variant="h5" sx={{
+                                            fontWeight: 600,
+                                            fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                                            color: 'primary.main'
+                                        }}>
+                                            Shipment Details
+                                        </Typography>
+                                        {shipmentData?.status !== 'draft' && shipmentData?.status !== 'delivered' && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={handleRefreshStatus}
+                                                disabled={loading}
+                                                title="Refresh tracking information"
+                                                sx={{
+                                                    '&:hover': { bgcolor: 'action.hover' },
+                                                    p: 1
+                                                }}
+                                            >
+                                                {loading ? (
+                                                    <CircularProgress size={18} />
+                                                ) : (
+                                                    <RefreshIcon sx={{ fontSize: 20 }} />
+                                                )}
+                                            </IconButton>
+                                        )}
+                                    </Box>
+
+                                    {/* QR Code Section */}
+                                    <Box sx={{ mb: { xs: 3, md: 4 } }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                                            {qrCodeLoading ? (
+                                                <Box sx={{
+                                                    width: '100%',
+                                                    height: { xs: 160, sm: 180, md: 200 },
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '1px solid',
+                                                    borderColor: 'divider',
+                                                    borderRadius: 2,
+                                                    bgcolor: 'grey.50'
+                                                }}>
+                                                    <CircularProgress size={32} />
+                                                </Box>
+                                            ) : qrCodeUrl ? (
+                                                <Box sx={{
+                                                    width: '100%',
+                                                    display: 'flex',
+                                                    justifyContent: 'center',
+                                                    border: '1px solid',
+                                                    borderColor: 'divider',
+                                                    borderRadius: 2,
+                                                    p: { xs: 2, sm: 3 },
+                                                    bgcolor: 'background.paper'
+                                                }}>
+                                                    <img
+                                                        src={qrCodeUrl}
+                                                        alt="Tracking QR Code"
+                                                        style={{
+                                                            width: 'min(200px, 100%)',
+                                                            height: 'min(200px, 100%)',
+                                                            display: 'block'
+                                                        }}
+                                                    />
+                                                </Box>
+                                            ) : (
+                                                <Box sx={{
+                                                    width: '100%',
+                                                    height: { xs: 160, sm: 180, md: 200 },
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '1px dashed',
+                                                    borderColor: 'divider',
+                                                    borderRadius: 2,
+                                                    bgcolor: 'grey.50'
+                                                }}>
+                                                    <QrCodeIcon sx={{ fontSize: { xs: '2.5rem', sm: '3rem' }, color: 'text.secondary', mb: 1 }} />
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        QR Code
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    </Box>
+
+                                    {/* Info sections */}
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: { xs: 2.5, md: 3 }
+                                    }}>
+                                        {/* SolushipX Shipment ID */}
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                fontWeight: 600,
+                                                letterSpacing: '0.5px',
+                                                mb: 0.5
+                                            }}>
+                                                SolushipX Shipment ID
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                                <Typography variant="h6" sx={{
+                                                    fontWeight: 600,
+                                                    color: 'primary.main',
+                                                    fontSize: { xs: '1rem', sm: '1.1rem' },
+                                                    wordBreak: 'break-all'
+                                                }}>
+                                                    {shipmentData?.shipmentID || 'N/A'}
+                                                </Typography>
+                                                {shipmentData?.shipmentID && shipmentData.shipmentID !== 'N/A' && (
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => copyToClipboard(shipmentData.shipmentID, 'SolushipX Shipment ID')}
+                                                        sx={{ p: 0.5 }}
+                                                        title="Copy SolushipX Shipment ID"
+                                                    >
+                                                        <ContentCopyIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                                                    </IconButton>
+                                                )}
+                                            </Box>
+                                        </Box>
+
+                                        {/* Carrier Tracking Number */}
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                fontWeight: 600,
+                                                letterSpacing: '0.5px',
+                                                mb: 0.5
+                                            }}>
+                                                Carrier Tracking Number
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                                <Typography variant="h6" sx={{
+                                                    fontWeight: 600,
+                                                    color: 'secondary.main',
+                                                    fontSize: { xs: '1rem', sm: '1.1rem' },
+                                                    wordBreak: 'break-all'
+                                                }}>
+                                                    {(() => {
+                                                        // Use the exact same logic as ShipmentDetail.jsx
+                                                        const isCanparShipment = carrier?.toLowerCase().includes('canpar');
+
+                                                        if (isCanparShipment) {
+                                                            return shipmentData?.trackingNumber ||
+                                                                shipmentData?.carrierBookingConfirmation?.trackingNumber ||
+                                                                shipmentData?.selectedRate?.TrackingNumber ||
+                                                                shipmentData?.selectedRate?.Barcode ||
+                                                                'N/A';
+                                                        } else {
+                                                            // For eShipPlus and other carriers, use proNumber then confirmationNumber
+                                                            return shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                                                shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                shipmentData?.trackingNumber ||
+                                                                'N/A';
+                                                        }
+                                                    })()}
+                                                </Typography>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        const trackingNumberToCopy = (() => {
+                                                            // Use the exact same logic as display
+                                                            const isCanparShipment = carrier?.toLowerCase().includes('canpar');
+
+                                                            if (isCanparShipment) {
+                                                                return shipmentData?.trackingNumber ||
+                                                                    shipmentData?.carrierBookingConfirmation?.trackingNumber ||
+                                                                    shipmentData?.selectedRate?.TrackingNumber ||
+                                                                    shipmentData?.selectedRate?.Barcode ||
+                                                                    'N/A';
+                                                            } else {
+                                                                // For eShipPlus and other carriers, use proNumber then confirmationNumber
+                                                                return shipmentData?.carrierBookingConfirmation?.proNumber ||
+                                                                    shipmentData?.carrierBookingConfirmation?.confirmationNumber ||
+                                                                    shipmentData?.trackingNumber ||
+                                                                    'N/A';
+                                                            }
+                                                        })();
+                                                        copyToClipboard(trackingNumberToCopy, 'Carrier confirmation number');
+                                                    }}
+                                                    title="Copy carrier confirmation number"
+                                                    sx={{ p: 0.5 }}
+                                                >
+                                                    <ContentCopyIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                                                </IconButton>
+                                            </Box>
+                                        </Box>
+
+                                        {/* Other info sections - Carrier, Status, Delivery, Origin, Destination */}
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                fontWeight: 600,
+                                                letterSpacing: '0.5px',
+                                                mb: 0.5
+                                            }}>
+                                                Carrier
+                                            </Typography>
+                                            <CarrierDisplay carrierName={carrier || (shipmentData?.carrier || 'Unknown')} size="medium" />
+                                        </Box>
+
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                fontWeight: 600,
+                                                letterSpacing: '0.5px',
+                                                mb: 0.5
+                                            }}>
+                                                Status
+                                            </Typography>
+                                            <StatusChip status={overallStatus} />
+                                        </Box>
+
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                fontWeight: 600,
+                                                letterSpacing: '0.5px',
+                                                mb: 0.5
+                                            }}>
+                                                Estimated Delivery
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <CalendarToday sx={{ fontSize: '1.2rem', color: 'text.secondary' }} />
+                                                <Typography variant="body1" sx={{
+                                                    fontWeight: 500,
+                                                    fontSize: { xs: '1rem', sm: '1.1rem' }
+                                                }}>
+                                                    {estimatedDeliveryDate}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+
+                                        {shipmentData?.shipFrom && (
+                                            <Box>
+                                                <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                    fontWeight: 600,
+                                                    letterSpacing: '0.5px',
+                                                    mb: 0.5
+                                                }}>
+                                                    Origin
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <LocationOn sx={{ fontSize: '1.2rem', color: 'text.secondary' }} />
+                                                    <Typography variant="body1" sx={{ fontSize: { xs: '1rem', sm: '1.1rem' } }}>
+                                                        {formatAddressDisplay(shipmentData.shipFrom)}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+
+                                        {shipmentData?.shipTo && (
+                                            <Box>
+                                                <Typography variant="overline" color="text.secondary" display="block" sx={{
+                                                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                                    fontWeight: 600,
+                                                    letterSpacing: '0.5px',
+                                                    mb: 0.5
+                                                }}>
+                                                    Destination
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <LocationOn sx={{ fontSize: '1.2rem', color: 'text.secondary' }} />
+                                                    <Typography variant="body1" sx={{ fontSize: { xs: '1rem', sm: '1.1rem' } }}>
+                                                        {formatAddressDisplay(shipmentData.shipTo)}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Grid>
+
+                                {/* Right Column: Timeline */}
+                                <Grid item xs={12} lg={8}>
+                                    <Typography variant="h5" sx={{
+                                        fontWeight: 600,
+                                        mb: { xs: 2, md: 3 },
+                                        mt: { xs: 4, lg: 0 },
+                                        fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                                        color: 'primary.main'
+                                    }}>
+                                        Tracking History
+                                    </Typography>
+                                    <Box sx={{
+                                        maxHeight: { xs: '500px', sm: '600px', md: '700px' },
+                                        overflowY: 'auto',
+                                        pr: 1,
+                                        '&::-webkit-scrollbar': { width: '6px' },
+                                        '&::-webkit-scrollbar-thumb': { backgroundColor: 'grey.300', borderRadius: '3px' }
+                                    }}>
+                                        <ShipmentTimeline events={mergedEvents} />
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                        </Paper>
+                    )}
+                </Container>
+            </Box>
             <Footer />
         </>
     );

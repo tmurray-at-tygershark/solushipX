@@ -13,7 +13,10 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         printShipment: { loading: false, error: null },
         refreshStatus: { loading: false, error: null },
         generateBOL: { loading: false, error: null },
-        cancelShipment: { loading: false, error: null }
+        cancelShipment: { loading: false, error: null },
+        regenerateBOL: { loading: false, error: null },
+        regenerateConfirmation: { loading: false, error: null },
+        editShipment: { loading: false, error: null }
     });
 
     // Snackbar for user feedback
@@ -21,6 +24,14 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         open: false,
         message: '',
         severity: 'info'
+    });
+
+    // Enhanced state for regeneration dialog with loading support
+    const [regenerationDialog, setRegenerationDialog] = useState({
+        open: false,
+        isLoading: false,
+        documentType: null,
+        onViewDocument: null
     });
 
     // Helper to update action loading states
@@ -34,6 +45,36 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
     // Helper to show snackbar messages
     const showSnackbar = useCallback((message, severity = 'info') => {
         setSnackbar({ open: true, message, severity });
+    }, []);
+
+    // Helper to show regeneration success dialog
+    const showRegenerationDialog = useCallback((documentType, onViewDocument) => {
+        setRegenerationDialog({
+            open: true,
+            isLoading: false,
+            documentType,
+            onViewDocument
+        });
+    }, []);
+
+    // Helper to show regeneration loading dialog
+    const showRegenerationLoading = useCallback((documentType) => {
+        setRegenerationDialog({
+            open: true,
+            isLoading: true,
+            documentType,
+            onViewDocument: null
+        });
+    }, []);
+
+    // Helper to close regeneration dialog
+    const closeRegenerationDialog = useCallback(() => {
+        setRegenerationDialog({
+            open: false,
+            isLoading: false,
+            documentType: null,
+            onViewDocument: null
+        });
     }, []);
 
     // Helper function to multiply PDF labels
@@ -59,120 +100,83 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, []);
 
-
-
-    // Enhanced print label function with quantity and type selection
-    const handlePrintLabel = useCallback(async (quantity = 1, labelType = '4x6') => {
+    // Enhanced label handler with multiplicative printing
+    const handlePrintLabel = useCallback(async () => {
         try {
             setActionLoading('printLabel', true);
-            showSnackbar(`Generating ${quantity} label(s)...`, 'info');
+            showSnackbar('Loading shipping labels...', 'info');
 
-            let labels = shipmentDocuments.labels || [];
+            const allDocs = [
+                ...(shipmentDocuments.labels || []),
+                ...(shipmentDocuments.other || []),
+                ...(shipmentDocuments.documents || [])
+            ];
 
-            // Fallback: If no labels but we have other documents, try to find shipping documents
-            if (labels.length === 0) {
-                console.log('No labels found, searching all documents for shipping documents...');
-                const allDocs = Object.values(shipmentDocuments).flat();
+            const actualLabels = allDocs.filter(doc => {
+                const filename = (doc.filename || '').toLowerCase();
+                const documentType = (doc.documentType || '').toLowerCase();
 
-                const potentialLabels = allDocs.filter(doc => {
-                    const filename = (doc.filename || '').toLowerCase();
-                    const documentType = (doc.documentType || '').toLowerCase();
+                const isBOL = filename.includes('bol') ||
+                    filename.includes('billoflading') ||
+                    filename.includes('bill_of_lading') ||
+                    documentType.includes('bol') ||
+                    documentType === 'bill_of_lading';
 
-                    // Look for shipping-related documents
-                    return filename.includes('label') ||
-                        filename.includes('shipping') ||
-                        filename.includes('ship') ||
-                        filename.includes('print') ||
-                        // Specific eShipPlus ProLabel patterns
-                        filename.includes('prolabel') ||
-                        filename.includes('pro-label') ||
-                        filename.includes('prolabel4x6') ||
-                        filename.includes('prolabelavery') ||
-                        filename.includes('4x6inch') ||
-                        filename.includes('3x4inch') ||
-                        documentType.includes('label') ||
-                        documentType.includes('shipping') ||
-                        // For freight shipments, any PDF might be a label
-                        (shipment?.shipmentInfo?.shipmentType === 'freight' &&
-                            filename.includes('.pdf') &&
-                            !filename.includes('bol') &&
-                            !filename.includes('billoflading') &&
-                            !filename.includes('invoice'));
-                });
+                const isConfirmation = filename.includes('confirmation') ||
+                    filename.includes('carrier') ||
+                    documentType === 'carrier_confirmation' ||
+                    doc.docType === 7;
 
-                if (potentialLabels.length > 0) {
-                    console.log('Found potential shipping labels:', potentialLabels);
-                    labels = potentialLabels;
-                    showSnackbar('Found shipping documents to print', 'info');
-                } else {
-                    throw new Error('No shipping labels or documents available for this shipment');
-                }
-            }
+                if (isBOL || isConfirmation) return false;
 
-            let selectedLabel = labels[0];
+                return filename.includes('label') ||
+                    filename.includes('prolabel') ||
+                    filename.includes('shipping_label') ||
+                    documentType.includes('label') ||
+                    documentType === 'shipping_label' ||
+                    doc.docType === 1;
+            });
 
-            // Check if this is an eShipPlus carrier
-            const isEShipPlusCarrier = carrierData?.name?.toLowerCase().includes('eshipplus') ||
-                carrierData?.carrierID === 'ESHIPPLUS';
+            if (actualLabels.length > 0) {
+                const selectedDoc = actualLabels[0];
+                showSnackbar('Opening shipping label...', 'success');
 
-            // For eShipPlus, select based on label type if multiple are available
-            if (isEShipPlusCarrier && labels.length > 1) {
-                const typeToSearch = labelType === 'Thermal' ? 'avery3x4' : labelType;
-                const typeBasedLabel = labels.find(label => {
-                    const isAvery = label.filename?.toLowerCase().includes('avery') ||
-                        label.docType === 1 ||
-                        label.metadata?.eshipplus?.docType === 1;
-                    return typeToSearch === 'avery3x4' ? isAvery : !isAvery;
-                });
-                if (typeBasedLabel) selectedLabel = typeBasedLabel;
-            }
+                if (shipment?.packages?.length > 1) {
+                    const multipliedPdfBuffer = await multiplyPdfLabels(selectedDoc.downloadUrl, shipment.packages.length);
+                    const blob = new Blob([multipliedPdfBuffer], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(blob);
 
-            if (quantity === 1) {
-                // Single label - view directly
-                await viewPdfInModal(
-                    selectedLabel.id,
-                    selectedLabel.filename,
-                    `${labelType.toUpperCase()} ${labels.length > 0 ? 'Label' : 'Document'} - ${shipment?.shipmentID}`,
-                    'printLabel'
-                );
-            } else {
-                // Multiple labels - fetch PDF, multiply, and show in modal
-                const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
-                const result = await getDocumentDownloadUrlFunction({
-                    documentId: selectedLabel.id,
-                    shipmentId: shipment?.id
-                });
-
-                if (result.data.success) {
-                    const response = await fetch(result.data.downloadUrl);
-                    const pdfArrayBuffer = await response.arrayBuffer();
-                    const multipliedPdf = await multiplyPdfLabels(pdfArrayBuffer, quantity);
-
-                    // Create blob URL for the multiplied PDF and use modal
-                    const blob = new Blob([multipliedPdf], { type: 'application/pdf' });
-                    const multipliedPdfUrl = URL.createObjectURL(blob);
-
-                    // Use the modal instead of window.open
                     await viewPdfInModal(
-                        null, // No document ID for generated PDF
-                        `${quantity}x-${selectedLabel.filename}`,
-                        `${quantity}x ${labelType.toUpperCase()} ${labels.length > 0 ? 'Labels' : 'Documents'} - ${shipment?.shipmentID}`,
+                        url,
+                        `${selectedDoc.filename}_x${shipment.packages.length}`,
+                        `Shipping Labels (${shipment.packages.length} copies) - ${shipment?.shipmentID}`,
                         'printLabel',
-                        multipliedPdfUrl // Pass the blob URL directly
+                        true
                     );
                 } else {
-                    throw new Error('Failed to get download URL');
+                    await viewPdfInModal(
+                        selectedDoc.id,
+                        selectedDoc.filename,
+                        `Shipping Label - ${shipment?.shipmentID}`,
+                        'printLabel'
+                    );
+                }
+            } else {
+                const isQuickShip = shipment?.creationMethod === 'quickship';
+                if (isQuickShip) {
+                    showSnackbar('No shipping labels found. Labels should have been generated during QuickShip booking. Please contact support.', 'error');
+                } else {
+                    showSnackbar('No shipping labels found for this shipment', 'warning');
                 }
             }
 
-            showSnackbar(`${quantity} ${labels.length > 0 ? 'label(s)' : 'document(s)'} ready for printing`, 'success');
         } catch (error) {
-            console.error('Error printing label:', error);
-            showSnackbar('Failed to print document: ' + error.message, 'error');
+            console.error('Error printing labels:', error);
+            showSnackbar(`Failed to print labels: ${error.message}`, 'error');
         } finally {
             setActionLoading('printLabel', false);
         }
-    }, [shipment?.id, shipment?.shipmentID, carrierData, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
+    }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
 
     // Enhanced BOL handler - ALWAYS show Generic BOL attached to email confirmations
     const handlePrintBOL = useCallback(async () => {
@@ -200,32 +204,44 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                 });
 
                 if (genericBOL) {
-                    console.log('✅ Selected Generic BOL document (attached to emails):', {
+                    console.log('✅ Using Generic BOL (SOLUSHIP pattern):', {
                         id: genericBOL.id,
                         filename: genericBOL.filename,
-                        isGeneratedBOL: genericBOL.isGeneratedBOL,
-                        carrier: genericBOL.carrier
+                        isGeneratedBOL: genericBOL.isGeneratedBOL
                     });
 
-                    showSnackbar('Opening Generic BOL (email attachment)...', 'success');
+                    showSnackbar('Opening Generic BOL...', 'success');
 
                     await viewPdfInModal(
                         genericBOL.id,
                         genericBOL.filename,
-                        `Generic BOL - ${shipment?.shipmentID}`,
+                        `Bill of Lading - ${shipment?.shipmentID}`,
                         'printBOL'
                     );
                 } else {
-                    // No Generic BOL found - this should not happen for properly generated shipments
-                    console.warn('⚠️ Generic BOL not found, shipment may have been created with older system');
-                    showSnackbar('Generic BOL not found. Contact support if this is a recent shipment.', 'error');
+                    // Fall back to any available BOL if no Generic BOL found
+                    const fallbackBOL = bolDocuments[0];
+                    console.log('⚠️ No Generic BOL found, using fallback BOL:', {
+                        id: fallbackBOL.id,
+                        filename: fallbackBOL.filename,
+                        isGeneratedBOL: fallbackBOL.isGeneratedBOL
+                    });
+
+                    showSnackbar('Opening available BOL...', 'success');
+
+                    await viewPdfInModal(
+                        fallbackBOL.id,
+                        fallbackBOL.filename,
+                        `Bill of Lading - ${shipment?.shipmentID}`,
+                        'printBOL'
+                    );
                 }
             } else {
-                // No BOL documents found at all
+                // No BOL documents found
                 if (shipment?.creationMethod === 'quickship') {
-                    showSnackbar('BOL document not found. The BOL should have been generated during booking. Please contact support.', 'error');
+                    showSnackbar('BOL not found. The document should have been generated during booking. Please contact support.', 'error');
                 } else {
-                    showSnackbar('No BOL document found for this shipment. Contact support.', 'warning');
+                    showSnackbar('No BOL document found for this shipment', 'warning');
                 }
             }
 
@@ -381,8 +397,6 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                             );
                         }, 2000);
                     }
-                } else if (result.skipped) {
-                    showSnackbar(result.reason || 'Status check skipped', 'info');
                 } else if (result.updated) {
                     if (result.trackingUpdatesCount > 0) {
                         showSnackbar(
@@ -395,6 +409,8 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                     
                     // Refresh the shipment data even if status didn't change
                     refreshShipment?.();
+                } else {
+                    showSnackbar(result.reason || 'Status check skipped', 'info');
                 }
             } else {
                 const errorMessage = result?.error || 'Failed to refresh status';
@@ -410,20 +426,178 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
     }, [statusUpdateFunctions, setActionLoading, showSnackbar]);
 
     const handleCancelShipment = useCallback(async () => {
-        showSnackbar('Cancel shipment functionality coming soon', 'info');
-    }, [showSnackbar]);
+        // This is a placeholder - the actual cancel functionality
+        // is handled by the CancelShipmentModal component  
+        // The parent component should handle opening the cancel modal
+        return true; // Indicate readiness for cancel operation
+    }, []);
+
+    // NEW: Document Regeneration Handlers
+    const handleRegenerateBOL = useCallback(async (reason = 'User requested regeneration') => {
+        try {
+            // Show loading dialog immediately
+            showRegenerationLoading('bol');
+            setActionLoading('regenerateBOL', true);
+
+            const regenerateBOLFunction = httpsCallable(functions, 'regenerateBOL');
+
+            const result = await regenerateBOLFunction({
+                shipmentId: shipment?.shipmentID || shipment?.id,
+                firebaseDocId: shipment?.id,
+                reason: reason
+            });
+
+            if (result.data && result.data.success) {
+                // Trigger document refresh after successful regeneration
+                if (statusUpdateFunctions.fetchShipmentDocuments) {
+                    try {
+                        await statusUpdateFunctions.fetchShipmentDocuments();
+                        
+                        // Update dialog to success state with VIEW button
+                        showRegenerationDialog('bol', () => {
+                            // This will trigger the BOL viewing function
+                            handlePrintBOL();
+                        });
+                    } catch (error) {
+                        console.error('Error refreshing documents:', error);
+                        // Close loading dialog and show error
+                        closeRegenerationDialog();
+                        showSnackbar('BOL regenerated but failed to refresh document list. Please refresh the page.', 'warning');
+                    }
+                } else {
+                    // Close loading dialog and show success message
+                    closeRegenerationDialog();
+                    showSnackbar('BOL document regenerated successfully!', 'success');
+                }
+            } else {
+                throw new Error(result.data?.error || 'Failed to regenerate BOL');
+            }
+
+        } catch (error) {
+            console.error('Error regenerating BOL:', error);
+            const errorMessage = error.message || 'Unknown error occurred';
+            
+            // Close loading dialog and show error
+            closeRegenerationDialog();
+            showSnackbar(`Failed to regenerate BOL: ${errorMessage}`, 'error');
+            
+            // Show additional help message
+            setTimeout(() => {
+                showSnackbar('Please try again or contact support if the issue persists', 'warning');
+            }, 2000);
+        } finally {
+            setActionLoading('regenerateBOL', false);
+        }
+    }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar, statusUpdateFunctions, showRegenerationDialog, showRegenerationLoading, closeRegenerationDialog, handlePrintBOL]);
+
+    const handleRegenerateCarrierConfirmation = useCallback(async (reason = 'User requested regeneration') => {
+        try {
+            // Show loading dialog immediately
+            showRegenerationLoading('carrierConfirmation');
+            setActionLoading('regenerateConfirmation', true);
+
+            console.log('🔍 REGENERATION DEBUG: Current carrier and shipment data:', {
+                carrierData: carrierData,
+                shipmentCarrier: shipment?.carrier,
+                shipmentSelectedCarrier: shipment?.selectedCarrier,
+                carrierDataKeys: carrierData ? Object.keys(carrierData) : [],
+                carrierDataAccountNumber: carrierData?.accountNumber,
+                carrierDataApiCredentials: carrierData?.apiCredentials,
+                shipmentCreationMethod: shipment?.creationMethod
+            });
+
+            // Get carrier details from shipment or carrierData
+            const carrierDetails = {
+                name: carrierData?.name || shipment?.selectedCarrier || shipment?.carrier || 'Unknown Carrier',
+                contactEmail: carrierData?.contactEmail || carrierData?.email || '',
+                contactName: carrierData?.contactName || '',
+                contactPhone: carrierData?.contactPhone || carrierData?.phone || '',
+                accountNumber: carrierData?.accountNumber || '',
+                apiCredentials: carrierData?.apiCredentials || {}
+            };
+
+            console.log('🔍 REGENERATION DEBUG: Constructed carrierDetails for cloud function:', carrierDetails);
+
+            const regenerateConfirmationFunction = httpsCallable(functions, 'regenerateCarrierConfirmation');
+            const result = await regenerateConfirmationFunction({
+                shipmentId: shipment?.shipmentID || shipment?.id,
+                firebaseDocId: shipment?.id,
+                carrierDetails: carrierDetails,
+                reason: reason
+            });
+
+            if (result.data && result.data.success) {
+                // Trigger document refresh after successful regeneration
+                if (statusUpdateFunctions.fetchShipmentDocuments) {
+                    try {
+                        await statusUpdateFunctions.fetchShipmentDocuments();
+                        
+                        // Update dialog to success state with VIEW button
+                        showRegenerationDialog('carrierConfirmation', () => {
+                            // This will trigger the carrier confirmation viewing function
+                            handlePrintConfirmation();
+                        });
+                    } catch (error) {
+                        console.error('Error refreshing documents:', error);
+                        // Close loading dialog and show error
+                        closeRegenerationDialog();
+                        showSnackbar('Carrier confirmation regenerated but failed to refresh document list. Please refresh the page.', 'warning');
+                    }
+                } else {
+                    // Close loading dialog and show success message
+                    closeRegenerationDialog();
+                    showSnackbar('Carrier confirmation regenerated successfully!', 'success');
+                }
+            } else {
+                throw new Error(result.data?.error || 'Failed to regenerate carrier confirmation');
+            }
+
+        } catch (error) {
+            console.error('Error regenerating carrier confirmation:', error);
+            const errorMessage = error.message || 'Unknown error occurred';
+            
+            // Close loading dialog and show error
+            closeRegenerationDialog();
+            showSnackbar(`Failed to regenerate carrier confirmation: ${errorMessage}`, 'error');
+            
+            // Show additional help message
+            setTimeout(() => {
+                showSnackbar('Please try again or contact support if the issue persists', 'warning');
+            }, 2000);
+        } finally {
+            setActionLoading('regenerateConfirmation', false);
+        }
+    }, [shipment?.shipmentID, shipment?.id, carrierData, setActionLoading, showSnackbar, statusUpdateFunctions, showRegenerationDialog, showRegenerationLoading, closeRegenerationDialog, handlePrintConfirmation]);
+
+    const handleEditShipment = useCallback(async () => {
+        setActionLoading('editShipment', true);
+        showSnackbar('Opening shipment editor...', 'info');
+        
+        // Set a timeout to simulate opening the modal
+        setTimeout(() => {
+            setActionLoading('editShipment', false);
+            // The actual modal opening will be handled by the parent component
+            // This function just needs to indicate that editing is starting
+        }, 500);
+    }, [setActionLoading, showSnackbar]);
 
     return {
         actionStates,
         snackbar,
+        regenerationDialog,
         handlePrintLabel,
         handlePrintBOL,
         handlePrintConfirmation,
         handlePrintShipment,
         handleRefreshStatus,
         handleCancelShipment,
+        handleRegenerateBOL,
+        handleRegenerateCarrierConfirmation,
+        handleEditShipment,
         showSnackbar,
         setSnackbar,
-        setActionLoading
+        setActionLoading,
+        showRegenerationDialog,
+        closeRegenerationDialog
     };
 };

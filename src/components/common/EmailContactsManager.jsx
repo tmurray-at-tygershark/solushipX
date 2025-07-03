@@ -704,4 +704,4 @@ const EmailContactsManager = ({
     );
 };
 
-export default EmailContactsManager; 
+export default EmailContactsManager;

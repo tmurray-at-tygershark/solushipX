@@ -222,7 +222,7 @@ function extractBOLData(shipmentData, shipmentId) {
             company: 'SOLUSHIPX - INTEGRATED CARRIERS',
             address1: '9 - 75 FIRST STREET,',
             address2: 'SUITE 209,',
-            city: 'Orangeville',
+            city: 'ORANGEVILLE',
             state: 'ON',
             zip: 'L9W 5B6',
             accountNumber: '000605'
@@ -626,15 +626,28 @@ function drawExactThirdPartySection(doc, bolData) {
        .fontSize(6) // Reduced from 8
        .text('Freight Charges are:', 400, checkBoxY);
     
-    // Draw checkboxes
+    // STATIC SELECTION: Always select Third Party checkbox as per business requirement
+    console.log('Polaris BOL Generation: Static Third Party billing selection applied');
+    
+    // Prepaid checkbox (always unchecked)
     doc.rect(400, checkBoxY + 12, 6, 6).stroke() // Reduced size
        .text('Prepaid', 410, checkBoxY + 14);
     
+    // Collect checkbox (always unchecked)
     doc.rect(450, checkBoxY + 12, 6, 6).stroke()
        .text('Collect', 460, checkBoxY + 14);
     
-    doc.rect(500, checkBoxY + 12, 6, 6).stroke()
-       .text('3rd Party', 510, checkBoxY + 14);
+    // 3rd Party checkbox (ALWAYS CHECKED)
+    doc.rect(500, checkBoxY + 12, 6, 6).stroke();
+    // Always add X mark for 3rd party
+    doc.lineWidth(1)
+       .moveTo(501, checkBoxY + 13)
+       .lineTo(505, checkBoxY + 17)
+       .stroke()
+       .moveTo(505, checkBoxY + 13)
+       .lineTo(501, checkBoxY + 17)
+       .stroke();
+    doc.text('3rd Party', 510, checkBoxY + 14);
 }
 
 /**

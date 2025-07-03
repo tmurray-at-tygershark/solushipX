@@ -101,38 +101,214 @@ export const useShipmentData = (shipmentId) => {
         return () => unsubscribe();
     }, [shipment?.id, shipment?.shipmentID]);
 
+    // Computed values - MOVED UP: Define getBestRateInfo before it's used in carrier fetching
+    const getBestRateInfo = useMemo(() => {
+        // PRIORITY 1: Check if we have dual rate storage system data
+        if (shipment?.selectedRate && (shipment?.actualRates || shipment?.markupRates)) {
+            console.log('Using dual rate storage system data for rate display');
+            
+            // Use the selectedRate data which contains the complete rate information
+            const selectedRate = shipment.selectedRate;
+            
+            // Check if it's in universal format
+            if (selectedRate.carrier && selectedRate.pricing && selectedRate.transit) {
+                return {
+                    carrier: selectedRate.carrier.name,
+                    service: selectedRate.service?.name || 'Standard',
+                    totalCharges: selectedRate.pricing.total,
+                    freightCharge: selectedRate.pricing.freight,
+                    freightCharges: selectedRate.pricing.freight,
+                    fuelCharge: selectedRate.pricing.fuel,
+                    fuelCharges: selectedRate.pricing.fuel,
+                    serviceCharges: selectedRate.pricing.service,
+                    accessorialCharges: selectedRate.pricing.accessorial,
+                    transitDays: selectedRate.transit.days,
+                    estimatedDeliveryDate: selectedRate.transit.estimatedDelivery,
+                    guaranteed: selectedRate.transit.guaranteed,
+                    currency: selectedRate.pricing.currency,
+                    _isUniversalFormat: true
+                };
+            }
+            
+            // Fallback for non-universal format selectedRate
+            return {
+                carrier: selectedRate.carrier?.name || selectedRate.carrierName || selectedRate.sourceCarrierName || 'Unknown',
+                service: selectedRate.service?.name || selectedRate.serviceName || 'Standard',
+                totalCharges: selectedRate.totalCharges || selectedRate.pricing?.total || 0,
+                freightCharge: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
+                freightCharges: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
+                fuelCharge: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
+                fuelCharges: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
+                serviceCharges: selectedRate.serviceCharges || selectedRate.pricing?.service || 0,
+                accessorialCharges: selectedRate.accessorialCharges || selectedRate.pricing?.accessorial || 0,
+                transitDays: selectedRate.transitDays || selectedRate.transit?.days || 0,
+                estimatedDeliveryDate: selectedRate.estimatedDeliveryDate || selectedRate.transit?.estimatedDelivery,
+                guaranteed: selectedRate.guaranteed || selectedRate.transit?.guaranteed || false,
+                currency: selectedRate.currency || selectedRate.pricing?.currency || 'USD'
+            };
+        }
+
+        // PRIORITY 2: Legacy detailed rate info from separate rates collection
+        if (detailedRateInfo) {
+            if (detailedRateInfo.universalRateData) {
+                const universal = detailedRateInfo.universalRateData;
+                return {
+                    carrier: universal.carrier?.name || detailedRateInfo.carrier,
+                    service: universal.service?.name || detailedRateInfo.service,
+                    totalCharges: universal.pricing?.total || detailedRateInfo.totalCharges,
+                    freightCharge: universal.pricing?.freight || detailedRateInfo.freightCharges,
+                    freightCharges: universal.pricing?.freight || detailedRateInfo.freightCharges,
+                    fuelCharge: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
+                    fuelCharges: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
+                    serviceCharges: universal.pricing?.service || detailedRateInfo.serviceCharges,
+                    accessorialCharges: universal.pricing?.accessorial || detailedRateInfo.accessorialCharges,
+                    transitDays: universal.transit?.days || detailedRateInfo.transitDays,
+                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || detailedRateInfo.estimatedDeliveryDate,
+                    guaranteed: universal.transit?.guaranteed || detailedRateInfo.guaranteed,
+                    currency: universal.pricing?.currency || detailedRateInfo.currency,
+                    ...detailedRateInfo,
+                    _isUniversalFormat: true
+                };
+            }
+            return detailedRateInfo;
+        }
+
+        // PRIORITY 3: Legacy shipment.selectedRate (without dual rate storage)
+        if (shipment?.selectedRate) {
+            if (shipment.selectedRate.carrier && shipment.selectedRate.pricing && shipment.selectedRate.transit) {
+                return {
+                    carrier: shipment.selectedRate.carrier.name,
+                    service: shipment.selectedRate.service.name,
+                    totalCharges: shipment.selectedRate.pricing.total,
+                    freightCharge: shipment.selectedRate.pricing.freight,
+                    freightCharges: shipment.selectedRate.pricing.freight,
+                    fuelCharge: shipment.selectedRate.pricing.fuel,
+                    fuelCharges: shipment.selectedRate.pricing.fuel,
+                    serviceCharges: shipment.selectedRate.pricing.service,
+                    accessorialCharges: shipment.selectedRate.pricing.accessorial,
+                    transitDays: shipment.selectedRate.transit.days,
+                    estimatedDeliveryDate: shipment.selectedRate.transit.estimatedDelivery,
+                    guaranteed: shipment.selectedRate.transit.guaranteed,
+                    currency: shipment.selectedRate.pricing.currency,
+                    _isUniversalFormat: true
+                };
+            }
+            return shipment.selectedRate;
+        }
+
+        // PRIORITY 4: Legacy selectedRateRef
+        if (shipment?.selectedRateRef) {
+            return shipment.selectedRateRef;
+        }
+
+        // PRIORITY 5: Fallback to allShipmentRates
+        if (allShipmentRates.length > 0) {
+            const bookedRate = allShipmentRates.find(rate => rate.status === 'pending') ||
+                allShipmentRates.find(rate => rate.status === 'selected') ||
+                allShipmentRates[0];
+
+            if (bookedRate?.universalRateData) {
+                const universal = bookedRate.universalRateData;
+                return {
+                    carrier: universal.carrier?.name || bookedRate.carrier,
+                    service: universal.service?.name || bookedRate.service,
+                    totalCharges: universal.pricing?.total || bookedRate.totalCharges,
+                    freightCharge: universal.pricing?.freight || bookedRate.freightCharges,
+                    freightCharges: universal.pricing?.freight || bookedRate.freightCharges,
+                    fuelCharge: universal.pricing?.fuel || bookedRate.fuelCharges,
+                    fuelCharges: universal.pricing?.fuel || bookedRate.fuelCharges,
+                    serviceCharges: universal.pricing?.service || bookedRate.serviceCharges,
+                    accessorialCharges: universal.pricing?.accessorial || bookedRate.accessorialCharges,
+                    transitDays: universal.transit?.days || bookedRate.transitDays,
+                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || bookedRate.estimatedDeliveryDate,
+                    guaranteed: universal.transit?.guaranteed || bookedRate.guaranteed,
+                    currency: universal.pricing?.currency || bookedRate.currency,
+                    ...bookedRate,
+                    _isUniversalFormat: true
+                };
+            }
+            return bookedRate;
+        }
+
+        console.log('No rate information available - checked all sources');
+        return null;
+    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, shipment?.actualRates, shipment?.markupRates, allShipmentRates]);
+
     // Fetch carrier data
     useEffect(() => {
         const fetchCarrierData = async () => {
             const bestRate = getBestRateInfo;
-            if (!bestRate?.carrier) return;
+            if (!bestRate?.carrier && !shipment?.selectedCarrier && !shipment?.carrier) return;
 
             try {
-                const carriersRef = collection(db, 'carriers');
+                let carrierFound = false;
                 
-                let carrierIdentifier = bestRate.carrier;
-                
-                // Check if this is an eShipPlus integration
-                if (bestRate.displayCarrierId === 'ESHIPPLUS' ||
-                    bestRate.sourceCarrierName === 'eShipPlus' ||
-                    bestRate.displayCarrierId === 'eshipplus') {
-                    carrierIdentifier = 'ESHIPPLUS';
-                }
-
-                const q = query(carriersRef, where('carrierID', '==', carrierIdentifier));
-                const querySnapshot = await getDocs(q);
-
-                if (!querySnapshot.empty) {
-                    const carrierDoc = querySnapshot.docs[0];
-                    setCarrierData(carrierDoc.data());
-                } else {
-                    // Try by name
-                    const nameQuery = query(carriersRef, where('name', '==', carrierIdentifier));
-                    const nameSnapshot = await getDocs(nameQuery);
+                // For QuickShip shipments, check quickshipCarriers collection first
+                if (shipment?.creationMethod === 'quickship') {
+                    console.log('🔍 QuickShip detected - searching quickshipCarriers collection');
                     
-                    if (!nameSnapshot.empty) {
-                        const carrierDoc = nameSnapshot.docs[0];
+                    const quickshipCarriersRef = collection(db, 'quickshipCarriers');
+                    
+                    // Try to find by carrier name from shipment
+                    const carrierName = shipment?.selectedCarrier || shipment?.carrier;
+                    if (carrierName) {
+                        const nameQuery = query(quickshipCarriersRef, where('name', '==', carrierName));
+                        const nameSnapshot = await getDocs(nameQuery);
+                        
+                        if (!nameSnapshot.empty) {
+                            const carrierDoc = nameSnapshot.docs[0];
+                            const carrierData = carrierDoc.data();
+                            console.log('✅ Found QuickShip carrier data:', carrierData);
+                            setCarrierData(carrierData);
+                            carrierFound = true;
+                        } else {
+                            // Try by carrierId if name doesn't work
+                            const idQuery = query(quickshipCarriersRef, where('carrierId', '==', carrierName));
+                            const idSnapshot = await getDocs(idQuery);
+                            
+                            if (!idSnapshot.empty) {
+                                const carrierDoc = idSnapshot.docs[0];
+                                const carrierData = carrierDoc.data();
+                                console.log('✅ Found QuickShip carrier by ID:', carrierData);
+                                setCarrierData(carrierData);
+                                carrierFound = true;
+                            }
+                        }
+                    }
+                }
+                
+                // If not found in quickshipCarriers or not a QuickShip shipment, check regular carriers collection
+                if (!carrierFound) {
+                    const carriersRef = collection(db, 'carriers');
+                    
+                    let carrierIdentifier = bestRate?.carrier || shipment?.selectedCarrier || shipment?.carrier;
+                    
+                    // Check if this is an eShipPlus integration
+                    if (bestRate?.displayCarrierId === 'ESHIPPLUS' ||
+                        bestRate?.sourceCarrierName === 'eShipPlus' ||
+                        bestRate?.displayCarrierId === 'eshipplus') {
+                        carrierIdentifier = 'ESHIPPLUS';
+                    }
+
+                    const q = query(carriersRef, where('carrierID', '==', carrierIdentifier));
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        const carrierDoc = querySnapshot.docs[0];
+                        console.log('✅ Found regular carrier data:', carrierDoc.data());
                         setCarrierData(carrierDoc.data());
+                    } else {
+                        // Try by name
+                        const nameQuery = query(carriersRef, where('name', '==', carrierIdentifier));
+                        const nameSnapshot = await getDocs(nameQuery);
+                        
+                        if (!nameSnapshot.empty) {
+                            const carrierDoc = nameSnapshot.docs[0];
+                            console.log('✅ Found regular carrier by name:', carrierDoc.data());
+                            setCarrierData(carrierDoc.data());
+                        } else {
+                            console.warn('❌ No carrier found in either collection for:', carrierIdentifier);
+                        }
                     }
                 }
             } catch (error) {
@@ -141,7 +317,7 @@ export const useShipmentData = (shipmentId) => {
         };
 
         fetchCarrierData();
-    }, [shipment]);
+    }, [shipment, getBestRateInfo]);
 
     // Helper functions
     const fetchTrackingData = async (shipmentData) => {
@@ -282,139 +458,6 @@ export const useShipmentData = (shipmentId) => {
             shipmentData.trackingNumber = shipmentData.carrierBookingConfirmation.proNumber;
         }
     };
-
-    // Computed values
-    const getBestRateInfo = useMemo(() => {
-        // PRIORITY 1: Check if we have dual rate storage system data
-        if (shipment?.selectedRate && (shipment?.actualRates || shipment?.markupRates)) {
-            console.log('Using dual rate storage system data for rate display');
-            
-            // Use the selectedRate data which contains the complete rate information
-            const selectedRate = shipment.selectedRate;
-            
-            // Check if it's in universal format
-            if (selectedRate.carrier && selectedRate.pricing && selectedRate.transit) {
-                return {
-                    carrier: selectedRate.carrier.name,
-                    service: selectedRate.service?.name || 'Standard',
-                    totalCharges: selectedRate.pricing.total,
-                    freightCharge: selectedRate.pricing.freight,
-                    freightCharges: selectedRate.pricing.freight,
-                    fuelCharge: selectedRate.pricing.fuel,
-                    fuelCharges: selectedRate.pricing.fuel,
-                    serviceCharges: selectedRate.pricing.service,
-                    accessorialCharges: selectedRate.pricing.accessorial,
-                    transitDays: selectedRate.transit.days,
-                    estimatedDeliveryDate: selectedRate.transit.estimatedDelivery,
-                    guaranteed: selectedRate.transit.guaranteed,
-                    currency: selectedRate.pricing.currency,
-                    _isUniversalFormat: true
-                };
-            }
-            
-            // Fallback for non-universal format selectedRate
-            return {
-                carrier: selectedRate.carrier?.name || selectedRate.carrierName || selectedRate.sourceCarrierName || 'Unknown',
-                service: selectedRate.service?.name || selectedRate.serviceName || 'Standard',
-                totalCharges: selectedRate.totalCharges || selectedRate.pricing?.total || 0,
-                freightCharge: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
-                freightCharges: selectedRate.freightCharges || selectedRate.pricing?.freight || 0,
-                fuelCharge: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
-                fuelCharges: selectedRate.fuelCharges || selectedRate.pricing?.fuel || 0,
-                serviceCharges: selectedRate.serviceCharges || selectedRate.pricing?.service || 0,
-                accessorialCharges: selectedRate.accessorialCharges || selectedRate.pricing?.accessorial || 0,
-                transitDays: selectedRate.transitDays || selectedRate.transit?.days || 0,
-                estimatedDeliveryDate: selectedRate.estimatedDeliveryDate || selectedRate.transit?.estimatedDelivery,
-                guaranteed: selectedRate.guaranteed || selectedRate.transit?.guaranteed || false,
-                currency: selectedRate.currency || selectedRate.pricing?.currency || 'USD'
-            };
-        }
-
-        // PRIORITY 2: Legacy detailed rate info from separate rates collection
-        if (detailedRateInfo) {
-            if (detailedRateInfo.universalRateData) {
-                const universal = detailedRateInfo.universalRateData;
-                return {
-                    carrier: universal.carrier?.name || detailedRateInfo.carrier,
-                    service: universal.service?.name || detailedRateInfo.service,
-                    totalCharges: universal.pricing?.total || detailedRateInfo.totalCharges,
-                    freightCharge: universal.pricing?.freight || detailedRateInfo.freightCharges,
-                    freightCharges: universal.pricing?.freight || detailedRateInfo.freightCharges,
-                    fuelCharge: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
-                    fuelCharges: universal.pricing?.fuel || detailedRateInfo.fuelCharges,
-                    serviceCharges: universal.pricing?.service || detailedRateInfo.serviceCharges,
-                    accessorialCharges: universal.pricing?.accessorial || detailedRateInfo.accessorialCharges,
-                    transitDays: universal.transit?.days || detailedRateInfo.transitDays,
-                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || detailedRateInfo.estimatedDeliveryDate,
-                    guaranteed: universal.transit?.guaranteed || detailedRateInfo.guaranteed,
-                    currency: universal.pricing?.currency || detailedRateInfo.currency,
-                    ...detailedRateInfo,
-                    _isUniversalFormat: true
-                };
-            }
-            return detailedRateInfo;
-        }
-
-        // PRIORITY 3: Legacy shipment.selectedRate (without dual rate storage)
-        if (shipment?.selectedRate) {
-            if (shipment.selectedRate.carrier && shipment.selectedRate.pricing && shipment.selectedRate.transit) {
-                return {
-                    carrier: shipment.selectedRate.carrier.name,
-                    service: shipment.selectedRate.service.name,
-                    totalCharges: shipment.selectedRate.pricing.total,
-                    freightCharge: shipment.selectedRate.pricing.freight,
-                    freightCharges: shipment.selectedRate.pricing.freight,
-                    fuelCharge: shipment.selectedRate.pricing.fuel,
-                    fuelCharges: shipment.selectedRate.pricing.fuel,
-                    serviceCharges: shipment.selectedRate.pricing.service,
-                    accessorialCharges: shipment.selectedRate.pricing.accessorial,
-                    transitDays: shipment.selectedRate.transit.days,
-                    estimatedDeliveryDate: shipment.selectedRate.transit.estimatedDelivery,
-                    guaranteed: shipment.selectedRate.transit.guaranteed,
-                    currency: shipment.selectedRate.pricing.currency,
-                    _isUniversalFormat: true
-                };
-            }
-            return shipment.selectedRate;
-        }
-
-        // PRIORITY 4: Legacy selectedRateRef
-        if (shipment?.selectedRateRef) {
-            return shipment.selectedRateRef;
-        }
-
-        // PRIORITY 5: Fallback to allShipmentRates
-        if (allShipmentRates.length > 0) {
-            const bookedRate = allShipmentRates.find(rate => rate.status === 'pending') ||
-                allShipmentRates.find(rate => rate.status === 'selected') ||
-                allShipmentRates[0];
-
-            if (bookedRate?.universalRateData) {
-                const universal = bookedRate.universalRateData;
-                return {
-                    carrier: universal.carrier?.name || bookedRate.carrier,
-                    service: universal.service?.name || bookedRate.service,
-                    totalCharges: universal.pricing?.total || bookedRate.totalCharges,
-                    freightCharge: universal.pricing?.freight || bookedRate.freightCharges,
-                    freightCharges: universal.pricing?.freight || bookedRate.freightCharges,
-                    fuelCharge: universal.pricing?.fuel || bookedRate.fuelCharges,
-                    fuelCharges: universal.pricing?.fuel || bookedRate.fuelCharges,
-                    serviceCharges: universal.pricing?.service || bookedRate.serviceCharges,
-                    accessorialCharges: universal.pricing?.accessorial || bookedRate.accessorialCharges,
-                    transitDays: universal.transit?.days || bookedRate.transitDays,
-                    estimatedDeliveryDate: universal.transit?.estimatedDelivery || bookedRate.estimatedDeliveryDate,
-                    guaranteed: universal.transit?.guaranteed || bookedRate.guaranteed,
-                    currency: universal.pricing?.currency || bookedRate.currency,
-                    ...bookedRate,
-                    _isUniversalFormat: true
-                };
-            }
-            return bookedRate;
-        }
-
-        console.log('No rate information available - checked all sources');
-        return null;
-    }, [detailedRateInfo, shipment?.selectedRate, shipment?.selectedRateRef, shipment?.actualRates, shipment?.markupRates, allShipmentRates]);
 
     const isEShipPlusCarrier = useMemo(() => {
         return getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' ||

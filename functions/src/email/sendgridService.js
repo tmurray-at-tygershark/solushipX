@@ -159,7 +159,7 @@ const EMAIL_TEMPLATES = {
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -226,7 +226,7 @@ Need help? Contact us at support@integratedcarriers.com
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0;">${data.shipmentNumber}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Delivered:</strong></td><td style="padding: 8px 0;">${new Date(data.deliveredAt).toLocaleString()}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrier}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}</td></tr>
                             ${data.signature ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Signed by:</strong></td><td style="padding: 8px 0;">${data.signature}</td></tr>` : ''}
                         </table>
                     </div>
@@ -249,7 +249,7 @@ Need help? Contact us at support@integratedcarriers.com
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Thank you for choosing SolushipX!</p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -260,7 +260,7 @@ Shipment Delivered!
 Delivery Details:
 - Shipment #: ${data.shipmentNumber}
 - Delivered: ${new Date(data.deliveredAt).toLocaleString()}
-- Carrier: ${data.carrier}
+- Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
 ${data.signature ? `- Signed by: ${data.signature}` : ''}
 
 Delivered to: ${data.destination.city}, ${data.destination.state}
@@ -310,7 +310,7 @@ Thank you for choosing SolushipX!
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -418,7 +418,7 @@ Questions? Contact support@integratedcarriers.com
                                Track Shipment
                             </a>
                         </div>
-                        <p style="margin: 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Questions? Contact us at support@integratedcarriers.com</p>
                     </div>
                 </div>
@@ -540,7 +540,7 @@ Questions? Contact support@integratedcarriers.com
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Need help? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -659,7 +659,7 @@ Need help? Contact us at support@integratedcarriers.com
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Questions? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -795,7 +795,7 @@ Questions? Contact support@integratedcarriers.com
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Questions about this pickup? Reply to this email or contact Integrated Carriers</p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -881,7 +881,7 @@ ACTION REQUIRED: Please confirm receipt of this pickup assignment and provide ex
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Questions? Contact us at <a href="mailto:billing@integratedcarriers.com" style="color: #1c277d;">billing@integratedcarriers.com</a></p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 Integrated Carriers. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 Integrated Carriers. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -902,7 +902,7 @@ PAYMENT INSTRUCTIONS
 Please remit payment within the specified terms. The detailed invoice is attached as a PDF. For questions, contact our billing department.
 
 Questions? Contact billing@integratedcarriers.com
-© 2024 Integrated Carriers. All rights reserved.
+© 2025 Integrated Carriers. All rights reserved.
         `
     },
 
@@ -924,27 +924,23 @@ Questions? Contact billing@integratedcarriers.com
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment ID:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentId}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrier}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Booked By:</strong></td><td style="padding: 8px 0;">${data.bookedBy}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total Charges:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${data.currency} $${data.totalCharges}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Total:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.currency} $${data.totalCharges}</td></tr>
                         </table>
                     </div>
 
                     <!-- Route Information -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Route Information</h2>
-                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 200px; margin-right: 20px;">
-                                <h4 style="color: #000; margin: 0 0 10px 0;">From:</h4>
-                                <p style="margin: 0; line-height: 1.5;">
-                                    <strong>${data.shipFromCompany}</strong><br>
-                                    ${data.shipFromAddress}
-                                </p>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                            <div style="width: 48%;">
+                                <h3 style="color: #666; margin: 0 0 10px 0; font-size: 14px;">SHIP FROM</h3>
+                                <p style="margin: 0; font-weight: bold;">${data.shipFromCompany}</p>
+                                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">${data.shipFromAddress}</p>
                             </div>
-                            <div style="flex: 1; min-width: 200px;">
-                                <h4 style="color: #000; margin: 0 0 10px 0;">To:</h4>
-                                <p style="margin: 0; line-height: 1.5;">
-                                    <strong>${data.shipToCompany}</strong><br>
-                                    ${data.shipToAddress}
-                                </p>
+                            <div style="width: 48%;">
+                                <h3 style="color: #666; margin: 0 0 10px 0; font-size: 14px;">SHIP TO</h3>
+                                <p style="margin: 0; font-weight: bold;">${data.shipToCompany}</p>
+                                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">${data.shipToAddress}</p>
                             </div>
                         </div>
                     </div>
@@ -958,23 +954,12 @@ Questions? Contact billing@integratedcarriers.com
                         </table>
                     </div>
 
-                    <!-- Financial Breakdown -->
                     ${(data.rateBreakdown && data.rateBreakdown.length > 0) ? `
+                    <!-- Financial Breakdown -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Financial Breakdown</h2>
-                        ${data.rateBreakdown.map(rate => `
-                            <div style="border-bottom: 1px solid #eee; padding: 8px 0; display: flex; justify-content: space-between;">
-                                <span>${rate.description}</span>
-                                <div style="text-align: right;">
-                                    <span style="color: #28a745; margin-right: 10px;">Cost: ${rate.currency} $${rate.cost}</span>
-                                    <span style="color: #1c277d; font-weight: bold;">Charge: ${rate.currency} $${rate.charge}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                        <div style="border-top: 2px solid #1c277d; padding: 12px 0; display: flex; justify-content: space-between; font-weight: bold;">
-                            <span>Total Revenue:</span>
-                            <span style="color: #1c277d; font-size: 18px;">${data.currency} $${data.totalCharges}</span>
-                        </div>
+                        ${data.rateBreakdown.map(rate => `<tr><td style="padding: 8px 0; color: #666; width: 200px;"><strong>${rate.description}:</strong></td><td style="padding: 8px 0;">Cost ${rate.currency} $${rate.cost} | Charge ${rate.currency} $${rate.charge}</td></tr>`).join('')}
+                        <tr style="border-top: 1px solid #e9ecef;"><td style="padding: 12px 0 8px 0; color: #1c277d; font-weight: bold;"><strong>Total Revenue:</strong></td><td style="padding: 12px 0 8px 0; font-weight: bold; color: #1c277d;">${data.currency} $${data.totalCharges}</td></tr>
                     </div>
                     ` : ''}
 
@@ -985,7 +970,7 @@ Questions? Contact billing@integratedcarriers.com
 
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
                         <p style="margin: 0;">Internal SolushipX Notification</p>
-                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2024 SolushipX. All rights reserved.</p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                     </div>
                 </div>
             </div>
@@ -1015,6 +1000,130 @@ ${data.rateBreakdown.map(rate => `${rate.description}: Cost ${rate.currency} $${
 Total Revenue: ${data.currency} $${data.totalCharges}` : ''}
 
 Internal Note: This is an automatically generated internal notification for QuickShip booking. Please follow up with carrier coordination and customer service as needed.
+        `
+    },
+
+    shipment_cancelled: {
+        subject: (data) => `Shipment Cancelled - ${data.shipmentNumber}`,
+        html: (data) => `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #dc3545; color: white; padding: 30px; border-radius: 0;">
+                    <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                    <h1 style="margin: 0; font-size: 24px;">Shipment Cancellation Notice</h1>
+                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Shipment ${data.shipmentNumber} has been cancelled</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Cancellation Summary -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #dc3545; margin: 0 0 15px 0; font-size: 18px;">Cancellation Details</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Cancelled By:</strong></td><td style="padding: 8px 0;">${data.cancelledBy || 'System'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Cancellation Date:</strong></td><td style="padding: 8px 0;">${data.cancelledAt}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${data.carrierName || 'N/A'}</td></tr>
+                            ${data.trackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0;">${data.trackingNumber}</td></tr>` : ''}
+                        </table>
+                    </div>
+
+                    <!-- Cancellation Reason -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #dc3545; margin: 0 0 15px 0; font-size: 18px;">Reason for Cancellation</h2>
+                        <div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545;">
+                            <p style="margin: 0; color: #495057;">${data.cancellationReason || 'No specific reason provided'}</p>
+                        </div>
+                    </div>
+
+                    <!-- Original Shipment Details -->
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #6c757d; margin: 0 0 15px 0; font-size: 18px;">Original Shipment Details</h2>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                            <div style="width: 48%;">
+                                <h3 style="color: #666; margin: 0 0 10px 0; font-size: 14px;">SHIP FROM</h3>
+                                <p style="margin: 0; font-weight: bold;">${data.shipFrom || 'Not specified'}</p>
+                            </div>
+                            <div style="width: 48%;">
+                                <h3 style="color: #666; margin: 0 0 10px 0; font-size: 14px;">SHIP TO</h3>
+                                <p style="margin: 0; font-weight: bold;">${data.shipTo || 'Not specified'}</p>
+                            </div>
+                        </div>
+                        ${data.totalCharges ? `
+                        <table style="width: 100%; border-collapse: collapse; border-top: 1px solid #e9ecef; padding-top: 15px; margin-top: 15px;">
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Total Charges:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.currency || 'CAD'} $${data.totalCharges}</td></tr>
+                        </table>
+                        ` : ''}
+                    </div>
+
+                    <!-- Carrier Notification Status -->
+                    ${data.carrierNotificationStatus ? `
+                    <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Carrier Notification</h2>
+                        <div style="background: ${data.carrierNotificationStatus.success ? '#d4edda' : '#f8d7da'}; padding: 15px; border-left: 4px solid ${data.carrierNotificationStatus.success ? '#28a745' : '#dc3545'};">
+                            <p style="margin: 0; color: ${data.carrierNotificationStatus.success ? '#155724' : '#721c24'};">
+                                ${data.carrierNotificationStatus.success 
+                                    ? `✅ Carrier has been automatically notified of the cancellation.`
+                                    : `⚠️ Manual carrier notification required. Please contact the carrier directly.`
+                                }
+                            </p>
+                            ${data.carrierNotificationStatus.message ? `<p style="margin: 10px 0 0 0; color: #6c757d; font-size: 14px;">${data.carrierNotificationStatus.message}</p>` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Next Steps -->
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                        <h2 style="color: #856404; margin: 0 0 15px 0; font-size: 18px;">Next Steps</h2>
+                        <ul style="margin: 0; padding-left: 20px; color: #856404;">
+                            <li style="margin-bottom: 8px;">Your shipment has been successfully cancelled in our system</li>
+                            ${data.carrierNotificationStatus && !data.carrierNotificationStatus.success ? 
+                                '<li style="margin-bottom: 8px;">Please contact the carrier directly to confirm cancellation on their end</li>' : ''}
+                            <li style="margin-bottom: 8px;">If you paid for this shipment, our billing team will process any applicable refunds</li>
+                            <li style="margin-bottom: 8px;">You can create a new shipment anytime through your SolushipX dashboard</li>
+                        </ul>
+                    </div>
+
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
+                        <p style="margin: 0;">Questions about this cancellation? Contact us at <a href="mailto:support@integratedcarriers.com" style="color: #1c277d;">support@integratedcarriers.com</a></p>
+                        <p style="margin: 10px 0 0 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        `,
+        text: (data) => `
+Shipment Cancellation Notice
+
+CANCELLATION DETAILS
+- Shipment #: ${data.shipmentNumber}
+- Cancelled By: ${data.cancelledBy || 'System'}
+- Cancellation Date: ${data.cancelledAt}
+- Carrier: ${data.carrierName || 'N/A'}
+${data.trackingNumber ? `- Tracking #: ${data.trackingNumber}` : ''}
+
+REASON FOR CANCELLATION
+${data.cancellationReason || 'No specific reason provided'}
+
+ORIGINAL SHIPMENT DETAILS
+Ship From: ${data.shipFrom || 'Not specified'}
+Ship To: ${data.shipTo || 'Not specified'}
+${data.totalCharges ? `Total Charges: ${data.currency || 'CAD'} $${data.totalCharges}` : ''}
+
+CARRIER NOTIFICATION
+${data.carrierNotificationStatus ? 
+    (data.carrierNotificationStatus.success 
+        ? '✅ Carrier has been automatically notified of the cancellation.'
+        : '⚠️ Manual carrier notification required. Please contact the carrier directly.'
+    ) : 'Carrier notification status unknown'
+}
+
+NEXT STEPS
+• Your shipment has been successfully cancelled in our system
+${data.carrierNotificationStatus && !data.carrierNotificationStatus.success ? 
+    '• Please contact the carrier directly to confirm cancellation on their end' : ''}
+• If you paid for this shipment, our billing team will process any applicable refunds
+• You can create a new shipment anytime through your SolushipX dashboard
+
+Questions about this cancellation? Contact support@integratedcarriers.com
+© 2025 SolushipX. All rights reserved.
         `
     }
 };

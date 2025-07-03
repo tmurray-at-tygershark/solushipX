@@ -63,20 +63,42 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, o
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import QuickShipCarrierDialog from '../CreateShipment/QuickShipCarrierDialog';
 
-// Import the proper ModalHeader component (same as Notifications)
-import ModalHeader from '../common/ModalHeader';
+// Import components with error boundary protection
+let QuickShipCarrierDialog;
+let ModalHeader;
+
+try {
+    QuickShipCarrierDialog = require('../CreateShipment/QuickShipCarrierDialog').default;
+} catch (error) {
+    console.error('Error importing QuickShipCarrierDialog:', error);
+    QuickShipCarrierDialog = () => <div>QuickShip Carrier Dialog failed to load</div>;
+}
+
+try {
+    ModalHeader = require('../common/ModalHeader').default;
+} catch (error) {
+    console.error('Error importing ModalHeader:', error);
+    ModalHeader = ({ title, onClose, showCloseButton }) => (
+        <Box sx={{ p: 2, borderBottom: '1px solid #e5e7eb' }}>
+            <Typography variant="h6">{title}</Typography>
+            {showCloseButton && <Button onClick={onClose}>Close</Button>}
+        </Box>
+    );
+}
 
 const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
-    // Context and Auth
+    console.log('🚢 Carriers component initializing...', { isModal, showCloseButton });
+
+    // Context and Auth - always call hooks at top level
     const { currentUser } = useAuth();
     const { companyData, companyIdForAddress } = useCompany();
 
     // Use the correct company ID - either from companyIdForAddress or from companyData.companyID
     const companyId = companyIdForAddress || companyData?.companyID;
+    console.log('🆔 Using company ID:', companyId);
 
-    // States
+    // States - always call at top level
     const [selectedTab, setSelectedTab] = useState(0);
     const [loading, setLoading] = useState(true);
     const [solushipCarriers, setSolushipCarriers] = useState([]);
@@ -88,6 +110,8 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const [quickshipActionMenuAnchor, setQuickshipActionMenuAnchor] = useState(null);
     const [selectedCarrier, setSelectedCarrier] = useState(null);
     const [selectedSolushipCarrier, setSelectedSolushipCarrier] = useState(null);
+    const [error, setError] = useState(null);
+    const [contextError, setContextError] = useState(null);
 
     // Credentials dialog states
     const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
@@ -98,9 +122,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         apiSecret: ''
     });
 
-    // Load connected Soluship carriers
+    // Load connected Soluship carriers - ALL HOOKS MUST BE AT TOP LEVEL
     const loadConnectedCarriers = useCallback(async () => {
-        console.log('Loading connected carriers, companyData:', companyData);
+        console.log('📡 Loading connected carriers, companyData:', companyData);
 
         try {
             // Load all carriers from the carriers collection
@@ -110,11 +134,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 ...doc.data()
             }));
 
-            console.log('All carriers from database:', allCarriers.length);
-            console.log('Company connected carriers:', companyData?.connectedCarriers);
+            console.log('📦 All carriers from database:', allCarriers.length);
+            console.log('🔗 Company connected carriers:', companyData?.connectedCarriers);
 
             if (!companyData?.connectedCarriers || companyData.connectedCarriers.length === 0) {
-                console.log('No connected carriers in company data');
+                console.log('ℹ️ No connected carriers in company data');
                 setSolushipCarriers([]);
                 return;
             }
@@ -124,11 +148,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 const connection = companyData.connectedCarriers.find(cc =>
                     cc.carrierID === carrier.carrierID || cc.carrierId === carrier.carrierID
                 );
-                console.log(`Checking carrier ${carrier.name} (${carrier.carrierID}):`, !!connection);
+                console.log(`🔍 Checking carrier ${carrier.name} (${carrier.carrierID}):`, !!connection);
                 return connection; // Show all connected carriers, regardless of enabled status
             });
 
-            console.log('Filtered connected carriers:', connectedCarriers.length);
+            console.log('✅ Filtered connected carriers:', connectedCarriers.length);
 
             // Add connection info to each carrier
             const carriersWithConnectionInfo = connectedCarriers.map(carrier => {
@@ -145,25 +169,26 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
             setSolushipCarriers(carriersWithConnectionInfo);
         } catch (error) {
-            console.error('Error loading connected carriers:', error);
+            console.error('❌ Error loading connected carriers:', error);
             setSolushipCarriers([]);
+            throw error; // Re-throw to be caught by the main error handler
         }
     }, [companyData]);
 
     // Load QuickShip carriers
     const loadQuickShipCarriers = useCallback(async () => {
-        console.log('Loading QuickShip carriers for company:', companyId);
-        console.log('Company data:', companyData);
-        console.log('Available company fields:', Object.keys(companyData || {}));
+        console.log('🚀 Loading QuickShip carriers for company:', companyId);
+        console.log('🏢 Company data:', companyData);
+        console.log('📝 Available company fields:', Object.keys(companyData || {}));
 
         if (!companyId) {
-            console.log('No companyId provided');
+            console.log('⚠️ No companyId provided');
             setQuickShipCarriers([]);
             return;
         }
 
         try {
-            console.log('Attempting to query quickshipCarriers collection with companyID =', companyId);
+            console.log('🔍 Attempting to query quickshipCarriers collection with companyID =', companyId);
 
             const quickShipQuery = query(
                 collection(db, 'quickshipCarriers'),
@@ -172,11 +197,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             );
 
             const querySnapshot = await getDocs(quickShipQuery);
-            console.log('Query returned', querySnapshot.docs.length, 'documents');
+            console.log('📊 Query returned', querySnapshot.docs.length, 'documents');
 
             const carriers = querySnapshot.docs.map(doc => {
                 const data = doc.data();
-                console.log('QuickShip carrier found:', {
+                console.log('🚛 QuickShip carrier found:', {
                     id: doc.id,
                     name: data.name,
                     companyID: data.companyID,
@@ -188,24 +213,24 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 };
             });
 
-            console.log('Loaded QuickShip carriers:', carriers.length, carriers);
+            console.log('✅ Loaded QuickShip carriers:', carriers.length, carriers);
             setQuickShipCarriers(carriers);
         } catch (error) {
-            console.error('Error loading QuickShip carriers:', error);
+            console.error('❌ Error loading QuickShip carriers:', error);
             // If there's an ordering error, try without orderBy
             try {
-                console.log('Retrying without orderBy...');
+                console.log('🔄 Retrying without orderBy...');
                 const simpleQuery = query(
                     collection(db, 'quickshipCarriers'),
                     where('companyID', '==', companyId)
                 );
 
                 const querySnapshot = await getDocs(simpleQuery);
-                console.log('Simple query returned', querySnapshot.docs.length, 'documents');
+                console.log('📊 Simple query returned', querySnapshot.docs.length, 'documents');
 
                 const carriers = querySnapshot.docs.map(doc => {
                     const data = doc.data();
-                    console.log('QuickShip carrier found (simple query):', {
+                    console.log('🚛 QuickShip carrier found (simple query):', {
                         id: doc.id,
                         name: data.name,
                         companyID: data.companyID,
@@ -217,18 +242,18 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     };
                 });
 
-                console.log('Loaded QuickShip carriers (simple query):', carriers.length);
+                console.log('✅ Loaded QuickShip carriers (simple query):', carriers.length);
                 setQuickShipCarriers(carriers);
             } catch (retryError) {
-                console.error('Error on retry:', retryError);
+                console.error('❌ Error on retry:', retryError);
 
                 // Let's try to query all quickship carriers to see what's available
                 try {
-                    console.log('Attempting to fetch ALL quickship carriers for debugging...');
+                    console.log('🔍 Attempting to fetch ALL quickship carriers for debugging...');
                     const allCarriersQuery = collection(db, 'quickshipCarriers');
                     const allSnapshot = await getDocs(allCarriersQuery);
 
-                    console.log('Found', allSnapshot.docs.length, 'total quickship carriers in database:');
+                    console.log('📦 Found', allSnapshot.docs.length, 'total quickship carriers in database:');
                     allSnapshot.docs.forEach(doc => {
                         const data = doc.data();
                         console.log('- Carrier:', data.name, 'CompanyID:', data.companyID, 'ID:', doc.id);
@@ -239,29 +264,52 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         .map(doc => ({ id: doc.id, ...doc.data() }))
                         .filter(carrier => carrier.companyID === companyId);
 
-                    console.log('Filtered carriers for company', companyId + ':', ourCarriers.length);
+                    console.log('✅ Filtered carriers for company', companyId + ':', ourCarriers.length);
                     setQuickShipCarriers(ourCarriers);
                 } catch (debugError) {
-                    console.error('Debug query also failed:', debugError);
+                    console.error('❌ Debug query also failed:', debugError);
                     setQuickShipCarriers([]);
+                    throw debugError; // Re-throw to be caught by the main error handler
                 }
             }
         }
     }, [companyId, companyData]);
 
+    // Check for context errors after hooks are called
+    useEffect(() => {
+        try {
+            if (!currentUser) {
+                setContextError('User authentication required');
+                return;
+            }
+            console.log('🏢 Company context loaded:', {
+                hasCompanyData: !!companyData,
+                companyIdForAddress,
+                companyDataFields: companyData ? Object.keys(companyData) : []
+            });
+            setContextError(null);
+        } catch (error) {
+            console.error('❌ Error with contexts:', error);
+            setContextError('Error loading user context. Please refresh the page.');
+        }
+    }, [currentUser, companyData, companyIdForAddress]);
+
     // Load all data
     useEffect(() => {
         const loadData = async () => {
-            console.log('Carriers - Loading data, companyId:', companyId, 'companyData:', companyData);
+            console.log('📥 Carriers - Loading data, companyId:', companyId, 'companyData:', companyData);
             setLoading(true);
+            setError(null); // Clear any previous errors
 
             try {
                 await Promise.all([
                     loadConnectedCarriers(),
                     loadQuickShipCarriers()
                 ]);
+                console.log('✅ All carrier data loaded successfully');
             } catch (error) {
-                console.error('Error loading carriers data:', error);
+                console.error('❌ Error loading carriers data:', error);
+                setError(error.message || 'Failed to load carrier data');
             } finally {
                 setLoading(false);
             }
@@ -270,6 +318,24 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         // Always try to load data, even if companyId is null (for debugging)
         loadData();
     }, [companyId, companyData, loadConnectedCarriers, loadQuickShipCarriers]);
+
+    // Early return for context errors - AFTER all hooks are called
+    if (contextError) {
+        return (
+            <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Alert severity="error">
+                    <Typography>{contextError}</Typography>
+                    <Button
+                        variant="outlined"
+                        onClick={() => window.location.reload()}
+                        sx={{ mt: 2 }}
+                    >
+                        Refresh Page
+                    </Button>
+                </Alert>
+            </Box>
+        );
+    }
 
     // Handle tab change
     const handleTabChange = (event, newValue) => {
@@ -600,7 +666,37 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                     </TableCell>
                                     <TableCell>
                                         <Typography sx={{ fontSize: '12px' }}>
-                                            {carrier.createdAt ? new Date(carrier.createdAt.toDate()).toLocaleDateString() : 'N/A'}
+                                            {(() => {
+                                                try {
+                                                    if (!carrier.createdAt) return 'N/A';
+
+                                                    // Handle Firestore Timestamp
+                                                    if (carrier.createdAt && typeof carrier.createdAt.toDate === 'function') {
+                                                        return new Date(carrier.createdAt.toDate()).toLocaleDateString();
+                                                    }
+
+                                                    // Handle regular Date object
+                                                    if (carrier.createdAt instanceof Date) {
+                                                        return carrier.createdAt.toLocaleDateString();
+                                                    }
+
+                                                    // Handle timestamp objects with seconds
+                                                    if (carrier.createdAt && carrier.createdAt.seconds) {
+                                                        return new Date(carrier.createdAt.seconds * 1000).toLocaleDateString();
+                                                    }
+
+                                                    // Handle string dates
+                                                    if (typeof carrier.createdAt === 'string') {
+                                                        const date = new Date(carrier.createdAt);
+                                                        return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString();
+                                                    }
+
+                                                    return 'N/A';
+                                                } catch (error) {
+                                                    console.warn('Error formatting date for carrier:', carrier.id, error);
+                                                    return 'N/A';
+                                                }
+                                            })()}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
@@ -693,28 +789,74 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 />
             )}
 
-            {/* Main Content */}
-            <Box sx={{ height: isModal ? 'calc(100% - 64px)' : '100%' }}>
-                {/* Tabs */}
-                <Box sx={{ borderBottom: '1px solid #e5e7eb', px: 3, pt: 2 }}>
-                    <Tabs value={selectedTab} onChange={handleTabChange}>
-                        <Tab
-                            label={`Soluship Carriers (${solushipCarriers.length})`}
-                            sx={{ fontSize: '14px', textTransform: 'none' }}
-                        />
-                        <Tab
-                            label={`QuickShip Carriers (${quickShipCarriers.length})`}
-                            sx={{ fontSize: '14px', textTransform: 'none' }}
-                        />
-                    </Tabs>
+            {/* Error Display */}
+            {error && (
+                <Box sx={{ p: 3 }}>
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
+                            Error Loading Carriers
+                        </Typography>
+                        <Typography sx={{ fontSize: '12px' }}>
+                            {error}
+                        </Typography>
+                        <Box sx={{ mt: 2 }}>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => window.location.reload()}
+                                sx={{ fontSize: '11px', mr: 1 }}
+                            >
+                                Refresh Page
+                            </Button>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => setError(null)}
+                                sx={{ fontSize: '11px' }}
+                            >
+                                Dismiss Error
+                            </Button>
+                        </Box>
+                    </Alert>
                 </Box>
+            )}
 
-                {/* Tab Content */}
-                <Box sx={{ height: 'calc(100% - 48px)', overflow: 'auto' }}>
-                    {selectedTab === 0 && renderSolushipCarriers()}
-                    {selectedTab === 1 && renderQuickShipCarriers()}
+            {/* Loading Display */}
+            {loading && !error && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                        <CircularProgress size={40} />
+                        <Typography sx={{ mt: 2, fontSize: '14px', color: '#6b7280' }}>
+                            Loading carriers...
+                        </Typography>
+                    </Box>
                 </Box>
-            </Box>
+            )}
+
+            {/* Main Content - only show if no error and not loading */}
+            {!error && !loading && (
+                <Box sx={{ height: isModal ? 'calc(100% - 64px)' : '100%' }}>
+                    {/* Tabs */}
+                    <Box sx={{ borderBottom: '1px solid #e5e7eb', px: 3, pt: 2 }}>
+                        <Tabs value={selectedTab} onChange={handleTabChange}>
+                            <Tab
+                                label={`Soluship Carriers (${solushipCarriers.length})`}
+                                sx={{ fontSize: '14px', textTransform: 'none' }}
+                            />
+                            <Tab
+                                label={`QuickShip Carriers (${quickShipCarriers.length})`}
+                                sx={{ fontSize: '14px', textTransform: 'none' }}
+                            />
+                        </Tabs>
+                    </Box>
+
+                    {/* Tab Content */}
+                    <Box sx={{ height: 'calc(100% - 48px)', overflow: 'auto' }}>
+                        {selectedTab === 0 && renderSolushipCarriers()}
+                        {selectedTab === 1 && renderQuickShipCarriers()}
+                    </Box>
+                </Box>
+            )}
 
             {/* QuickShip Carrier Dialog */}
             <QuickShipCarrierDialog

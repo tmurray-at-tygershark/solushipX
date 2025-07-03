@@ -142,6 +142,12 @@ const { uploadFile, uploadFileBase64 } = require('./src/fileUpload');
 // Import address book update function
 const { updateAddressBookOwnerCompanyID } = require('./src/updateAddressBookOwnerCompanyID');
 
+// Document regeneration functions
+const { regenerateBOL, regenerateCarrierConfirmation, regenerateAllDocuments } = require('./src/carrier-api/generic/regenerateDocuments');
+
+// Shipment management functions
+const { updateShipment } = require('./src/shipment-management/updateShipment');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -263,6 +269,14 @@ exports.updateAddressBookOwnerCompanyID = updateAddressBookOwnerCompanyID;
 // Export invoice generation functions
 exports.onInvoiceCreated = onInvoiceCreated;
 exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
+
+// Document regeneration functions
+exports.regenerateBOL = regenerateBOL;
+exports.regenerateCarrierConfirmation = regenerateCarrierConfirmation;
+exports.regenerateAllDocuments = regenerateAllDocuments;
+
+// Export shipment management function
+exports.updateShipment = updateShipment;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

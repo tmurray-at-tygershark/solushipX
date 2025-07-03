@@ -244,7 +244,7 @@ const Footer = () => {
                     }}
                 >
                     <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                        © 2024 SolushipX. All rights reserved.
+                        © 2025 SolushipX. All rights reserved.
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 3 }}>
                         <MuiLink

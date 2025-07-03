@@ -31,7 +31,6 @@ const formatTimestamp = (timestamp) => {
     try {
         // Handle serverTimestamp placeholders
         if (timestamp._methodName === 'serverTimestamp') {
-            console.warn('Encountered serverTimestamp placeholder, returning pending');
             return 'Pending...';
         }
 
@@ -42,13 +41,16 @@ const formatTimestamp = (timestamp) => {
             try {
                 date = timestamp.toDate();
             } catch (error) {
-                console.warn('Error calling toDate() on timestamp:', error, timestamp);
-                return 'Invalid Date';
+                return 'N/A';
             }
         }
         // Handle timestamp objects with seconds and nanoseconds
         else if (timestamp && typeof timestamp === 'object' && typeof timestamp.seconds === 'number') {
-            date = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+            try {
+                date = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
+            } catch (error) {
+                return 'N/A';
+            }
         }
         // Handle numeric timestamps (milliseconds)
         else if (typeof timestamp === 'number') {
@@ -60,28 +62,16 @@ const formatTimestamp = (timestamp) => {
         }
         // Handle string timestamps
         else if (typeof timestamp === 'string') {
-            // Try to parse various string formats
             date = new Date(timestamp);
-
-            // If parsing failed, try to handle special formats
-            if (isNaN(date.getTime())) {
-                // Try ISO format or other common formats
-                const isoMatch = timestamp.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-                if (isoMatch) {
-                    date = new Date(timestamp);
-                }
-            }
         }
         // Handle invalid or unknown timestamp formats
         else {
-            console.warn('Unknown timestamp format:', typeof timestamp, timestamp);
-            return 'Unknown Date';
+            return 'N/A';
         }
 
         // Final validation
         if (!date || isNaN(date.getTime())) {
-            console.warn('Invalid timestamp after processing:', timestamp, 'resulted in:', date);
-            return 'Invalid Date';
+            return 'N/A';
         }
 
         return date.toLocaleString('en-US', {
@@ -93,8 +83,7 @@ const formatTimestamp = (timestamp) => {
             hour12: true
         });
     } catch (error) {
-        console.error('Error formatting timestamp:', error, 'for timestamp:', timestamp);
-        return 'Invalid Date';
+        return 'N/A';
     }
 };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import {
     Box,
     Paper,
@@ -11,14 +11,16 @@ import {
     DialogActions,
     Button,
     IconButton,
-    Drawer
+    Drawer,
+    Alert,
+    Snackbar
 } from '@mui/material';
 import {
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
     Close as CloseIcon
 } from '@mui/icons-material';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../firebase';
 import { httpsCallable } from 'firebase/functions';
 import { collection, getDocs } from 'firebase/firestore';
@@ -37,19 +39,22 @@ import TrackingDrawer from '../Tracking/Tracking';
 // Dialogs and Modals
 import PrintLabelDialog from './dialogs/PrintLabelDialog';
 // PDF viewer will be inline - no separate import needed
-import CancelShipmentModal from './dialogs/CancelShipmentModal';
+import CancelShipmentModal from './components/CancelShipmentModal';
 import SnackbarNotification from './components/SnackbarNotification';
+import EditShipmentModal from './components/EditShipmentModal';
+import DocumentRegenerationDialog from './components/DocumentRegenerationDialog';
 
 // Hooks
 import { useShipmentData } from './hooks/useShipmentData';
 import { useShipmentActions } from './hooks/useShipmentActions';
 import { useDocuments } from './hooks/useDocuments';
 import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate';
+import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
 
 // Utils
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin }) => {
+const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin, editMode = false }) => {
     const { id } = useParams();
     const shipmentId = propShipmentId || id;
     const { user } = useAuth();
@@ -145,6 +150,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     const {
         actionStates,
         snackbar,
+        regenerationDialog,
         handlePrintLabel,
         handlePrintBOL,
         handlePrintConfirmation,
@@ -152,13 +158,46 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         handleRefreshStatus,
         handleCancelShipment,
         showSnackbar,
-        setSnackbar
+        setSnackbar,
+        handleRegenerateBOL,
+        handleRegenerateCarrierConfirmation,
+        handleEditShipment,
+        showRegenerationDialog,
+        closeRegenerationDialog
     } = useShipmentActions(shipment, carrierData, shipmentDocuments, viewPdfInModal, {
         smartUpdateLoading,
         forceSmartRefresh,
         clearUpdateState,
-        refreshShipment
+        refreshShipment,
+        fetchShipmentDocuments
     });
+
+    // Custom handlers for modals
+    const handleEditShipmentClick = useCallback(() => {
+        setEditShipmentModalOpen(true);
+    }, []);
+
+    const handleShipmentUpdated = useCallback((updatedShipment) => {
+        // Refresh the shipment data after successful update
+        refreshShipment();
+        showSnackbar('Shipment updated successfully! Refreshing data...', 'success');
+        setEditShipmentModalOpen(false);
+    }, [refreshShipment, showSnackbar]);
+
+    const handleShipmentCancelled = useCallback((cancelledShipment) => {
+        // Refresh the shipment data after successful cancellation
+        refreshShipment();
+        showSnackbar('Shipment cancelled successfully! Status updated.', 'success');
+        setCancelModalOpen(false);
+
+        // REMOVED: Don't automatically navigate away - let user stay on the page
+        // User can manually go back if they want to see the updated status and timeline
+        // if (onBackToTable) {
+        //     setTimeout(() => {
+        //         onBackToTable();
+        //     }, 2000); // Give time for the success message to show
+        // }
+    }, [refreshShipment, showSnackbar]);
 
     // UI State - Remove expandedSections since we don't need collapsible sections anymore
     // const [expandedSections, setExpandedSections] = useState({
@@ -171,10 +210,19 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     // Modal States
     const [printLabelModalOpen, setPrintLabelModalOpen] = useState(false);
+    const [editShipmentModalOpen, setEditShipmentModalOpen] = useState(false);
     const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
     const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
     const [currentPdfTitle, setCurrentPdfTitle] = useState('');
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+    // Auto-open edit modal when editMode is true
+    useEffect(() => {
+        if (editMode && shipment && !loading && !editShipmentModalOpen) {
+            console.log('🔧 Auto-opening edit modal due to editMode prop');
+            setEditShipmentModalOpen(true);
+        }
+    }, [editMode, shipment, loading, editShipmentModalOpen]);
 
     // Maps and Route States  
     const [directions, setDirections] = useState(null);
@@ -705,6 +753,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onCancelShipment={() => setCancelModalOpen(true)}
                     onShowSnackbar={showSnackbar}
                     onRefreshShipment={refreshShipment}
+                    onRegenerateBOL={handleRegenerateBOL}
+                    onRegenerateCarrierConfirmation={handleRegenerateCarrierConfirmation}
+                    onEditShipment={handleEditShipmentClick}
                     isAdmin={isAdmin}
                 />
 
@@ -888,9 +939,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
             <CancelShipmentModal
                 open={cancelModalOpen}
                 onClose={() => setCancelModalOpen(false)}
-                onConfirm={handleCancelShipment}
                 shipment={shipment}
-                loading={actionStates.cancelShipment}
+                onShipmentCancelled={handleShipmentCancelled}
+                showNotification={showSnackbar}
             />
 
             <SnackbarNotification
@@ -898,6 +949,24 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 message={snackbar.message}
                 severity={snackbar.severity}
                 onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+            />
+
+            <EditShipmentModal
+                open={editShipmentModalOpen}
+                onClose={() => setEditShipmentModalOpen(false)}
+                onShipmentUpdated={handleShipmentUpdated}
+                shipment={shipment}
+                carrierData={carrierData}
+                showNotification={showSnackbar}
+            />
+
+            <DocumentRegenerationDialog
+                open={regenerationDialog.open}
+                onClose={closeRegenerationDialog}
+                onViewDocument={regenerationDialog.onViewDocument}
+                documentType={regenerationDialog.documentType}
+                shipmentID={shipment?.shipmentID}
+                isLoading={regenerationDialog.isLoading}
             />
         </ErrorBoundary>
     );

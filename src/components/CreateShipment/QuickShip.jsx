@@ -322,7 +322,17 @@ const ERROR_MESSAGES = {
     EMAIL_FAILED: 'Shipment booked successfully but email notification failed. You can download documents from the shipment details.'
 };
 
-const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false }) => {
+const QuickShip = ({
+    onClose,
+    onReturnToShipments,
+    onViewShipment,
+    draftId = null,
+    isModal = false,
+    editMode = false,
+    editShipment = null,
+    onShipmentUpdated = null,
+    showNotification = null
+}) => {
     const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, setCompanyContext } = useCompany();
 
@@ -464,6 +474,22 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
 
+    // Edit mode detection and handling
+    const isEditingExistingShipment = editMode && editShipment && editShipment.status !== 'draft';
+    const isEditingShipmentDraft = !editMode && draftId; // Regular draft editing
+
+    console.log('🚀 QuickShip Edit Mode Detection:', {
+        editMode,
+        hasEditShipment: !!editShipment,
+        shipmentStatus: editShipment?.status,
+        isEditingExistingShipment,
+        isEditingShipmentDraft,
+        draftId
+    });
+
+    // Function to handle updating an existing shipment - MOVED TO AFTER VALIDATION FUNCTIONS
+    // Function to handle cancelling edit changes - MOVED TO AFTER VALIDATION FUNCTIONS
+
     // Load customers for selected company (super admin)
     const loadCustomersForCompany = useCallback(async (companyId) => {
         if (!companyId || companyId === 'all') {
@@ -498,6 +524,31 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             setLoadingCustomers(false);
         }
     }, []);
+
+    // Success message handler
+    const showSuccess = (message) => {
+        setSuccessMessage(message);
+        setShowSuccessSnackbar(true);
+    };
+
+    // Helper function to clear all dependent state
+    const clearDependentState = useCallback(() => {
+        // Clear addresses
+        setShipFromAddress(null);
+        setShipToAddress(null);
+        setAvailableAddresses([]);
+
+        // Clear carriers
+        setQuickShipCarriers([]);
+        setSelectedCarrier('');
+        setSelectedCarrierContactId('');
+
+        // Clear form sections
+        updateFormSection('shipFrom', {});
+        updateFormSection('shipTo', {});
+
+        console.log('🧹 Cleared all dependent state for company switch');
+    }, [updateFormSection]);
 
     // Atomic company context switching for super admins
     const handleCompanySelection = useCallback(async (companyId) => {
@@ -545,12 +596,8 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             // 4. Switch company context atomically
             await setCompanyContext(targetCompanyData);
 
-            // 5. Load new company data in parallel
-            await Promise.all([
-                loadCustomersForCompany(companyId),
-                loadAddressesForCompany(companyId),
-                loadCarriersForCompany(companyId)
-            ]);
+            // 5. Load new company data
+            await loadCustomersForCompany(companyId);
 
             console.log('✅ Atomic company switch completed:', targetCompanyData.name);
             showSuccess(`Switched to ${targetCompanyData.name || companyId}`);
@@ -560,26 +607,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             setError('Error switching company context');
             setTimeout(() => setError(null), 3000);
         }
-    }, [setCompanyContext, updateFormSection]);
-
-    // Helper function to clear all dependent state
-    const clearDependentState = useCallback(() => {
-        // Clear addresses
-        setShipFromAddress(null);
-        setShipToAddress(null);
-        setAvailableAddresses([]);
-
-        // Clear carriers
-        setQuickShipCarriers([]);
-        setSelectedCarrier('');
-        setSelectedCarrierContactId('');
-
-        // Clear form sections
-        updateFormSection('shipFrom', {});
-        updateFormSection('shipTo', {});
-
-        console.log('🧹 Cleared all dependent state for company switch');
-    }, [updateFormSection]);
+    }, [setCompanyContext, loadCustomersForCompany, showSuccess, clearDependentState]);
 
     // Scroll to error function
     const scrollToError = () => {
@@ -602,12 +630,6 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         setTimeout(() => {
             scrollToError();
         }, 100);
-    };
-
-    // Success message handler
-    const showSuccess = (message) => {
-        setSuccessMessage(message);
-        setShowSuccessSnackbar(true);
     };
 
     // Enhanced conversion functions with better precision
@@ -656,6 +678,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
 
     // Generate shipment ID early when component initializes
     useEffect(() => {
+        if (editMode && editShipment) return; // <-- PATCH: skip in edit mode
         const generateInitialShipmentID = async () => {
             // Don't generate if we already have a shipmentID or if we're loading a draft
             if (!companyIdForAddress || shipmentID || draftId) return;
@@ -675,10 +698,16 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         };
 
         generateInitialShipmentID();
-    }, [companyIdForAddress, draftId]); // Removed shipmentID from dependencies to prevent loops
+    }, [companyIdForAddress, draftId, editMode, editShipment]); // <-- PATCH: add editMode, editShipment to deps
 
     // Create draft in database immediately after shipment ID is generated
     useEffect(() => {
+        // Skip entirely if in edit mode - this prevents new drafts from being created when editing existing shipments
+        if (editMode && editShipment) {
+            console.log('🔄 Edit mode detected - skipping draft creation for existing shipment:', editShipment.id);
+            return;
+        }
+
         const createInitialDraft = async () => {
             // Only create if we have a shipment ID, we're not editing an existing draft, and we're not loading a draft
             if (!shipmentID || isEditingDraft || draftId || !companyIdForAddress || !currentUser) return;
@@ -792,7 +821,7 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         };
 
         createInitialDraft();
-    }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem]);
+    }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem, editMode, editShipment]); // <-- PATCH: add editMode, editShipment to deps
 
     // Remove duplicate carrier loading effect - carriers are now loaded with company switching
 
@@ -1915,7 +1944,103 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
         };
 
         loadDraft();
-    }, [draftId, updateFormSection, onReturnToShipments]); // Removed editing flags from dependencies
+    }, [draftId, updateFormSection, onReturnToShipments]);
+
+    // Load existing shipment data when in edit mode
+    useEffect(() => {
+        const loadEditShipmentData = async () => {
+            if (!isEditingExistingShipment || !editShipment) return;
+
+            console.log('🔄 Loading existing shipment for editing:', editShipment);
+
+            try {
+                // Load shipment info
+                if (editShipment.shipmentInfo) {
+                    setShipmentInfo(prev => ({
+                        ...prev,
+                        ...editShipment.shipmentInfo
+                    }));
+                }
+
+                // Load addresses
+                if (editShipment.shipFrom || editShipment.shipFromAddress) {
+                    const fromAddress = editShipment.shipFrom || editShipment.shipFromAddress;
+                    setShipFromAddress(fromAddress);
+                    updateFormSection('shipFrom', fromAddress);
+                }
+                if (editShipment.shipTo || editShipment.shipToAddress) {
+                    const toAddress = editShipment.shipTo || editShipment.shipToAddress;
+                    setShipToAddress(toAddress);
+                    updateFormSection('shipTo', toAddress);
+                }
+
+                // Load packages
+                if (editShipment.packages && Array.isArray(editShipment.packages) && editShipment.packages.length > 0) {
+                    console.log('Loading packages from shipment:', editShipment.packages);
+                    const validatedPackages = editShipment.packages.map(pkg => ({
+                        ...pkg,
+                        itemDescription: pkg.itemDescription || '',
+                        packagingType: pkg.packagingType || 262,
+                        packagingQuantity: pkg.packagingQuantity || 1,
+                        weight: pkg.weight || '',
+                        length: pkg.length || '48',
+                        width: pkg.width || '40',
+                        height: pkg.height || '',
+                        freightClass: pkg.freightClass || '',
+                        unitSystem: pkg.unitSystem || 'imperial',
+                        declaredValue: pkg.declaredValue || '',
+                        declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
+                    }));
+                    setPackages(validatedPackages);
+                }
+
+                // Load manual rates
+                if (editShipment.manualRates && editShipment.manualRates.length > 0) {
+                    setManualRates(editShipment.manualRates);
+                } else if (editShipment.rates && editShipment.rates.length > 0) {
+                    // Convert from stored rates format if needed
+                    const convertedRates = editShipment.rates.map((rate, index) => ({
+                        id: rate.id || index + 1,
+                        carrier: rate.carrier || '',
+                        code: rate.code || 'FRT',
+                        chargeName: rate.chargeName || rate.description || 'Freight',
+                        cost: rate.cost || rate.amount || '',
+                        costCurrency: rate.costCurrency || rate.currency || 'CAD',
+                        charge: rate.charge || rate.amount || '',
+                        chargeCurrency: rate.chargeCurrency || rate.currency || 'CAD'
+                    }));
+                    setManualRates(convertedRates);
+                }
+
+                // Load carrier
+                if (editShipment.selectedCarrier) {
+                    setSelectedCarrier(editShipment.selectedCarrier);
+                } else if (editShipment.carrier) {
+                    setSelectedCarrier(editShipment.carrier);
+                }
+
+                // Load unit system
+                if (editShipment.unitSystem) {
+                    setUnitSystem(editShipment.unitSystem);
+                }
+
+                // Load email notification preference (default to true if not specified)
+                setSendEmailNotifications(editShipment.sendEmailNotifications !== false);
+
+                console.log('✅ Loaded existing shipment data for editing');
+
+            } catch (error) {
+                console.error('❌ Error loading existing shipment data:', error);
+                if (showNotification) {
+                    showNotification('Error loading shipment data for editing', 'error');
+                } else {
+                    setError('Error loading shipment data for editing');
+                }
+            }
+        };
+
+        loadEditShipmentData();
+    }, [isEditingExistingShipment, editShipment, updateFormSection, showNotification]);
 
     // Additional effect to ensure components are properly updated when draft editing begins
     // Removed - no longer needed since we're using final shipment IDs from the start
@@ -1944,7 +2069,9 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                 shipmentID,
                 isEditingDraft,
                 draftId,
-                activeDraftId
+                activeDraftId,
+                editMode,
+                editShipment: editShipment?.id
             });
 
             // Get the ship from and ship to addresses with full details
@@ -2021,7 +2148,14 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
             let docRef;
             let docId;
 
-            if (activeDraftId) {
+            // Handle edit mode - update existing shipment instead of creating new draft
+            if (editMode && editShipment) {
+                console.log('🔄 Edit mode detected - updating existing shipment:', editShipment.id);
+                docRef = doc(db, 'shipments', editShipment.id);
+                docId = editShipment.id;
+                await updateDoc(docRef, draftData);
+                console.log('QuickShip shipment updated successfully in edit mode:', docId);
+            } else if (activeDraftId) {
                 // We already have a draft document, update it
                 docRef = doc(db, 'shipments', activeDraftId);
                 docId = activeDraftId;
@@ -2542,6 +2676,89 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
     // Add debug log before rendering Ship From/Ship To dropdowns
     // (Place this right before the return statement)
     console.log('🚚 Rendering Ship From/To dropdowns with availableAddresses:', availableAddresses);
+
+    // Edit mode handling functions (moved here to ensure validateQuickShipForm is defined)
+
+    // Function to handle cancelling edit changes
+    const handleCancelEdit = useCallback(() => {
+        if (onClose) {
+            onClose();
+        }
+    }, [onClose]);
+
+    // At the top of the QuickShip component, after state declarations:
+    useEffect(() => {
+        if (editMode && editShipment) {
+            // Set shipmentID and activeDraftId to the existing shipment's Firestore doc ID
+            setShipmentID(editShipment.shipmentID || editShipment.id);
+            setActiveDraftId(editShipment.id);
+            // Set all form state from editShipment
+            if (editShipment.shipmentInfo) setShipmentInfo(editShipment.shipmentInfo);
+            if (editShipment.packages) setPackages(editShipment.packages);
+            if (editShipment.manualRates) setManualRates(editShipment.manualRates);
+            if (editShipment.selectedCarrier) setSelectedCarrier(editShipment.selectedCarrier);
+            if (editShipment.selectedCarrierContactId) setSelectedCarrierContactId(editShipment.selectedCarrierContactId);
+            if (editShipment.unitSystem) setUnitSystem(editShipment.unitSystem);
+            if (editShipment.shipFrom) setShipFromAddress(editShipment.shipFrom);
+            if (editShipment.shipTo) setShipToAddress(editShipment.shipTo);
+        }
+    }, [editMode, editShipment]);
+
+    // Patch any useEffects or logic that would create a new shipment or draft:
+    useEffect(() => {
+        if (editMode && editShipment) return; // Skip draft creation in edit mode
+        // ... existing draft creation logic ...
+    }, [/* dependencies */]);
+
+    // Add a new handleUpdateShipment function for edit mode:
+    const handleUpdateShipment = async () => {
+        if (!editMode || !editShipment) return;
+        setIsSavingDraft(true);
+        setError(null);
+        try {
+            // Validate form
+            if (!validateQuickShipForm()) {
+                setIsSavingDraft(false);
+                return;
+            }
+            // Prepare updated shipment data (similar to draftData)
+            const updatedData = {
+                shipmentID,
+                status: editShipment.status || 'booked',
+                creationMethod: 'quickship',
+                companyID: companyIdForAddress,
+                updatedAt: serverTimestamp(),
+                shipmentInfo: { ...shipmentInfo, unitSystem },
+                shipFrom: shipFromAddress,
+                shipTo: shipToAddress,
+                packages,
+                selectedCarrier,
+                selectedCarrierContactId,
+                manualRates,
+                unitSystem,
+                totalCost,
+                carrier: selectedCarrier,
+                carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
+                sendEmailNotifications,
+                isDraft: false
+            };
+            // Update the existing shipment document
+            const docRef = doc(db, 'shipments', editShipment.id);
+            await updateDoc(docRef, updatedData);
+            if (onShipmentUpdated) onShipmentUpdated(editShipment.id);
+            if (showNotification) showNotification('Shipment updated successfully!', 'success');
+            setShowDraftSuccess(true);
+            setTimeout(() => {
+                setShowDraftSuccess(false);
+                if (onClose) onClose();
+                if (onReturnToShipments) onReturnToShipments();
+            }, 1500);
+        } catch (error) {
+            setError(`Failed to update shipment: ${error.message}`);
+        } finally {
+            setIsSavingDraft(false);
+        }
+    };
 
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -4327,45 +4544,83 @@ const QuickShip = ({ onClose, onReturnToShipments, onViewShipment, draftId = nul
                                                     </Typography>
                                                 </Box>
 
-                                                {/* Right side - Ready to Ship text and buttons */}
+                                                {/* Right side - Action buttons (different for edit vs create mode) */}
                                                 <Box sx={{ textAlign: 'right' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
                                                         <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                            Ready to Ship?
+                                                            {isEditingExistingShipment ? 'Update Shipment?' : 'Ready to Ship?'}
                                                         </Typography>
                                                         <Box sx={{ display: 'flex', gap: 2 }}>
-                                                            <Button
-                                                                variant="outlined"
-                                                                onClick={handleShipLater}
-                                                                disabled={isSavingDraft || isDraftLoading}
-                                                                sx={{
-                                                                    fontSize: '12px',
-                                                                    textTransform: 'none',
-                                                                    minWidth: '120px'
-                                                                }}
-                                                                startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
-                                                            >
-                                                                {isSavingDraft ? 'Saving...' : 'Ship Later'}
-                                                            </Button>
-                                                            <Button
-                                                                variant="contained"
-                                                                color="primary"
-                                                                onClick={handleBookShipment}
-                                                                disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
-                                                                sx={{
-                                                                    fontSize: '12px',
-                                                                    textTransform: 'none',
-                                                                    minWidth: '120px'
-                                                                }}
-                                                            >
-                                                                {isBooking ? 'Booking...' : 'Book Shipment'}
-                                                            </Button>
+                                                            {isEditingExistingShipment ? (
+                                                                // Edit mode buttons
+                                                                <>
+                                                                    <Button
+                                                                        variant="outlined"
+                                                                        onClick={handleCancelEdit}
+                                                                        disabled={isLoading}
+                                                                        sx={{
+                                                                            fontSize: '12px',
+                                                                            textTransform: 'none',
+                                                                            minWidth: '120px'
+                                                                        }}
+                                                                    >
+                                                                        Cancel Changes
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="contained"
+                                                                        color="primary"
+                                                                        onClick={handleUpdateShipment}
+                                                                        disabled={isLoading || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                                        sx={{
+                                                                            fontSize: '12px',
+                                                                            textTransform: 'none',
+                                                                            minWidth: '120px'
+                                                                        }}
+                                                                        startIcon={isLoading ? <CircularProgress size={16} /> : null}
+                                                                    >
+                                                                        {isLoading ? 'Updating...' : 'Update Shipment'}
+                                                                    </Button>
+                                                                </>
+                                                            ) : (
+                                                                // Create mode buttons
+                                                                <>
+                                                                    <Button
+                                                                        variant="outlined"
+                                                                        onClick={handleShipLater}
+                                                                        disabled={isSavingDraft || isDraftLoading}
+                                                                        sx={{
+                                                                            fontSize: '12px',
+                                                                            textTransform: 'none',
+                                                                            minWidth: '120px'
+                                                                        }}
+                                                                        startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
+                                                                    >
+                                                                        {isSavingDraft ? 'Saving...' : 'Ship Later'}
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="contained"
+                                                                        color="primary"
+                                                                        onClick={handleBookShipment}
+                                                                        disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                                        sx={{
+                                                                            fontSize: '12px',
+                                                                            textTransform: 'none',
+                                                                            minWidth: '120px'
+                                                                        }}
+                                                                    >
+                                                                        {isBooking ? 'Booking...' : 'Book Shipment'}
+                                                                    </Button>
+                                                                </>
+                                                            )}
                                                         </Box>
                                                     </Box>
 
                                                     {/* Helper text below the buttons on the right */}
                                                     <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
-                                                        Save as draft to complete later, or book now to proceed with shipping.
+                                                        {isEditingExistingShipment
+                                                            ? 'Cancel to discard changes, or update to save your modifications.'
+                                                            : 'Save as draft to complete later, or book now to proceed with shipping.'
+                                                        }
                                                     </Typography>
                                                 </Box>
                                             </Box>

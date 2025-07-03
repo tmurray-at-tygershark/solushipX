@@ -220,6 +220,18 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
                       booking.totalCharges ||
                       500.00; // Default rate (lower since this is cost, not customer charge)
     
+    // DEBUG: Log account resolution for debugging the TS issue
+    const accountResolution = {
+        carrierDetailsAccountNumber: carrierDetails.accountNumber,
+        carrierDetailsApiAccountNumber: carrierDetails.apiCredentials?.accountNumber,
+        companyIDFallback: shipmentData.companyID,
+        finalAccountValue: carrierDetails.accountNumber || carrierDetails.apiCredentials?.accountNumber || shipmentData.companyID || '-',
+        carrierDetailsKeys: Object.keys(carrierDetails),
+        carrierName: carrierDetails.name
+    };
+    
+    console.log('🔍 CARRIER CONFIRMATION ACCOUNT DEBUG:', accountResolution);
+    
     // Extract special instructions from multiple sources
     const specialInstructions = [];
     
@@ -252,6 +264,15 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
     let carrierPhone = '';
     let carrierEmail = '';
     let carrierAttention = '';
+    
+    console.log('🚛 CARRIER CONFIRMATION DEBUG: Extracting carrier contact information:', {
+        carrierName: carrierDetails.name,
+        hasEmailContacts: !!carrierDetails.emailContacts,
+        creationMethod: shipmentData.creationMethod,
+        selectedCarrierContactId: shipmentData.selectedCarrierContactId,
+        carrierDetailsKeys: Object.keys(carrierDetails),
+        emailContactsLength: carrierDetails.emailContacts?.length || 0
+    });
     
     // Handle both old and new carrier data structures
     if (carrierDetails.emailContacts && shipmentData.creationMethod === 'quickship') {
@@ -307,7 +328,14 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
                 phone: carrierPhone,
                 email: carrierEmail,
                 attention: carrierAttention,
-                totalEmails: allEmails.length
+                totalEmails: allEmails.length,
+                dispatchEmailsCount: dispatchEmails.length,
+                customerServiceEmailsCount: customerServiceEmails.length
+            });
+        } else {
+            console.log('⚠️ No terminal found for QuickShip carrier:', {
+                selectedTerminalId,
+                availableTerminals: terminals.map(t => ({ id: t.id, name: t.name, isDefault: t.isDefault }))
             });
         }
     } else {
@@ -316,28 +344,46 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         carrierPhone = carrierDetails.contactPhone || carrierDetails.phone || '';
         carrierEmail = carrierDetails.contactEmail || carrierDetails.email || '';
         carrierAttention = carrierDetails.contactName || carrierDetails.attention || '';
+        
+        console.log('Legacy carrier fields extracted:', {
+            contactPhone: carrierDetails.contactPhone,
+            phone: carrierDetails.phone,
+            contactEmail: carrierDetails.contactEmail,
+            email: carrierDetails.email,
+            contactName: carrierDetails.contactName,
+            attention: carrierDetails.attention
+        });
     }
     
     // If still no email found, use legacy fallback
     if (!carrierEmail) {
-        carrierEmail = carrierDetails.contactEmail || carrierDetails.email || carrierDetails.billingEmail || '';
+        const fallbackEmail = carrierDetails.contactEmail || carrierDetails.email || carrierDetails.billingEmail || '';
+        console.log('🔄 Using email fallback:', fallbackEmail);
+        carrierEmail = fallbackEmail;
     }
     
     // If still no phone found, use legacy fallback  
     if (!carrierPhone) {
-        carrierPhone = carrierDetails.contactPhone || carrierDetails.phone || '';
+        const fallbackPhone = carrierDetails.contactPhone || carrierDetails.phone || '';
+        console.log('🔄 Using phone fallback:', fallbackPhone);
+        carrierPhone = fallbackPhone;
     }
     
     // If still no attention found, use legacy fallback
     if (!carrierAttention) {
-        carrierAttention = carrierDetails.contactName || carrierDetails.attention || '';
+        const fallbackAttention = carrierDetails.contactName || carrierDetails.attention || '';
+        console.log('🔄 Using attention fallback:', fallbackAttention);
+        carrierAttention = fallbackAttention;
     }
     
-    console.log('Final carrier contact info for confirmation:', {
+    console.log('🚛 FINAL CARRIER CONTACT INFO for confirmation:', {
         name: carrierDetails.name,
         phone: carrierPhone,
         email: carrierEmail,
-        attention: carrierAttention
+        attention: carrierAttention,
+        phoneLength: carrierPhone.length,
+        emailLength: carrierEmail.length,
+        attentionLength: carrierAttention.length
     });
 
     // FIXED: Extract business hours from address records like BOL does
@@ -353,13 +399,38 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         closed: false
     };
     
+    // CRITICAL FIX: Ensure times are always available with comprehensive fallbacks
+    const finalShipperOpen = shipperHours.open || shipFrom.openTime || shipFrom.readyTime || shipFrom.hours?.open || '';
+    const finalShipperClose = shipperHours.close || shipFrom.closeTime || shipFrom.hours?.close || '';
+    const finalConsigneeOpen = consigneeHours.open || shipTo.openTime || shipTo.deliverTime || shipTo.hours?.open || '';
+    const finalConsigneeClose = consigneeHours.close || shipTo.closeTime || shipTo.hours?.close || '';
+    
+    console.log('🚛 CARRIER CONFIRMATION HOURS DEBUG:', {
+        shipperOriginal: { open: shipperHours.open, close: shipperHours.close },
+        shipperFinal: { open: finalShipperOpen, close: finalShipperClose },
+        consigneeOriginal: { open: consigneeHours.open, close: consigneeHours.close },
+        consigneeFinal: { open: finalConsigneeOpen, close: finalConsigneeClose },
+        shipFromData: { openTime: shipFrom.openTime, closeTime: shipFrom.closeTime, readyTime: shipFrom.readyTime },
+        shipToData: { openTime: shipTo.openTime, closeTime: shipTo.closeTime, deliverTime: shipTo.deliverTime }
+    });
+    
     return {
         // Header information
         date: formatDateLong(now),
         refNumber: confirmationNumber,
         orderNumber: shipmentId,
-        account: shipmentData.companyID || '-',
+        account: carrierDetails.accountNumber || carrierDetails.apiCredentials?.accountNumber || shipmentData.companyID || '-',
         contact: 'Tim Smith', // As requested
+        
+        // Log the account resolution for debugging
+        _debugAccountResolution: {
+            carrierDetailsAccountNumber: carrierDetails.accountNumber,
+            carrierDetailsApiAccountNumber: carrierDetails.apiCredentials?.accountNumber,
+            companyIDFallback: shipmentData.companyID,
+            finalAccountValue: carrierDetails.accountNumber || carrierDetails.apiCredentials?.accountNumber || shipmentData.companyID || '-',
+            carrierDetailsKeys: Object.keys(carrierDetails),
+            carrierDetailsFullObject: carrierDetails
+        },
         
         // Carrier information with enhanced details
         carrier: carrierDetails.name || 'Integrated Carriers',
@@ -403,11 +474,10 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         
         // Enhanced date/time information
         dateReady: formatDateShort(shipDate),
-        readyTime: shipperHours.closed ? 'CLOSED' : shipperHours.open,
-        closeTime: shipperHours.closed ? 'CLOSED' : shipperHours.close,
-        deliverOn: formatDateShort(deliveryDate),
-        deliverOpen: consigneeHours.closed ? 'CLOSED' : consigneeHours.open, // ADDED: Missing delivery open time
-        deliverClose: consigneeHours.closed ? 'CLOSED' : consigneeHours.close,
+        readyTime: finalShipperOpen,
+        closeTime: finalShipperClose,
+        deliverOpen: finalConsigneeOpen,
+        deliverClose: finalConsigneeClose,
         
         // Enhanced load information with detailed package breakdown
         pieces: totalPieces,
@@ -548,31 +618,49 @@ function extractCloseTime(address) {
 /**
  * Formats time string to consistent format
  * @param {string} timeString - Time in various formats
- * @returns {string} - Formatted time (HH:MM)
+ * @returns {string} - Formatted time (HH:MM) or empty string for 0:00
  */
 function formatTime(timeString) {
     if (!timeString || timeString.trim() === '') {
         return '';
     }
     
+    // Convert to string and clean
+    const cleanTime = String(timeString).trim();
+    
+    // If time is 0:00, 00:00, or similar, return empty string
+    if (cleanTime === '0:00' || cleanTime === '00:00' || cleanTime === '0000' || cleanTime === '0') {
+        return '';
+    }
+    
     // If already in HH:MM format, return as is
-    if (/^\d{1,2}:\d{2}$/.test(timeString)) {
-        return timeString;
+    if (/^\d{1,2}:\d{2}$/.test(cleanTime)) {
+        return cleanTime;
     }
     
     // If in HHMM format, add colon
-    if (/^\d{4}$/.test(timeString)) {
-        return `${timeString.substring(0, 2)}:${timeString.substring(2, 4)}`;
+    if (/^\d{4}$/.test(cleanTime)) {
+        const formatted = `${cleanTime.substring(0, 2)}:${cleanTime.substring(2, 4)}`;
+        // Check if it's 00:00 after formatting
+        if (formatted === '00:00') {
+            return '';
+        }
+        return formatted;
     }
     
     // If in H:MM or HH:M format, normalize
-    if (/^\d{1,2}:\d{1,2}$/.test(timeString)) {
-        const [hours, minutes] = timeString.split(':');
-        return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+    if (/^\d{1,2}:\d{1,2}$/.test(cleanTime)) {
+        const [hours, minutes] = cleanTime.split(':');
+        const formatted = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+        // Check if it's 00:00 after formatting
+        if (formatted === '00:00') {
+            return '';
+        }
+        return formatted;
     }
     
     // Return as-is if can't parse
-    return timeString;
+    return cleanTime;
 }
 
 /**
@@ -995,7 +1083,7 @@ function drawEnhancedShipperSection(doc, data) {
        .fillColor('#000000')
        .text(data.shipper.phone, rightValueX, rightYPos);
     
-    // Instructions
+    // Instructions - FIXED: Better positioning to prevent overlap
     if (data.shipper.specialInstructions) {
         rightYPos += 14;
         doc.font('Helvetica-Bold')
@@ -1005,17 +1093,17 @@ function drawEnhancedShipperSection(doc, data) {
         doc.font('Helvetica')
            .fontSize(8)
            .fillColor('#000000')
-           .text(data.shipper.specialInstructions, rightValueX, rightYPos, { width: 140 });
+           .text(data.shipper.specialInstructions, rightValueX, rightYPos, { width: 140 }); // FIXED: Use rightValueX, not rightLabelX
     }
     
-    // Date Ready and times at bottom of shipper section - MOVED DOWN 20px from original position
+    // FIXED: Changed "Date Ready" to "Shipment Date" and improved spacing
     yPos += 40; // CHANGED: Increased from 20 to 40 for 20px additional space from original position
-    console.log(`🚛 CARRIER CONFIRMATION DEBUG: Date Ready moved down 20px within shipper section to Y=${yPos}`);
+    console.log(`🚛 CARRIER CONFIRMATION DEBUG: Shipment Date moved down 20px within shipper section to Y=${yPos}`);
     
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text('Date Ready', labelX, yPos);
+       .text('Shipment Date', labelX, yPos); // FIXED: Changed from "Date Ready" to "Shipment Date"
     
     doc.fillColor('#000000')
        .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
@@ -1023,7 +1111,7 @@ function drawEnhancedShipperSection(doc, data) {
     doc.font('Helvetica')
        .text(data.dateReady, valueX, yPos);
     
-    // Ready time - FIXED: Much closer spacing
+    // Ready time - FIXED: Much closer spacing with guaranteed display
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
        .text('Open', 180, yPos);  // FIXED: Moved left from 240 to 180
@@ -1032,9 +1120,9 @@ function drawEnhancedShipperSection(doc, data) {
        .text(':', 205, yPos);     // FIXED: Moved left from 280 to 205
     
     doc.font('Helvetica')
-       .text(data.readyTime, 210, yPos);  // FIXED: Moved left from 290 to 210
+       .text(data.readyTime, 210, yPos);
     
-    // Close time - FIXED: Much closer spacing, moved further left to avoid overlap
+    // Close time - FIXED: Much closer spacing, moved further left to avoid overlap with guaranteed display
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
        .text('Close', 260, yPos);  // FIXED: Moved even further left from 280 to 260
@@ -1043,7 +1131,7 @@ function drawEnhancedShipperSection(doc, data) {
        .text(':', 285, yPos);      // FIXED: Moved left to 285
     
     doc.font('Helvetica')
-       .text(data.closeTime, 290, yPos);  // FIXED: Moved left to 290
+       .text(data.closeTime, 290, yPos);
 }
 
 /**
@@ -1128,7 +1216,7 @@ function drawEnhancedConsigneeSection(doc, data) {
        .fillColor('#000000')
        .text(data.consignee.phone, rightValueX, rightYPos);
     
-    // Instructions
+    // Instructions - FIXED: Proper positioning to prevent overlap
     if (data.consignee.specialInstructions) {
         rightYPos += 14;
         doc.font('Helvetica-Bold')
@@ -1138,43 +1226,34 @@ function drawEnhancedConsigneeSection(doc, data) {
         doc.font('Helvetica')
            .fontSize(8)
            .fillColor('#000000')
-           .text(data.consignee.specialInstructions, rightValueX, rightYPos, { width: 140 });
+           .text(data.consignee.specialInstructions, rightValueX, rightYPos, { width: 140 }); // FIXED: Use rightValueX, not rightLabelX
     }
     
-    // Deliver On, Open, and Close time at bottom - FIXED: Much closer spacing
-    yPos += 20;
+    // ADDED BACK: Open and Close times (without Deliver On date)
+    yPos += 20; // Add some space after address
+    
+    // Open time for consignee
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text('Deliver On', labelX, yPos);
+       .text('Open', 180, yPos); // Position similar to shipper section
     
     doc.fillColor('#000000')
-       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
+       .text(':', 205, yPos);
     
     doc.font('Helvetica')
-       .text(data.deliverOn, valueX, yPos);
+       .text(data.deliverOpen, 210, yPos);
     
-    // ADDED: Open time for consignee - FIXED: Much closer spacing
+    // Close time
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text('Open', 180, yPos);  // FIXED: Position similar to Date Ready section
+       .text('Close', 260, yPos);
     
     doc.fillColor('#000000')
-       .text(':', 205, yPos);     // FIXED: Moved left to match Date Ready section
+       .text(':', 285, yPos);
     
     doc.font('Helvetica')
-       .text(data.deliverOpen || '', 210, yPos);  // FIXED: Use deliverOpen data
-    
-    // Close time - FIXED: Much closer spacing, moved further left to avoid overlap  
-    doc.font('Helvetica-Bold')
-       .fillColor('#333333')
-       .text('Close', 260, yPos);  // FIXED: Moved even further left from 280 to 260
-    
-    doc.fillColor('#000000')
-       .text(':', 285, yPos);      // FIXED: Moved left to 285
-    
-    doc.font('Helvetica')
-       .text(data.deliverClose, 290, yPos);  // FIXED: Moved left to 290
+       .text(data.deliverClose, 290, yPos);
 }
 
 /**
@@ -1183,22 +1262,18 @@ function drawEnhancedConsigneeSection(doc, data) {
 function drawEnhancedSpecialInstructions(doc, data) {
     const sectionY = 405; // Reverted back to original position
     const labelX = 35;
-    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     
-    // Section background if there are instructions
+    // Section background if there are instructions - INCREASED HEIGHT
     if (data.shipper.specialInstructions || data.consignee.specialInstructions) {
-        doc.rect(25, sectionY - 5, 562, 35)
+        doc.rect(25, sectionY - 5, 562, 45) // FIXED: Increased from 35 to 45
            .fill('#fff3cd');
     }
     
-    // Special instructions
+    // Special instructions label
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text('Special Instructions', labelX, sectionY);
-    
-    doc.fillColor('#000000')
-       .text(':', valueX - 5, sectionY);  // FIXED: Reduced gap from -10 to -5
+       .text('Special Instructions:', labelX, sectionY); // Added colon to label
     
     let instructions = [];
     if (data.shipper.specialInstructions) {
@@ -1211,8 +1286,9 @@ function drawEnhancedSpecialInstructions(doc, data) {
     if (instructions.length > 0) {
         doc.font('Helvetica')
            .fontSize(8)
-           .text(instructions.join(' | '), valueX, sectionY, {
-               width: 420,
+           .fillColor('#000000')
+           .text(instructions.join(' | '), labelX, sectionY + 14, { // FIXED: Increased spacing from +12 to +14
+               width: 520, // Increased width since we're not beside the label
                align: 'left'
            });
     }
@@ -1222,7 +1298,7 @@ function drawEnhancedSpecialInstructions(doc, data) {
  * Draws enhanced broker section
  */
 function drawEnhancedBrokerSection(doc, data) {
-    const sectionY = 445; // Reverted back to original position
+    const sectionY = 455; // MOVED DOWN: Add 10px padding from yellow banner above (was 445)
     const labelX = 35;
     const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
     const rightLabelX = 340;
@@ -1294,7 +1370,7 @@ function drawEnhancedBrokerSection(doc, data) {
  * Draws enhanced load information section with detailed table
  */
 function drawEnhancedLoadInfoSection(doc, data) {
-    const tableY = 495; // Reverted back to original position
+    const tableY = 505; // MOVED DOWN: Adjusted for broker section move (was 495)
     
     // Table header background
     doc.rect(25, tableY, 562, 20)
@@ -1312,18 +1388,18 @@ function drawEnhancedLoadInfoSection(doc, data) {
        .text('Class', 380, tableY + 6)
        .text('Description', 420, tableY + 6);
     
-    // Table border
+    // Table border - REDUCED HEIGHT: 80px for better balance
     doc.strokeColor('#cccccc')
        .lineWidth(1)
-       .rect(25, tableY, 562, 120)
+       .rect(25, tableY, 562, 80)
        .stroke();
     
     // Table data
     let dataY = tableY + 25;
-    const maxPackages = 10; // Make room for 10 packages as requested
+    const maxPackages = 6; // REDUCED: Show 6 packages to fit in 80px table
     
     if (data.packages && data.packages.length > 0) {
-        // Show up to 10 packages
+        // Show up to 6 packages
         data.packages.slice(0, maxPackages).forEach((pkg, index) => {
             if (index > 0) {
                 // Row separator
@@ -1340,8 +1416,8 @@ function drawEnhancedLoadInfoSection(doc, data) {
                .text(pkg.pieces.toString(), 110, dataY, { align: 'center', width: 40 })
                .text(pkg.weight + ' LBS', 170, dataY, { align: 'center', width: 50 })
                .text(pkg.type, 230, dataY, { align: 'center', width: 50 })
-               .text(pkg.dimensions || 'N/A', 290, dataY, { align: 'center', width: 80 })
-               .text(pkg.class || 'N/A', 380, dataY, { align: 'center', width: 30 })
+               .text(pkg.dimensions, 290, dataY, { align: 'center', width: 80 })
+               .text(pkg.class, 380, dataY, { align: 'center', width: 30 })
                .text(pkg.description, 420, dataY, { width: 160 });
             
             dataY += 10;
@@ -1362,12 +1438,12 @@ function drawEnhancedLoadInfoSection(doc, data) {
            .text(data.weight, 170, dataY, { align: 'center', width: 50 })
            .text('FREIGHT', 230, dataY, { align: 'center', width: 50 })
            .text('MIXED', 290, dataY, { align: 'center', width: 80 })
-           .text('N/A', 380, dataY, { align: 'center', width: 30 })
+           .text('', 380, dataY, { align: 'center', width: 30 })
            .text(data.description, 420, dataY);
     }
     
-    // Totals section
-    const totalsY = tableY + 125;
+    // Totals section - ADJUSTED: now at tableY + 85 for smaller table
+    const totalsY = tableY + 85;
     
     // Totals background
     doc.rect(25, totalsY, 562, 25)
@@ -1392,10 +1468,10 @@ function drawEnhancedLoadInfoSection(doc, data) {
 }
 
 /**
- * Draws enhanced terms and conditions section - more compact
+ * Draws enhanced terms and conditions section with full text
  */
 function drawEnhancedTermsSection(doc, data) {
-    const termsY = 650; // Reverted back to original position
+    const termsY = 635; // FINE-TUNED: moved back up 15px from 650 to 635 for perfect spacing
     
     // Terms header
     doc.rect(25, termsY, 562, 18)
@@ -1406,75 +1482,86 @@ function drawEnhancedTermsSection(doc, data) {
        .fillColor('#ffffff')
        .text('TERMS AND CONDITIONS', 35, termsY + 5);
     
-    // Terms content background
-    doc.rect(25, termsY + 18, 562, 70)
+    // Terms content background - AGGRESSIVELY REDUCED: 45px to fit everything
+    doc.rect(25, termsY + 18, 562, 45)
        .fill('#f8f9fa');
     
-    // Terms text - more compact
-    let textY = termsY + 23;
-    const terms = [
-        'Carrier is solely responsible for the payment of freight charges on this shipment. Rate is all inclusive including fuel surcharge.',
-        'Carrier must be informed of any change to shipment and any accessorial charges before they occur. All Charges must be confirmed by revised email.',
-        'All driver\'s crossing the border MUST have valid passport. Non payment will occur if this order is co-brokered or if customer is back solicited.',
-        'Should the Bill of Lading instructions differ from the above and/or any conditions cannot be met, must be notified immediately.',
-        'Load confirmation must be signed and emailed back IMMEDIATELY to complete this transaction and for payment to be processed.'
-    ];
+    // Terms text - UPDATED: Full terms text as provided by user
+    let textY = termsY + 22;
+    
+    // FULL TERMS: Updated with the complete terms text provided by user
+    const fullTerms = 'Integrated Carriers is solely responsible for the payment of freight charges on this shipment. Rate is all inclusive including fuel surcharge. Integrated Carriers must be informed of any change to shipment and any accessorial charges before they occur. All charges must be confirmed by revised email. All drivers crossing the border MUST have valid passport. Non payment will occur if this order is co-brokered (or subcontracted) or if customer is back solicited. Should the Bill of Lading instructions differ from the above and/or any conditions cannot be met, Integrated Carriers must be notified immediately. Load confirmation must be signed and emailed back IMMEDIATELY to complete this transaction and for payment to be processed.';
     
     doc.font('Helvetica')
-       .fontSize(7)
-       .fillColor('#000000');
-    
-    terms.forEach(term => {
-        doc.text(term, 35, textY, { width: 542 });
-        textY += 12;
-    });
+       .fontSize(6.5) // REDUCED font size to fit more text
+       .fillColor('#000000')
+       .text(fullTerms, 35, textY, { 
+           width: 522, // Slightly reduced width for better margins
+           lineGap: 1 // Minimal line gap
+       });
 }
 
 /**
  * Draws enhanced signature section
  */
 function drawEnhancedSignatureSection(doc, data) {
-    const sigY = 725; // Reverted back to original position
+    const sigY = 705; // MOVED DOWN 20PX: from 685 to 705
     
-    // Signature area background
-    doc.rect(25, sigY, 562, 40)
+    // Signature area background - MOVED DOWN ENTIRE SECTION
+    doc.rect(25, sigY, 562, 35)
        .fill('#ffffff')
        .strokeColor('#000000')
        .lineWidth(1)
        .stroke();
     
-    // X mark
+    // X mark - MOVED DOWN WITH ENTIRE SECTION
     doc.font('Helvetica-Bold')
        .fontSize(14)
        .fillColor('#dc3545')
-       .text('X', 40, sigY + 10);
+       .text('X', 40, sigY + 8);
     
-    // Signature line
+    // Signature line - MOVED DOWN WITH ENTIRE SECTION
     doc.strokeColor('#000000')
        .lineWidth(1)
-       .moveTo(60, sigY + 20)
-       .lineTo(300, sigY + 20)
+       .moveTo(60, sigY + 18)
+       .lineTo(300, sigY + 18)
        .stroke();
     
-    // Signature label
+    // Signature label - MOVED DOWN WITH ENTIRE SECTION
     doc.font('Helvetica')
        .fontSize(9)
        .fillColor('#666666')
-       .text('Carrier Signature', 60, sigY + 25);
+       .text('Carrier Signature', 60, sigY + 22);
     
-    // Date line
-    doc.moveTo(350, sigY + 20)
-       .lineTo(450, sigY + 20)
+    // Date line - MOVED DOWN WITH ENTIRE SECTION
+    doc.moveTo(350, sigY + 18)
+       .lineTo(450, sigY + 18)
        .stroke();
     
-    doc.text('Date', 350, sigY + 25);
+    doc.text('Date', 350, sigY + 22);
     
-    // Print name line
-    doc.moveTo(480, sigY + 20)
-       .lineTo(570, sigY + 20)
+    // Print name line - MOVED DOWN WITH ENTIRE SECTION
+    doc.moveTo(480, sigY + 18)
+       .lineTo(570, sigY + 18)
        .stroke();
     
-    doc.text('Print Name', 480, sigY + 25);
+    doc.text('Print Name', 480, sigY + 22);
+    
+    // MOVED DOWN 20PX: Integrated Carriers address - positioned right after signature
+    const addressY = sigY + 40; // Now at 745 (705 + 40)
+    
+    // FIXED: Put entire address on one line for maximum compactness - ALL CAPITALS
+    const fullAddress = 'INTEGRATED CARRIERS - 9 - 75 FIRST STREET, SUITE 209, ORANGEVILLE, ON L9W 5B6';
+    
+    // Center the address block - FIXED: Proper centering calculation
+    const pageWidth = 612; // Standard letter size width
+    const addressBlockWidth = 400; // Wider for single line
+    const centerX = (pageWidth - addressBlockWidth) / 2; // True center calculation
+    
+    doc.font('Helvetica')
+       .fontSize(8)
+       .fillColor('#000000')
+       .text(fullAddress, centerX, addressY, { align: 'center', width: addressBlockWidth });
 }
 
 /**
