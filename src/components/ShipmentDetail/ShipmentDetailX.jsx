@@ -54,7 +54,7 @@ import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticSt
 // Utils
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin, editMode = false }) => {
+const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin, editMode = false, onShipmentUpdated: parentOnShipmentUpdated }) => {
     const { id } = useParams();
     const shipmentId = propShipmentId || id;
     const { user } = useAuth();
@@ -182,7 +182,13 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         refreshShipment();
         showSnackbar('Shipment updated successfully! Refreshing data...', 'success');
         setEditShipmentModalOpen(false);
-    }, [refreshShipment, showSnackbar]);
+
+        // Also call the parent callback to refresh the shipments table
+        if (parentOnShipmentUpdated) {
+            console.log('🔄 Calling parent callback to refresh shipments table');
+            parentOnShipmentUpdated(shipmentId, 'Shipment updated successfully');
+        }
+    }, [refreshShipment, showSnackbar, parentOnShipmentUpdated, shipmentId]);
 
     const handleShipmentCancelled = useCallback((cancelledShipment) => {
         // Refresh the shipment data after successful cancellation

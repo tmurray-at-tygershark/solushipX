@@ -1338,7 +1338,38 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         console.log('🔄 Manual reload triggered');
         loadShipments();
-    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode]); // Removed companyData to prevent loops
+    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode, navigationStack]); // Removed companyData to prevent loops
+
+    // Add a shipment updated callback that refreshes the table data
+    const handleShipmentUpdated = useCallback((updatedShipmentId, message = 'Shipment updated successfully') => {
+        console.log('🔄 Shipment updated, refreshing table data:', updatedShipmentId);
+
+        // Always reload shipments when one is updated
+        loadShipments();
+
+        // Show success message
+        showSnackbar(message, 'success');
+
+        // If we're in detail view, we might want to refresh that shipment's data too
+        if (navigationStack.length > 1) {
+            const currentView = navigationStack[navigationStack.length - 1];
+            if (currentView.component === 'shipment-detail' && currentView.props?.shipmentId === updatedShipmentId) {
+                console.log('🔄 Also refreshing detail view for updated shipment');
+                // The detail view should handle its own refresh through its refreshShipment function
+            }
+        }
+    }, [loadShipments, showSnackbar, navigationStack]);
+
+    // Add a draft saved callback that refreshes the table data  
+    const handleDraftSaved = useCallback((draftId, message = 'Draft saved successfully') => {
+        console.log('🔄 Draft saved, refreshing table data:', draftId);
+
+        // Always reload shipments when a draft is saved
+        loadShipments();
+
+        // Show success message
+        showSnackbar(message, 'success');
+    }, [loadShipments, showSnackbar]);
 
     // Debounced version for search inputs
     const debounceTimeoutRef = useRef(null);
@@ -1568,8 +1599,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Button
                                             onClick={() => {
                                                 if (onOpenCreateShipment) {
-                                                    // Open QuickShip modal with mode parameter
-                                                    onOpenCreateShipment(null, null, null, 'quickship');
+                                                    // Open QuickShip modal with mode parameter and refresh callbacks
+                                                    onOpenCreateShipment(null, null, null, 'quickship', {
+                                                        onShipmentUpdated: handleShipmentUpdated,
+                                                        onDraftSaved: handleDraftSaved,
+                                                        onReturnToShipments: () => {
+                                                            // Refresh the table when returning from QuickShip
+                                                            setTimeout(() => loadShipments(), 100);
+                                                        }
+                                                    });
                                                 } else {
                                                     showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
                                                 }
@@ -1592,7 +1630,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Button
                                             onClick={() => {
                                                 if (onOpenCreateShipment) {
-                                                    onOpenCreateShipment();
+                                                    // Open advanced CreateShipment with refresh callbacks
+                                                    onOpenCreateShipment(null, null, null, null, {
+                                                        onShipmentUpdated: handleShipmentUpdated,
+                                                        onDraftSaved: handleDraftSaved,
+                                                        onReturnToShipments: () => {
+                                                            // Refresh the table when returning from shipment creation
+                                                            setTimeout(() => loadShipments(), 100);
+                                                        }
+                                                    });
                                                 } else {
                                                     showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
                                                 }
@@ -2030,6 +2076,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                             onBackToTable={popView}
                             // Pass through adminViewMode to ShipmentDetailX
                             isAdmin={adminViewMode !== null}
+                            // Pass the shipment updated callback to refresh table data
+                            onShipmentUpdated={handleShipmentUpdated}
                         />
                     </Suspense>
                 );
@@ -2274,8 +2322,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('🚀 Opening QuickShip for quickship draft');
                 // For QuickShip drafts, open in QuickShip mode
                 if (onOpenCreateShipment) {
-                    // Always use the callback for modern modal flow
-                    onOpenCreateShipment(null, null, draftId, 'quickship');
+                    // Pass refresh callbacks to QuickShip
+                    onOpenCreateShipment(null, null, draftId, 'quickship', {
+                        onShipmentUpdated: handleShipmentUpdated,
+                        onDraftSaved: handleDraftSaved,
+                        onReturnToShipments: () => {
+                            // Refresh the table when returning from draft editing
+                            setTimeout(() => loadShipments(), 100);
+                        }
+                    });
                 } else {
                     console.error('❌ No onOpenCreateShipment callback available for QuickShip draft editing');
                     showSnackbar('Cannot edit QuickShip draft - feature not available in this context', 'error');
@@ -2285,8 +2340,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('🔧 Opening advanced CreateShipment for advanced/legacy draft');
                 // For advanced drafts or legacy drafts without creationMethod, use the advanced flow
                 if (onOpenCreateShipment) {
-                    // Always use the callback for modern modal flow
-                    onOpenCreateShipment(null, draftId); // null for prePopulatedData, draftId for editing existing draft
+                    // Pass refresh callbacks to CreateShipmentX
+                    onOpenCreateShipment(null, draftId, null, null, {
+                        onShipmentUpdated: handleShipmentUpdated,
+                        onDraftSaved: handleDraftSaved,
+                        onReturnToShipments: () => {
+                            // Refresh the table when returning from draft editing
+                            setTimeout(() => loadShipments(), 100);
+                        }
+                    });
                 } else {
                     console.error('❌ No onOpenCreateShipment callback available for advanced draft editing');
                     showSnackbar('Cannot edit draft - feature not available in this context', 'error');
@@ -2297,7 +2359,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error checking draft type:', error);
             showSnackbar('Error loading draft shipment', 'error');
         }
-    }, [isModal, onOpenCreateShipment, navigate, showSnackbar, userRole, companyIdForAddress, setCompanyContext]);
+    }, [onOpenCreateShipment, showSnackbar, userRole, companyIdForAddress, setCompanyContext, handleShipmentUpdated, handleDraftSaved, loadShipments]);
 
     // Handle repeating a shipment (creating a new draft with pre-populated data)
     const handleRepeatShipment = useCallback(async (shipment) => {
@@ -2352,9 +2414,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             console.log('🔄 Repeating shipment with pre-populated data:', prePopulatedData);
 
-            // Call the onOpenCreateShipment callback with pre-populated data
+            // Call the onOpenCreateShipment callback with pre-populated data and refresh callbacks
             if (onOpenCreateShipment) {
-                onOpenCreateShipment(prePopulatedData);
+                onOpenCreateShipment(prePopulatedData, null, null, null, {
+                    onShipmentUpdated: handleShipmentUpdated,
+                    onDraftSaved: handleDraftSaved,
+                    onReturnToShipments: () => {
+                        // Refresh the table when returning from shipment creation
+                        setTimeout(() => loadShipments(), 100);
+                    }
+                });
             } else {
                 showSnackbar('Cannot open create shipment - feature not available in this context', 'error');
             }
@@ -2362,7 +2431,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error repeating shipment:', error);
             showSnackbar('Error creating repeat shipment', 'error');
         }
-    }, [onOpenCreateShipment, showSnackbar]);
+    }, [onOpenCreateShipment, showSnackbar, handleShipmentUpdated, handleDraftSaved, loadShipments]);
 
     // Handle editing a booked shipment
     const handleEditShipment = useCallback((shipment) => {

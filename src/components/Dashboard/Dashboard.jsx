@@ -2927,8 +2927,8 @@ const Dashboard = () => {
         }
     };
 
-    const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null, quickshipDraftId = null, mode = 'advanced') => {
-        console.log('🚀 Opening modal with:', { prePopulatedData, draftId, quickshipDraftId, mode });
+    const handleOpenCreateShipmentModal = (prePopulatedData = null, draftId = null, quickshipDraftId = null, mode = 'advanced', callbacks = null) => {
+        console.log('🚀 Opening modal with:', { prePopulatedData, draftId, quickshipDraftId, mode, callbacks });
 
         if (mode === 'quickship') {
             console.log('🚀 Opening QuickShip modal');
@@ -2943,13 +2943,16 @@ const Dashboard = () => {
                 setIsQuickShipModalOpen(true);
             }
 
-            // Store the draft ID for QuickShip if provided
-            if (quickshipDraftId) {
+            // Store the draft ID and callbacks for QuickShip if provided
+            if (quickshipDraftId || callbacks) {
                 console.log('🚀 Opening QuickShip modal for draft:', quickshipDraftId);
-                setCreateShipmentPrePopulatedData({ quickshipDraftId: quickshipDraftId });
+                setCreateShipmentPrePopulatedData({
+                    quickshipDraftId: quickshipDraftId,
+                    callbacks: callbacks // Store callbacks to pass to QuickShip
+                });
             } else {
                 // Clear any previous data when opening QuickShip for new shipment
-                setCreateShipmentPrePopulatedData(null);
+                setCreateShipmentPrePopulatedData(callbacks ? { callbacks } : null);
             }
 
         } else {
@@ -2965,7 +2968,14 @@ const Dashboard = () => {
                 // The CreateShipmentX component will handle this appropriately
                 setCreateShipmentPrePopulatedData(prev => ({
                     ...prev,
-                    editDraftId: draftId
+                    editDraftId: draftId,
+                    callbacks: callbacks // Store callbacks to pass to CreateShipmentX
+                }));
+            } else if (callbacks) {
+                // If no draft ID but callbacks provided, store callbacks
+                setCreateShipmentPrePopulatedData(prev => ({
+                    ...prev,
+                    callbacks: callbacks
                 }));
             }
 
@@ -3025,21 +3035,23 @@ const Dashboard = () => {
 
     // Handler for viewing shipment from CreateShipmentX
     const handleViewShipment = (shipmentId) => {
-        console.log('Viewing shipment from CreateShipmentX:', shipmentId);
+        console.log('Viewing shipment from CreateShipmentX/QuickShip:', shipmentId);
 
-        // Close CreateShipmentX modal
+        // Close any open creation modals first
         setIsCreateShipmentModalOpen(false);
+        setIsQuickShipModalOpen(false);
 
-        // Open Shipments modal directly to shipment detail (bypassing the table)
+        // Set deep link params BEFORE opening shipments modal to ensure it's ready
         setShipmentsDeepLinkParams({
             directToDetail: true,
             selectedShipmentId: shipmentId
         });
 
-        // Open Shipments modal after a brief delay
+        // Open Shipments modal with a longer delay to ensure modals close properly
         setTimeout(() => {
+            console.log('Opening shipments modal with direct navigation to:', shipmentId);
             setIsShipmentsModalOpen(true);
-        }, 300);
+        }, 500); // Increased delay for smoother transition
     };
 
     // Handler for viewing shipment detail from LogisticsCommandCenter
@@ -3796,11 +3808,14 @@ const Dashboard = () => {
                                 // Clear pre-populated data when modal closes
                                 setCreateShipmentPrePopulatedData(null);
                             }}
-                            onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                            onReturnToShipments={createShipmentPrePopulatedData?.callbacks?.onReturnToShipments || handleReturnToShipmentsFromCreateShipment}
                             onViewShipment={handleViewShipment}
                             showCloseButton={true}
                             draftId={createShipmentPrePopulatedData?.editDraftId || null}
                             prePopulatedData={createShipmentPrePopulatedData}
+                            // Pass refresh callbacks from ShipmentsX
+                            onShipmentUpdated={createShipmentPrePopulatedData?.callbacks?.onShipmentUpdated}
+                            onDraftSaved={createShipmentPrePopulatedData?.callbacks?.onDraftSaved}
                         />
                     </LazyComponentWrapper>
                 </Box>
@@ -4203,10 +4218,13 @@ const Dashboard = () => {
                                     // Clear pre-populated data when modal closes
                                     setCreateShipmentPrePopulatedData(null);
                                 }}
-                                onReturnToShipments={handleReturnToShipmentsFromCreateShipment}
+                                onReturnToShipments={createShipmentPrePopulatedData?.callbacks?.onReturnToShipments || handleReturnToShipmentsFromCreateShipment}
                                 onViewShipment={handleViewShipment}
                                 draftId={createShipmentPrePopulatedData?.quickshipDraftId || null}
                                 showCloseButton={true}
+                                // Pass refresh callbacks from ShipmentsX
+                                onShipmentUpdated={createShipmentPrePopulatedData?.callbacks?.onShipmentUpdated}
+                                onDraftSaved={createShipmentPrePopulatedData?.callbacks?.onDraftSaved}
                             />
                         </ShipmentFormProvider>
                     </LazyComponentWrapper>

@@ -243,7 +243,7 @@ const FREIGHT_CLASSES = [
     }
 ];
 
-const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData }) => {
+const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData, onShipmentUpdated = null, onDraftSaved = null }) => {
     const { companyData, companyIdForAddress, loading: companyLoading, setCompanyContext } = useCompany();
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const debounceTimeoutRef = useRef(null);
@@ -1608,6 +1608,13 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 showMessage('Draft saved successfully');
             }
 
+            // Call the parent callback to refresh shipments table
+            if (onDraftSaved) {
+                console.log('🔄 Calling parent callback to refresh shipments table after draft save');
+                const docId = activeDraftId || draftIdToLoad;
+                onDraftSaved(docId, 'Draft saved successfully');
+            }
+
             // Return to shipments after successful save
             if (onReturnToShipments) {
                 setTimeout(() => {
@@ -2162,6 +2169,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 console.log('Advanced shipment booking successful!');
                 setBookingStep('completed');
 
+                // Call the parent callback to refresh shipments table
+                if (onShipmentUpdated) {
+                    console.log('🔄 Calling parent callback to refresh shipments table after shipment booking');
+                    onShipmentUpdated(finalShipmentID, 'Shipment booked successfully');
+                }
+
             } else {
                 const errorMessage = bookingResult.data?.error || 'Booking failed. Please try again.';
                 console.error('Advanced shipment booking error:', errorMessage);
@@ -2206,13 +2219,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         if (finalShipmentId && onViewShipment) {
             // Call the onViewShipment prop immediately to open shipment detail
             console.log('🎯 CreateShipmentX: Calling onViewShipment with shipmentId:', finalShipmentId);
+
+            // Don't close dialogs here - let the parent handle the modal transitions
+            // This prevents the CreateShipmentX modal from closing too early
             onViewShipment(finalShipmentId);
 
-            // Close dialogs after navigation is triggered
-            setShowBookingDialog(false);
-            if (onClose) {
-                onClose();
-            }
+            // The parent Dashboard component will handle closing modals in the right order
         } else if (finalShipmentId) {
             // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
             console.log('🎯 CreateShipmentX: No onViewShipment prop, attempting direct admin navigation');

@@ -332,7 +332,8 @@ const QuickShip = ({
     editMode = false,
     editShipment = null,
     onShipmentUpdated = null,
-    showNotification = null
+    showNotification = null,
+    onDraftSaved = null // New callback for when draft is saved
 }) => {
     const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, setCompanyContext } = useCompany();
@@ -1653,13 +1654,12 @@ const QuickShip = ({
         if (finalShipmentId && onViewShipment) {
             // Call the onViewShipment prop immediately to open the shipment detail modal directly
             console.log('🎯 QuickShip: Calling onViewShipment with shipmentId:', finalShipmentId);
+
+            // Don't close dialogs here - let the parent handle the modal transitions
+            // This prevents the QuickShip modal from closing too early
             onViewShipment(finalShipmentId);
 
-            // Close dialogs after navigation is triggered
-            setShowBookingDialog(false);
-            if (onClose) {
-                onClose();
-            }
+            // The parent Dashboard component will handle closing modals in the right order
         } else if (finalShipmentId) {
             // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
             console.log('🎯 QuickShip: No onViewShipment prop, attempting direct admin navigation');
@@ -2181,6 +2181,12 @@ const QuickShip = ({
 
             // Show success notification
             setShowDraftSuccess(true);
+
+            // Call the parent callback to refresh shipments table
+            if (onDraftSaved) {
+                console.log('🔄 Calling parent callback to refresh shipments table after draft save');
+                onDraftSaved(docId, 'Draft saved successfully');
+            }
 
             // After a short delay, navigate to shipments modal
             setTimeout(() => {
@@ -2748,8 +2754,14 @@ const QuickShip = ({
             // Update the existing shipment document
             const docRef = doc(db, 'shipments', editShipment.id);
             await updateDoc(docRef, updatedData);
-            if (onShipmentUpdated) onShipmentUpdated(editShipment.id);
+
+            // Call both callbacks for shipment updates
+            if (onShipmentUpdated) {
+                console.log('🔄 Calling parent callback to refresh shipments table after shipment update');
+                onShipmentUpdated(editShipment.id, 'Shipment updated successfully');
+            }
             if (showNotification) showNotification('Shipment updated successfully!', 'success');
+
             setShowDraftSuccess(true);
             setTimeout(() => {
                 setShowDraftSuccess(false);
