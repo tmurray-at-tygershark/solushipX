@@ -53,7 +53,8 @@ import {
     Email as EmailIcon,
     LocationOn as LocationOnIcon,
     Flag as FlagIcon,
-    Map as MapIcon
+    Map as MapIcon,
+    Save as SaveIcon
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -1649,38 +1650,33 @@ const QuickShip = ({
 
     // Handle view shipment - open shipment detail modal directly
     const handleViewShipment = () => {
-        // Close the booking dialog first
-        setShowBookingDialog(false);
+        if (finalShipmentId && onViewShipment) {
+            // Call the onViewShipment prop immediately to open the shipment detail modal directly
+            console.log('🎯 QuickShip: Calling onViewShipment with shipmentId:', finalShipmentId);
+            onViewShipment(finalShipmentId);
 
-        // Close the QuickShip modal entirely
-        if (onClose) {
-            onClose();
-        }
-
-        // Then navigate to view the shipment after a brief delay to allow modal to close
-        setTimeout(() => {
-            if (finalShipmentId && onViewShipment) {
-                // Call the onViewShipment prop to open the shipment detail modal directly
-                console.log('🎯 QuickShip: Calling onViewShipment with shipmentId:', finalShipmentId);
-                onViewShipment(finalShipmentId);
-            } else if (finalShipmentId) {
-                // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
-                console.log('🎯 QuickShip: No onViewShipment prop, attempting direct admin navigation');
-
-                // Check if we're in an admin context (look for admin in the URL)
-                const isAdminContext = window.location.pathname.includes('/admin');
-
-                if (isAdminContext) {
-                    // Navigate directly to admin shipment detail
-                    window.location.href = `/admin/shipments?shipment=${finalShipmentId}`;
-                } else {
-                    // Navigate to regular shipment detail
-                    window.location.href = `/shipments/${finalShipmentId}`;
-                }
-            } else if (onReturnToShipments) {
-                onReturnToShipments();
+            // Close dialogs after navigation is triggered
+            setShowBookingDialog(false);
+            if (onClose) {
+                onClose();
             }
-        }, 300); // Small delay to ensure smooth transition
+        } else if (finalShipmentId) {
+            // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
+            console.log('🎯 QuickShip: No onViewShipment prop, attempting direct admin navigation');
+
+            // Check if we're in an admin context (look for admin in the URL)
+            const isAdminContext = window.location.pathname.includes('/admin');
+
+            if (isAdminContext) {
+                // Navigate directly to admin shipment detail
+                window.location.href = `/admin/shipments?shipment=${finalShipmentId}`;
+            } else {
+                // Navigate to regular shipment detail
+                window.location.href = `/shipments/${finalShipmentId}`;
+            }
+        } else if (onReturnToShipments) {
+            onReturnToShipments();
+        }
     };
 
     // Load draft data when draftId is provided
@@ -2779,6 +2775,35 @@ const QuickShip = ({
         // Only run when selectedCarrier, selectedCarrierContactId, or quickShipCarriers change
     }, [selectedCarrier, selectedCarrierContactId, quickShipCarriers]);
 
+    // Add keyboard navigation helpers
+    const handleKeyDown = (e, action) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+            // Ctrl+Enter to book shipment
+            if (action === 'book') {
+                handleBookShipment();
+            }
+        } else if (e.key === 'Enter' && e.shiftKey) {
+            // Shift+Enter to save as draft
+            if (action === 'draft') {
+                handleShipLater();
+            }
+        } else if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+            // Enter to move to next field in package section
+            const currentField = e.target;
+            const tabIndex = parseInt(currentField.getAttribute('tabindex') || currentField.tabIndex);
+            if (tabIndex) {
+                const nextField = document.querySelector(`[tabindex="${tabIndex + 1}"]`);
+                if (nextField) {
+                    nextField.focus();
+                    e.preventDefault();
+                }
+            }
+        }
+    };
+
+    // Calculate base tab index for each package (100 per package)
+    const getPackageBaseTabIndex = (packageIndex) => 100 + (packageIndex * 100);
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
@@ -3084,13 +3109,87 @@ const QuickShip = ({
                                                     type="date"
                                                     value={shipmentInfo.shipmentDate}
                                                     onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
-                                                    InputLabelProps={{ shrink: true, sx: { fontSize: '12px' } }}
+                                                    required
                                                     autoComplete="off"
+                                                    tabIndex={10}
+                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Reference Number"
+                                                    value={shipmentInfo.shipperReferenceNumber}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                    autoComplete="off"
+                                                    tabIndex={11}
+                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
                                                     sx={{
                                                         '& .MuiInputBase-input': {
                                                             fontSize: '12px',
                                                             '&::placeholder': { fontSize: '12px' }
-                                                        }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <Autocomplete
+                                                    size="small"
+                                                    options={[
+                                                        { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
+                                                        { value: 'collect', label: 'Collect (Receiver Pays)' },
+                                                        { value: 'third_party', label: 'Third Party' }
+                                                    ]}
+                                                    getOptionLabel={(option) => option.label}
+                                                    value={[
+                                                        { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
+                                                        { value: 'collect', label: 'Collect (Receiver Pays)' },
+                                                        { value: 'third_party', label: 'Third Party' }
+                                                    ].find(option => option.value === shipmentInfo.billType)}
+                                                    onChange={(event, newValue) => {
+                                                        setShipmentInfo(prev => ({ ...prev, billType: newValue ? newValue.value : 'third_party' }));
+                                                    }}
+                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Bill Type"
+                                                            tabIndex={20}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
                                                     }}
                                                 />
                                             </Grid>
@@ -3244,6 +3343,7 @@ const QuickShip = ({
                                                     size="small"
                                                     startIcon={<AddIcon />}
                                                     onClick={handleAddCarrier}
+                                                    tabIndex={-1}
                                                     sx={{
                                                         fontSize: '11px',
                                                         borderColor: '#e0e0e0',
@@ -3396,6 +3496,8 @@ const QuickShip = ({
                                                     value={shipmentInfo.carrierTrackingNumber}
                                                     onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
                                                     autoComplete="off"
+                                                    tabIndex={12}
+                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
                                                     sx={{
                                                         '& .MuiInputBase-input': {
                                                             fontSize: '12px',
@@ -3422,24 +3524,6 @@ const QuickShip = ({
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
-                                                    <Select
-                                                        value={shipmentInfo.billType}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
-                                                        label="Bill Type"
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            '& .MuiSelect-select': { fontSize: '12px' }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
-                                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
-                                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
-                                                    </Select>
-                                                </FormControl>
-                                            </Grid>
                                         </Grid>
                                     </CardContent>
                                 </Card>
@@ -3458,6 +3542,7 @@ const QuickShip = ({
                                                 size="small"
                                                 onClick={() => handleOpenAddAddress('from')}
                                                 startIcon={<AddIcon />}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 New Address
@@ -3565,24 +3650,24 @@ const QuickShip = ({
                                                     gap: 1,
                                                     zIndex: 10
                                                 }}>
-                                                    {/* View in Maps Button */}
+                                                    {/* Edit Button - FIRST */}
                                                     <IconButton
                                                         size="small"
-                                                        onClick={() => handleOpenInMaps(shipFromAddress)}
+                                                        onClick={() => handleOpenEditAddress('from')}
                                                         sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            bgcolor: 'rgba(255,255,255,0.95)',
                                                             border: '1px solid #bae6fd',
                                                             boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                                                             '&:hover': {
                                                                 bgcolor: 'white',
-                                                                borderColor: '#10b981',
+                                                                borderColor: '#6366f1',
                                                                 boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
                                                             },
                                                             width: 28,
                                                             height: 28
                                                         }}
                                                     >
-                                                        <MapIcon sx={{ fontSize: 14, color: '#10b981' }} />
+                                                        <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
                                                     </IconButton>
 
                                                     {/* Change Address Button */}
@@ -3608,34 +3693,25 @@ const QuickShip = ({
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-                                                    {/* Edit Button */}
-                                                    {shipFromAddress && (
-                                                        <Box sx={{
-                                                            position: 'absolute',
-                                                            top: 8,
-                                                            right: 44, // Place to the left of the swap button
-                                                            zIndex: 11
-                                                        }}>
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => handleOpenEditAddress('from')}
-                                                                sx={{
-                                                                    bgcolor: 'rgba(255,255,255,0.95)',
-                                                                    border: '1px solid #bae6fd',
-                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                                    '&:hover': {
-                                                                        bgcolor: 'white',
-                                                                        borderColor: '#6366f1',
-                                                                        boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                                    },
-                                                                    width: 28,
-                                                                    height: 28
-                                                                }}
-                                                            >
-                                                                <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
-                                                            </IconButton>
-                                                        </Box>
-                                                    )}
+                                                    {/* View in Maps Button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenInMaps(shipFromAddress)}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#10b981',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <MapIcon sx={{ fontSize: 14, color: '#10b981' }} />
+                                                    </IconButton>
                                                 </Box>
 
                                                 {/* Address Icon */}
@@ -3761,6 +3837,7 @@ const QuickShip = ({
                                                 size="small"
                                                 onClick={() => handleOpenAddAddress('to')}
                                                 startIcon={<AddIcon />}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 New Address
@@ -3868,24 +3945,24 @@ const QuickShip = ({
                                                     gap: 1,
                                                     zIndex: 10
                                                 }}>
-                                                    {/* View in Maps Button */}
+                                                    {/* Edit Button - FIRST */}
                                                     <IconButton
                                                         size="small"
-                                                        onClick={() => handleOpenInMaps(shipToAddress)}
+                                                        onClick={() => handleOpenEditAddress('to')}
                                                         sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            bgcolor: 'rgba(255,255,255,0.95)',
                                                             border: '1px solid #bae6fd',
                                                             boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                                                             '&:hover': {
                                                                 bgcolor: 'white',
-                                                                borderColor: '#ef4444',
+                                                                borderColor: '#6366f1',
                                                                 boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
                                                             },
                                                             width: 28,
                                                             height: 28
                                                         }}
                                                     >
-                                                        <MapIcon sx={{ fontSize: 14, color: '#ef4444' }} />
+                                                        <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
                                                     </IconButton>
 
                                                     {/* Change Address Button */}
@@ -3911,34 +3988,25 @@ const QuickShip = ({
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-                                                    {/* Edit Button */}
-                                                    {shipToAddress && (
-                                                        <Box sx={{
-                                                            position: 'absolute',
-                                                            top: 8,
-                                                            right: 44, // Place to the left of the swap button
-                                                            zIndex: 11
-                                                        }}>
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => handleOpenEditAddress('to')}
-                                                                sx={{
-                                                                    bgcolor: 'rgba(255,255,255,0.95)',
-                                                                    border: '1px solid #bae6fd',
-                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                                    '&:hover': {
-                                                                        bgcolor: 'white',
-                                                                        borderColor: '#6366f1',
-                                                                        boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                                    },
-                                                                    width: 28,
-                                                                    height: 28
-                                                                }}
-                                                            >
-                                                                <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
-                                                            </IconButton>
-                                                        </Box>
-                                                    )}
+                                                    {/* View in Maps Button */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenInMaps(shipToAddress)}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#ef4444',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <MapIcon sx={{ fontSize: 14, color: '#ef4444' }} />
+                                                    </IconButton>
                                                 </Box>
 
                                                 {/* Address Icon */}
@@ -4103,6 +4171,7 @@ const QuickShip = ({
                                                 size="small"
                                                 startIcon={<AddIcon />}
                                                 onClick={addPackage}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 Add Package
@@ -4166,6 +4235,9 @@ const QuickShip = ({
                                                                 onChange={(e) => updatePackage(pkg.id, 'itemDescription', e.target.value)}
                                                                 required
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 1}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                placeholder="e.g., Electronic equipment, Medical supplies"
                                                                 sx={{
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -4175,45 +4247,55 @@ const QuickShip = ({
 
                                                         {/* Packaging Type */}
                                                         <Grid item xs={12} md={4}>
-                                                            <FormControl fullWidth required size="small">
-                                                                <InputLabel sx={{ fontSize: '12px' }}>Packaging Type</InputLabel>
-                                                                <Select
-                                                                    value={pkg.packagingType || 258}
-                                                                    onChange={(e) => updatePackage(pkg.id, 'packagingType', e.target.value)}
-                                                                    label="Packaging Type"
-                                                                    sx={{
-                                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                    }}
-                                                                >
-                                                                    {PACKAGING_TYPES.map(type => (
-                                                                        <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                                                            {type.label}
-                                                                        </MenuItem>
-                                                                    ))}
-                                                                </Select>
-                                                            </FormControl>
+                                                            <Autocomplete
+                                                                size="small"
+                                                                options={PACKAGING_TYPES}
+                                                                getOptionLabel={(option) => option.label}
+                                                                value={PACKAGING_TYPES.find(type => type.value === pkg.packagingType) || PACKAGING_TYPES.find(type => type.value === 258)}
+                                                                onChange={(event, newValue) => {
+                                                                    updatePackage(pkg.id, 'packagingType', newValue ? newValue.value : 258);
+                                                                }}
+                                                                isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                                renderInput={(params) => (
+                                                                    <TextField
+                                                                        {...params}
+                                                                        label="Packaging Type"
+                                                                        required
+                                                                        tabIndex={getPackageBaseTabIndex(index) + 2}
+                                                                        onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                        sx={{
+                                                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                sx={{
+                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                }}
+                                                            />
                                                         </Grid>
 
                                                         <Grid item xs={12} md={3}>
-                                                            <FormControl fullWidth required size="small">
-                                                                <InputLabel sx={{ fontSize: '12px' }}>Qty</InputLabel>
-                                                                <Select
-                                                                    value={pkg.packagingQuantity || 1}
-                                                                    onChange={(e) => updatePackage(pkg.id, 'packagingQuantity', e.target.value)}
-                                                                    label="Qty"
-                                                                    sx={{
-                                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                    }}
-                                                                >
-                                                                    {[...Array(30)].map((_, i) => (
-                                                                        <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
-                                                                            {i + 1}
-                                                                        </MenuItem>
-                                                                    ))}
-                                                                </Select>
-                                                            </FormControl>
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label="Qty"
+                                                                type="number"
+                                                                value={pkg.packagingQuantity || 1}
+                                                                onChange={(e) => {
+                                                                    const value = Math.max(1, parseInt(e.target.value) || 1);
+                                                                    updatePackage(pkg.id, 'packagingQuantity', value);
+                                                                }}
+                                                                required
+                                                                autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 3}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 1, max: 999, step: 1 }}
+                                                                sx={{
+                                                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
                                                         </Grid>
 
                                                         <Grid item xs={12} md={2.4}>
@@ -4226,6 +4308,9 @@ const QuickShip = ({
                                                                 onChange={(e) => updatePackage(pkg.id, 'weight', e.target.value)}
                                                                 required
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 4}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 0.1, step: 0.1 }}
                                                                 sx={{
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -4261,6 +4346,9 @@ const QuickShip = ({
                                                                 onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)}
                                                                 required
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 5}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 1, step: 0.1 }}
                                                                 sx={{
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -4296,6 +4384,9 @@ const QuickShip = ({
                                                                 onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)}
                                                                 required
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 6}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 1, step: 0.1 }}
                                                                 sx={{
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -4331,6 +4422,9 @@ const QuickShip = ({
                                                                 onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)}
                                                                 required
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 7}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 1, step: 0.1 }}
                                                                 sx={{
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -4373,18 +4467,34 @@ const QuickShip = ({
                                                                     }}
                                                                     placeholder="0.00"
                                                                 />
-                                                                <FormControl size="small" sx={{ minWidth: '70px' }}>
-                                                                    <Select
-                                                                        value={pkg.declaredValueCurrency || 'CAD'}
-                                                                        onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
-                                                                        sx={{
-                                                                            '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
-                                                                        }}
-                                                                    >
-                                                                        <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
-                                                                        <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
-                                                                    </Select>
-                                                                </FormControl>
+                                                                <Autocomplete
+                                                                    size="small"
+                                                                    options={[
+                                                                        { value: 'CAD', label: 'CAD' },
+                                                                        { value: 'USD', label: 'USD' }
+                                                                    ]}
+                                                                    getOptionLabel={(option) => option.label}
+                                                                    value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
+                                                                    onChange={(event, newValue) => {
+                                                                        updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
+                                                                    }}
+                                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                                    renderInput={(params) => (
+                                                                        <TextField
+                                                                            {...params}
+                                                                            tabIndex={getPackageBaseTabIndex(index) + 7}
+                                                                            sx={{
+                                                                                minWidth: '70px',
+                                                                                '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
+                                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                    sx={{
+                                                                        minWidth: '70px',
+                                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                    }}
+                                                                />
                                                             </Box>
                                                         </Grid>
 
@@ -4444,6 +4554,7 @@ const QuickShip = ({
                                                 size="small"
                                                 startIcon={<AddIcon />}
                                                 onClick={addRateLineItem}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 Add Line Item
@@ -4528,6 +4639,7 @@ const QuickShip = ({
                                                                         <Select
                                                                             value={rate.costCurrency}
                                                                             onChange={(e) => updateRateLineItem(rate.id, 'costCurrency', e.target.value)}
+                                                                            tabIndex={-1}
                                                                             sx={{
                                                                                 '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
                                                                                 '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
@@ -4572,6 +4684,7 @@ const QuickShip = ({
                                                                         <Select
                                                                             value={rate.chargeCurrency}
                                                                             onChange={(e) => updateRateLineItem(rate.id, 'chargeCurrency', e.target.value)}
+                                                                            tabIndex={-1}
                                                                             sx={{
                                                                                 '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
                                                                                 '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
@@ -4588,6 +4701,7 @@ const QuickShip = ({
                                                                 <IconButton
                                                                     size="small"
                                                                     onClick={() => removeRateLineItem(rate.id)}
+                                                                    tabIndex={-1}
                                                                     sx={{ color: '#ef4444' }}
                                                                 >
                                                                     <DeleteIcon fontSize="small" />

@@ -30,7 +30,17 @@ import {
     Dialog,
     DialogTitle,
     DialogContent,
-    DialogActions
+    DialogActions,
+    Checkbox,
+    Avatar,
+    AlertTitle,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Stack
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -43,7 +53,13 @@ import {
     ExpandLess as ExpandLessIcon,
     ContentCopy as ContentCopyIcon,
     Edit as EditIcon,
-    SwapHoriz as SwapHorizIcon
+    SwapHoriz as SwapHorizIcon,
+    LocationOn as LocationOnIcon,
+    Person as PersonIcon,
+    Business as BusinessIcon,
+    Description as DescriptionIcon,
+    Cancel as CancelIcon,
+    Map as MapIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, limit, increment } from 'firebase/firestore';
@@ -2187,17 +2203,16 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
     // Handle view shipment
     const handleViewShipment = () => {
-        setShowBookingDialog(false);
-
-        // Close the CreateShipmentX modal/form first
-        if (onClose) {
-            onClose();
-        }
-
         if (finalShipmentId && onViewShipment) {
-            // Call the onViewShipment prop to open shipment detail
+            // Call the onViewShipment prop immediately to open shipment detail
             console.log('🎯 CreateShipmentX: Calling onViewShipment with shipmentId:', finalShipmentId);
             onViewShipment(finalShipmentId);
+
+            // Close dialogs after navigation is triggered
+            setShowBookingDialog(false);
+            if (onClose) {
+                onClose();
+            }
         } else if (finalShipmentId) {
             // Fallback: If no onViewShipment prop but we have a shipment ID, try direct navigation
             console.log('🎯 CreateShipmentX: No onViewShipment prop, attempting direct admin navigation');
@@ -2216,6 +2231,35 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             onReturnToShipments();
         }
     };
+
+    // Add keyboard navigation helpers
+    const handleKeyDown = (e, action) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+            // Ctrl+Enter to book shipment
+            if (action === 'book') {
+                handleBookShipment();
+            }
+        } else if (e.key === 'Enter' && e.shiftKey) {
+            // Shift+Enter to save as draft
+            if (action === 'draft') {
+                handleSaveAsDraft();
+            }
+        } else if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+            // Enter to move to next field in package section
+            const currentField = e.target;
+            const tabIndex = parseInt(currentField.getAttribute('tabindex') || currentField.tabIndex);
+            if (tabIndex) {
+                const nextField = document.querySelector(`[tabindex="${tabIndex + 1}"]`);
+                if (nextField) {
+                    nextField.focus();
+                    e.preventDefault();
+                }
+            }
+        }
+    };
+
+    // Calculate base tab index for each package (200 per package for CreateShipmentX)
+    const getPackageBaseTabIndex = (packageIndex) => 200 + (packageIndex * 200);
 
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -2307,7 +2351,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         });
                         return shouldShowForm;
                     })() && (
-                            <form autoComplete="off" noValidate>
+                            <form autoComplete="off" noValidate onKeyDown={(e) => handleKeyDown(e, 'book')}>
                                 {/* Shipment Information */}
                                 <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
                                     <CardContent sx={{ p: 3 }}>
@@ -2316,21 +2360,33 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Typography>
                                         <Grid container spacing={3}>
                                             <Grid item xs={12} md={6}>
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
-                                                    <Select
-                                                        value={shipmentInfo.shipmentType}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentType: e.target.value }))}
-                                                        label="Shipment Type"
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            '& .MuiSelect-select': { fontSize: '12px' }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
-                                                        <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
-                                                    </Select>
-                                                </FormControl>
+                                                <Autocomplete
+                                                    size="small"
+                                                    options={[
+                                                        { value: 'courier', label: 'Courier' },
+                                                        { value: 'freight', label: 'Freight' }
+                                                    ]}
+                                                    getOptionLabel={(option) => option.label}
+                                                    value={{ value: shipmentInfo.shipmentType, label: shipmentInfo.shipmentType === 'courier' ? 'Courier' : 'Freight' }}
+                                                    onChange={(event, newValue) => {
+                                                        setShipmentInfo(prev => ({ ...prev, shipmentType: newValue ? newValue.value : 'freight' }));
+                                                    }}
+                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Shipment Type"
+                                                            tabIndex={10}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                    }}
+                                                />
                                             </Grid>
                                             <Grid item xs={12} md={6}>
                                                 <TextField
@@ -2345,30 +2401,51 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     sx={{
                                                         '& .MuiInputBase-input': {
                                                             fontSize: '12px',
-                                                            '&::placeholder': { fontSize: '12px' }
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
                                                         }
                                                     }}
                                                 />
                                             </Grid>
                                             <Grid item xs={12} md={6}>
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Service Level</InputLabel>
-                                                    <Select
-                                                        value={shipmentInfo.serviceLevel}
-                                                        label="Service Level"
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, serviceLevel: e.target.value }))}
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            '& .MuiSelect-select': { fontSize: '12px' }
-                                                        }}
-                                                    >
-                                                        {(shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS).map(level => (
-                                                            <MenuItem key={level.value} value={level.value} sx={{ fontSize: '12px' }}>
-                                                                {level.label}
-                                                            </MenuItem>
-                                                        ))}
-                                                    </Select>
-                                                </FormControl>
+                                                <Autocomplete
+                                                    size="small"
+                                                    options={shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS}
+                                                    getOptionLabel={(option) => option.label}
+                                                    value={(shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS).find(level => level.value === shipmentInfo.serviceLevel)}
+                                                    onChange={(event, newValue) => {
+                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.value : 'any' }));
+                                                    }}
+                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Service Level"
+                                                            tabIndex={11}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                    }}
+                                                />
                                             </Grid>
                                             <Grid item xs={12} md={6}>
                                                 <TextField
@@ -2457,6 +2534,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                 size="small"
                                                 onClick={() => handleOpenAddAddress('from')}
                                                 startIcon={<AddIcon />}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 New Address
@@ -2606,6 +2684,26 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     display: 'flex',
                                                     gap: 1
                                                 }}>
+                                                    {/* Edit button - FIRST */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenEditAddress('from')}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#0ea5e9',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                                    </IconButton>
+
                                                     {/* Change Address Button */}
                                                     <IconButton
                                                         size="small"
@@ -2627,26 +2725,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
-                                                    </IconButton>
-
-                                                    {/* Edit button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenEditAddress('from')}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#0ea5e9',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
                                                     </IconButton>
                                                 </Box>
 
@@ -2679,6 +2757,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                 size="small"
                                                 onClick={() => handleOpenAddAddress('to')}
                                                 startIcon={<AddIcon />}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 New Address
@@ -2827,6 +2906,26 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     display: 'flex',
                                                     gap: 1
                                                 }}>
+                                                    {/* Edit button - FIRST */}
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleOpenEditAddress('to')}
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                            border: '1px solid #bae6fd',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            '&:hover': {
+                                                                bgcolor: 'white',
+                                                                borderColor: '#0ea5e9',
+                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                            },
+                                                            width: 28,
+                                                            height: 28
+                                                        }}
+                                                    >
+                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
+                                                    </IconButton>
+
                                                     {/* Change Address Button */}
                                                     <IconButton
                                                         size="small"
@@ -2848,26 +2947,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
-                                                    </IconButton>
-
-                                                    {/* Edit button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenEditAddress('to')}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#0ea5e9',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#0ea5e9' }} />
                                                     </IconButton>
                                                 </Box>
 
@@ -2900,6 +2979,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                 size="small"
                                                 startIcon={<AddIcon />}
                                                 onClick={addPackage}
+                                                tabIndex={-1}
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 Add Package
@@ -2963,6 +3043,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             error={!!formErrors[`package_${index}_itemDescription`]}
                                                             helperText={formErrors[`package_${index}_itemDescription`]}
                                                             autoComplete="off"
+                                                            tabIndex={getPackageBaseTabIndex(index) + 1}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            placeholder="e.g., Electronic equipment, Medical supplies"
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' },
@@ -2973,45 +3056,51 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                                                     {/* Packaging Type */}
                                                     <Grid item xs={12} md={4}>
-                                                        <FormControl fullWidth required size="small">
-                                                            <InputLabel sx={{ fontSize: '12px' }}>Packaging Type</InputLabel>
-                                                            <Select
-                                                                value={pkg.packagingType || 262}
-                                                                onChange={(e) => updatePackage(pkg.id, 'packagingType', e.target.value)}
-                                                                label="Packaging Type"
-                                                                sx={{
-                                                                    '& .MuiSelect-select': { fontSize: '12px' },
-                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                }}
-                                                            >
-                                                                {PACKAGING_TYPES.map(type => (
-                                                                    <MenuItem key={type.value} value={type.value} sx={{ fontSize: '12px' }}>
-                                                                        {type.label}
-                                                                    </MenuItem>
-                                                                ))}
-                                                            </Select>
-                                                        </FormControl>
+                                                        <Autocomplete
+                                                            size="small"
+                                                            options={PACKAGING_TYPES}
+                                                            getOptionLabel={(option) => option.label}
+                                                            value={PACKAGING_TYPES.find(type => type.value === pkg.packagingType) || PACKAGING_TYPES.find(type => type.value === 262)}
+                                                            onChange={(event, newValue) => {
+                                                                updatePackage(pkg.id, 'packagingType', newValue ? newValue.value : 262);
+                                                            }}
+                                                            isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                            renderInput={(params) => (
+                                                                <TextField
+                                                                    {...params}
+                                                                    label="Packaging Type"
+                                                                    required
+                                                                    sx={{
+                                                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            sx={{
+                                                                '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                            }}
+                                                        />
                                                     </Grid>
 
                                                     <Grid item xs={12} md={3}>
-                                                        <FormControl fullWidth required size="small">
-                                                            <InputLabel sx={{ fontSize: '12px' }}>Qty</InputLabel>
-                                                            <Select
-                                                                value={pkg.packagingQuantity || 1}
-                                                                onChange={(e) => updatePackage(pkg.id, 'packagingQuantity', e.target.value)}
-                                                                label="Qty"
-                                                                sx={{
-                                                                    '& .MuiSelect-select': { fontSize: '12px' },
-                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                }}
-                                                            >
-                                                                {[...Array(30)].map((_, i) => (
-                                                                    <MenuItem key={i + 1} value={i + 1} sx={{ fontSize: '12px' }}>
-                                                                        {i + 1}
-                                                                    </MenuItem>
-                                                                ))}
-                                                            </Select>
-                                                        </FormControl>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Qty"
+                                                            type="number"
+                                                            value={pkg.packagingQuantity || 1}
+                                                            onChange={(e) => {
+                                                                const value = Math.max(1, parseInt(e.target.value) || 1);
+                                                                updatePackage(pkg.id, 'packagingQuantity', value);
+                                                            }}
+                                                            required
+                                                            autoComplete="off"
+                                                            inputProps={{ min: 1, max: 999, step: 1 }}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
                                                     </Grid>
 
                                                     <Grid item xs={12} md={2.4}>
@@ -3026,6 +3115,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             error={!!formErrors[`package_${index}_weight`]}
                                                             helperText={formErrors[`package_${index}_weight`]}
                                                             autoComplete="off"
+                                                            tabIndex={getPackageBaseTabIndex(index) + 2}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            inputProps={{ min: 0.1, step: 0.1 }}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' },
@@ -3064,6 +3156,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             error={!!formErrors[`package_${index}_length`]}
                                                             helperText={formErrors[`package_${index}_length`]}
                                                             autoComplete="off"
+                                                            tabIndex={getPackageBaseTabIndex(index) + 3}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            inputProps={{ min: 1, step: 0.1 }}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' },
@@ -3102,6 +3197,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             error={!!formErrors[`package_${index}_width`]}
                                                             helperText={formErrors[`package_${index}_width`]}
                                                             autoComplete="off"
+                                                            tabIndex={getPackageBaseTabIndex(index) + 4}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            inputProps={{ min: 1, step: 0.1 }}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' },
@@ -3140,6 +3238,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             error={!!formErrors[`package_${index}_height`]}
                                                             helperText={formErrors[`package_${index}_height`]}
                                                             autoComplete="off"
+                                                            tabIndex={getPackageBaseTabIndex(index) + 5}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            inputProps={{ min: 1, step: 0.1 }}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' },
@@ -3176,6 +3277,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                 value={pkg.declaredValue || ''}
                                                                 onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
                                                                 autoComplete="off"
+                                                                tabIndex={getPackageBaseTabIndex(index) + 6}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                inputProps={{ min: 0, step: 0.01 }}
                                                                 sx={{
                                                                     flex: 1,
                                                                     '& .MuiInputBase-root': { fontSize: '12px' },
@@ -3183,18 +3287,44 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                 }}
                                                                 placeholder="0.00"
                                                             />
-                                                            <FormControl size="small" sx={{ minWidth: '70px' }}>
-                                                                <Select
-                                                                    value={pkg.declaredValueCurrency || 'CAD'}
-                                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValueCurrency', e.target.value)}
-                                                                    sx={{
-                                                                        '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' }
-                                                                    }}
-                                                                >
-                                                                    <MenuItem value="CAD" sx={{ fontSize: '12px' }}>CAD</MenuItem>
-                                                                    <MenuItem value="USD" sx={{ fontSize: '12px' }}>USD</MenuItem>
-                                                                </Select>
-                                                            </FormControl>
+                                                            <Autocomplete
+                                                                size="small"
+                                                                options={[
+                                                                    { value: 'CAD', label: 'CAD' },
+                                                                    { value: 'USD', label: 'USD' }
+                                                                ]}
+                                                                getOptionLabel={(option) => option.label}
+                                                                value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
+                                                                onChange={(event, newValue) => {
+                                                                    updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
+                                                                }}
+                                                                isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                                componentsProps={{
+                                                                    popper: {
+                                                                        container: document.body
+                                                                    }
+                                                                }}
+                                                                slotProps={{
+                                                                    paper: {
+                                                                        tabIndex: -1
+                                                                    }
+                                                                }}
+                                                                renderInput={(params) => (
+                                                                    <TextField
+                                                                        {...params}
+                                                                        tabIndex={getPackageBaseTabIndex(index) + 7}
+                                                                        sx={{
+                                                                            minWidth: '70px',
+                                                                            '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
+                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                sx={{
+                                                                    minWidth: '70px',
+                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                }}
+                                                            />
                                                         </Box>
                                                     </Grid>
 
@@ -3739,6 +3869,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         startIcon={<SaveIcon />}
                                                         onClick={handleSaveAsDraft}
                                                         disabled={isSavingDraft}
+                                                        tabIndex={900}
+                                                        onKeyDown={(e) => handleKeyDown(e, 'draft')}
                                                         sx={{
                                                             fontSize: '12px',
                                                             textTransform: 'none',
@@ -3752,6 +3884,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         {isSavingDraft ? 'Saving...' : 'Ship Later'}
+                                                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.7 }}>
+                                                            (Shift+Enter)
+                                                        </span>
                                                     </Button>
                                                     <Button
                                                         variant="contained"
@@ -3759,6 +3894,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         startIcon={<ShippingIcon />}
                                                         onClick={handleBookShipment}
                                                         disabled={!selectedRate || isBooking || isSavingDraft}
+                                                        tabIndex={901}
+                                                        onKeyDown={(e) => handleKeyDown(e, 'book')}
                                                         sx={{
                                                             fontSize: '12px',
                                                             textTransform: 'none',
@@ -3770,6 +3907,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         {isBooking ? 'Booking...' : 'Book Shipment'}
+                                                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.7 }}>
+                                                            (Ctrl+Enter)
+                                                        </span>
                                                     </Button>
                                                 </Box>
                                             </Box>
