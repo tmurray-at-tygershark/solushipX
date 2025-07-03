@@ -917,8 +917,15 @@ const QuickShip = ({
     const handleCarrierChange = (newCarrier) => {
         setSelectedCarrier(newCarrier);
 
-        // Reset email contact selection when carrier changes
-        setSelectedCarrierContactId('');
+        // Find the selected carrier object
+        const carrierObj = quickShipCarriers.find(c => c.name === newCarrier);
+        let defaultTerminalId = '';
+        if (carrierObj && Array.isArray(carrierObj.emailContacts) && carrierObj.emailContacts.length > 0) {
+            // Prefer isDefault terminal, else first
+            const defaultTerminal = carrierObj.emailContacts.find(t => t.isDefault) || carrierObj.emailContacts[0];
+            defaultTerminalId = defaultTerminal.id;
+        }
+        setSelectedCarrierContactId(defaultTerminalId);
 
         // Update all manual rates with the new carrier
         setManualRates(prev => prev.map(rate => ({
@@ -2760,6 +2767,18 @@ const QuickShip = ({
         }
     };
 
+    // When loading a draft, if selectedCarrier is set but selectedCarrierContactId is not, default to first terminal
+    useEffect(() => {
+        if (selectedCarrier && !selectedCarrierContactId) {
+            const carrierObj = quickShipCarriers.find(c => c.name === selectedCarrier);
+            if (carrierObj && Array.isArray(carrierObj.emailContacts) && carrierObj.emailContacts.length > 0) {
+                const defaultTerminal = carrierObj.emailContacts.find(t => t.isDefault) || carrierObj.emailContacts[0];
+                setSelectedCarrierContactId(defaultTerminal.id);
+            }
+        }
+        // Only run when selectedCarrier, selectedCarrierContactId, or quickShipCarriers change
+    }, [selectedCarrier, selectedCarrierContactId, quickShipCarriers]);
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
@@ -3589,7 +3608,34 @@ const QuickShip = ({
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-
+                                                    {/* Edit Button */}
+                                                    {shipFromAddress && (
+                                                        <Box sx={{
+                                                            position: 'absolute',
+                                                            top: 8,
+                                                            right: 44, // Place to the left of the swap button
+                                                            zIndex: 11
+                                                        }}>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleOpenEditAddress('from')}
+                                                                sx={{
+                                                                    bgcolor: 'rgba(255,255,255,0.95)',
+                                                                    border: '1px solid #bae6fd',
+                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                    '&:hover': {
+                                                                        bgcolor: 'white',
+                                                                        borderColor: '#6366f1',
+                                                                        boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                    },
+                                                                    width: 28,
+                                                                    height: 28
+                                                                }}
+                                                            >
+                                                                <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
+                                                            </IconButton>
+                                                        </Box>
+                                                    )}
                                                 </Box>
 
                                                 {/* Address Icon */}
@@ -3865,7 +3911,34 @@ const QuickShip = ({
                                                         <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
                                                     </IconButton>
 
-
+                                                    {/* Edit Button */}
+                                                    {shipToAddress && (
+                                                        <Box sx={{
+                                                            position: 'absolute',
+                                                            top: 8,
+                                                            right: 44, // Place to the left of the swap button
+                                                            zIndex: 11
+                                                        }}>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleOpenEditAddress('to')}
+                                                                sx={{
+                                                                    bgcolor: 'rgba(255,255,255,0.95)',
+                                                                    border: '1px solid #bae6fd',
+                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                    '&:hover': {
+                                                                        bgcolor: 'white',
+                                                                        borderColor: '#6366f1',
+                                                                        boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                    },
+                                                                    width: 28,
+                                                                    height: 28
+                                                                }}
+                                                            >
+                                                                <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
+                                                            </IconButton>
+                                                        </Box>
+                                                    )}
                                                 </Box>
 
                                                 {/* Address Icon */}

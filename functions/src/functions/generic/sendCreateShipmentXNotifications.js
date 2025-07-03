@@ -5,6 +5,36 @@ const sgMail = require('@sendgrid/mail');
 
 const db = admin.firestore();
 
+/**
+ * Helper function to convert bill type codes to human readable labels
+ */
+function getBillTypeLabel(billType) {
+    const billTypeLabels = {
+        'prepaid': 'Prepaid',
+        'collect': 'Collect',
+        'third_party': 'Third Party',
+        'freight_collect': 'Freight Collect',
+        'fob_origin': 'FOB Origin',
+        'fob_destination': 'FOB Destination'
+    };
+    return billTypeLabels[billType] || billType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Helper function to get proper service name from shipment data
+ */
+function getServiceName(data) {
+    // Priority order for service name
+    if (data.selectedRate?.service?.name) return data.selectedRate.service.name;
+    if (data.selectedRate?.serviceName) return data.selectedRate.serviceName;
+    if (data.shipmentInfo?.serviceType) return data.shipmentInfo.serviceType;
+    if (data.serviceType) return data.serviceType;
+    if (data.shipmentInfo?.shipmentType === 'ltl') return 'LTL';
+    if (data.shipmentInfo?.shipmentType === 'ftl') return 'FTL';
+    if (data.shipmentInfo?.shipmentType === 'courier') return 'Ground';
+    return 'Standard Service';
+}
+
 // Initialize SendGrid with API key
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 if (SENDGRID_API_KEY) {
@@ -1002,20 +1032,19 @@ Your shipment ${shipmentData.shipmentID || shipmentData.id} has been successfull
 
 SHIPMENT SUMMARY
 - Shipment #: ${shipmentData.shipmentID || shipmentData.id}
-- Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
 - Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}
-- Bill Type: ${shipmentData.shipmentInfo?.billType || 'third_party'}
+- Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
 ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}` : ''}
 
 CARRIER & SERVICE
 - Carrier: ${carrierName}
-- Service: ${serviceName}
+- Service: ${getServiceName(shipmentData)}
 - Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber || 'Pending'}
 
 PACKAGE INFORMATION
@@ -1211,7 +1240,6 @@ New pickup request for order ${shipmentData.shipmentID || shipmentData.id}
 
 ORDER DETAILS
 - Order #: ${shipmentData.shipmentID || shipmentData.id}
-- Company ID: ${shipmentData.companyID || 'N/A'}
 - Assigned Carrier: ${carrierDetails.name}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
@@ -1219,7 +1247,7 @@ ORDER DETAILS
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
 - Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}
-- Bill Type: ${shipmentData.shipmentInfo?.billType || 'third_party'}
+- Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
 ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}` : ''}
 
@@ -1228,7 +1256,7 @@ CARRIER CONTACT INFORMATION
 - Contact Person: ${carrierDetails.contactName}
 - Email: ${carrierDetails.contactEmail}
 - Phone: ${carrierDetails.contactPhone}
-- Service: CreateShipmentX Booking
+- Service: ${getServiceName(shipmentData)}
 
 PACKAGE INFORMATION
 Total: ${totalPieces} package${totalPieces > 1 ? 's' : ''}, ${totalWeight.toFixed(1)} ${shipmentData.unitSystem === 'metric' ? 'kg' : 'lbs'}
@@ -1336,13 +1364,12 @@ A new shipment has been created in the system.
 
 SHIPMENT DETAILS
 - Shipment ID: ${shipmentData.shipmentID || shipmentData.id}
-- Company ID: ${shipmentData.companyID || 'N/A'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Pending
 
 CARRIER & SERVICE
 - Carrier: ${carrierName}
-- Service: ${serviceName}
+- Service: ${getServiceName(shipmentData)}
 - Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber || 'Pending'}
 
 SHIPMENT SUMMARY

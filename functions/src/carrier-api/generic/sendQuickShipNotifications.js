@@ -1,6 +1,6 @@
 const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
-const { sendEmail } = require('../../email/sendgridService');
+const { sendEmail, sendNotificationEmail } = require('../../email/sendgridService');
 
 const db = admin.firestore();
 
@@ -15,6 +15,36 @@ const SEND_FROM_NAME = 'Integrated Carriers';
 const sendgridApiKey = process.env.SENDGRID_API_KEY;
 if (sendgridApiKey) {
     sgMail.setApiKey(sendgridApiKey);
+}
+
+/**
+ * Helper function to convert bill type codes to human readable labels
+ */
+function getBillTypeLabel(billType) {
+    const billTypeLabels = {
+        'prepaid': 'Prepaid',
+        'collect': 'Collect',
+        'third_party': 'Third Party',
+        'freight_collect': 'Freight Collect',
+        'fob_origin': 'FOB Origin',
+        'fob_destination': 'FOB Destination'
+    };
+    return billTypeLabels[billType] || billType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Helper function to get proper service name from shipment data
+ */
+function getServiceName(data) {
+    // Priority order for service name
+    if (data.selectedRate?.service?.name) return data.selectedRate.service.name;
+    if (data.selectedRate?.serviceName) return data.selectedRate.serviceName;
+    if (data.shipmentInfo?.serviceType) return data.shipmentInfo.serviceType;
+    if (data.serviceType) return data.serviceType;
+    if (data.shipmentInfo?.shipmentType === 'ltl') return 'LTL';
+    if (data.shipmentInfo?.shipmentType === 'ftl') return 'FTL';
+    if (data.shipmentInfo?.shipmentType === 'courier') return 'Ground';
+    return 'Standard Service';
 }
 
 /**
@@ -1132,7 +1162,6 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Pickup Assignment</h2>
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Order #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentID}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Assigned Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${carrierDetails.name || shipmentData.carrier || 'Unknown'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold;">Awaiting Pickup</td></tr>
@@ -1145,7 +1174,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.shipmentType || 'freight'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
                         ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentInfo.carrierTrackingNumber}</td></tr>` : ''}
                     </table>
@@ -1159,7 +1188,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Contact Person:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactName || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Email:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactEmail || 'N/A'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Phone:</strong></td><td style="padding: 8px 0;">${carrierDetails.contactPhone || 'N/A'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">QuickShip Manual Entry</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${getServiceName(shipmentData)}</td></tr>
                     </table>
                 </div>
 
@@ -1268,7 +1297,6 @@ New pickup request for order ${shipmentData.shipmentID}
 
 ORDER DETAILS
 - Order #: ${shipmentData.shipmentID}
-- Company ID: ${shipmentData.companyID || 'N/A'}
 - Assigned Carrier: ${carrierDetails.name || shipmentData.carrier || 'Unknown'}
 - Created: ${new Date().toLocaleDateString()}
 - Status: Awaiting Pickup
@@ -1276,7 +1304,7 @@ ORDER DETAILS
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
 - Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}
-- Bill Type: ${shipmentData.shipmentInfo?.billType || 'third_party'}
+- Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
 ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.shipmentInfo.carrierTrackingNumber}` : ''}
 
@@ -1285,7 +1313,7 @@ CARRIER CONTACT INFORMATION
 - Contact Person: ${carrierDetails.contactName || 'N/A'}
 - Email: ${carrierDetails.contactEmail || 'N/A'}
 - Phone: ${carrierDetails.contactPhone || 'N/A'}
-- Service: QuickShip Manual Entry
+- Service: ${getServiceName(shipmentData)}
 
 PACKAGE INFORMATION
 Total: ${totalPieces} package${totalPieces > 1 ? 's' : ''}, ${totalWeight.toFixed(1)} ${shipmentData.unitSystem === 'metric' ? 'kg' : 'lbs'}

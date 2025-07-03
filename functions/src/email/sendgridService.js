@@ -23,6 +23,36 @@ if (sendgridApiKey) {
 }
 
 /**
+ * Helper function to convert bill type codes to human readable labels
+ */
+function getBillTypeLabel(billType) {
+    const billTypeLabels = {
+        'prepaid': 'Prepaid',
+        'collect': 'Collect',
+        'third_party': 'Third Party',
+        'freight_collect': 'Freight Collect',
+        'fob_origin': 'FOB Origin',
+        'fob_destination': 'FOB Destination'
+    };
+    return billTypeLabels[billType] || billType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Helper function to get proper service name from shipment data
+ */
+function getServiceName(data) {
+    // Priority order for service name
+    if (data.selectedRate?.service?.name) return data.selectedRate.service.name;
+    if (data.selectedRate?.serviceName) return data.selectedRate.serviceName;
+    if (data.shipmentInfo?.serviceType) return data.shipmentInfo.serviceType;
+    if (data.serviceType) return data.serviceType;
+    if (data.shipmentInfo?.shipmentType === 'ltl') return 'LTL';
+    if (data.shipmentInfo?.shipmentType === 'ftl') return 'FTL';
+    if (data.shipmentInfo?.shipmentType === 'courier') return 'Ground';
+    return 'Standard Service';
+}
+
+/**
  * Email templates and utilities
  */
 const EMAIL_TEMPLATES = {
@@ -42,10 +72,9 @@ const EMAIL_TEMPLATES = {
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipment Summary</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${data.companyID || 'N/A'}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID || 'N/A'}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date(data.createdAt).toLocaleDateString()}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">${data.status || 'pending'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.status || 'pending'}</td></tr>
                         </table>
                     </div>
 
@@ -55,7 +84,7 @@ const EMAIL_TEMPLATES = {
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${(data.shipmentInfo && data.shipmentInfo.shipmentType) || 'package'}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${(data.shipmentInfo && data.shipmentInfo.referenceNumber) || data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${(data.shipmentInfo && data.shipmentInfo.billType) || 'prepaid'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${getBillTypeLabel((data.shipmentInfo && data.shipmentInfo.billType) || 'prepaid')}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Pickup Window:</strong></td><td style="padding: 8px 0;">${(data.shipmentInfo && data.shipmentInfo.pickupWindow) ? `${data.shipmentInfo.pickupWindow.earliest} - ${data.shipmentInfo.pickupWindow.latest}` : '09:00 - 17:00'}</td></tr>
                             ${data.estimatedDeliveryDate ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Est. Delivery:</strong></td><td style="padding: 8px 0;">${new Date(data.estimatedDeliveryDate).toLocaleDateString()}</td></tr>` : ''}
                         </table>
@@ -66,7 +95,7 @@ const EMAIL_TEMPLATES = {
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Carrier & Service</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.service) || 'Standard Service'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${getServiceName(data)}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.trackingNumber || 'Pending'}</td></tr>
                             ${data.transitDays > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Transit Time:</strong></td><td style="padding: 8px 0;">${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}</td></tr>` : ''}
                         </table>
@@ -169,7 +198,6 @@ Shipment Successfully Created!
 
 SHIPMENT SUMMARY
 - Shipment #: ${data.shipmentNumber}
-- Company ID: ${data.companyID || 'N/A'}
 - Customer ID: ${data.customerID || 'N/A'}
 - Created: ${new Date(data.createdAt).toLocaleDateString()}
 - Status: ${data.status || 'pending'}
@@ -177,13 +205,13 @@ SHIPMENT SUMMARY
 SHIPMENT INFORMATION
 - Type: ${(data.shipmentInfo && data.shipmentInfo.shipmentType) || 'package'}
 - Reference #: ${(data.shipmentInfo && data.shipmentInfo.referenceNumber) || data.shipmentNumber}
-- Bill Type: ${(data.shipmentInfo && data.shipmentInfo.billType) || 'prepaid'}
+- Bill Type: ${getBillTypeLabel((data.shipmentInfo && data.shipmentInfo.billType) || 'prepaid')}
 - Pickup Window: ${(data.shipmentInfo && data.shipmentInfo.pickupWindow) ? `${data.shipmentInfo.pickupWindow.earliest} - ${data.shipmentInfo.pickupWindow.latest}` : '09:00 - 17:00'}
 ${data.estimatedDeliveryDate ? `- Est. Delivery: ${new Date(data.estimatedDeliveryDate).toLocaleDateString()}` : ''}
 
 CARRIER & SERVICE
 - Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
-- Service: ${(data.carrier && data.carrier.service) || 'Standard Service'}
+- Service: ${getServiceName(data)}
 - Tracking #: ${data.trackingNumber || 'Pending'}
 ${data.transitDays > 0 ? `- Transit Time: ${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}` : ''}
 
