@@ -47,6 +47,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
         role: 'user',
         status: 'active',
         phone: '',
+        phoneExtension: '',
         companies: [],
     });
 
@@ -94,6 +95,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                     role: userData.role || 'user',
                     status: userData.status || 'active',
                     phone: userData.phone || '',
+                    phoneExtension: userData.phoneExtension || '',
                     companies: userData.connectedCompanies?.companies || [],
                 });
             }
@@ -114,7 +116,14 @@ const UserForm = ({ isModal = false, onClose = null }) => {
     // Form handlers
     const handleInputChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+
+        // Validate phone extension to allow only numbers
+        if (name === 'phoneExtension') {
+            const numericValue = value.replace(/[^0-9]/g, '');
+            setFormData(prev => ({ ...prev, [name]: numericValue }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
 
         // Clear field error when user starts typing
         if (errors[name]) {
@@ -168,6 +177,11 @@ const UserForm = ({ isModal = false, onClose = null }) => {
             newErrors.phone = 'Please enter a valid phone number';
         }
 
+        // Phone extension validation (optional but format check if provided)
+        if (formData.phoneExtension && !/^\d+$/.test(formData.phoneExtension)) {
+            newErrors.phoneExtension = 'Extension must contain only numbers';
+        }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -195,7 +209,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
             // Get fresh auth token
             await currentUser.getIdToken(true);
 
-            const { email, firstName, lastName, role, status, phone, companies } = formData;
+            const { email, firstName, lastName, role, status, phone, phoneExtension, companies } = formData;
 
             if (isEditMode) {
                 // Update existing user
@@ -206,6 +220,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                     role,
                     status,
                     phone: phone.trim(),
+                    phoneExtension: phoneExtension.trim(),
                     connectedCompanies: { companies },
                     updatedAt: new Date(),
                 };
@@ -233,6 +248,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                     role,
                     status,
                     phone: phone.trim(),
+                    phoneExtension: phoneExtension.trim(),
                     companies
                 });
 
@@ -247,6 +263,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                         role: 'user',
                         status: 'active',
                         phone: '',
+                        phoneExtension: '',
                         companies: [],
                     });
 
@@ -495,7 +512,7 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                         }}
                                     />
                                 </Grid>
-                                <Grid item xs={12} md={6}>
+                                <Grid item xs={12} md={4}>
                                     <TextField
                                         fullWidth
                                         size="small"
@@ -506,6 +523,24 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                         error={!!errors.phone}
                                         helperText={errors.phone}
                                         placeholder="(555) 123-4567"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={2}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Extension"
+                                        name="phoneExtension"
+                                        value={formData.phoneExtension}
+                                        onChange={handleInputChange}
+                                        error={!!errors.phoneExtension}
+                                        helperText={errors.phoneExtension}
+                                        placeholder="1234"
                                         sx={{
                                             '& .MuiInputLabel-root': { fontSize: '12px' },
                                             '& .MuiInputBase-input': { fontSize: '12px' },
@@ -554,10 +589,10 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                             sx={{ fontSize: '12px' }}
                                         >
                                             <MenuItem value="company_staff" sx={{ fontSize: '12px' }}>Company Staff</MenuItem>
-                                            <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Admin</MenuItem>
                                             <MenuItem value="accounting" sx={{ fontSize: '12px' }}>Accounting</MenuItem>
-                                            <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
-                                            <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
+                                            <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Administrator</MenuItem>
+                                            <MenuItem value="admin" sx={{ fontSize: '12px' }}>Administrator</MenuItem>
+                                            <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Administrator</MenuItem>
                                         </Select>
                                         {errors.role && (
                                             <FormHelperText sx={{ fontSize: '11px' }}>
@@ -596,10 +631,65 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                         multiple
                                         size="small"
                                         options={allCompanies}
-                                        getOptionLabel={(option) => option.name}
+                                        getOptionLabel={(option) => `${option.name} (${option.id})`}
                                         value={selectedCompanyObjects}
                                         onChange={handleCompaniesChange}
                                         filterSelectedOptions
+                                        renderOption={(props, option) => (
+                                            <Box component="li" {...props} sx={{ fontSize: '12px' }}>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        {option.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Company ID: {option.id}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                        renderTags={(tagValue, getTagProps) =>
+                                            tagValue.map((option, index) => (
+                                                <Box
+                                                    key={option.id}
+                                                    {...getTagProps({ index })}
+                                                    component="span"
+                                                    sx={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        backgroundColor: '#f3f4f6',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '6px',
+                                                        padding: '2px 8px',
+                                                        margin: '2px',
+                                                        fontSize: '12px',
+                                                        maxWidth: '300px'
+                                                    }}
+                                                >
+                                                    <Typography sx={{ fontSize: '12px', marginRight: '4px' }}>
+                                                        {option.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                        ({option.id})
+                                                    </Typography>
+                                                    <Box
+                                                        sx={{
+                                                            marginLeft: '6px',
+                                                            cursor: 'pointer',
+                                                            fontSize: '14px',
+                                                            color: '#6b7280',
+                                                            '&:hover': { color: '#374151' }
+                                                        }}
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            getTagProps({ index }).onDelete(e);
+                                                        }}
+                                                    >
+                                                        ×
+                                                    </Box>
+                                                </Box>
+                                            ))
+                                        }
                                         renderInput={(params) => (
                                             <TextField
                                                 {...params}

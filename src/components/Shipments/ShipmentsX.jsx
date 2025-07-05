@@ -84,7 +84,7 @@ import {
     getShipmentStatusGroup,
     checkDocumentAvailability
 } from './utils/shipmentHelpers';
-import { carrierOptions } from './utils/carrierOptions';
+// Dynamic carrier loading - removed hardcoded import
 
 // Import hooks
 import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticStatusUpdate';
@@ -93,7 +93,7 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
-const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null }) => {
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null, hideSearch = false }) => {
     console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment, adminViewMode, adminCompanyIds });
 
     // Auth and company context
@@ -115,6 +115,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [customers, setCustomers] = useState({});
     const [carrierData, setCarrierData] = useState({});
     const [companiesData, setCompaniesData] = useState({}); // Enhanced to load multiple companies for admin view
+    const [availableCarriers, setAvailableCarriers] = useState([]); // Dynamic carrier options from database
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -124,7 +125,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [rowsPerPage, setRowsPerPage] = useState(50);
     const [selected, setSelected] = useState([]);
 
-    // Filter states
+    // Filter states - ENHANCED FOR ENTERPRISE
     const [filters, setFilters] = useState({
         status: 'all',
         carrier: 'all',
@@ -132,6 +133,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         shipmentType: 'all',
         enhancedStatus: ''
     });
+
+    // ENTERPRISE SEARCH STATE - Single unified search field
+    const [unifiedSearch, setUnifiedSearch] = useState('');
+
+    // Legacy search fields for backward compatibility and specific filters
     const [searchFields, setSearchFields] = useState({
         shipmentId: '',
         referenceNumber: '',
@@ -204,20 +210,27 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('✅ Navigation reset to table view for search');
             }
 
+            // Handle deep link search parameters - use unified search for better results
+            const deepLinkSearchTerms = [];
+
             if (deepLinkParams.customerId) {
-                setSelectedCustomer(deepLinkParams.customerId);
-                setFiltersOpen(true); // Open filters when deep linking
+                deepLinkSearchTerms.push(deepLinkParams.customerId);
             }
             if (deepLinkParams.shipmentId) {
-                setSearchFields(prev => ({ ...prev, shipmentId: deepLinkParams.shipmentId }));
-                setFiltersOpen(true);
+                deepLinkSearchTerms.push(deepLinkParams.shipmentId);
             }
             if (deepLinkParams.referenceNumber) {
-                setSearchFields(prev => ({ ...prev, referenceNumber: deepLinkParams.referenceNumber }));
-                setFiltersOpen(true);
+                deepLinkSearchTerms.push(deepLinkParams.referenceNumber);
             }
             if (deepLinkParams.trackingNumber) {
-                setSearchFields(prev => ({ ...prev, trackingNumber: deepLinkParams.trackingNumber }));
+                deepLinkSearchTerms.push(deepLinkParams.trackingNumber);
+            }
+
+            // If we have search terms, use unified search for better results
+            if (deepLinkSearchTerms.length > 0) {
+                const searchTerm = deepLinkSearchTerms[0]; // Use the first term for unified search
+                console.log('🔗 Deep link search term:', searchTerm);
+                setUnifiedSearch(searchTerm);
                 setFiltersOpen(true);
             }
             if (deepLinkParams.status && deepLinkParams.status !== 'all') {
@@ -248,6 +261,435 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             severity
         });
     }, []);
+
+    // DYNAMIC CARRIER LOADING - Load carriers from database
+    const loadAvailableCarriers = useCallback(async () => {
+        try {
+            console.log('🚛 Loading available carriers from database');
+            const carrierOptions = [];
+
+            // 1. Load main carriers from carriers collection (simplified query to avoid index issues)
+            try {
+                console.log('📡 Querying carriers collection...');
+                const carriersSnapshot = await getDocs(collection(db, 'carriers'));
+                const mainCarriers = [];
+
+                console.log(`📊 Found ${carriersSnapshot.docs.length} carriers in database`);
+
+                carriersSnapshot.forEach(doc => {
+                    const carrierData = doc.data();
+                    console.log('🔍 Carrier data:', {
+                        id: doc.id,
+                        name: carrierData.name,
+                        enabled: carrierData.enabled,
+                        carrierID: carrierData.carrierID
+                    });
+
+                    // Only include enabled carriers, but be flexible about the enabled field
+                    const isEnabled = carrierData.enabled === true || carrierData.enabled === 'true' ||
+                        carrierData.status === 'active' || carrierData.status === 'enabled';
+
+                    if (isEnabled && carrierData.name) {
+                        mainCarriers.push({
+                            id: carrierData.carrierID || doc.id,
+                            name: carrierData.name,
+                            type: carrierData.type || 'main',
+                            normalized: carrierData.name?.toLowerCase()?.replace(/[^a-z0-9]/g, '') || ''
+                        });
+                    }
+                });
+
+                // Sort carriers by name manually
+                mainCarriers.sort((a, b) => a.name.localeCompare(b.name));
+
+                console.log(`✅ Processed ${mainCarriers.length} enabled carriers:`, mainCarriers.map(c => c.name));
+
+                if (mainCarriers.length > 0) {
+                    carrierOptions.push({
+                        group: 'Main Carriers',
+                        carriers: mainCarriers
+                    });
+                }
+            } catch (carriersError) {
+                console.error('❌ Error loading main carriers:', carriersError);
+            }
+
+            // 2. Load QuickShip carriers from quickshipCarriers collection
+            try {
+                console.log('📡 Querying quickshipCarriers collection...');
+                const quickshipSnapshot = await getDocs(collection(db, 'quickshipCarriers'));
+                const quickshipCarriers = [];
+
+                console.log(`📊 Found ${quickshipSnapshot.docs.length} QuickShip carriers in database`);
+
+                quickshipSnapshot.forEach(doc => {
+                    const carrierData = doc.data();
+                    console.log('🚀 QuickShip carrier data:', {
+                        id: doc.id,
+                        name: carrierData.name,
+                        companyID: carrierData.companyID
+                    });
+
+                    if (carrierData.name) {
+                        quickshipCarriers.push({
+                            id: `quickship_${doc.id}`,
+                            name: carrierData.name,
+                            type: 'quickship',
+                            normalized: carrierData.name?.toLowerCase()?.replace(/[^a-z0-9]/g, '') || ''
+                        });
+                    }
+                });
+
+                // Sort carriers by name manually
+                quickshipCarriers.sort((a, b) => a.name.localeCompare(b.name));
+
+                console.log(`✅ Processed ${quickshipCarriers.length} QuickShip carriers:`, quickshipCarriers.map(c => c.name));
+
+                if (quickshipCarriers.length > 0) {
+                    carrierOptions.push({
+                        group: 'QuickShip Carriers',
+                        carriers: quickshipCarriers
+                    });
+                }
+            } catch (quickshipError) {
+                console.error('❌ Error loading QuickShip carriers:', quickshipError);
+            }
+
+            // 3. Add eShipPlus freight carriers as a separate group (always available)
+            const eshipPlusCarriers = [
+                { id: 'eShipPlus_fedexfreight', name: 'FedEx Freight via eShipPlus', type: 'eshipplus', normalized: 'fedexfreight' },
+                { id: 'eShipPlus_roadrunner', name: 'Road Runner via eShipPlus', type: 'eshipplus', normalized: 'roadrunner' },
+                { id: 'eShipPlus_estes', name: 'ESTES via eShipPlus', type: 'eshipplus', normalized: 'estes' },
+                { id: 'eShipPlus_yrc', name: 'YRC Freight via eShipPlus', type: 'eshipplus', normalized: 'yrc' },
+                { id: 'eShipPlus_xpo', name: 'XPO Logistics via eShipPlus', type: 'eshipplus', normalized: 'xpo' },
+                { id: 'eShipPlus_odfl', name: 'Old Dominion via eShipPlus', type: 'eshipplus', normalized: 'odfl' },
+                { id: 'eShipPlus_saia', name: 'SAIA via eShipPlus', type: 'eshipplus', normalized: 'saia' }
+            ];
+
+            carrierOptions.push({
+                group: 'Freight Services (eShipPlus)',
+                carriers: eshipPlusCarriers
+            });
+
+            console.log('✅ Final carrier options loaded:', carrierOptions);
+            console.log('📈 Total groups:', carrierOptions.length);
+            console.log('📈 Total carriers:', carrierOptions.reduce((sum, group) => sum + group.carriers.length, 0));
+
+            setAvailableCarriers(carrierOptions);
+
+        } catch (error) {
+            console.error('❌ Critical error loading carriers:', error);
+
+            // Fallback to just eShipPlus carriers if everything fails
+            const fallbackCarriers = [{
+                group: 'Freight Services (eShipPlus)',
+                carriers: [
+                    { id: 'eShipPlus_fedexfreight', name: 'FedEx Freight via eShipPlus', type: 'eshipplus', normalized: 'fedexfreight' },
+                    { id: 'eShipPlus_roadrunner', name: 'Road Runner via eShipPlus', type: 'eshipplus', normalized: 'roadrunner' },
+                    { id: 'eShipPlus_estes', name: 'ESTES via eShipPlus', type: 'eshipplus', normalized: 'estes' },
+                    { id: 'eShipPlus_yrc', name: 'YRC Freight via eShipPlus', type: 'eshipplus', normalized: 'yrc' },
+                    { id: 'eShipPlus_xpo', name: 'XPO Logistics via eShipPlus', type: 'eshipplus', normalized: 'xpo' },
+                    { id: 'eShipPlus_odfl', name: 'Old Dominion via eShipPlus', type: 'eshipplus', normalized: 'odfl' },
+                    { id: 'eShipPlus_saia', name: 'SAIA via eShipPlus', type: 'eshipplus', normalized: 'saia' }
+                ]
+            }];
+
+            console.log('🔄 Using fallback carriers:', fallbackCarriers);
+            setAvailableCarriers(fallbackCarriers);
+        }
+    }, []);
+
+    // ENTERPRISE SEARCH ENGINE - Comprehensive wildcard search (stable function)
+    const performUnifiedSearch = useCallback((shipments, searchTerm, customersMap, carrierDataMap) => {
+        if (!searchTerm || !searchTerm.trim()) {
+            return shipments;
+        }
+
+        const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+        console.log('🔍 Enterprise search for:', normalizedSearchTerm);
+
+        return shipments.filter(shipment => {
+            // Create searchable content array with all possible fields
+            const searchableContent = [];
+
+            // 1. SHIPMENT IDENTIFIERS
+            searchableContent.push(
+                shipment.shipmentID,
+                shipment.id,
+                shipment.shipmentId
+            );
+
+            // 2. COMPANY IDs (Critical for enterprise search)
+            searchableContent.push(
+                shipment.companyID,
+                shipment.shipFrom?.companyID,
+                shipment.shipTo?.companyID
+            );
+
+            // 3. CUSTOMER IDs (Critical for enterprise search)
+            searchableContent.push(
+                shipment.shipTo?.customerID,
+                shipment.shipFrom?.customerID,
+                shipment.customerID
+            );
+
+            // 4. REFERENCE NUMBERS (All variations)
+            searchableContent.push(
+                shipment.referenceNumber,
+                shipment.shipperReferenceNumber,
+                shipment.shipmentInfo?.shipperReferenceNumber,
+                shipment.shipmentInfo?.customerReference,
+                shipment.selectedRate?.referenceNumber,
+                shipment.selectedRateRef?.referenceNumber
+            );
+
+            // Additional reference numbers array
+            if (shipment.shipmentInfo?.referenceNumbers) {
+                searchableContent.push(...shipment.shipmentInfo.referenceNumbers);
+            }
+
+            // 5. TRACKING NUMBERS (All variations)
+            searchableContent.push(
+                shipment.trackingNumber,
+                shipment.selectedRate?.trackingNumber,
+                shipment.selectedRate?.TrackingNumber,
+                shipment.selectedRateRef?.trackingNumber,
+                shipment.selectedRateRef?.TrackingNumber,
+                shipment.carrierTrackingData?.trackingNumber,
+                shipment.carrierBookingConfirmation?.trackingNumber,
+                shipment.carrierBookingConfirmation?.proNumber,
+                shipment.bookingReferenceNumber
+            );
+
+            // 6. COMPANY NAMES
+            searchableContent.push(
+                shipment.shipFrom?.company,
+                shipment.shipTo?.company,
+                shipment.companyName
+            );
+
+            // 7. CUSTOMER NAMES (from customers map)
+            if (shipment.shipTo?.customerID && customersMap[shipment.shipTo.customerID]) {
+                searchableContent.push(customersMap[shipment.shipTo.customerID]);
+            }
+
+            // 8. CARRIER INFORMATION
+            searchableContent.push(
+                shipment.carrier,
+                shipment.selectedRate?.carrier,
+                shipment.selectedRateRef?.carrier,
+                carrierDataMap[shipment.id]?.carrier,
+                carrierDataMap[shipment.id]?.displayCarrierId,
+                carrierDataMap[shipment.id]?.sourceCarrierName
+            );
+
+            // 9. ADDRESSES (for origin/destination search)
+            const shipFromFields = shipment.shipFrom || shipment.shipfrom || {};
+            const shipToFields = shipment.shipTo || shipment.shipto || {};
+
+            searchableContent.push(
+                shipFromFields.street,
+                shipFromFields.city,
+                shipFromFields.state,
+                shipFromFields.postalCode,
+                shipFromFields.country,
+                shipToFields.street,
+                shipToFields.city,
+                shipToFields.state,
+                shipToFields.postalCode,
+                shipToFields.country
+            );
+
+            // 10. CONTACT INFORMATION
+            searchableContent.push(
+                shipFromFields.contactName,
+                shipFromFields.contactEmail,
+                shipFromFields.contactPhone,
+                shipToFields.contactName,
+                shipToFields.contactEmail,
+                shipToFields.contactPhone
+            );
+
+            // 11. STATUS AND TYPE
+            searchableContent.push(
+                shipment.status,
+                shipment.shipmentType,
+                shipment.shipmentInfo?.shipmentType,
+                shipment.shipmentInfo?.serviceType
+            );
+
+            // 12. SPECIAL INSTRUCTIONS AND NOTES
+            searchableContent.push(
+                shipment.shipmentInfo?.specialInstructions,
+                shipment.notes,
+                shipment.instructions
+            );
+
+            // Filter out null/undefined values and convert to lowercase
+            const cleanedContent = searchableContent
+                .filter(item => item !== null && item !== undefined && item !== '')
+                .map(item => String(item).toLowerCase());
+
+            // ULTRA-SMART SEARCH LOGIC - Company-focused with strict short term matching
+            const searchLength = normalizedSearchTerm.length;
+
+            // Separate high-priority company fields from general content
+            const companyFields = [
+                shipment.companyID,
+                shipment.shipFrom?.companyID,
+                shipment.shipTo?.companyID
+            ].filter(item => item !== null && item !== undefined && item !== '')
+                .map(item => String(item).toLowerCase());
+
+            const shipmentIdFields = [
+                shipment.shipmentID,
+                shipment.id,
+                shipment.shipmentId
+            ].filter(item => item !== null && item !== undefined && item !== '')
+                .map(item => String(item).toLowerCase());
+
+            // For short terms (1-3 chars), be VERY restrictive - company/shipment IDs only
+            if (searchLength <= 3) {
+                console.log('🔍 Short term search - checking company/shipment IDs only');
+
+                // Check for EXACT matches in company fields first (highest priority)
+                const exactCompanyMatch = companyFields.some(field => field === normalizedSearchTerm);
+                if (exactCompanyMatch) {
+                    console.log('✅ Exact company ID match found');
+                    return true;
+                }
+
+                // Check for EXACT matches in shipment ID fields
+                const exactShipmentMatch = shipmentIdFields.some(field => field === normalizedSearchTerm);
+                if (exactShipmentMatch) {
+                    console.log('✅ Exact shipment ID match found');
+                    return true;
+                }
+
+                // For shipment IDs, allow prefix matching (e.g., "IC" matches "IC-ABC-123")
+                const shipmentPrefixMatch = shipmentIdFields.some(field => {
+                    return field.startsWith(normalizedSearchTerm + '-') ||
+                        field.startsWith(normalizedSearchTerm + '_') ||
+                        (field.length > normalizedSearchTerm.length && field.startsWith(normalizedSearchTerm));
+                });
+
+                if (shipmentPrefixMatch) {
+                    console.log('✅ Shipment ID prefix match found');
+                    return true;
+                }
+
+                console.log('❌ No company/shipment ID match for short term');
+                return false; // No other matches for short terms
+            }
+
+            // For medium terms (4-6 chars), expand to include customer IDs and reference numbers
+            if (searchLength <= 6) {
+                // Check all high-priority fields
+                const priorityFields = [
+                    ...companyFields,
+                    ...shipmentIdFields,
+                    shipment.shipTo?.customerID,
+                    shipment.shipFrom?.customerID,
+                    shipment.customerID,
+                    shipment.referenceNumber,
+                    shipment.shipperReferenceNumber,
+                    shipment.shipmentInfo?.shipperReferenceNumber,
+                    shipment.trackingNumber
+                ].filter(item => item !== null && item !== undefined && item !== '')
+                    .map(item => String(item).toLowerCase());
+
+                // Exact match first
+                const exactMatch = priorityFields.some(field => field === normalizedSearchTerm);
+                if (exactMatch) return true;
+
+                // Prefix match for IDs
+                const prefixMatch = priorityFields.some(field => {
+                    return field.startsWith(normalizedSearchTerm + '-') ||
+                        field.startsWith(normalizedSearchTerm + '_') ||
+                        field.startsWith(normalizedSearchTerm);
+                });
+
+                if (prefixMatch) return true;
+
+                // Contains match only for longer priority fields
+                const containsMatch = priorityFields.some(field =>
+                    field.length >= 6 && field.includes(normalizedSearchTerm)
+                );
+
+                return containsMatch;
+            }
+
+            // For longer terms (7+ chars), use full search across all fields
+            const allFields = cleanedContent;
+
+            // Exact match gets highest priority
+            if (allFields.some(content => content === normalizedSearchTerm)) return true;
+
+            // Word boundary match gets second priority
+            const wordBoundaryMatch = allFields.some(content => {
+                const wordBoundaryRegex = new RegExp(`\\b${normalizedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                return wordBoundaryRegex.test(content);
+            });
+            if (wordBoundaryMatch) return true;
+
+            // Contains matching for longer terms
+            return allFields.some(content => content.includes(normalizedSearchTerm));
+        });
+    }, []); // No dependencies to prevent recreation
+
+    // ENHANCED CARRIER FILTER FUNCTION (stable)
+    const applyCarrierFilter = useCallback((shipments, carrierFilter, carrierDataMap) => {
+        if (!carrierFilter || carrierFilter === 'all') {
+            return shipments;
+        }
+
+        return shipments.filter(shipment => {
+            // Check multiple carrier sources
+            const carrierSources = [
+                shipment.carrier,
+                shipment.selectedRate?.carrier,
+                shipment.selectedRateRef?.carrier,
+                carrierDataMap[shipment.id]?.carrier,
+                carrierDataMap[shipment.id]?.displayCarrierId,
+                carrierDataMap[shipment.id]?.sourceCarrierName
+            ];
+
+            return carrierSources.some(carrier =>
+                carrier && carrier.toLowerCase().includes(carrierFilter.toLowerCase())
+            );
+        });
+    }, []); // No dependencies to prevent recreation
+
+    // ENHANCED STATUS FILTER FUNCTION (stable)
+    const applyStatusFilter = useCallback((shipments, statusFilter) => {
+        if (!statusFilter || statusFilter === 'all') {
+            return shipments;
+        }
+
+        return shipments.filter(shipment => {
+            const shipmentStatus = shipment.status?.toLowerCase()?.trim();
+            const filterStatus = statusFilter.toLowerCase().trim();
+
+            // Direct match
+            if (shipmentStatus === filterStatus) return true;
+
+            // Handle status variations and mappings
+            const statusMappings = {
+                'in_transit': ['in transit', 'intransit', 'picked_up', 'on_route'],
+                'in transit': ['in_transit', 'intransit', 'picked_up', 'on_route'],
+                'awaiting_shipment': ['pending', 'scheduled', 'booked', 'ready_to_ship', 'label_created'],
+                'cancelled': ['canceled', 'void', 'voided'],
+                'delivered': ['completed'],
+                'delayed': ['on_hold', 'exception', 'returned', 'damaged']
+            };
+
+            if (statusMappings[filterStatus]) {
+                return statusMappings[filterStatus].includes(shipmentStatus);
+            }
+
+            return false;
+        });
+    }, []); // No dependencies to prevent recreation
 
     // Generic navigation push
     const pushView = useCallback((view) => {
@@ -1051,58 +1493,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 });
             }
 
-            console.log(`🔍 After tab filter: ${shipmentsData.length} shipments remaining`)
+            console.log(`🔍 After tab filter: ${shipmentsData.length} shipments remaining`);
 
-            // Apply search filters
+            // ENTERPRISE SEARCH AND FILTER SYSTEM
             let filteredData = [...shipmentsData];
 
-            // 🔍 UNIFIED SEARCH: Check if all three search fields have the same value (from admin search)
-            const unifiedSearchTerm = searchFields.shipmentId &&
-                searchFields.shipmentId === searchFields.referenceNumber &&
-                searchFields.referenceNumber === searchFields.trackingNumber
-                ? searchFields.shipmentId.toLowerCase()
-                : null;
+            // 1. APPLY UNIFIED SEARCH (Primary search - wildcard across all fields)
+            if (unifiedSearch && unifiedSearch.trim()) {
+                console.log('🚀 ENTERPRISE UNIFIED SEARCH:', unifiedSearch);
+                filteredData = performUnifiedSearch(filteredData, unifiedSearch, customers, carrierData);
+                console.log(`🔍 After unified search: ${filteredData.length} shipments remaining`);
+            }
 
-            if (unifiedSearchTerm) {
-                // Admin search: Search across all three fields with OR logic
-                console.log('🔍 Unified admin search for:', unifiedSearchTerm);
-                filteredData = filteredData.filter(shipment => {
-                    // Shipment ID
-                    const shipmentId = (shipment.shipmentID || shipment.id || '').toLowerCase();
-                    if (shipmentId.includes(unifiedSearchTerm)) return true;
-
-                    // Reference Number
-                    const refNumber = (
-                        shipment.shipmentInfo?.shipperReferenceNumber ||
-                        shipment.referenceNumber ||
-                        shipment.shipperReferenceNumber ||
-                        shipment.selectedRate?.referenceNumber ||
-                        shipment.selectedRateRef?.referenceNumber ||
-                        ''
-                    ).toLowerCase();
-                    if (refNumber.includes(unifiedSearchTerm)) return true;
-
-                    // Tracking Number
-                    const trackingNumber = (
-                        shipment.trackingNumber ||
-                        shipment.selectedRate?.trackingNumber ||
-                        shipment.selectedRate?.TrackingNumber ||
-                        shipment.selectedRateRef?.trackingNumber ||
-                        shipment.selectedRateRef?.TrackingNumber ||
-                        shipment.carrierTrackingData?.trackingNumber ||
-                        shipment.carrierBookingConfirmation?.trackingNumber ||
-                        shipment.carrierBookingConfirmation?.proNumber ||
-                        shipment.bookingReferenceNumber ||
-                        ''
-                    ).toLowerCase();
-                    if (trackingNumber.includes(unifiedSearchTerm)) return true;
-
-                    return false; // No match found
-                });
-            } else {
-                // Individual field searches with AND logic (for manual filter use)
-
-                // Shipment ID search
+            // 2. APPLY LEGACY SEARCH FIELDS (for backward compatibility and specific filters)
+            // Only apply these if unified search is not being used
+            if (!unifiedSearch || !unifiedSearch.trim()) {
+                // Individual field searches with AND logic
                 if (searchFields.shipmentId) {
                     const searchTerm = searchFields.shipmentId.toLowerCase();
                     filteredData = filteredData.filter(shipment => {
@@ -1111,7 +1517,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     });
                 }
 
-                // Reference Number search
                 if (searchFields.referenceNumber) {
                     const searchTerm = searchFields.referenceNumber.toLowerCase();
                     filteredData = filteredData.filter(shipment => {
@@ -1123,11 +1528,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                             shipment.selectedRateRef?.referenceNumber ||
                             ''
                         ).toLowerCase();
-                        return refNumber.includes(searchTerm);
+
+                        if (refNumber.includes(searchTerm)) return true;
+
+                        const referenceNumbers = shipment.shipmentInfo?.referenceNumbers || [];
+                        return referenceNumbers.some(ref =>
+                            ref && ref.toLowerCase().includes(searchTerm)
+                        );
                     });
                 }
 
-                // Tracking Number search
                 if (searchFields.trackingNumber) {
                     const searchTerm = searchFields.trackingNumber.toLowerCase();
                     filteredData = filteredData.filter(shipment => {
@@ -1146,78 +1556,76 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         return trackingNumber.includes(searchTerm);
                     });
                 }
+
+                // Customer search
+                if (selectedCustomer || searchFields.customerName) {
+                    const searchTerm = (selectedCustomer || searchFields.customerName).toLowerCase();
+                    filteredData = filteredData.filter(shipment => {
+                        const shipToCustomerId = shipment.shipTo?.customerID;
+                        const shipToCompany = shipment.shipTo?.company;
+                        const customerNameFromMap = customers[shipToCustomerId];
+
+                        return [
+                            shipToCustomerId && shipToCustomerId.toLowerCase().includes(searchTerm),
+                            customerNameFromMap && customerNameFromMap.toLowerCase().includes(searchTerm),
+                            shipToCompany && shipToCompany.toLowerCase().includes(searchTerm)
+                        ].some(Boolean);
+                    });
+                }
+
+                // Origin/Destination search
+                if (searchFields.origin) {
+                    filteredData = filteredData.filter(shipment => {
+                        const shipFrom = shipment.shipFrom || shipment.shipfrom || {};
+                        return Object.values(shipFrom)
+                            .join(' ')
+                            .toLowerCase()
+                            .includes(searchFields.origin.toLowerCase());
+                    });
+                }
+
+                if (searchFields.destination) {
+                    filteredData = filteredData.filter(shipment => {
+                        const shipTo = shipment.shipTo || shipment.shipto || {};
+                        return Object.values(shipTo)
+                            .join(' ')
+                            .toLowerCase()
+                            .includes(searchFields.destination.toLowerCase());
+                    });
+                }
             }
 
-            // Customer search
-            if (selectedCustomer || searchFields.customerName) {
-                const searchTerm = (selectedCustomer || searchFields.customerName).toLowerCase();
-                console.log('Filtering by customer:', { selectedCustomer, searchTerm, availableCustomers: Object.keys(customers) });
+            // 3. APPLY CARRIER FILTER (Enhanced)
+            filteredData = applyCarrierFilter(filteredData, filters.carrier, carrierData);
 
-                filteredData = filteredData.filter(shipment => {
-                    // Check multiple possible customer identification methods
-                    const shipToCustomerId = shipment.shipTo?.customerID;
-                    const shipToCompany = shipment.shipTo?.company;
-                    const customerNameFromMap = customers[shipToCustomerId];
+            // 4. APPLY STATUS FILTER (Enhanced)
+            filteredData = applyStatusFilter(filteredData, filters.enhancedStatus || filters.status);
 
-                    // Debug logging for first few shipments
-                    if (filteredData.indexOf(shipment) < 3) {
-                        console.log('Checking shipment:', {
-                            shipmentId: shipment.id,
-                            shipToCustomerId,
-                            shipToCompany,
-                            customerNameFromMap,
-                            searchTerm
-                        });
-                    }
-
-                    // Try multiple matching strategies
-                    const matches = [
-                        // Direct customer ID match
-                        shipToCustomerId && shipToCustomerId.toLowerCase().includes(searchTerm),
-                        // Customer name from customers map
-                        customerNameFromMap && customerNameFromMap.toLowerCase().includes(searchTerm),
-                        // Direct company name match
-                        shipToCompany && shipToCompany.toLowerCase().includes(searchTerm)
-                    ].some(Boolean);
-
-                    return matches;
-                });
-
-                console.log('Filtered data after customer filter:', filteredData.length, 'shipments');
-            }
-
-            // Origin/Destination search
-            if (searchFields.origin) {
-                filteredData = filteredData.filter(shipment => {
-                    const shipFrom = shipment.shipFrom || shipment.shipfrom || {};
-                    return Object.values(shipFrom)
-                        .join(' ')
-                        .toLowerCase()
-                        .includes(searchFields.origin.toLowerCase());
-                });
-            }
-
-            if (searchFields.destination) {
-                filteredData = filteredData.filter(shipment => {
-                    const shipTo = shipment.shipTo || shipment.shipto || {};
-                    return Object.values(shipTo)
-                        .join(' ')
-                        .toLowerCase()
-                        .includes(searchFields.destination.toLowerCase());
-                });
-            }
-
-            // Carrier filter
-            if (filters.carrier !== 'all') {
-                // Carrier filter logic will be applied here later
-            }
-
-            // Shipment type filter
+            // 5. APPLY SHIPMENT TYPE FILTER
             if (filters.shipmentType !== 'all') {
                 filteredData = filteredData.filter(shipment => {
                     const shipmentType = (shipment.shipmentInfo?.shipmentType ||
                         shipment.shipmentType || '').toLowerCase();
-                    return shipmentType.includes(filters.shipmentType.toLowerCase());
+
+                    const filterType = filters.shipmentType.toLowerCase();
+
+                    // Direct match
+                    if (shipmentType.includes(filterType)) return true;
+
+                    // Handle type variations
+                    if (filterType === 'courier') {
+                        return shipmentType.includes('courier') ||
+                            shipmentType.includes('express') ||
+                            shipmentType.includes('parcel');
+                    }
+
+                    if (filterType === 'freight') {
+                        return shipmentType.includes('freight') ||
+                            shipmentType.includes('ltl') ||
+                            shipmentType.includes('ftl');
+                    }
+
+                    return false;
                 });
             }
 
@@ -1317,7 +1725,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } finally {
             setLoading(false);
         }
-    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds]); // Removed companyData to prevent loops
+    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds]); // Removed problematic dependencies that cause infinite loops
 
     // Create a stable reload function that can be called when needed
     const reloadShipments = useCallback(() => {
@@ -1418,6 +1826,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setSelectedTab('all');
         setPage(0);
         setSelected([]);
+
+        // Clear unified search
+        setUnifiedSearch('');
+
+        // Clear filters
         setFilters({
             status: 'all',
             carrier: 'all',
@@ -1425,6 +1838,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             shipmentType: 'all',
             enhancedStatus: ''
         });
+
+        // Clear legacy search fields
         setSearchFields({
             shipmentId: '',
             referenceNumber: '',
@@ -1433,11 +1848,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             origin: '',
             destination: ''
         });
+
         setDateRange([null, null]);
         setSelectedCustomer('');
         setFiltersOpen(false);
         setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
         setMountedViews(['table']);
+
         // ENHANCED FIX: Reset auto-open state to prevent sticky navigation
         setHasAutoOpenedShipment(false);
         setIsReturningFromDetail(false); // Reset the returning flag
@@ -1464,23 +1881,35 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         if (!authLoading && !companyCtxLoading && (companyIdForAddress || isAdminAllView)) {
             console.log('🔄 Initial data load triggered', { adminViewMode, isAdminAllView });
 
-            // Load data in parallel for faster initial load
-            const dataPromises = [
-                fetchCustomers(),
-                loadShipments()
-            ];
+            // Load data in parallel for faster initial load - call functions directly to avoid dependency issues
+            const loadInitialData = async () => {
+                try {
+                    const promises = [];
 
-            // Add company data loading for admin view
-            if (adminViewMode) {
-                dataPromises.push(fetchCompaniesData());
-            }
+                    // Load customers
+                    promises.push(fetchCustomers());
 
-            Promise.all(dataPromises).catch(error => {
-                console.error('Error loading initial data:', error);
-                setLoading(false);
-            });
+                    // Load shipments
+                    promises.push(loadShipments());
+
+                    // Load dynamic carriers from database
+                    promises.push(loadAvailableCarriers());
+
+                    // Add company data loading for admin view
+                    if (adminViewMode) {
+                        promises.push(fetchCompaniesData());
+                    }
+
+                    await Promise.all(promises);
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    setLoading(false);
+                }
+            };
+
+            loadInitialData();
         }
-    }, [authLoading, companyCtxLoading, companyIdForAddress, fetchCustomers, loadShipments, fetchCompaniesData, adminViewMode]);
+    }, [authLoading, companyCtxLoading, companyIdForAddress, adminViewMode]); // Removed function dependencies to prevent loops
 
     // Add tracking drawer handler
     const handleOpenTrackingDrawer = (trackingNumber) => {
@@ -1661,381 +2090,531 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     </Box>
                                 </Toolbar>
 
+                                {/* ENTERPRISE SEARCH BAR - Prominent placement above filters */}
+                                {!hideSearch && (
+                                    <Box sx={{
+                                        p: 2,
+                                        bgcolor: '#ffffff',
+                                        borderBottom: '1px solid #e2e8f0',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 2
+                                    }}>
+                                        <TextField
+                                            fullWidth
+                                            placeholder="Search Shipments"
+                                            value={unifiedSearch}
+                                            onChange={(e) => {
+                                                setUnifiedSearch(e.target.value);
+                                                // Clear legacy search fields when using unified search
+                                                if (e.target.value) {
+                                                    setSearchFields({
+                                                        shipmentId: '',
+                                                        referenceNumber: '',
+                                                        trackingNumber: '',
+                                                        customerName: '',
+                                                        origin: '',
+                                                        destination: ''
+                                                    });
+                                                    setSelectedCustomer('');
+                                                }
+                                                debouncedReload();
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    console.log('🔍 ENTER pressed - triggering search');
+                                                    reloadShipments();
+                                                }
+                                            }}
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{
+                                                '& .MuiInputBase-root': {
+                                                    fontSize: '14px',
+                                                    borderRadius: '8px',
+                                                    backgroundColor: '#f8fafc',
+                                                    '&:hover': {
+                                                        backgroundColor: '#f1f5f9'
+                                                    },
+                                                    '&.Mui-focused': {
+                                                        backgroundColor: '#ffffff',
+                                                        '& .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#3b82f6',
+                                                            borderWidth: '2px'
+                                                        }
+                                                    }
+                                                },
+                                                '& .MuiInputBase-input': {
+                                                    fontSize: '14px',
+                                                    py: '10px'
+                                                },
+                                                '& .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#d1d5db'
+                                                }
+                                            }}
+                                            InputProps={{
+                                                startAdornment: (
+                                                    <InputAdornment position="start">
+                                                        <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                                    </InputAdornment>
+                                                ),
+                                                endAdornment: unifiedSearch && (
+                                                    <InputAdornment position="end">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setUnifiedSearch('');
+                                                                reloadShipments();
+                                                            }}
+                                                            sx={{
+                                                                color: '#6b7280',
+                                                                '&:hover': {
+                                                                    color: '#374151',
+                                                                    backgroundColor: '#f3f4f6'
+                                                                }
+                                                            }}
+                                                        >
+                                                            <ClearIcon sx={{ fontSize: '18px' }} />
+                                                        </IconButton>
+                                                    </InputAdornment>
+                                                )
+                                            }}
+                                        />
+                                        {unifiedSearch && (
+                                            <Chip
+                                                label={`Searching: ${unifiedSearch}`}
+                                                onDelete={() => {
+                                                    setUnifiedSearch('');
+                                                    reloadShipments();
+                                                }}
+                                                size="small"
+                                                sx={{
+                                                    bgcolor: '#eff6ff',
+                                                    color: '#1d4ed8',
+                                                    fontWeight: 500,
+                                                    '& .MuiChip-deleteIcon': {
+                                                        color: '#1d4ed8'
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                    </Box>
+                                )}
+
                                 {/* Search and Filter Section */}
                                 <Collapse in={filtersOpen}>
                                     <Box sx={{ p: 3, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                        <Grid container spacing={2} alignItems="center">
-                                            {/* Shipment ID Search */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Shipment ID"
-                                                    placeholder="Search by Shipment ID (e.g. SH-12345)"
-                                                    value={searchFields.shipmentId}
-                                                    onChange={(e) => {
-                                                        setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }));
-                                                        debouncedReload();
-                                                    }}
-                                                    size="small"
+                                        {/* Advanced Filters Section - Only show if unified search is not being used */}
+                                        {(!unifiedSearch || !unifiedSearch.trim()) && (
+                                            <>
+                                                <Typography
+                                                    variant="body2"
                                                     sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        color: '#64748b',
+                                                        mb: 2,
+                                                        fontSize: '12px',
+                                                        fontWeight: 500
                                                     }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.shipmentId && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, shipmentId: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Reference Number */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Reference Number"
-                                                    placeholder="Search by reference number"
-                                                    value={searchFields.referenceNumber}
-                                                    onChange={(e) => {
-                                                        setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }));
-                                                        debouncedReload();
-                                                    }}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.referenceNumber && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Tracking Number */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Tracking / PRO Number"
-                                                    placeholder="Search by tracking number"
-                                                    value={searchFields.trackingNumber}
-                                                    onChange={(e) => {
-                                                        setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }));
-                                                        debouncedReload();
-                                                    }}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.trackingNumber && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Date Range Picker */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                                    <DateRangePicker
-                                                        value={dateRange}
-                                                        onChange={(newValue) => {
-                                                            setDateRange(newValue);
-                                                            setTimeout(() => reloadShipments(), 100);
-                                                        }}
-                                                        label="Date Range"
-                                                        slotProps={{
-                                                            textField: {
-                                                                size: "small",
-                                                                fullWidth: true,
-                                                                variant: "outlined",
-                                                                placeholder: "",
-                                                                sx: {
-                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                },
-                                                                InputProps: {
-                                                                    startAdornment: (
-                                                                        <InputAdornment position="start">
-                                                                            <CalendarIcon sx={{ color: '#64748b' }} />
-                                                                        </InputAdornment>
-                                                                    )
-                                                                }
-                                                            },
-                                                            actionBar: {
-                                                                actions: ['clear', 'today', 'accept']
-                                                            },
-                                                            separator: {
-                                                                children: ''
-                                                            }
-                                                        }}
-                                                        calendars={2}
-                                                        sx={{ width: '100%' }}
-                                                    />
-                                                </LocalizationProvider>
-                                            </Grid>
-                                        </Grid>
-
-                                        {/* Second Row */}
-                                        <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
-                                            {/* Customer Search with Autocomplete */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <Autocomplete
-                                                    fullWidth
-                                                    options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
-                                                    getOptionLabel={(option) => option.name}
-                                                    value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
-                                                    onChange={(event, newValue) => {
-                                                        setSelectedCustomer(newValue?.id || '');
-                                                        setTimeout(() => reloadShipments(), 100);
-                                                    }}
-                                                    renderInput={(params) => (
+                                                >
+                                                    Advanced Filters (Individual Field Search)
+                                                </Typography>
+                                                <Grid container spacing={2} alignItems="center">
+                                                    {/* Shipment ID Search */}
+                                                    <Grid item xs={12} sm={6} md={3}>
                                                         <TextField
-                                                            {...params}
-                                                            label="Search Customers"
-                                                            placeholder="Search customers"
+                                                            fullWidth
+                                                            label="Shipment ID"
+                                                            placeholder="Search by Shipment ID"
+                                                            value={searchFields.shipmentId}
+                                                            onChange={(e) => {
+                                                                setSearchFields(prev => ({ ...prev, shipmentId: e.target.value }));
+                                                                debouncedReload();
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    reloadShipments();
+                                                                }
+                                                            }}
                                                             size="small"
-                                                            variant="outlined"
                                                             sx={{
-                                                                '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                startAdornment: (
+                                                                    <InputAdornment position="start">
+                                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                                    </InputAdornment>
+                                                                ),
+                                                                endAdornment: searchFields.shipmentId && (
+                                                                    <InputAdornment position="end">
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            onClick={() => {
+                                                                                setSearchFields(prev => ({ ...prev, shipmentId: '' }));
+                                                                                reloadShipments();
+                                                                            }}
+                                                                        >
+                                                                            <ClearIcon />
+                                                                        </IconButton>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    {/* Reference Number */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <TextField
+                                                            fullWidth
+                                                            label="Reference Number"
+                                                            placeholder="Search by reference number"
+                                                            value={searchFields.referenceNumber}
+                                                            onChange={(e) => {
+                                                                setSearchFields(prev => ({ ...prev, referenceNumber: e.target.value }));
+                                                                debouncedReload();
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    reloadShipments();
+                                                                }
+                                                            }}
+                                                            size="small"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                startAdornment: (
+                                                                    <InputAdornment position="start">
+                                                                        <DescriptionIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                                    </InputAdornment>
+                                                                ),
+                                                                endAdornment: searchFields.referenceNumber && (
+                                                                    <InputAdornment position="end">
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
+                                                                        >
+                                                                            <ClearIcon />
+                                                                        </IconButton>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    {/* Tracking Number */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <TextField
+                                                            fullWidth
+                                                            label="Tracking / PRO Number"
+                                                            placeholder="Search by tracking number"
+                                                            value={searchFields.trackingNumber}
+                                                            onChange={(e) => {
+                                                                setSearchFields(prev => ({ ...prev, trackingNumber: e.target.value }));
+                                                                debouncedReload();
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    reloadShipments();
+                                                                }
+                                                            }}
+                                                            size="small"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                startAdornment: (
+                                                                    <InputAdornment position="start">
+                                                                        <QrCodeIcon sx={{ fontSize: '14px', color: '#64748b' }} />
+                                                                    </InputAdornment>
+                                                                ),
+                                                                endAdornment: searchFields.trackingNumber && (
+                                                                    <InputAdornment position="end">
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
+                                                                        >
+                                                                            <ClearIcon />
+                                                                        </IconButton>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                    </Grid>
+
+                                                    {/* Date Range Picker */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                                            <DateRangePicker
+                                                                value={dateRange}
+                                                                onChange={(newValue) => {
+                                                                    setDateRange(newValue);
+                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                }}
+                                                                label="Date Range"
+                                                                slotProps={{
+                                                                    textField: {
+                                                                        size: "small",
+                                                                        fullWidth: true,
+                                                                        variant: "outlined",
+                                                                        placeholder: "",
+                                                                        sx: {
+                                                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                        },
+                                                                        InputProps: {
+                                                                            startAdornment: (
+                                                                                <InputAdornment position="start">
+                                                                                    <CalendarIcon sx={{ color: '#64748b' }} />
+                                                                                </InputAdornment>
+                                                                            )
+                                                                        }
+                                                                    },
+                                                                    actionBar: {
+                                                                        actions: ['clear', 'today', 'accept']
+                                                                    },
+                                                                    separator: {
+                                                                        children: ''
+                                                                    }
+                                                                }}
+                                                                calendars={2}
+                                                                sx={{ width: '100%' }}
+                                                            />
+                                                        </LocalizationProvider>
+                                                    </Grid>
+                                                </Grid>
+
+                                                {/* Second Row */}
+                                                <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
+                                                    {/* Customer Search with Autocomplete */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <Autocomplete
+                                                            fullWidth
+                                                            options={Object.entries(customers).map(([id, name]) => ({ id, name }))}
+                                                            getOptionLabel={(option) => option.name}
+                                                            value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
+                                                            onChange={(event, newValue) => {
+                                                                setSelectedCustomer(newValue?.id || '');
+                                                                setTimeout(() => reloadShipments(), 100);
+                                                            }}
+                                                            renderInput={(params) => (
+                                                                <TextField
+                                                                    {...params}
+                                                                    label="Search Customers"
+                                                                    placeholder="Search customers"
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    sx={{
+                                                                        '& .MuiInputBase-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
+                                                                        '& .MuiInputLabel-root': {
+                                                                            fontSize: '12px',
+                                                                            '&.MuiInputLabel-shrink': {
+                                                                                fontSize: '12px'
+                                                                            }
+                                                                        },
+                                                                        '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            sx={{
+                                                                '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
                                                                 '& .MuiInputLabel-root': {
                                                                     fontSize: '12px',
                                                                     '&.MuiInputLabel-shrink': {
                                                                         fontSize: '12px'
                                                                     }
                                                                 },
-                                                                '& .MuiOutlinedInput-root': { minHeight: '40px' }
+                                                                '& .MuiOutlinedInput-root': { minHeight: '40px' },
+                                                                fontSize: '12px',
+                                                                minHeight: '40px',
+                                                                display: 'flex',
+                                                                alignItems: 'center'
+                                                            }}
+                                                            ListboxProps={{
+                                                                sx: { fontSize: '12px' }
                                                             }}
                                                         />
-                                                    )}
-                                                    sx={{
-                                                        '& .MuiAutocomplete-input': { fontSize: '12px', minHeight: '1.5em', py: '8.5px' },
-                                                        '& .MuiInputLabel-root': {
-                                                            fontSize: '12px',
-                                                            '&.MuiInputLabel-shrink': {
-                                                                fontSize: '12px'
-                                                            }
-                                                        },
-                                                        '& .MuiOutlinedInput-root': { minHeight: '40px' },
-                                                        fontSize: '12px',
-                                                        minHeight: '40px',
-                                                        display: 'flex',
-                                                        alignItems: 'center'
-                                                    }}
-                                                    ListboxProps={{
-                                                        sx: { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Carrier Selection with Sub-carriers */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <FormControl fullWidth>
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
-                                                    <Select
-                                                        value={filters.carrier}
-                                                        onChange={(e) => {
-                                                            setFilters(prev => ({
-                                                                ...prev,
-                                                                carrier: e.target.value
-                                                            }));
-                                                            setTimeout(() => reloadShipments(), 100);
-                                                        }}
-                                                        label="Carrier"
-                                                        sx={{ fontSize: '12px' }}
-                                                        MenuProps={{
-                                                            PaperProps: {
-                                                                sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
-                                                            }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
-                                                        {carrierOptions.flatMap((group) => [
-                                                            <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
-                                                            ...group.carriers.map((carrier) => (
-                                                                <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
-                                                                    {carrier.name}
-                                                                </MenuItem>
-                                                            ))
-                                                        ])}
-                                                    </Select>
-                                                </FormControl>
-                                            </Grid>
-
-                                            {/* Shipment Type */}
-                                            <Grid item xs={12} sm={6} md={2}>
-                                                <FormControl fullWidth>
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
-                                                    <Select
-                                                        value={filters.shipmentType}
-                                                        onChange={(e) => {
-                                                            setFilters(prev => ({
-                                                                ...prev,
-                                                                shipmentType: e.target.value
-                                                            }));
-                                                            setTimeout(() => reloadShipments(), 100);
-                                                        }}
-                                                        label="Type"
-                                                        sx={{ fontSize: '12px' }}
-                                                        MenuProps={{
-                                                            PaperProps: {
-                                                                sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
-                                                            }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
-                                                        <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
-                                                        <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
-                                                    </Select>
-                                                </FormControl>
-                                            </Grid>
-
-                                            {/* Enhanced Status Filter */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <EnhancedStatusFilter
-                                                    value={filters.enhancedStatus || ''}
-                                                    onChange={(value) => {
-                                                        setFilters(prev => ({
-                                                            ...prev,
-                                                            enhancedStatus: value,
-                                                            // Keep legacy status for backward compatibility
-                                                            status: value ? enhancedToLegacy(value) : 'all'
-                                                        }));
-                                                        setTimeout(() => reloadShipments(), 100);
-                                                    }}
-                                                    label="Shipment Status"
-                                                    showGroups={true}
-                                                    showSearch={true}
-                                                    fullWidth={true}
-                                                    sx={{
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                        '& .MuiMenuItem-root': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Clear Filters Button */}
-                                            {(Object.values(searchFields).some(val => val !== '') ||
-                                                filters.carrier !== 'all' ||
-                                                filters.shipmentType !== 'all' ||
-                                                filters.status !== 'all' ||
-                                                dateRange[0] || dateRange[1]) && (
-                                                    <Grid item xs={12} sm={6} md={1}>
-                                                        <Button
-                                                            fullWidth
-                                                            variant="outlined"
-                                                            onClick={handleClearFilters}
-                                                            startIcon={<ClearIcon />}
-                                                            sx={{
-                                                                borderColor: '#e2e8f0',
-                                                                color: '#64748b',
-                                                                '&:hover': {
-                                                                    borderColor: '#cbd5e1',
-                                                                    bgcolor: '#f8fafc'
-                                                                }
-                                                            }}
-                                                        >
-                                                            Clear
-                                                        </Button>
                                                     </Grid>
-                                                )}
-                                        </Grid>
 
-                                        {/* Active Filters Display */}
-                                        {(Object.values(searchFields).some(val => val !== '') ||
-                                            filters.carrier !== 'all' ||
-                                            filters.shipmentType !== 'all' ||
-                                            filters.status !== 'all' ||
-                                            dateRange[0] || dateRange[1]) && (
-                                                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                                    <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
-                                                        <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
-                                                        Active Filters:
-                                                    </Typography>
-                                                    {Object.entries(searchFields).map(([key, value]) => value && (
-                                                        <Chip
-                                                            key={key}
-                                                            label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
-                                                            onDelete={() => setSearchFields(prev => ({ ...prev, [key]: '' }))}
-                                                            size="small"
-                                                            sx={{ bgcolor: '#f1f5f9' }}
+                                                    {/* Carrier Selection with Sub-carriers */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <FormControl fullWidth>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Carrier</InputLabel>
+                                                            <Select
+                                                                value={filters.carrier}
+                                                                onChange={(e) => {
+                                                                    setFilters(prev => ({
+                                                                        ...prev,
+                                                                        carrier: e.target.value
+                                                                    }));
+                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                }}
+                                                                label="Carrier"
+                                                                sx={{ fontSize: '12px' }}
+                                                                MenuProps={{
+                                                                    PaperProps: {
+                                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Carriers</MenuItem>
+                                                                {availableCarriers.flatMap((group) => [
+                                                                    <ListSubheader key={group.group} sx={{ fontSize: '12px' }}>{group.group}</ListSubheader>,
+                                                                    ...group.carriers.map((carrier) => (
+                                                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
+                                                                            {carrier.name}
+                                                                        </MenuItem>
+                                                                    ))
+                                                                ])}
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Grid>
+
+                                                    {/* Shipment Type */}
+                                                    <Grid item xs={12} sm={6} md={2}>
+                                                        <FormControl fullWidth>
+                                                            <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
+                                                            <Select
+                                                                value={filters.shipmentType}
+                                                                onChange={(e) => {
+                                                                    setFilters(prev => ({
+                                                                        ...prev,
+                                                                        shipmentType: e.target.value
+                                                                    }));
+                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                }}
+                                                                label="Type"
+                                                                sx={{ fontSize: '12px' }}
+                                                                MenuProps={{
+                                                                    PaperProps: {
+                                                                        sx: { '& .MuiMenuItem-root': { fontSize: '12px' } }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
+                                                                <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                                <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </Grid>
+
+                                                    {/* Enhanced Status Filter */}
+                                                    <Grid item xs={12} sm={6} md={3}>
+                                                        <EnhancedStatusFilter
+                                                            value={filters.enhancedStatus || ''}
+                                                            onChange={(value) => {
+                                                                setFilters(prev => ({
+                                                                    ...prev,
+                                                                    enhancedStatus: value,
+                                                                    // Keep legacy status for backward compatibility
+                                                                    status: value ? enhancedToLegacy(value) : 'all'
+                                                                }));
+                                                                setTimeout(() => reloadShipments(), 100);
+                                                            }}
+                                                            label="Shipment Status"
+                                                            showGroups={true}
+                                                            showSearch={true}
+                                                            fullWidth={true}
+                                                            sx={{
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiSelect-select': { fontSize: '12px' },
+                                                                '& .MuiMenuItem-root': { fontSize: '12px' }
+                                                            }}
                                                         />
-                                                    ))}
-                                                    {filters.carrier !== 'all' && (
-                                                        <Chip
-                                                            label={`Carrier: ${carrierOptions.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || String(filters.carrier)}`}
-                                                            onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
-                                                            size="small"
-                                                            sx={{ bgcolor: '#f1f5f9' }}
-                                                        />
+                                                    </Grid>
+
+                                                    {/* Clear Filters Button */}
+                                                    {(Object.values(searchFields).some(val => val !== '') ||
+                                                        filters.carrier !== 'all' ||
+                                                        filters.shipmentType !== 'all' ||
+                                                        filters.status !== 'all' ||
+                                                        dateRange[0] || dateRange[1]) && (
+                                                            <Grid item xs={12} sm={6} md={1}>
+                                                                <Button
+                                                                    fullWidth
+                                                                    variant="outlined"
+                                                                    onClick={handleClearFilters}
+                                                                    startIcon={<ClearIcon />}
+                                                                    sx={{
+                                                                        borderColor: '#e2e8f0',
+                                                                        color: '#64748b',
+                                                                        '&:hover': {
+                                                                            borderColor: '#cbd5e1',
+                                                                            bgcolor: '#f8fafc'
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Clear
+                                                                </Button>
+                                                            </Grid>
+                                                        )}
+                                                </Grid>
+
+                                                {/* Active Filters Display - Only show non-unified search filters */}
+                                                {(Object.values(searchFields).some(val => val !== '') ||
+                                                    filters.carrier !== 'all' ||
+                                                    filters.shipmentType !== 'all' ||
+                                                    filters.status !== 'all' ||
+                                                    filters.enhancedStatus !== '' ||
+                                                    dateRange[0] || dateRange[1]) && (
+                                                        <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                            <Typography variant="body2" sx={{ color: '#64748b', mr: 1, display: 'flex', alignItems: 'center' }}>
+                                                                <FilterAltIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                                                                Active Filters:
+                                                            </Typography>
+                                                            {Object.entries(searchFields).map(([key, value]) => value && (
+                                                                <Chip
+                                                                    key={key}
+                                                                    label={`${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`}
+                                                                    onDelete={() => setSearchFields(prev => ({ ...prev, [key]: '' }))}
+                                                                    size="small"
+                                                                    sx={{ bgcolor: '#f1f5f9' }}
+                                                                />
+                                                            ))}
+                                                            {filters.carrier !== 'all' && (
+                                                                <Chip
+                                                                    label={`Carrier: ${availableCarriers.flatMap(g => g.carriers).find(c => c.id === filters.carrier)?.name || String(filters.carrier)}`}
+                                                                    onDelete={() => setFilters(prev => ({ ...prev, carrier: 'all' }))}
+                                                                    size="small"
+                                                                    sx={{ bgcolor: '#f1f5f9' }}
+                                                                />
+                                                            )}
+                                                            {filters.shipmentType !== 'all' && (
+                                                                <Chip
+                                                                    label={`Type: ${filters.shipmentType}`}
+                                                                    onDelete={() => setFilters(prev => ({ ...prev, shipmentType: 'all' }))}
+                                                                    size="small"
+                                                                    sx={{ bgcolor: '#f1f5f9' }}
+                                                                />
+                                                            )}
+                                                            {filters.status !== 'all' && (
+                                                                <Chip
+                                                                    label={`Status: ${filters.status}`}
+                                                                    onDelete={() => setFilters(prev => ({ ...prev, status: 'all' }))}
+                                                                    size="small"
+                                                                    sx={{ bgcolor: '#f1f5f9' }}
+                                                                />
+                                                            )}
+                                                            {(dateRange[0] || dateRange[1]) && (
+                                                                <Chip
+                                                                    label={`Date: ${dateRange[0]?.format('MMM D, YYYY')} - ${dateRange[1]?.format('MMM D, YYYY')}`}
+                                                                    onDelete={() => setDateRange([null, null])}
+                                                                    size="small"
+                                                                    sx={{ bgcolor: '#f1f5f9' }}
+                                                                />
+                                                            )}
+                                                        </Box>
                                                     )}
-                                                    {filters.shipmentType !== 'all' && (
-                                                        <Chip
-                                                            label={`Type: ${filters.shipmentType}`}
-                                                            onDelete={() => setFilters(prev => ({ ...prev, shipmentType: 'all' }))}
-                                                            size="small"
-                                                            sx={{ bgcolor: '#f1f5f9' }}
-                                                        />
-                                                    )}
-                                                    {filters.status !== 'all' && (
-                                                        <Chip
-                                                            label={`Status: ${filters.status}`}
-                                                            onDelete={() => setFilters(prev => ({ ...prev, status: 'all' }))}
-                                                            size="small"
-                                                            sx={{ bgcolor: '#f1f5f9' }}
-                                                        />
-                                                    )}
-                                                    {(dateRange[0] || dateRange[1]) && (
-                                                        <Chip
-                                                            label={`Date: ${dateRange[0]?.format('MMM D, YYYY')} - ${dateRange[1]?.format('MMM D, YYYY')}`}
-                                                            onDelete={() => setDateRange([null, null])}
-                                                            size="small"
-                                                            sx={{ bgcolor: '#f1f5f9' }}
-                                                        />
-                                                    )}
-                                                </Box>
-                                            )}
+                                            </>
+                                        )}
                                     </Box>
                                 </Collapse>
                             </Paper>
@@ -2179,6 +2758,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Add missing handler functions
     const handleClearFilters = useCallback(() => {
+        console.log('🧹 Clearing all filters and search');
+
+        // Clear unified search
+        setUnifiedSearch('');
+
+        // Clear legacy search fields
         setSearchFields({
             shipmentId: '',
             referenceNumber: '',
@@ -2187,6 +2772,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             origin: '',
             destination: ''
         });
+
+        // Clear filters
         setFilters({
             status: 'all',
             carrier: 'all',
@@ -2194,6 +2781,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             shipmentType: 'all',
             enhancedStatus: ''
         });
+
+        // Clear date range and customer selection
         setDateRange([null, null]);
         setSelectedCustomer('');
 

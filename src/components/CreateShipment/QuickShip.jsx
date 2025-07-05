@@ -361,7 +361,8 @@ const QuickShip = ({
         dangerousGoodsType: 'none',
         signatureServiceType: 'none',
         notes: '',
-
+        // New field for multiple references
+        referenceNumbers: []
     });
 
     // Address state - simplified to use AddressBook
@@ -517,11 +518,11 @@ const QuickShip = ({
             customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             setAvailableCustomers(customers);
-            setSelectedCustomerId('all'); // Reset to "All Customers"
+            // Don't reset customer selection - keep current selection if valid
         } catch (error) {
             console.error('Error loading customers:', error);
             setAvailableCustomers([]);
-            setSelectedCustomerId('all');
+            // Don't reset customer selection on error
         } finally {
             setLoadingCustomers(false);
         }
@@ -761,7 +762,9 @@ const QuickShip = ({
                         notes: '',
                         carrierTrackingNumber: '',
                         bookingReferenceNumber: '',
-                        bookingReferenceType: 'PO'
+                        bookingReferenceType: 'PO',
+                        // Initialize empty reference numbers array
+                        referenceNumbers: []
                     },
                     packages: [{
                         id: 1,
@@ -1300,7 +1303,8 @@ const QuickShip = ({
                     serviceLevel: 'any',
                     dangerousGoodsType: 'none',
                     signatureServiceType: 'none',
-                    notes: ''
+                    notes: '',
+                    referenceNumbers: [] // Reset reference numbers
                 });
                 setPackages([{
                     id: 1,
@@ -1446,7 +1450,9 @@ const QuickShip = ({
                     notes: shipmentInfo.notes || '',
                     shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
                     bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
-                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO'
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO',
+                    // Add multiple reference numbers
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
 
                 // Addresses - properly structured from address book with validation
@@ -1876,7 +1882,9 @@ const QuickShip = ({
                             if (draftData.shipmentInfo) {
                                 setShipmentInfo(prev => ({
                                     ...prev,
-                                    ...draftData.shipmentInfo
+                                    ...draftData.shipmentInfo,
+                                    // Ensure referenceNumbers is included
+                                    referenceNumbers: draftData.shipmentInfo.referenceNumbers || []
                                 }));
                             }
 
@@ -1961,7 +1969,9 @@ const QuickShip = ({
                 if (editShipment.shipmentInfo) {
                     setShipmentInfo(prev => ({
                         ...prev,
-                        ...editShipment.shipmentInfo
+                        ...editShipment.shipmentInfo,
+                        // Ensure referenceNumbers is included
+                        referenceNumbers: editShipment.shipmentInfo.referenceNumbers || []
                     }));
                 }
 
@@ -2111,7 +2121,9 @@ const QuickShip = ({
                     notes: shipmentInfo.notes || '',
                     shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
                     bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
-                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO'
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO',
+                    // Add multiple reference numbers
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
                 shipFrom: shipFromAddressFull || null, // Save null if not selected
                 shipTo: shipToAddressFull || null, // Save null if not selected
@@ -2210,8 +2222,8 @@ const QuickShip = ({
     };
 
     // Coordinated data loading functions
-    const loadAddressesForCompany = useCallback(async (companyId) => {
-        console.log('🟡 loadAddressesForCompany called with companyId:', companyId);
+    const loadAddressesForCompany = useCallback(async (companyId, customerId = null) => {
+        console.log('🟡 loadAddressesForCompany called with:', { companyId, customerId });
         if (!companyId) {
             console.log('📍 No company ID provided for address loading');
             return;
@@ -2221,35 +2233,70 @@ const QuickShip = ({
         setLoadingAddresses(true);
 
         try {
-            let addressQuery = query(
+            // First, get ALL addresses for the company to debug
+            const allAddressQuery = query(
                 collection(db, 'addressBook'),
                 where('companyID', '==', companyId),
                 where('status', '==', 'active')
             );
 
-            // Add customer filter for super admins if specific customer is selected
-            if (userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all') {
-                addressQuery = query(
-                    collection(db, 'addressBook'),
-                    where('companyID', '==', companyId),
-                    where('status', '==', 'active'),
-                    where('addressClassID', '==', selectedCustomerId)
-                );
-            }
-
-            const addressSnapshot = await getDocs(addressQuery);
-            const addresses = addressSnapshot.docs.map(doc => ({
+            const allAddressSnapshot = await getDocs(allAddressQuery);
+            const allAddresses = allAddressSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
+            console.log('🔍 DEBUG: All addresses for company:', {
+                companyId,
+                totalCount: allAddresses.length,
+                sampleAddresses: allAddresses.slice(0, 3).map(addr => ({
+                    id: addr.id,
+                    name: addr.name || addr.nickname || 'No name',
+                    addressClass: addr.addressClass,
+                    addressClassID: addr.addressClassID,
+                    customerID: addr.customerID,
+                    street: addr.street
+                }))
+            });
+
+            let addresses = allAddresses;
+
+            // Add customer filter for super admins if specific customer is selected
+            const effectiveCustomerId = customerId || selectedCustomerId;
+            if (userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all') {
+                // Try multiple filter approaches to handle different data structures
+                addresses = allAddresses.filter(addr => {
+                    const matches = addr.addressClassID === effectiveCustomerId ||
+                        addr.customerID === effectiveCustomerId ||
+                        (addr.addressClass === 'customer' && addr.addressClassID === effectiveCustomerId);
+
+                    if (!matches && addr.addressClassID) {
+                        console.log('🔍 Address not matching:', {
+                            addressId: addr.id,
+                            addressClassID: addr.addressClassID,
+                            customerID: addr.customerID,
+                            lookingFor: effectiveCustomerId,
+                            addressClass: addr.addressClass
+                        });
+                    }
+
+                    return matches;
+                });
+
+                console.log('🔍 DEBUG: Filtered addresses:', {
+                    effectiveCustomerId,
+                    filteredCount: addresses.length,
+                    filterCriteria: 'addressClassID or customerID equals customerId'
+                });
+            }
+
             console.log('📍 Address loading completed:', {
                 companyId,
-                selectedCustomerId,
+                effectiveCustomerId,
                 userRole,
                 addressCount: addresses.length,
-                addresses,
-                isFiltered: userRole === 'superadmin' && selectedCustomerId && selectedCustomerId !== 'all'
+                isFiltered: userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all',
+                addresses: addresses.slice(0, 3) // Show first 3 for debugging
             });
 
             setAvailableAddresses(addresses);
@@ -2305,24 +2352,16 @@ const QuickShip = ({
     }, [selectedCompanyId, companyIdForAddress, loadAddressesForCompany]);
 
     // Simplified address loading effect - only trigger on customer filter changes
-    useEffect(() => {
-        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+    // REMOVED: Duplicate useEffect for customer filter - handled below
 
-        // Only reload addresses when customer filter changes (not company changes)
-        if (currentCompanyId && userRole === 'superadmin') {
-            console.log('🔄 Customer filter changed, reloading addresses for company:', currentCompanyId);
-            loadAddressesForCompany(currentCompanyId);
-        }
-    }, [selectedCustomerId, userRole, loadAddressesForCompany]);
+    // Debug address state changes (simplified)
+    // useEffect(() => {
+    //     console.log('shipFromAddress state changed:', shipFromAddress);
+    // }, [shipFromAddress]);
 
-    // Debug address state changes
-    useEffect(() => {
-        console.log('shipFromAddress state changed:', shipFromAddress);
-    }, [shipFromAddress]);
-
-    useEffect(() => {
-        console.log('shipToAddress state changed:', shipToAddress);
-    }, [shipToAddress]);
+    // useEffect(() => {
+    //     console.log('shipToAddress state changed:', shipToAddress);
+    // }, [shipToAddress]);
 
     // Format address for display
     const formatAddressForDisplay = (address) => {
@@ -2676,15 +2715,28 @@ const QuickShip = ({
         console.log('🟢 useEffect: company context changed, currentCompanyId:', currentCompanyId, 'userRole:', userRole, 'selectedCompanyId:', selectedCompanyId);
 
         if (currentCompanyId) {
-            loadAddressesForCompany(currentCompanyId);
+            // Pass the current customer selection to preserve filtering
+            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
             loadCustomersForCompany(currentCompanyId);
             loadCarriersForCompany(currentCompanyId);
         }
-    }, [companyIdForAddress, selectedCompanyId, userRole]);
+    }, [companyIdForAddress, selectedCompanyId, userRole, selectedCustomerId, loadAddressesForCompany, loadCustomersForCompany, loadCarriersForCompany]);
 
-    // Add debug log before rendering Ship From/Ship To dropdowns
-    // (Place this right before the return statement)
-    console.log('🚚 Rendering Ship From/To dropdowns with availableAddresses:', availableAddresses);
+    // Reload addresses when customer selection changes
+    useEffect(() => {
+        const currentCompanyId = userRole === 'superadmin' && selectedCompanyId
+            ? selectedCompanyId
+            : companyIdForAddress;
+
+        // Only reload addresses when customer filter changes (not company changes)
+        if (currentCompanyId && userRole === 'superadmin') {
+            // console.log('🔄 Customer filter changed, reloading addresses for company:', currentCompanyId);
+            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
+        }
+    }, [selectedCustomerId, userRole, selectedCompanyId, companyIdForAddress, loadAddressesForCompany]);
+
+    // Add debug log before rendering Ship From/Ship To dropdowns (commented out for performance)
+    // console.log('🚚 Rendering Ship From/To dropdowns with availableAddresses:', availableAddresses);
 
     // Edit mode handling functions (moved here to ensure validateQuickShipForm is defined)
 
@@ -2737,7 +2789,12 @@ const QuickShip = ({
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
                 updatedAt: serverTimestamp(),
-                shipmentInfo: { ...shipmentInfo, unitSystem },
+                shipmentInfo: {
+                    ...shipmentInfo,
+                    unitSystem,
+                    // Include reference numbers
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
+                },
                 shipFrom: shipFromAddress,
                 shipTo: shipToAddress,
                 packages,
@@ -2924,13 +2981,13 @@ const QuickShip = ({
                     {/* Company Selector for Super Admins */}
                     {(() => {
                         const shouldShowSelector = userRole === 'superadmin';
-                        console.log('🔍 QuickShip Company Selector Debug:', {
-                            userRole,
-                            companyIdForAddress,
-                            selectedCompanyId,
-                            needsCompanySelection,
-                            shouldShowSelector
-                        });
+                        // console.log('🔍 QuickShip Company Selector Debug:', {
+                        //     userRole,
+                        //     companyIdForAddress,
+                        //     selectedCompanyId,
+                        //     needsCompanySelection,
+                        //     shouldShowSelector
+                        // });
                         return shouldShowSelector;
                     })() && (
                             <CompanySelector
@@ -3078,14 +3135,14 @@ const QuickShip = ({
                     {/* Show form only when company is selected or user is not super admin */}
                     {(() => {
                         const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyIdForAddress));
-                        console.log('🔍 QuickShip Form Visibility Debug:', {
-                            userRole,
-                            companyIdForAddress,
-                            selectedCompanyId,
-                            shouldShowForm,
-                            'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'regularUserCondition': userRole !== 'superadmin' && companyIdForAddress
-                        });
+                        // console.log('🔍 QuickShip Form Visibility Debug:', {
+                        //     userRole,
+                        //     companyIdForAddress,
+                        //     selectedCompanyId,
+                        //     shouldShowForm,
+                        //     'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
+                        //     'regularUserCondition': userRole !== 'superadmin' && companyIdForAddress
+                        // });
                         return shouldShowForm;
                     })() && (
                             <form autoComplete="off" noValidate>
@@ -3152,15 +3209,103 @@ const QuickShip = ({
                                                     }}
                                                 />
                                             </Grid>
+                                            {/* Multiple Reference Numbers */}
+                                            <Grid item xs={12}>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            Reference Numbers
+                                                        </Typography>
+                                                        <Button
+                                                            size="small"
+                                                            startIcon={<AddIcon />}
+                                                            onClick={() => {
+                                                                setShipmentInfo(prev => ({
+                                                                    ...prev,
+                                                                    referenceNumbers: [...(prev.referenceNumbers || []), '']
+                                                                }));
+                                                            }}
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                padding: '2px 8px',
+                                                                minWidth: 'auto',
+                                                                textTransform: 'none'
+                                                            }}
+                                                            tabIndex={-1}
+                                                        >
+                                                            Add Reference
+                                                        </Button>
+                                                    </Box>
+
+                                                    {/* Legacy single reference for backward compatibility */}
+                                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Primary Reference"
+                                                            value={shipmentInfo.shipperReferenceNumber}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                            autoComplete="off"
+                                                            tabIndex={11}
+                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    </Box>
+
+                                                    {/* Additional reference numbers */}
+                                                    {(shipmentInfo.referenceNumbers || []).map((ref, index) => (
+                                                        <Box key={index} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label={`Reference ${index + 2}`}
+                                                                value={ref}
+                                                                onChange={(e) => {
+                                                                    const newRefs = [...shipmentInfo.referenceNumbers];
+                                                                    newRefs[index] = e.target.value;
+                                                                    setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
+                                                                }}
+                                                                autoComplete="off"
+                                                                tabIndex={12 + index}
+                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: '12px',
+                                                                        '&::placeholder': { fontSize: '12px' }
+                                                                    },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    const newRefs = shipmentInfo.referenceNumbers.filter((_, i) => i !== index);
+                                                                    setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
+                                                                }}
+                                                                sx={{ padding: '4px' }}
+                                                                tabIndex={-1}
+                                                            >
+                                                                <DeleteIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        </Box>
+                                                    ))}
+                                                </Box>
+                                            </Grid>
                                             <Grid item xs={12} md={6}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
-                                                    label="Reference Number"
-                                                    value={shipmentInfo.shipperReferenceNumber}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                    label="Carrier Tracking Number"
+                                                    value={shipmentInfo.carrierTrackingNumber}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
                                                     autoComplete="off"
-                                                    tabIndex={11}
+                                                    tabIndex={20}
                                                     onKeyDown={(e) => handleKeyDown(e, 'navigate')}
                                                     sx={{
                                                         '& .MuiInputBase-input': {
@@ -3193,7 +3338,7 @@ const QuickShip = ({
                                                         <TextField
                                                             {...params}
                                                             label="Bill Type"
-                                                            tabIndex={20}
+                                                            tabIndex={21}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -3490,53 +3635,6 @@ const QuickShip = ({
                                                 </Box>
                                             </Box>
                                         </Box>
-                                    </CardContent>
-                                </Card>
-
-                                {/* Rest of form continues here */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', mb: 3, color: '#374151' }}>
-                                            Additional Information
-                                        </Typography>
-                                        <Grid container spacing={3}>
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Carrier Tracking Number"
-                                                    value={shipmentInfo.carrierTrackingNumber}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
-                                                    autoComplete="off"
-                                                    tabIndex={12}
-                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            '&::placeholder': { fontSize: '12px' }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Reference Number"
-                                                    value={shipmentInfo.shipperReferenceNumber}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            '&::placeholder': { fontSize: '12px' }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                        </Grid>
                                     </CardContent>
                                 </Card>
 

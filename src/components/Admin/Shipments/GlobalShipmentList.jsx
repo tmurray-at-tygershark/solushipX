@@ -459,33 +459,42 @@ const GlobalShipmentList = () => {
 
                     {/* Right side controls */}
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                        {/* Search Box */}
+                        {/* Enterprise Search Box */}
                         <TextField
                             size="small"
-                            placeholder="Search by ID, Reference, or Tracking # (Press Enter to search)"
+                            placeholder="Search Shipments"
                             value={searchValue}
                             onChange={handleSearchChange}
                             onKeyPress={handleSearchKeyPress}
                             sx={{
                                 width: 320,
                                 '& .MuiInputBase-root': {
-                                    fontSize: '12px',
-                                    bgcolor: 'white'
-                                },
-                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                '& .MuiOutlinedInput-root': {
-                                    '&:hover fieldset': {
-                                        borderColor: '#1976d2',
+                                    fontSize: '14px',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#f8fafc',
+                                    '&:hover': {
+                                        backgroundColor: '#f1f5f9'
                                     },
-                                    '&.Mui-focused fieldset': {
-                                        borderColor: '#1976d2',
+                                    '&.Mui-focused': {
+                                        backgroundColor: '#ffffff',
+                                        '& .MuiOutlinedInput-notchedOutline': {
+                                            borderColor: '#3b82f6',
+                                            borderWidth: '2px'
+                                        }
                                     }
+                                },
+                                '& .MuiInputBase-input': {
+                                    fontSize: '14px',
+                                    py: '10px'
+                                },
+                                '& .MuiOutlinedInput-notchedOutline': {
+                                    borderColor: '#d1d5db'
                                 }
                             }}
                             InputProps={{
                                 startAdornment: (
                                     <InputAdornment position="start">
-                                        <SearchIcon sx={{ fontSize: 18, color: '#6b7280' }} />
+                                        <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
                                     </InputAdornment>
                                 ),
                                 endAdornment: searchValue && (
@@ -494,9 +503,16 @@ const GlobalShipmentList = () => {
                                             size="small"
                                             onClick={handleSearchClear}
                                             edge="end"
-                                            sx={{ p: 0.5 }}
+                                            sx={{
+                                                p: 0.5,
+                                                color: '#6b7280',
+                                                '&:hover': {
+                                                    color: '#374151',
+                                                    backgroundColor: '#f3f4f6'
+                                                }
+                                            }}
                                         >
-                                            <ClearIcon sx={{ fontSize: 16 }} />
+                                            <ClearIcon sx={{ fontSize: '18px' }} />
                                         </IconButton>
                                     </InputAdornment>
                                 )
@@ -652,6 +668,7 @@ const GlobalShipmentList = () => {
                         }}
                         adminViewMode={viewMode}
                         adminCompanyIds={viewMode === 'all' ? (userRole === 'superadmin' ? 'all' : availableCompanies.map(c => c.companyID)) : null}
+                        hideSearch={true}
                     />
                 </Paper>
             </Box>

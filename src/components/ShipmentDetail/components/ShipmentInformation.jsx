@@ -734,27 +734,81 @@ const ShipmentInformation = ({
     };
 
     const formatTimestamp = (timestamp) => {
-        if (!timestamp) return 'N/A';
+        if (!timestamp) return 'Not Available';
 
         try {
+            let date;
+
+            // Debug logging
+            console.log('formatTimestamp input:', timestamp);
+            console.log('formatTimestamp type:', typeof timestamp);
+            if (timestamp && typeof timestamp === 'object') {
+                console.log('formatTimestamp object keys:', Object.keys(timestamp));
+                console.log('formatTimestamp object:', JSON.stringify(timestamp, null, 2));
+            }
+
             // Handle Firestore Timestamp
-            if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-                return timestamp.toDate().toLocaleString();
+            if (timestamp && timestamp.toDate && typeof timestamp.toDate === 'function') {
+                date = timestamp.toDate();
             }
             // Handle timestamp objects with seconds (and optional nanoseconds)
-            if (timestamp.seconds !== undefined) {
+            else if (timestamp && typeof timestamp === 'object' && timestamp.seconds !== undefined) {
                 const milliseconds = timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000;
-                return new Date(milliseconds).toLocaleString();
+                date = new Date(milliseconds);
             }
-            // Handle regular date strings/objects
-            const date = new Date(timestamp);
-            if (isNaN(date.getTime())) {
-                return 'N/A';
+            // Handle timestamp objects with _seconds (alternative format)
+            else if (timestamp && typeof timestamp === 'object' && timestamp._seconds !== undefined) {
+                const milliseconds = timestamp._seconds * 1000 + (timestamp._nanoseconds || 0) / 1000000;
+                date = new Date(milliseconds);
             }
-            return date.toLocaleString();
+            // Handle Date objects
+            else if (timestamp instanceof Date) {
+                date = timestamp;
+            }
+            // Handle numeric timestamps
+            else if (typeof timestamp === 'number') {
+                date = new Date(timestamp);
+            }
+            // Handle string timestamps
+            else if (typeof timestamp === 'string') {
+                date = new Date(timestamp);
+            }
+            // Handle objects that might have a different structure
+            else if (timestamp && typeof timestamp === 'object') {
+                // Try to extract a date value from the object
+                if (timestamp.date) {
+                    date = new Date(timestamp.date);
+                } else if (timestamp.value) {
+                    date = new Date(timestamp.value);
+                } else if (timestamp.time) {
+                    date = new Date(timestamp.time);
+                } else {
+                    // Last resort - try to convert to string and parse
+                    date = new Date(String(timestamp));
+                }
+            }
+            else {
+                date = new Date(timestamp);
+            }
+
+            // Check if date is valid
+            if (!date || isNaN(date.getTime())) {
+                console.warn('Invalid timestamp format after parsing:', timestamp, 'resulted in:', date);
+                return 'Invalid Date';
+            }
+
+            // Format the date nicely
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
         } catch (error) {
             console.error('Error formatting timestamp:', error, timestamp);
-            return 'N/A';
+            return 'Format Error';
         }
     };
 
@@ -1038,6 +1092,9 @@ const ShipmentInformation = ({
             }
         }
 
+        // If no time found, return empty string instead of N/A
+        if (!openTime) return '';
+
         return formatTime(openTime);
     }
 
@@ -1073,12 +1130,15 @@ const ShipmentInformation = ({
             }
         }
 
+        // If no time found, return empty string instead of N/A
+        if (!closeTime) return '';
+
         return formatTime(closeTime);
     }
 
     // Helper function to format shipment date without timezone issues
     const formatShipmentDate = (dateString) => {
-        if (!dateString) return 'N/A';
+        if (!dateString) return 'Not Set';
 
         try {
             // Handle different date formats
@@ -1091,19 +1151,33 @@ const ShipmentInformation = ({
                     date = new Date(dateString);
                 } else {
                     // Date-only string (YYYY-MM-DD) - parse as local date to avoid timezone shift
-                    const [year, month, day] = dateString.split('-');
-                    date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    const parts = dateString.split('-');
+                    if (parts.length === 3) {
+                        const [year, month, day] = parts;
+                        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    } else {
+                        date = new Date(dateString);
+                    }
                 }
-            } else if (dateString.toDate) {
+            } else if (dateString.toDate && typeof dateString.toDate === 'function') {
                 // Firestore timestamp
                 date = dateString.toDate();
+            } else if (dateString.seconds !== undefined) {
+                // Timestamp object with seconds
+                const milliseconds = dateString.seconds * 1000 + (dateString.nanoseconds || 0) / 1000000;
+                date = new Date(milliseconds);
+            } else if (dateString._seconds !== undefined) {
+                // Timestamp object with _seconds
+                const milliseconds = dateString._seconds * 1000 + (dateString._nanoseconds || 0) / 1000000;
+                date = new Date(milliseconds);
             } else {
-                // Already a Date object
+                // Already a Date object or other format
                 date = new Date(dateString);
             }
 
             // Verify the date is valid
             if (isNaN(date.getTime())) {
+                console.warn('Invalid shipment date format:', dateString);
                 return 'Invalid Date';
             }
 
@@ -1113,8 +1187,8 @@ const ShipmentInformation = ({
                 day: 'numeric'
             });
         } catch (error) {
-            console.error('Error formatting shipment date:', error);
-            return 'Invalid Date';
+            console.error('Error formatting shipment date:', error, dateString);
+            return 'Format Error';
         }
     };
 
@@ -1145,8 +1219,9 @@ const ShipmentInformation = ({
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Shipper Reference</Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary">Reference Numbers</Typography>
+                                {/* Primary reference */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                                     <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                         {shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}
                                     </Typography>
@@ -1167,6 +1242,31 @@ const ShipmentInformation = ({
                                         <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
                                     </IconButton>
                                 </Box>
+                                {/* Additional references */}
+                                {shipment?.shipmentInfo?.referenceNumbers && shipment.shipmentInfo.referenceNumbers.length > 0 && (
+                                    <>
+                                        {shipment.shipmentInfo.referenceNumbers.map((ref, index) => (
+                                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                    {ref}
+                                                </Typography>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        if (ref) {
+                                                            navigator.clipboard.writeText(ref);
+                                                            onShowSnackbar('Reference number copied!', 'success');
+                                                        }
+                                                    }}
+                                                    sx={{ padding: '2px' }}
+                                                    title="Copy reference number"
+                                                >
+                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                                </IconButton>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
                             </Box>
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Bill Type</Typography>
@@ -1239,13 +1339,25 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Origin Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {extractOpenTime(shipment?.shipFrom) || 'N/A'} - {extractCloseTime(shipment?.shipFrom) || 'N/A'}
+                                    {(() => {
+                                        const openTime = extractOpenTime(shipment?.shipFrom);
+                                        const closeTime = extractCloseTime(shipment?.shipFrom);
+                                        if (!openTime && !closeTime) return 'Not Available';
+                                        if (!openTime || !closeTime) return 'Incomplete Hours';
+                                        return `${openTime} - ${closeTime}`;
+                                    })()}
                                 </Typography>
                             </Box>
                             <Box>
                                 <Typography variant="caption" color="text.secondary">Destination Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {extractOpenTime(shipment?.shipTo) || 'N/A'} - {extractCloseTime(shipment?.shipTo) || 'N/A'}
+                                    {(() => {
+                                        const openTime = extractOpenTime(shipment?.shipTo);
+                                        const closeTime = extractCloseTime(shipment?.shipTo);
+                                        if (!openTime && !closeTime) return 'Not Available';
+                                        if (!openTime || !closeTime) return 'Incomplete Hours';
+                                        return `${openTime} - ${closeTime}`;
+                                    })()}
                                 </Typography>
                             </Box>
                         </Stack>
@@ -1374,7 +1486,14 @@ const ShipmentInformation = ({
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {(() => {
                                         const lastUpdated = getLastUpdatedTimestamp(shipment, mergedEvents);
-                                        return lastUpdated ? formatTimestamp(lastUpdated) : 'N/A';
+                                        if (!lastUpdated) {
+                                            // If no update timestamp, try to use creation timestamp
+                                            if (shipment?.createdAt) {
+                                                return formatTimestamp(shipment.createdAt);
+                                            }
+                                            return 'No Updates';
+                                        }
+                                        return formatTimestamp(lastUpdated);
                                     })()}
                                 </Typography>
                             </Box>

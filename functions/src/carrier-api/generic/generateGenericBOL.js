@@ -148,6 +148,9 @@ function extractBOLData(shipmentData, shipmentId) {
                           shipmentData.shipmentID ||
                           '';
     
+    // Extract additional reference numbers
+    const referenceNumbers = shipmentData.shipmentInfo?.referenceNumbers || [];
+    
     // Use SHIPMENT ID as BOL number instead of random number
     const bolNumber = shipmentData.shipmentID || shipmentId || 'Unknown';
     
@@ -296,6 +299,7 @@ function extractBOLData(shipmentData, shipmentId) {
         carrier: carrierName,
         proNumber: proNumber,
         customerRef: referenceNumber,
+        referenceNumbers: referenceNumbers,
         
         // Ship From Information - Enhanced extraction for QuickShip
         shipFrom: {
@@ -829,19 +833,41 @@ function drawExactShippingSection(doc, bolData) {
        .fontSize(8)
        .text(bolData.customerRef || '', 395, 210);
     
-    doc.font('Helvetica-Bold')
-       .fontSize(8)
-       .text('P.O. Number:', 310, 225)
-       .font('Helvetica')
-       .fontSize(8)
-       .text('', 385, 225);
-    
-    // Add empty line for manual entry
-    doc.strokeColor('#CCCCCC')
-       .lineWidth(0.5)
-       .moveTo(385, 235)
-       .lineTo(570, 235)
-       .stroke();
+    // Display additional reference numbers if available
+    let refYPos = 225;
+    if (bolData.referenceNumbers && bolData.referenceNumbers.length > 0) {
+        // Show up to 2 additional references
+        bolData.referenceNumbers.slice(0, 2).forEach((ref, index) => {
+            if (ref && ref.trim()) {
+                doc.font('Helvetica')
+                   .fontSize(7)
+                   .text(ref, 395, refYPos);
+                refYPos += 10;
+            }
+        });
+        
+        // If there are more than 2 additional references, show "..."
+        if (bolData.referenceNumbers.length > 2) {
+            doc.font('Helvetica')
+               .fontSize(6)
+               .text('...', 395, refYPos);
+        }
+    } else {
+        // Original P.O. Number field if no additional references
+        doc.font('Helvetica-Bold')
+           .fontSize(8)
+           .text('P.O. Number:', 310, 225)
+           .font('Helvetica')
+           .fontSize(8)
+           .text('', 385, 225);
+        
+        // Add empty line for manual entry
+        doc.strokeColor('#CCCCCC')
+           .lineWidth(0.5)
+           .moveTo(385, 235)
+           .lineTo(570, 235)
+           .stroke();
+    }
 }
 
 /**

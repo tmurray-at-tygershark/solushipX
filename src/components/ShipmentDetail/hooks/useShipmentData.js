@@ -488,12 +488,35 @@ export const useShipmentData = (shipmentId) => {
         // Add synthetic 'created' event if not present
         const hasCreated = all.some(e => (e.eventType === 'created' || (e.status && typeof e.status === 'string' && e.status.toLowerCase().includes('created'))));
         if (!hasCreated && shipment?.createdAt) {
+            // Parse the createdAt timestamp properly
+            let createdTimestamp;
+            try {
+                if (shipment.createdAt.toDate && typeof shipment.createdAt.toDate === 'function') {
+                    createdTimestamp = shipment.createdAt.toDate();
+                } else if (shipment.createdAt.seconds !== undefined) {
+                    createdTimestamp = new Date(shipment.createdAt.seconds * 1000 + (shipment.createdAt.nanoseconds || 0) / 1000000);
+                } else if (shipment.createdAt._seconds !== undefined) {
+                    createdTimestamp = new Date(shipment.createdAt._seconds * 1000 + (shipment.createdAt._nanoseconds || 0) / 1000000);
+                } else {
+                    createdTimestamp = new Date(shipment.createdAt);
+                }
+                
+                // Validate the timestamp
+                if (isNaN(createdTimestamp.getTime())) {
+                    console.warn('Invalid createdAt timestamp:', shipment.createdAt);
+                    createdTimestamp = new Date(); // Fallback to current date
+                }
+            } catch (error) {
+                console.error('Error parsing createdAt timestamp:', error, shipment.createdAt);
+                createdTimestamp = new Date(); // Fallback to current date
+            }
+            
             all.push({
                 id: 'created-' + (shipment.id || shipment.shipmentID),
                 status: 'Created',
                 description: 'Shipment was created',
                 location: { city: '', state: '', postalCode: '' },
-                timestamp: shipment.createdAt.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
+                timestamp: createdTimestamp,
                 color: getStatusColor('created'),
                 icon: getStatusIcon('created'),
                 eventType: 'created',

@@ -256,6 +256,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         serviceLevel: 'any',
         shipmentDate: new Date().toISOString().split('T')[0],
         shipperReferenceNumber: '',
+        referenceNumbers: [], // Array for multiple reference numbers
         billType: 'third_party'
     });
 
@@ -353,8 +354,50 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
 
+    // Customer selection state for super admins  
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
+
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
+
+    // Load customers for selected company (super admin)
+    const loadCustomersForCompany = useCallback(async (companyId) => {
+        console.log('🔍 loadCustomersForCompany called with:', companyId);
+
+        if (!companyId || companyId === 'all') {
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+            return;
+        }
+
+        setLoadingCustomers(true);
+        try {
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyID', '==', companyId)
+            );
+
+            const customersSnapshot = await getDocs(customersQuery);
+            const customers = customersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Sort customers by name
+            customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            setAvailableCustomers(customers);
+            setSelectedCustomerId('all'); // Reset to "All Customers"
+        } catch (error) {
+            console.error('Error loading customers:', error);
+            setAvailableCustomers([]);
+            setSelectedCustomerId('all');
+        } finally {
+            setLoadingCustomers(false);
+        }
+    }, []);
 
     // Handle company selection for super admins
     const handleCompanySelection = useCallback(async (companyId) => {
@@ -385,6 +428,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     // Switch company context
                     await setCompanyContext(targetCompanyData);
 
+                    // Load customers for the selected company
+                    await loadCustomersForCompany(companyId);
+
                     console.log('✅ Super admin switched to company context:', targetCompanyData.name);
                     showMessage(`Switched to ${targetCompanyData.name || companyId}`, 'success');
                 } else {
@@ -393,37 +439,134 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 }
             } else {
                 setSelectedCompanyData(null);
+                setAvailableCustomers([]);
+                setSelectedCustomerId('all');
             }
         } catch (error) {
             console.error('❌ Error switching company context:', error);
             showMessage('Error switching company context', 'error');
         }
-    }, [setCompanyContext]);
+    }, [setCompanyContext, loadCustomersForCompany]);
 
-    // Load addresses
-    useEffect(() => {
-        const loadAddresses = async () => {
-            if (!companyIdForAddress) return;
+    // Address loading function that matches QuickShip's pattern exactly
+    const loadAddressesForCompany = useCallback(async (companyId, customerId = null) => {
+        console.log('🟡 CreateShipmentX loadAddressesForCompany called with:', { companyId, customerId, selectedCustomerId, timestamp: new Date().toISOString() });
+        if (!companyId) {
+            console.log('📍 CreateShipmentX No company ID provided for address loading');
+            return;
+        }
 
-            setLoadingAddresses(true);
-            try {
-                const addressQuery = query(
-                    collection(db, 'addressBook'),
-                    where('companyID', '==', companyIdForAddress),
-                    where('status', '==', 'active')
-                );
-                const addressSnapshot = await getDocs(addressQuery);
-                const addresses = addressSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setAvailableAddresses(addresses);
-            } catch (error) {
-                console.error('Error loading addresses:', error);
-                setAvailableAddresses([]);
-            } finally {
-                setLoadingAddresses(false);
+        console.log('📍 Loading addresses for company:', companyId);
+        setLoadingAddresses(true);
+
+        try {
+            // First, get ALL addresses for the company to debug
+            const allAddressQuery = query(
+                collection(db, 'addressBook'),
+                where('companyID', '==', companyId),
+                where('status', '==', 'active')
+            );
+
+            const allAddressSnapshot = await getDocs(allAddressQuery);
+            const allAddresses = allAddressSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Calculate effective customer ID first
+            const effectiveCustomerId = customerId || selectedCustomerId;
+
+            console.log('🔍 CreateShipmentX DEBUG: All addresses for company:', {
+                companyId,
+                totalCount: allAddresses.length,
+                effectiveCustomerId,
+                selectedCustomerId,
+                sampleAddresses: allAddresses.slice(0, 3).map(addr => ({
+                    id: addr.id,
+                    name: addr.name || addr.nickname || 'No name',
+                    addressClass: addr.addressClass,
+                    addressClassID: addr.addressClassID,
+                    customerID: addr.customerID,
+                    street: addr.street
+                }))
+            });
+
+            let addresses = allAddresses;
+
+            // Add customer filter for super admins if specific customer is selected
+            if (userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all') {
+                // Try multiple filter approaches to handle different data structures
+                addresses = allAddresses.filter(addr => {
+                    const matches = addr.addressClassID === effectiveCustomerId ||
+                        addr.customerID === effectiveCustomerId ||
+                        (addr.addressClass === 'customer' && addr.addressClassID === effectiveCustomerId);
+
+                    // Log non-matching addresses like QuickShip does
+                    if (!matches && addr.addressClassID) {
+                        console.log('🔍 CreateShipmentX Address not matching:', {
+                            addressId: addr.id,
+                            addressClassID: addr.addressClassID,
+                            customerID: addr.customerID,
+                            lookingFor: effectiveCustomerId,
+                            addressClass: addr.addressClass,
+                            name: addr.name || addr.nickname || addr.companyName,
+                            allFields: Object.keys(addr)
+                        });
+                    }
+
+                    return matches;
+                });
+
+                console.log('🔍 CreateShipmentX DEBUG: Filtered addresses:', {
+                    effectiveCustomerId,
+                    filteredCount: addresses.length,
+                    originalCount: allAddresses.length,
+                    filterCriteria: 'addressClassID or customerID equals customerId',
+                    filteredAddresses: addresses.slice(0, 3).map(addr => ({
+                        id: addr.id,
+                        name: addr.name || addr.nickname,
+                        addressClass: addr.addressClass,
+                        addressClassID: addr.addressClassID,
+                        customerID: addr.customerID
+                    }))
+                });
             }
-        };
-        loadAddresses();
-    }, [companyIdForAddress]);
+
+            console.log('📍 CreateShipmentX Address loading completed:', {
+                companyId,
+                effectiveCustomerId,
+                userRole,
+                addressCount: addresses.length,
+                isFiltered: userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all',
+                addresses: addresses.slice(0, 3) // Show first 3 for debugging
+            });
+
+            setAvailableAddresses(addresses);
+        } catch (error) {
+            console.error('Error loading addresses:', error);
+            setAvailableAddresses([]);
+        } finally {
+            setLoadingAddresses(false);
+        }
+    }, [selectedCustomerId, userRole]);
+
+    // Load addresses using the same pattern as QuickShip
+    useEffect(() => {
+        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+
+        console.log('🟢 CreateShipmentX useEffect: address loading triggered', {
+            currentCompanyId,
+            selectedCustomerId,
+            userRole,
+            companyIdForAddress,
+            selectedCompanyId
+        });
+
+        if (currentCompanyId) {
+            // Pass the current customer selection to preserve filtering - this is the key fix
+            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
+        }
+    }, [companyIdForAddress, selectedCompanyId, selectedCustomerId, userRole, loadAddressesForCompany]);
 
     // Load customers
     useEffect(() => {
@@ -445,6 +588,15 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         };
         loadCustomers();
     }, [companyIdForAddress]);
+
+    // Load customers for initial company (super admin)
+    useEffect(() => {
+        // Only run for super admins on initial load
+        if (userRole === 'superadmin' && companyIdForAddress && !selectedCompanyId) {
+            console.log('🔍 Loading customers for initial company:', companyIdForAddress);
+            loadCustomersForCompany(companyIdForAddress);
+        }
+    }, [userRole, companyIdForAddress, selectedCompanyId, loadCustomersForCompany]);
 
     // Get company eligible carriers using enhanced system
     const getCompanyEligibleCarriers = useCallback(async (shipmentData) => {
@@ -545,7 +697,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         const currentSnapshot = createFormSnapshot();
         return currentSnapshot !== lastFormSnapshot;
     }, [createFormSnapshot, lastFormSnapshot]);
-
     // Fetch rates from carriers with progressive loading
     const fetchRates = useCallback(async (forceRefresh = false) => {
         if (!canFetchRates()) return;
@@ -836,6 +987,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                 serviceLevel: draftData.shipmentInfo.serviceLevel || 'any',
                                 shipmentDate: draftData.shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
                                 shipperReferenceNumber: draftData.shipmentInfo.shipperReferenceNumber || '',
+                                referenceNumbers: draftData.shipmentInfo.referenceNumbers || [],
                                 billType: draftData.shipmentInfo.billType || 'third_party'
                             });
                         }
@@ -856,6 +1008,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         // Load selected rate if available
                         if (draftData.selectedRate) {
                             setSelectedRate(draftData.selectedRate);
+                        }
+
+                        // Load customer filter for super admins
+                        if (userRole === 'superadmin' && draftData.selectedCustomerId) {
+                            setSelectedCustomerId(draftData.selectedCustomerId);
                         }
 
                         // Set the active draft ID
@@ -912,6 +1069,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         serviceLevel: 'any',
                         shipmentDate: new Date().toISOString().split('T')[0],
                         shipperReferenceNumber: newShipmentID,
+                        referenceNumbers: [],
                         billType: 'third_party'
                     },
                     packages: [{
@@ -1561,6 +1719,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     serviceLevel: shipmentInfo.serviceLevel || 'any',
                     shipmentDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
                     shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || currentShipmentID,
+                    referenceNumbers: shipmentInfo.referenceNumbers || [],
                     billType: shipmentInfo.billType || 'third_party'
                 },
 
@@ -1573,6 +1732,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                 // Rate information - clean undefined values if available
                 ...(selectedRate ? { selectedRate: cleanObject(selectedRate) } : {}),
+
+                // Customer filter for super admins
+                ...(userRole === 'superadmin' && selectedCustomerId ? { selectedCustomerId } : {}),
 
                 // Draft specific fields
                 isDraft: true,
@@ -1776,7 +1938,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     ...shipmentInfo,
                     totalWeight: totalWeight,
                     totalPieces: totalPieces,
-                    actualShipDate: shipmentInfo.shipmentDate
+                    actualShipDate: shipmentInfo.shipmentDate,
+                    // Ensure reference numbers are included
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
 
                 // Additional services and options
@@ -1825,7 +1989,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     ...shipmentInfo,
                     totalWeight: totalWeight,
                     totalPieces: totalPieces,
-                    actualShipDate: shipmentInfo.shipmentDate
+                    actualShipDate: shipmentInfo.shipmentDate,
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
 
                 // Addresses
@@ -2349,6 +2514,181 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             />
                         )}
 
+                    {/* Customer Filter for Super Admins */}
+                    {(() => {
+                        const shouldShowCustomerFilter = userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress) && availableCustomers.length > 0;
+                        console.log('🔍 CreateShipmentX Customer Filter Debug:', {
+                            userRole,
+                            selectedCompanyId,
+                            companyIdForAddress,
+                            availableCustomersLength: availableCustomers.length,
+                            availableCustomers: availableCustomers.slice(0, 3), // Show first 3 for debugging
+                            shouldShowCustomerFilter
+                        });
+                        return shouldShowCustomerFilter;
+                    })() && (
+                            <Box sx={{ mb: 3 }}>
+                                <Autocomplete
+                                    value={availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId) || { id: 'all', name: 'All Customers' }}
+                                    onChange={(event, newValue) => {
+                                        const customerId = newValue?.customerID || newValue?.id || 'all';
+                                        console.log('🎯 CreateShipmentX Customer selected:', {
+                                            newValue,
+                                            customerID: newValue?.customerID,
+                                            id: newValue?.id,
+                                            finalCustomerId: customerId,
+                                            previousSelectedCustomerId: selectedCustomerId
+                                        });
+                                        console.log('✅ CreateShipmentX BEFORE setSelectedCustomerId:', { previousValue: selectedCustomerId, newValue: customerId });
+                                        setSelectedCustomerId(customerId);
+                                        console.log('✅ CreateShipmentX AFTER setSelectedCustomerId called with:', customerId);
+                                    }}
+                                    options={[{ id: 'all', name: 'All Customers' }, ...availableCustomers]}
+                                    getOptionLabel={(option) => option.name || ''}
+                                    loading={loadingCustomers}
+                                    disabled={loadingCustomers}
+                                    renderInput={(params) => {
+                                        const selectedCustomer = availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId);
+                                        const isAllSelected = !selectedCustomer || selectedCustomerId === 'all';
+
+                                        return (
+                                            <TextField
+                                                {...params}
+                                                label={
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <PersonIcon sx={{ fontSize: '16px' }} />
+                                                        Filter by Customer
+                                                    </Box>
+                                                }
+                                                placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': {
+                                                        fontSize: '12px',
+                                                        // Hide the input field completely when a customer is selected
+                                                        opacity: !isAllSelected && selectedCustomer ? 0 : 1,
+                                                        width: !isAllSelected && selectedCustomer ? 0 : 'auto',
+                                                        padding: !isAllSelected && selectedCustomer ? 0 : undefined
+                                                    },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                helperText={
+                                                    loadingCustomers ? 'Loading customers...' :
+                                                        !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
+                                                            'No customers found for selected company' : ''
+                                                }
+                                                FormHelperTextProps={{
+                                                    sx: { fontSize: '11px', color: '#6b7280' }
+                                                }}
+                                                InputProps={{
+                                                    ...params.InputProps,
+                                                    startAdornment: !isAllSelected && selectedCustomer ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5, width: '100%' }}>
+                                                            <Avatar
+                                                                src={selectedCustomer.logo || selectedCustomer.logoUrl}
+                                                                sx={{
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    bgcolor: '#059669',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600
+                                                                }}
+                                                            >
+                                                                {!selectedCustomer.logo && !selectedCustomer.logoUrl && (selectedCustomer.name || 'C').charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.2 }}>
+                                                                    {selectedCustomer.name}
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', lineHeight: 1 }}>
+                                                                    ID: {selectedCustomer.customerID || selectedCustomer.id}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    ) : params.InputProps.startAdornment,
+                                                }}
+                                            />
+                                        );
+                                    }}
+                                    renderOption={(props, option) => (
+                                        <Box component="li" {...props} sx={{ p: 1.5 }}>
+                                            {option.customerID === 'all' || option.id === 'all' ? (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                    <PersonIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            All Customers
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            Show addresses for all customers
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            ) : (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                    <Avatar
+                                                        src={option.logo || option.logoUrl}
+                                                        sx={{
+                                                            width: 28,
+                                                            height: 28,
+                                                            bgcolor: '#059669',
+                                                            fontSize: '11px',
+                                                            fontWeight: 600
+                                                        }}
+                                                    >
+                                                        {!option.logo && !option.logoUrl && (option.name || 'C').charAt(0).toUpperCase()}
+                                                    </Avatar>
+                                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                        <Typography sx={{
+                                                            fontSize: '12px',
+                                                            fontWeight: 500,
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {option.name || 'Unknown Customer'}
+                                                        </Typography>
+                                                        <Typography sx={{
+                                                            fontSize: '11px',
+                                                            color: '#6b7280',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            ID: {option.customerID || option.id}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    )}
+                                    isOptionEqualToValue={(option, value) => {
+                                        const optionId = option.customerID || option.id;
+                                        const valueId = value.customerID || value.id;
+                                        return optionId === valueId;
+                                    }}
+                                    filterOptions={(options, { inputValue }) => {
+                                        if (!inputValue) return options;
+
+                                        const filtered = options.filter(option => {
+                                            if (option.customerID === 'all' || option.id === 'all') {
+                                                return 'all customers'.includes(inputValue.toLowerCase());
+                                            }
+                                            const name = (option.name || '').toLowerCase();
+                                            const customerId = (option.customerID || option.id || '').toLowerCase();
+                                            const searchTerm = inputValue.toLowerCase();
+
+                                            return name.includes(searchTerm) || customerId.includes(searchTerm);
+                                        });
+
+                                        return filtered;
+                                    }}
+                                    sx={{ width: '100%' }}
+                                    size="small"
+                                />
+                            </Box>
+                        )}
+
                     {/* Show rest of form only when company is selected or user is not super admin */}
                     {(() => {
                         const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyData?.companyID));
@@ -2460,21 +2800,84 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                 />
                                             </Grid>
                                             <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Reference Number"
-                                                    value={shipmentInfo.shipperReferenceNumber}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            '&::placeholder': { fontSize: '12px' }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                />
+                                                <Box>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                                                            Reference Numbers
+                                                        </Typography>
+                                                        <Button
+                                                            size="small"
+                                                            startIcon={<AddIcon />}
+                                                            onClick={() => {
+                                                                setShipmentInfo(prev => ({
+                                                                    ...prev,
+                                                                    referenceNumbers: [...(prev.referenceNumbers || []), { id: Date.now(), value: '' }]
+                                                                }));
+                                                            }}
+                                                            sx={{ fontSize: '11px', textTransform: 'none', minHeight: '24px' }}
+                                                        >
+                                                            Add Reference
+                                                        </Button>
+                                                    </Box>
+
+                                                    {/* Single reference number field (for backward compatibility) */}
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Primary Reference Number"
+                                                        value={shipmentInfo.shipperReferenceNumber}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                        autoComplete="off"
+                                                        sx={{
+                                                            mb: shipmentInfo.referenceNumbers?.length > 0 ? 2 : 0,
+                                                            '& .MuiInputBase-input': {
+                                                                fontSize: '12px',
+                                                                '&::placeholder': { fontSize: '12px' }
+                                                            },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                    />
+
+                                                    {/* Multiple reference numbers */}
+                                                    {shipmentInfo.referenceNumbers?.map((ref, index) => (
+                                                        <Box key={ref.id} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                label={`Reference ${index + 2}`}
+                                                                value={ref.value}
+                                                                onChange={(e) => {
+                                                                    const newRefs = [...shipmentInfo.referenceNumbers];
+                                                                    newRefs[index] = { ...ref, value: e.target.value };
+                                                                    setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
+                                                                }}
+                                                                autoComplete="off"
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: '12px',
+                                                                        '&::placeholder': { fontSize: '12px' }
+                                                                    },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    setShipmentInfo(prev => ({
+                                                                        ...prev,
+                                                                        referenceNumbers: prev.referenceNumbers.filter((_, i) => i !== index)
+                                                                    }));
+                                                                }}
+                                                                sx={{
+                                                                    color: '#ef4444',
+                                                                    '&:hover': { backgroundColor: '#fee2e2' }
+                                                                }}
+                                                            >
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Box>
+                                                    ))}
+                                                </Box>
                                             </Grid>
                                             <Grid item xs={12} md={6}>
                                                 <FormControl fullWidth size="small">
@@ -4133,3 +4536,4 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 };
 
 export default CreateShipmentX;
+

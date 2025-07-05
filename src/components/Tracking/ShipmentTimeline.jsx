@@ -26,7 +26,7 @@ import {
 
 // Consistent helper functions (can be moved to a utils file later)
 const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp) return 'Not Available';
 
     try {
         // Handle serverTimestamp placeholders
@@ -41,7 +41,8 @@ const formatTimestamp = (timestamp) => {
             try {
                 date = timestamp.toDate();
             } catch (error) {
-                return 'N/A';
+                console.warn('Error calling toDate() on timestamp:', error);
+                return 'Invalid Date';
             }
         }
         // Handle timestamp objects with seconds and nanoseconds
@@ -49,7 +50,17 @@ const formatTimestamp = (timestamp) => {
             try {
                 date = new Date(timestamp.seconds * 1000 + (timestamp.nanoseconds || 0) / 1000000);
             } catch (error) {
-                return 'N/A';
+                console.warn('Error parsing timestamp with seconds:', error);
+                return 'Invalid Date';
+            }
+        }
+        // Handle timestamp objects with _seconds (alternative format)
+        else if (timestamp && typeof timestamp === 'object' && typeof timestamp._seconds === 'number') {
+            try {
+                date = new Date(timestamp._seconds * 1000 + (timestamp._nanoseconds || 0) / 1000000);
+            } catch (error) {
+                console.warn('Error parsing timestamp with _seconds:', error);
+                return 'Invalid Date';
             }
         }
         // Handle numeric timestamps (milliseconds)
@@ -66,12 +77,14 @@ const formatTimestamp = (timestamp) => {
         }
         // Handle invalid or unknown timestamp formats
         else {
-            return 'N/A';
+            console.warn('Unknown timestamp format:', timestamp);
+            return 'Invalid Format';
         }
 
         // Final validation
         if (!date || isNaN(date.getTime())) {
-            return 'N/A';
+            console.warn('Invalid date after parsing:', date, 'from timestamp:', timestamp);
+            return 'Invalid Date';
         }
 
         return date.toLocaleString('en-US', {
@@ -83,7 +96,8 @@ const formatTimestamp = (timestamp) => {
             hour12: true
         });
     } catch (error) {
-        return 'N/A';
+        console.error('Error formatting timestamp:', error, timestamp);
+        return 'Format Error';
     }
 };
 

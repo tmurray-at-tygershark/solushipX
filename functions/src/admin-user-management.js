@@ -409,7 +409,7 @@ exports.adminInviteUser = onCall({
     }
 
     const callingUserUid = request.auth.uid;
-    const { email, firstName, lastName, role, status, phone, companies } = request.data;
+    const { email, firstName, lastName, role, status, phone, phoneExtension, companies } = request.data;
 
     // Validate required fields
     if (!email || !firstName || !lastName) {
@@ -466,6 +466,7 @@ exports.adminInviteUser = onCall({
             role: role || 'user',
             status: status || 'active',
             phone: phone?.trim() || '',
+            phoneExtension: phoneExtension?.trim() || '',
             connectedCompanies: { companies: companies || [] },
             authUID: newUserId,
             isInvited: true,
@@ -491,6 +492,43 @@ exports.adminInviteUser = onCall({
             const adminUserData = adminUserDoc.data();
             const inviterName = `${adminUserData.firstName || ''} ${adminUserData.lastName || ''}`.trim() || adminUserData.email;
 
+            // Helper function to get user-friendly role name
+            const getRoleDisplayName = (role) => {
+                switch (role) {
+                    case 'superadmin':
+                        return 'Super Administrator';
+                    case 'admin':
+                        return 'Administrator';
+                    case 'user':
+                        return 'Company Administrator';
+                    case 'company_staff':
+                        return 'Company Staff';
+                    case 'accounting':
+                        return 'Accounting';
+                    default:
+                        return 'User';
+                }
+            };
+
+            // Fetch company names for the companies the user has access to
+            let companyNamesText = '';
+            if (companies && companies.length > 0) {
+                try {
+                    const companyPromises = companies.map(async (companyId) => {
+                        const companyDoc = await db.collection('companies').where('companyID', '==', companyId).limit(1).get();
+                        if (!companyDoc.empty) {
+                            return companyDoc.docs[0].data().name || companyId;
+                        }
+                        return companyId;
+                    });
+                    const companyNames = await Promise.all(companyPromises);
+                    companyNamesText = companyNames.join(', ');
+                } catch (error) {
+                    console.log('Error fetching company names:', error);
+                    companyNamesText = `${companies.length} companies`;
+                }
+            }
+
             const msg = {
                 to: email.trim(),
                 from: {
@@ -508,38 +546,84 @@ exports.adminInviteUser = onCall({
                         
                         <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
                             <!-- Welcome Notice -->
-                            <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 0; margin-bottom: 20px;">
+                            <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
                                 <h3 style="color: #065f46; margin: 0 0 10px 0; font-size: 16px;">🎉 Account Invitation</h3>
-                                <p style="color: #047857; margin: 0; font-size: 14px;">Hello <strong>${firstName} ${lastName}</strong>, you've been invited to join SolushipX by ${inviterName}.</p>
+                                <p style="color: #047857; margin: 0; font-size: 14px;">Hello <strong>${firstName} ${lastName}</strong>, you've been invited to join SolushipX by <strong>${inviterName}</strong>.</p>
                             </div>
 
                             <!-- Account Details -->
-                            <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Account Details</h2>
+                            <div style="background: white; padding: 25px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                                <h2 style="color: #1c277d; margin: 0 0 20px 0; font-size: 18px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">Your Account Details</h2>
                                 <table style="width: 100%; border-collapse: collapse;">
-                                    <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Email:</strong></td><td style="padding: 8px 0; font-weight: bold;">${email}</td></tr>
-                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Role:</strong></td><td style="padding: 8px 0;">${role || 'User'}</td></tr>
-                                    ${companies && companies.length > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Company Access:</strong></td><td style="padding: 8px 0;">${companies.length} companies</td></tr>` : ''}
-                                    <tr><td style="padding: 8px 0; color: #666;"><strong>Invited By:</strong></td><td style="padding: 8px 0;">${inviterName}</td></tr>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; width: 140px; font-weight: 600;">Name:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">${firstName} ${lastName}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; font-weight: 600;">Email:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">${email}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; font-weight: 600;">Role:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">
+                                            <span style="background: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">
+                                                ${getRoleDisplayName(role)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    ${companies && companies.length > 0 ? `
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; font-weight: 600; vertical-align: top;">Company Access:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">
+                                            <div style="background: #f3f4f6; padding: 10px; border-radius: 6px; border-left: 3px solid #059669;">
+                                                ${companyNamesText}
+                                            </div>
+                                        </td>
+                                    </tr>` : ''}
+                                    ${phone?.trim() ? `
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; font-weight: 600;">Phone:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">${phone}${phoneExtension?.trim() ? ` ext. ${phoneExtension}` : ''}</td>
+                                    </tr>` : ''}
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #374151; font-weight: 600;">Invited By:</td>
+                                        <td style="padding: 12px 0; color: #111827; font-weight: 500;">${inviterName}</td>
+                                    </tr>
                                 </table>
                             </div>
                             
                             <!-- Call to Action -->
-                            <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
-                                <h3 style="color: #1c277d; margin: 0 0 10px 0;">Set Up Your Account</h3>
-                                <p style="margin: 0 0 15px 0; font-size: 14px; color: #666;">Click the button below to set your password and activate your account</p>
+                            <div style="background: linear-gradient(135deg, #1c277d 0%, #3b82f6 100%); padding: 30px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                                <h3 style="color: white; margin: 0 0 15px 0; font-size: 20px; font-weight: 600;">Ready to Get Started?</h3>
+                                <p style="margin: 0 0 20px 0; font-size: 14px; color: rgba(255,255,255,0.9); line-height: 1.5;">
+                                    Click the button below to set your password and activate your SolushipX account. You'll have access to our powerful shipping platform in minutes.
+                                </p>
                                 <a href="${inviteLink}" 
-                                   style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
-                                   Set Up Your Password
+                                   style="background: #ffffff; color: #1c277d; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">
+                                   🚀 Set Up Your Password
                                 </a>
+                                <p style="margin: 15px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.7);">
+                                    This link is secure and expires in 24 hours
+                                </p>
                             </div>
                             
-                            <!-- Security Warning -->
-                            <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 15px; border-radius: 0; margin-bottom: 20px;">
-                                <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">⚠️ Important Security Information</h3>
-                                <p style="margin: 0; color: #92400e; font-size: 14px;">
-                                    This invitation link will expire in 24 hours for security purposes. 
-                                    If you don't complete your account setup within this time, please contact your administrator for a new invitation.
+                            <!-- Next Steps -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <h3 style="color: #1e293b; margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">📋 What's Next?</h3>
+                                <div style="color: #475569; font-size: 14px; line-height: 1.6;">
+                                    <div style="margin-bottom: 8px;">✅ <strong>Set your password</strong> using the button above</div>
+                                    <div style="margin-bottom: 8px;">✅ <strong>Log in to SolushipX</strong> with your email and new password</div>
+                                    <div style="margin-bottom: 8px;">✅ <strong>Explore the platform</strong> and start managing shipments</div>
+                                    <div>✅ <strong>Contact support</strong> if you need any assistance</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Security Information -->
+                            <div style="background: #fff7ed; border: 1px solid #fed7aa; padding: 18px; border-radius: 8px; margin-bottom: 20px;">
+                                <h3 style="color: #c2410c; margin: 0 0 10px 0; font-size: 14px; font-weight: 600;">🔒 Security Notice</h3>
+                                <p style="margin: 0; color: #ea580c; font-size: 13px; line-height: 1.5;">
+                                    This invitation link will expire in <strong>24 hours</strong> for your security. 
+                                    If you don't complete your account setup within this time, please contact <strong>${inviterName}</strong> for a new invitation.
                                 </p>
                             </div>
 

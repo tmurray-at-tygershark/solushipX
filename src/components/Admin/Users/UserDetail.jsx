@@ -32,6 +32,24 @@ const formatDate = (timestamp) => {
     return timestamp.toDate().toLocaleString();
 };
 
+// Get role display name
+const getRoleDisplayName = (role) => {
+    switch (role) {
+        case 'superadmin':
+            return 'Super Administrator';
+        case 'admin':
+            return 'Administrator';
+        case 'user':
+            return 'Company Administrator';
+        case 'company_staff':
+            return 'Company Staff';
+        case 'accounting':
+            return 'Accounting';
+        default:
+            return role || 'User';
+    }
+};
+
 const UserDetail = () => {
     const { id: userId } = useParams();
     const navigate = useNavigate();
@@ -103,6 +121,7 @@ const UserDetail = () => {
                 firstName: userData.firstName || '',
                 lastName: userData.lastName || '',
                 phone: userData.phone || '',
+                phoneExtension: userData.phoneExtension || '',
                 role: userData.role || 'user',
                 status: userData.status || 'active',
             });
@@ -141,6 +160,7 @@ const UserDetail = () => {
                 firstName: originalUser.firstName || '',
                 lastName: originalUser.lastName || '',
                 phone: originalUser.phone || '',
+                phoneExtension: originalUser.phoneExtension || '',
                 role: originalUser.role || 'user',
                 status: originalUser.status || 'active',
             });
@@ -153,7 +173,15 @@ const UserDetail = () => {
 
     const handleInputChange = (event) => {
         const { name, value } = event.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+
+        // Validate phone extension to allow only numbers
+        if (name === 'phoneExtension') {
+            const numericValue = value.replace(/[^0-9]/g, '');
+            setFormData(prev => ({ ...prev, [name]: numericValue }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
+
         if (formErrors[name]) {
             setFormErrors(prev => ({ ...prev, [name]: null }));
         }
@@ -182,6 +210,7 @@ const UserDetail = () => {
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 phone: formData.phone,
+                phoneExtension: formData.phoneExtension,
                 role: formData.role,
                 status: formData.status,
                 updatedAt: new Date(), // Using client-side date, consider serverTimestamp if precision is critical
@@ -400,12 +429,32 @@ const UserDetail = () => {
                                 }}>
                                     {user.firstName || ''} {user.lastName || ''}
                                 </Typography>
-                                <Chip
-                                    label={user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Unknown'}
-                                    color={user.status === 'active' ? 'success' : user.status === 'inactive' ? 'default' : 'warning'}
-                                    size="small"
-                                    sx={{ fontSize: '11px' }}
-                                />
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                    <Chip
+                                        label={user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Unknown'}
+                                        color={
+                                            user.status === 'active' ? 'success' :
+                                                user.status === 'inactive' ? 'default' :
+                                                    user.status === 'suspended' ? 'error' :
+                                                        'warning'
+                                        }
+                                        size="small"
+                                        sx={{
+                                            fontSize: '11px',
+                                            fontWeight: 600
+                                        }}
+                                    />
+                                    <Chip
+                                        label={getRoleDisplayName(user.role)}
+                                        color="primary"
+                                        variant="outlined"
+                                        size="small"
+                                        sx={{
+                                            fontSize: '11px',
+                                            fontWeight: 600
+                                        }}
+                                    />
+                                </Box>
                             </Box>
 
                             <Stack spacing={2}>
@@ -437,20 +486,37 @@ const UserDetail = () => {
                                         Phone
                                     </Typography>
                                     {editMode ? (
-                                        <TextField
-                                            size="small"
-                                            name="phone"
-                                            value={formData.phone}
-                                            onChange={handleInputChange}
-                                            fullWidth
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                        />
+                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                            <TextField
+                                                size="small"
+                                                name="phone"
+                                                placeholder="(555) 123-4567"
+                                                value={formData.phone}
+                                                onChange={handleInputChange}
+                                                sx={{
+                                                    flex: 1,
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                            />
+                                            <TextField
+                                                size="small"
+                                                name="phoneExtension"
+                                                placeholder="Ext"
+                                                value={formData.phoneExtension}
+                                                onChange={handleInputChange}
+                                                sx={{
+                                                    width: '80px',
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Box>
                                     ) : (
                                         <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                            {user.phone || '—'}
+                                            {user.phone ?
+                                                `${user.phone}${user.phoneExtension ? ` ext. ${user.phoneExtension}` : ''}`
+                                                : '—'}
                                         </Typography>
                                     )}
                                 </Box>
@@ -477,14 +543,16 @@ const UserDetail = () => {
                                                     '& .MuiMenuItem-root': { fontSize: '12px' }
                                                 }}
                                             >
-                                                <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Admin</MenuItem>
-                                                <MenuItem value="admin" sx={{ fontSize: '12px' }}>Admin</MenuItem>
-                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Admin</MenuItem>
+                                                <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Administrator</MenuItem>
+                                                <MenuItem value="admin" sx={{ fontSize: '12px' }}>Administrator</MenuItem>
+                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Administrator</MenuItem>
+                                                <MenuItem value="company_staff" sx={{ fontSize: '12px' }}>Company Staff</MenuItem>
+                                                <MenuItem value="accounting" sx={{ fontSize: '12px' }}>Accounting</MenuItem>
                                             </Select>
                                         </FormControl>
                                     ) : (
                                         <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                            {user.role || '—'}
+                                            {getRoleDisplayName(user.role)}
                                         </Typography>
                                     )}
                                 </Box>
@@ -672,8 +740,13 @@ const UserDetail = () => {
                                                         </ListItemIcon>
                                                         <ListItemText
                                                             primary={
-                                                                <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                                <Typography sx={{ fontSize: '12px', color: '#111827', fontWeight: 500 }}>
                                                                     {companyMap[companyId] || companyId}
+                                                                </Typography>
+                                                            }
+                                                            secondary={
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    Company ID: {companyId}
                                                                 </Typography>
                                                             }
                                                         />
@@ -751,7 +824,7 @@ const UserDetail = () => {
                                 selectedCompaniesForManagement.map((company) => (
                                     <Chip
                                         key={company.id}
-                                        label={company.name}
+                                        label={`${company.name} (${company.id})`}
                                         onDelete={() => {
                                             setSelectedCompaniesForManagement(prev => prev.filter(c => c.id !== company.id));
                                         }}
@@ -773,7 +846,7 @@ const UserDetail = () => {
                             options={allCompanies.filter(opt =>
                                 !selectedCompaniesForManagement.find(sel => sel.id === opt.id)
                             )}
-                            getOptionLabel={(option) => option.name}
+                            getOptionLabel={(option) => `${option.name} (${option.id})`}
                             value={[]}
                             onChange={(event, newValue) => {
                                 setSelectedCompaniesForManagement(prev => {
@@ -781,6 +854,16 @@ const UserDetail = () => {
                                     return [...prev, ...newSelections];
                                 });
                             }}
+                            renderOption={(props, option) => (
+                                <Box component="li" {...props} sx={{ flexDirection: 'column', alignItems: 'flex-start !important' }}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#111827' }}>
+                                        {option.name}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Company ID: {option.id}
+                                    </Typography>
+                                </Box>
+                            )}
                             renderInput={(params) => (
                                 <TextField
                                     {...params}

@@ -967,7 +967,7 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipment Information</h2>
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.shipmentType || 'freight'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666; vertical-align: top;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}${(shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0) ? `<br>${shipmentData.shipmentInfo.referenceNumbers.filter(ref => ref).join('<br>')}` : ''}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
                         ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentInfo.carrierTrackingNumber}</td></tr>` : ''}
@@ -1095,7 +1095,7 @@ SHIPMENT SUMMARY
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
-- Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}
+- Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}${(shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0) ? `\n  ${shipmentData.shipmentInfo.referenceNumbers.filter(ref => ref).join('\n  ')}` : ''}
 - Bill Type: ${shipmentData.shipmentInfo?.billType || 'third_party'}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
 ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.shipmentInfo.carrierTrackingNumber}` : ''}
@@ -1173,7 +1173,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                     <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Shipment Information</h2>
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.shipmentType || 'freight'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666; vertical-align: top;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}${(shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0) ? `<br>${shipmentData.shipmentInfo.referenceNumbers.filter(ref => ref).join('<br>')}` : ''}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
                         ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentInfo.carrierTrackingNumber}</td></tr>` : ''}
@@ -1303,7 +1303,7 @@ ORDER DETAILS
 
 SHIPMENT INFORMATION
 - Type: ${shipmentData.shipmentInfo?.shipmentType || 'freight'}
-- Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}
+- Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID}${(shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0) ? `\n  ${shipmentData.shipmentInfo.referenceNumbers.filter(ref => ref).join('\n  ')}` : ''}
 - Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
 ${shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.shipmentInfo.carrierTrackingNumber}` : ''}

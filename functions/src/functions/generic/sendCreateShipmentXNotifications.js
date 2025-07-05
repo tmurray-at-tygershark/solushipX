@@ -914,6 +914,15 @@ function generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWei
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">Pending</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Method:</strong></td><td style="padding: 8px 0;">CreateShipmentX</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}</td></tr>
+                        ${shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0 ? 
+                            shipmentData.shipmentInfo.referenceNumbers.map((ref, index) => 
+                                `<tr><td style="padding: 8px 0; color: #666;"><strong>Reference ${index + 2}:</strong></td><td style="padding: 8px 0;">${ref}</td></tr>`
+                            ).join('') : ''
+                        }
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
+                        ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}</td></tr>` : ''}
                     </table>
                 </div>
 
@@ -923,6 +932,11 @@ function generateCreateShipmentXCustomerHTML(shipmentData, totalPieces, totalWei
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.shipmentType || 'freight'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}</td></tr>
+                        ${shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0 ? 
+                            shipmentData.shipmentInfo.referenceNumbers.map((ref, index) => 
+                                `<tr><td style="padding: 8px 0; color: #666;"><strong>Reference ${index + 2}:</strong></td><td style="padding: 8px 0;">${ref}</td></tr>`
+                            ).join('') : ''
+                        }
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
                         ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}</td></tr>` : ''}
@@ -1129,6 +1143,11 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.shipmentType || 'freight'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Reference #:</strong></td><td style="padding: 8px 0;">${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}</td></tr>
+                        ${shipmentData.shipmentInfo?.referenceNumbers && shipmentData.shipmentInfo.referenceNumbers.length > 0 ? 
+                            shipmentData.shipmentInfo.referenceNumbers.map((ref, index) => 
+                                `<tr><td style="padding: 8px 0; color: #666;"><strong>Reference ${index + 2}:</strong></td><td style="padding: 8px 0;">${ref}</td></tr>`
+                            ).join('') : ''
+                        }
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
                         ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}</td></tr>` : ''}
