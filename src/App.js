@@ -47,6 +47,7 @@ const BillingDashboard = lazy(() => import('./components/Admin/Billing/BillingDa
 const InvoiceForm = lazy(() => import('./components/Admin/Billing/InvoiceForm'));
 const RolePermissionsView = lazy(() => import('./components/Admin/Roles/RolePermissionsView'));
 const SystemSettings = lazy(() => import('./components/Admin/Settings/SystemSettings'));
+const SystemConfiguration = lazy(() => import('./components/Admin/Settings/SystemConfiguration'));
 const CarrierKeys = lazy(() => import('./components/Admin/Carriers/CarrierKeys'));
 const EDIMapping = lazy(() => import('./components/Admin/Billing/EDIMapping'));
 const AddCarrierMapping = lazy(() => import('./components/Admin/Billing/AddCarrierMapping'));
@@ -271,6 +272,7 @@ function AppRoutes() {
                     <Route path="billing/payment-terms" element={<BillingDashboard initialTab="payment-terms" />} />
                     <Route path="role-permissions" element={<RolePermissionsView />} />
                     <Route path="settings" element={<SystemSettings />} />
+                    <Route path="configuration" element={<SystemConfiguration />} />
                     <Route path="carrier-keys" element={<CarrierKeys />} />
                     <Route path="carriers" element={<AdminCarriers />} />
                     <Route path="carriers/new" element={<AddCarrier />} />

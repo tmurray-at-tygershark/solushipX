@@ -610,6 +610,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/carriers': [PERMISSIONS.VIEW_CARRIERS, PERMISSIONS.MANAGE_CARRIER_KEYS],
   '/admin/role-permissions': [PERMISSIONS.MANAGE_ROLES],
   '/admin/settings': [PERMISSIONS.MANAGE_SETTINGS],
+  '/admin/configuration': [PERMISSIONS.MANAGE_SETTINGS],
   '/admin/markups': [PERMISSIONS.MANAGE_MARKUPS],
   '/admin/carrier-keys': [PERMISSIONS.MANAGE_CARRIER_KEYS],
   '/admin/edi-mapping': [PERMISSIONS.MANAGE_EDI_MAPPING],

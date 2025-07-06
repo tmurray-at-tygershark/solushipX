@@ -41,7 +41,8 @@ import {
     ExpandMore as ExpandMoreIcon,
     Add as AddIcon,
     FlashOn as QuickIcon,
-    Assessment as AssessmentIcon
+    Assessment as AssessmentIcon,
+    Build as ConfigIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import './AdminHeader.css';
@@ -565,6 +566,132 @@ const AdminHeader = () => {
         );
     };
 
+    const renderSettingsMenu = () => {
+        if (megaMenuOpen !== 'settings') return null;
+
+        const settingsOptions = [
+            {
+                title: 'System Configuration',
+                description: 'Configure additional services and system components',
+                icon: <ConfigIcon />,
+                path: '/admin/configuration',
+                color: '#7c3aed'
+            },
+            {
+                title: 'System Settings',
+                description: 'Global system settings and preferences',
+                icon: <SettingsIcon />,
+                path: '/admin/settings',
+                color: '#6b7280'
+            }
+        ];
+
+        return (
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    zIndex: 999999,
+                    mt: 0,
+                    width: '280px',
+                    maxWidth: '90vw'
+                }}
+                onMouseEnter={() => {
+                    if (megaMenuTimeoutRef.current) {
+                        clearTimeout(megaMenuTimeoutRef.current);
+                    }
+                    setMegaMenuOpen('settings');
+                }}
+                onMouseLeave={() => {
+                    megaMenuTimeoutRef.current = setTimeout(() => {
+                        setMegaMenuOpen(null);
+                    }, 150);
+                }}
+            >
+                <Paper
+                    elevation={12}
+                    sx={{
+                        borderRadius: 2,
+                        border: '1px solid #e5e7eb',
+                        overflow: 'hidden',
+                        backgroundColor: '#ffffff',
+                        mt: 1
+                    }}
+                >
+                    <Box sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, pb: 1.5, borderBottom: '1px solid #f3f4f6' }}>
+                            <Box sx={{ color: '#6b7280', mr: 1, fontSize: '18px' }}>
+                                <SettingsIcon />
+                            </Box>
+                            <Typography
+                                sx={{
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    color: '#111827',
+                                    lineHeight: 1.2
+                                }}
+                            >
+                                Settings & Configuration
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            {settingsOptions.map((option, index) => (
+                                <Box
+                                    key={index}
+                                    onClick={() => {
+                                        setMegaMenuOpen(null);
+                                        hardRedirect(option.path);
+                                    }}
+                                    sx={{
+                                        p: 1.5,
+                                        borderRadius: 1,
+                                        transition: 'all 0.15s ease',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        border: '1px solid transparent',
+                                        '&:hover': {
+                                            backgroundColor: `${option.color}15`,
+                                            transform: 'translateX(2px)',
+                                            border: `1px solid ${option.color}40`
+                                        }
+                                    }}
+                                >
+                                    <Box sx={{ color: option.color, mr: 1.5, fontSize: '16px' }}>
+                                        {option.icon}
+                                    </Box>
+                                    <Box>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '13px',
+                                                fontWeight: 500,
+                                                color: '#111827',
+                                                lineHeight: 1.2,
+                                                mb: 0.5
+                                            }}
+                                        >
+                                            {option.title}
+                                        </Typography>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '11px',
+                                                color: '#6b7280',
+                                                lineHeight: 1.3
+                                            }}
+                                        >
+                                            {option.description}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            ))}
+                        </Box>
+                    </Box>
+                </Paper>
+            </Box>
+        );
+    };
+
     return (
         <nav className="navbar navbar-expand-lg" ref={navbarRef} style={{ position: 'relative' }}>
             <div className="container">
@@ -680,30 +807,46 @@ const AdminHeader = () => {
                             {renderQuickActionsMenu()}
                         </Box>
 
-                        {/* Settings Button */}
-                        <IconButton
-                            onClick={() => hardRedirect('/admin/settings')}
-                            sx={{
-                                backgroundColor: '#ffffff',
-                                color: '#374151',
-                                width: 40,
-                                height: 40,
-                                borderRadius: '50%',
-                                border: '2px solid rgba(255, 255, 255, 0.9)',
-                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                    backgroundColor: '#f8fafc',
-                                    transform: 'scale(1.05)',
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
-                                },
-                                '&:active': {
-                                    transform: 'scale(0.95)'
+                        {/* Settings Dropdown */}
+                        <Box
+                            sx={{ position: 'relative' }}
+                            onMouseEnter={() => {
+                                if (megaMenuTimeoutRef.current) {
+                                    clearTimeout(megaMenuTimeoutRef.current);
                                 }
+                                setMegaMenuOpen('settings');
+                            }}
+                            onMouseLeave={() => {
+                                megaMenuTimeoutRef.current = setTimeout(() => {
+                                    setMegaMenuOpen(null);
+                                }, 150);
                             }}
                         >
-                            <SettingsIcon sx={{ fontSize: 20 }} />
-                        </IconButton>
+                            <IconButton
+                                onClick={() => setMegaMenuOpen(megaMenuOpen === 'settings' ? null : 'settings')}
+                                sx={{
+                                    backgroundColor: '#ffffff',
+                                    color: '#374151',
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: '50%',
+                                    border: '2px solid rgba(255, 255, 255, 0.9)',
+                                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                    transition: 'all 0.2s ease',
+                                    '&:hover': {
+                                        backgroundColor: '#f8fafc',
+                                        transform: 'scale(1.05)',
+                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                                    },
+                                    '&:active': {
+                                        transform: 'scale(0.95)'
+                                    }
+                                }}
+                            >
+                                <SettingsIcon sx={{ fontSize: 20 }} />
+                            </IconButton>
+                            {renderSettingsMenu()}
+                        </Box>
                     </Box>
                 </Box>
 

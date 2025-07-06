@@ -44,7 +44,7 @@ import {
     LocalShipping as LocalShippingIcon,
     FlashOn as FlashOnIcon,
     CheckCircle as CheckCircleIcon,
-
+    ExpandMore as ExpandMoreIcon,
     SwapHoriz as SwapHorizIcon,
     Edit as EditIcon,
     Clear as ClearIcon,
@@ -409,6 +409,12 @@ const QuickShip = ({
 
     // Unit system state
     const [unitSystem, setUnitSystem] = useState('imperial');
+
+    // Additional Services state (for freight shipments only)
+    const [additionalServices, setAdditionalServices] = useState([]);
+    const [availableServices, setAvailableServices] = useState([]);
+    const [loadingServices, setLoadingServices] = useState(false);
+    const [servicesExpanded, setServicesExpanded] = useState(false);
 
     // Manual rates state - with default FRT and FUE charges
     const [manualRates, setManualRates] = useState([
@@ -1091,6 +1097,97 @@ const QuickShip = ({
         }));
     };
 
+    // Additional Services functions
+    const loadAdditionalServices = async () => {
+        console.log('🔧 loadAdditionalServices called, shipmentType:', shipmentInfo.shipmentType);
+        if (shipmentInfo.shipmentType !== 'freight' && shipmentInfo.shipmentType !== 'courier') {
+            console.log('🔧 Not freight or courier shipment, skipping service load');
+            return;
+        }
+
+        try {
+            console.log('🔧 Loading additional services from database for type:', shipmentInfo.shipmentType);
+            setLoadingServices(true);
+            const servicesRef = collection(db, 'shipmentServices');
+            const q = query(servicesRef, where('type', '==', shipmentInfo.shipmentType));
+            const querySnapshot = await getDocs(q);
+
+            const services = [];
+            querySnapshot.forEach((doc) => {
+                services.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            console.log('🔧 Loaded services from database:', services);
+            setAvailableServices(services);
+        } catch (error) {
+            console.error('🔧 Error loading additional services:', error);
+        } finally {
+            setLoadingServices(false);
+        }
+    };
+
+    const handleServiceToggle = (service) => {
+        console.log('🔧 handleServiceToggle called with service:', service);
+        console.log('🔧 Current additionalServices:', additionalServices);
+        console.log('🔧 Current manualRates:', manualRates);
+
+        setAdditionalServices(prev => {
+            console.log('🔧 Previous additionalServices:', prev);
+            const exists = prev.find(s => s.id === service.id);
+            console.log('🔧 Service exists?', exists);
+
+            if (exists) {
+                // Remove service and corresponding rate line item
+                const updatedServices = prev.filter(s => s.id !== service.id);
+                console.log('🔧 Removing service, updated services:', updatedServices);
+
+                // Remove the corresponding rate line item
+                setManualRates(prevRates => {
+                    const filteredRates = prevRates.filter(rate =>
+                        !(rate.code === 'SUR' && rate.chargeName === service.label)
+                    );
+                    console.log('🔧 Removing rate line item, filtered rates:', filteredRates);
+                    return filteredRates;
+                });
+
+                return updatedServices;
+            } else {
+                // Add service and create corresponding rate line item
+                const updatedServices = [...prev, service];
+                console.log('🔧 Adding service, updated services:', updatedServices);
+
+                // Add a new rate line item for this service
+                const newRateId = Math.max(...manualRates.map(r => r.id), 0) + 1;
+                const newRate = {
+                    id: newRateId,
+                    carrier: '',
+                    code: 'SUR',
+                    chargeName: service.label,
+                    cost: '',
+                    costCurrency: 'CAD',
+                    charge: '',
+                    chargeCurrency: 'CAD'
+                };
+                console.log('🔧 Adding new rate:', newRate);
+
+                setManualRates(prevRates => {
+                    const updatedRates = [...prevRates, newRate];
+                    console.log('🔧 Updated manual rates:', updatedRates);
+                    return updatedRates;
+                });
+
+                return updatedServices;
+            }
+        });
+    };
+
+    const isServiceSelected = (serviceId) => {
+        return additionalServices.some(s => s.id === serviceId);
+    };
+
     // Calculate total rate cost with formatting
     const totalCost = useMemo(() => {
         return manualRates.reduce((total, rate) => {
@@ -1542,6 +1639,9 @@ const QuickShip = ({
                 currency: manualRates[0]?.chargeCurrency || 'CAD',
                 unitSystem: unitSystem,
 
+                // Additional Services (freight and courier)
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
+
                 // Tracking
                 trackingNumber: shipmentInfo.carrierTrackingNumber || finalShipmentID,
 
@@ -1930,6 +2030,36 @@ const QuickShip = ({
                                 setManualRates(draftData.manualRates);
                             }
 
+                            // Load additional services and create corresponding rate line items
+                            if (draftData.additionalServices && Array.isArray(draftData.additionalServices)) {
+                                setAdditionalServices(draftData.additionalServices);
+
+                                // Create rate line items for additional services if they don't exist
+                                const existingServiceRates = draftData.manualRates?.filter(rate =>
+                                    rate.code === 'SUR' && draftData.additionalServices.some(service => service.label === rate.chargeName)
+                                ) || [];
+
+                                const missingServiceRates = draftData.additionalServices.filter(service =>
+                                    !existingServiceRates.some(rate => rate.chargeName === service.label)
+                                );
+
+                                if (missingServiceRates.length > 0) {
+                                    const currentMaxId = Math.max(...(draftData.manualRates?.map(r => r.id) || [0]), 0);
+                                    const newServiceRates = missingServiceRates.map((service, index) => ({
+                                        id: currentMaxId + index + 1,
+                                        carrier: '',
+                                        code: 'SUR',
+                                        chargeName: service.label,
+                                        cost: '',
+                                        costCurrency: 'CAD',
+                                        charge: '',
+                                        chargeCurrency: 'CAD'
+                                    }));
+
+                                    setManualRates(prevRates => [...prevRates, ...newServiceRates]);
+                                }
+                            }
+
                             // Load unit system
                             if (draftData.unitSystem) {
                                 setUnitSystem(draftData.unitSystem);
@@ -2036,6 +2166,36 @@ const QuickShip = ({
                     setSelectedCarrier(editShipment.selectedCarrier);
                 } else if (editShipment.carrier) {
                     setSelectedCarrier(editShipment.carrier);
+                }
+
+                // Load additional services and create corresponding rate line items
+                if (editShipment.additionalServices && Array.isArray(editShipment.additionalServices)) {
+                    setAdditionalServices(editShipment.additionalServices);
+
+                    // Create rate line items for additional services if they don't exist
+                    const existingServiceRates = editShipment.manualRates?.filter(rate =>
+                        rate.code === 'SUR' && editShipment.additionalServices.some(service => service.label === rate.chargeName)
+                    ) || [];
+
+                    const missingServiceRates = editShipment.additionalServices.filter(service =>
+                        !existingServiceRates.some(rate => rate.chargeName === service.label)
+                    );
+
+                    if (missingServiceRates.length > 0) {
+                        const currentMaxId = Math.max(...(editShipment.manualRates?.map(r => r.id) || [0]), 0);
+                        const newServiceRates = missingServiceRates.map((service, index) => ({
+                            id: currentMaxId + index + 1,
+                            carrier: '',
+                            code: 'SUR',
+                            chargeName: service.label,
+                            cost: '',
+                            costCurrency: 'CAD',
+                            charge: '',
+                            chargeCurrency: 'CAD'
+                        }));
+
+                        setManualRates(prevRates => [...prevRates, ...newServiceRates]);
+                    }
                 }
 
                 // Load unit system
@@ -2151,6 +2311,7 @@ const QuickShip = ({
                 selectedCarrier: selectedCarrier || '', // Save empty string if not selected
                 selectedCarrierContactId: selectedCarrierContactId || '', // Save selected email contact
                 manualRates: manualRates,
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
                 unitSystem: unitSystem,
                 totalCost: totalCost,
                 carrier: selectedCarrier || '', // Direct carrier field for table display
@@ -2837,6 +2998,16 @@ const QuickShip = ({
             setIsSavingDraft(false);
         }
     };
+
+    // Load additional services when shipment type changes to freight or courier
+    useEffect(() => {
+        if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
+            loadAdditionalServices();
+        } else {
+            setAdditionalServices([]);
+            setAvailableServices([]);
+        }
+    }, [shipmentInfo.shipmentType]);
 
     // When loading a draft, if selectedCarrier is set but selectedCarrierContactId is not, default to first terminal
     useEffect(() => {
@@ -4733,6 +4904,161 @@ const QuickShip = ({
                                         })}
                                     </CardContent>
                                 </Card>
+
+                                {/* Additional Services Section - Freight and Courier */}
+                                {(shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    cursor: 'pointer',
+                                                    mb: servicesExpanded ? 3 : 0
+                                                }}
+                                                onClick={() => setServicesExpanded(!servicesExpanded)}
+                                            >
+                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                    Additional Services
+                                                    {additionalServices.length > 0 && (
+                                                        <Chip
+                                                            label={`${additionalServices.length} selected`}
+                                                            size="small"
+                                                            sx={{
+                                                                ml: 2,
+                                                                fontSize: '10px',
+                                                                bgcolor: '#7c3aed',
+                                                                color: 'white'
+                                                            }}
+                                                        />
+                                                    )}
+                                                </Typography>
+                                                <ExpandMoreIcon
+                                                    sx={{
+                                                        transform: servicesExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                        transition: 'transform 0.2s ease',
+                                                        color: '#6b7280'
+                                                    }}
+                                                />
+                                            </Box>
+
+                                            <Collapse in={servicesExpanded}>
+
+                                                {(() => {
+                                                    console.log('🔧 Rendering services UI - loadingServices:', loadingServices, 'availableServices:', availableServices);
+                                                    return null;
+                                                })()}
+                                                {loadingServices ? (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                                                        <CircularProgress sx={{ mr: 2 }} />
+                                                        <Typography sx={{ fontSize: '14px', color: '#6b7280' }}>
+                                                            Loading additional services...
+                                                        </Typography>
+                                                    </Box>
+                                                ) : availableServices.length === 0 ? (
+                                                    <Box sx={{
+                                                        p: 4,
+                                                        textAlign: 'center',
+                                                        bgcolor: '#f9fafb',
+                                                        borderRadius: 2,
+                                                        border: '1px solid #e5e7eb'
+                                                    }}>
+                                                        <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                            No additional services available
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                            Additional services can be configured in System Configuration
+                                                        </Typography>
+                                                    </Box>
+                                                ) : (
+                                                    <Grid container spacing={2}>
+                                                        {availableServices.map((service) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={service.id}>
+                                                                <Box
+                                                                    onClick={() => handleServiceToggle(service)}
+                                                                    sx={{
+                                                                        p: 2,
+                                                                        border: isServiceSelected(service.id) ? '2px solid #7c3aed' : '1px solid #e5e7eb',
+                                                                        borderRadius: 2,
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.2s ease',
+                                                                        bgcolor: isServiceSelected(service.id) ? '#f3f4f6' : 'white',
+                                                                        '&:hover': {
+                                                                            borderColor: '#7c3aed',
+                                                                            transform: 'translateY(-1px)',
+                                                                            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <Checkbox
+                                                                            checked={isServiceSelected(service.id)}
+                                                                            onChange={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleServiceToggle(service);
+                                                                            }}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                            }}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                color: '#7c3aed',
+                                                                                '&.Mui-checked': {
+                                                                                    color: '#7c3aed'
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                        <Typography
+                                                                            sx={{
+                                                                                fontSize: '12px',
+                                                                                fontWeight: 600,
+                                                                                color: isServiceSelected(service.id) ? '#7c3aed' : '#374151',
+                                                                                lineHeight: 1.3
+                                                                            }}
+                                                                        >
+                                                                            {service.label}
+                                                                        </Typography>
+                                                                    </Box>
+
+                                                                </Box>
+                                                            </Grid>
+                                                        ))}
+                                                    </Grid>
+                                                )}
+
+                                                {/* Selected Services Summary */}
+                                                {additionalServices.length > 0 && (
+                                                    <Box sx={{ mt: 3, p: 2, bgcolor: '#f0f9ff', borderRadius: 2, border: '1px solid #bae6fd' }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#0369a1', mb: 1 }}>
+                                                            Selected Additional Services ({additionalServices.length})
+                                                        </Typography>
+                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                            {additionalServices.map((service) => (
+                                                                <Chip
+                                                                    key={service.id}
+                                                                    label={service.label}
+                                                                    size="small"
+                                                                    onDelete={() => handleServiceToggle(service)}
+                                                                    sx={{
+                                                                        fontSize: '11px',
+                                                                        height: 24,
+                                                                        bgcolor: '#7c3aed',
+                                                                        color: 'white',
+                                                                        '& .MuiChip-deleteIcon': {
+                                                                            color: 'white',
+                                                                            fontSize: '14px'
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </Box>
+                                                    </Box>
+                                                )}
+                                            </Collapse>
+                                        </CardContent>
+                                    </Card>
+                                )}
 
                                 {/* Manual Rate Entry Section */}
                                 <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>

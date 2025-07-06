@@ -320,6 +320,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [serviceFilter, setServiceFilter] = useState('any');
     const [showRateDetails, setShowRateDetails] = useState(false);
 
+    // Additional Services state (for freight and courier shipments)
+    const [additionalServices, setAdditionalServices] = useState([]);
+    const [availableServices, setAvailableServices] = useState([]);
+    const [loadingServices, setLoadingServices] = useState(false);
+    const [servicesExpanded, setServicesExpanded] = useState(false);
+
     // Additional state for improved UX
     const [formErrors, setFormErrors] = useState({});
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -1015,6 +1021,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             setSelectedRate(draftData.selectedRate);
                         }
 
+                        // Load additional services and create corresponding rate line items
+                        if (draftData.additionalServices && Array.isArray(draftData.additionalServices)) {
+                            setAdditionalServices(draftData.additionalServices);
+                        }
+
                         // Load customer filter for super admins
                         if (userRole === 'superadmin' && draftData.selectedCustomerId) {
                             setSelectedCustomerId(draftData.selectedCustomerId);
@@ -1110,6 +1121,17 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
         initializeShipment();
     }, [companyData?.companyID, user?.uid, shipmentID, isEditingDraft, draftIdToLoad]);
+
+    // Load additional services when shipment type changes
+    useEffect(() => {
+        if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
+            loadAdditionalServices();
+        } else {
+            // Clear services if not freight or courier
+            setAvailableServices([]);
+            setAdditionalServices([]);
+        }
+    }, [shipmentInfo.shipmentType]);
 
     // Update package defaults when shipment type changes
     useEffect(() => {
@@ -1532,6 +1554,65 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         }));
     };
 
+    // Additional Services functions
+    const loadAdditionalServices = async () => {
+        console.log('🔧 loadAdditionalServices called, shipmentType:', shipmentInfo.shipmentType);
+        if (shipmentInfo.shipmentType !== 'freight' && shipmentInfo.shipmentType !== 'courier') {
+            console.log('🔧 Not freight or courier shipment, skipping service load');
+            return;
+        }
+
+        try {
+            console.log('🔧 Loading additional services from database for type:', shipmentInfo.shipmentType);
+            setLoadingServices(true);
+            const servicesRef = collection(db, 'shipmentServices');
+            const q = query(servicesRef, where('type', '==', shipmentInfo.shipmentType));
+            const querySnapshot = await getDocs(q);
+
+            const services = [];
+            querySnapshot.forEach((doc) => {
+                services.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            console.log('🔧 Loaded services from database:', services);
+            setAvailableServices(services);
+        } catch (error) {
+            console.error('🔧 Error loading additional services:', error);
+        } finally {
+            setLoadingServices(false);
+        }
+    };
+
+    const handleServiceToggle = (service) => {
+        console.log('🔧 handleServiceToggle called with service:', service);
+        console.log('🔧 Current additionalServices:', additionalServices);
+
+        setAdditionalServices(prev => {
+            console.log('🔧 Previous additionalServices:', prev);
+            const exists = prev.find(s => s.id === service.id);
+            console.log('🔧 Service exists?', exists);
+
+            if (exists) {
+                // Remove service
+                const updatedServices = prev.filter(s => s.id !== service.id);
+                console.log('🔧 Removing service, updated services:', updatedServices);
+                return updatedServices;
+            } else {
+                // Add service
+                const updatedServices = [...prev, service];
+                console.log('🔧 Adding service, updated services:', updatedServices);
+                return updatedServices;
+            }
+        });
+    };
+
+    const isServiceSelected = (serviceId) => {
+        return additionalServices.some(s => s.id === serviceId);
+    };
+
     // Show snackbar message
     const showMessage = (message, severity = 'success') => {
         setSnackbar({ open: true, message, severity });
@@ -1737,6 +1818,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                 // Rate information - clean undefined values if available
                 ...(selectedRate ? { selectedRate: cleanObject(selectedRate) } : {}),
+
+                // Additional Services (freight and courier)
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
 
                 // Customer filter for super admins
                 ...(userRole === 'superadmin' && selectedCustomerId ? { selectedCustomerId } : {}),
@@ -1948,8 +2032,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
 
-                // Additional services and options
-                additionalOptions: additionalOptions
+                // Additional services
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : []
             };
 
             // Debug: Log the final rate request data
@@ -2013,6 +2097,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     declaredValue: parseFloat(pkg.declaredValue || 0),
                     declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
                 })),
+
+                // Additional Services (freight and courier)
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
 
                 // Selected rate and carrier information (clean undefined values)
                 selectedRate: cleanUndefinedValues(selectedRate),
@@ -3947,184 +4034,139 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                     </CardContent>
                                 </Card>
 
-                                {/* Additional Options Section */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                cursor: 'pointer',
-                                                mb: serviceOptionsExpanded ? 3 : 0
-                                            }}
-                                            onClick={() => setServiceOptionsExpanded(!serviceOptionsExpanded)}
-                                        >
-                                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', flex: 1 }}>
-                                                Additional Options
-                                            </Typography>
-                                            {serviceOptionsExpanded ? (
-                                                <ExpandLessIcon sx={{ color: '#666' }} />
-                                            ) : (
-                                                <ExpandMoreIcon sx={{ color: '#666' }} />
-                                            )}
-                                        </Box>
-
-                                        <Collapse in={serviceOptionsExpanded}>
-                                            <Grid container spacing={3}>
-                                                {/* Delivery & Pickup Options */}
-                                                <Grid item xs={12} md={6}>
-                                                    <Box sx={{ mb: 1 }}>
-                                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                            Delivery & Pickup Options
-                                                        </Typography>
-                                                        <FormControl fullWidth size="small">
-                                                            <InputLabel sx={{ fontSize: '12px' }}>Delivery Options</InputLabel>
-                                                            <Select
-                                                                value={additionalOptions.deliveryPickupOption || ''}
-                                                                onChange={(e) => handleAdditionalOptionsChange('deliveryPickupOption', e.target.value)}
-                                                                label="Delivery Options"
-                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                            >
-                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                                    Standard Delivery
-                                                                </MenuItem>
-                                                                <MenuItem value="residential" sx={{ fontSize: '12px' }}>
-                                                                    Residential Delivery
-                                                                </MenuItem>
-                                                                <MenuItem value="holdForPickup" sx={{ fontSize: '12px' }}>
-                                                                    Hold for Pickup
-                                                                </MenuItem>
-                                                            </Select>
-                                                        </FormControl>
-                                                    </Box>
-                                                </Grid>
-
-                                                {/* Hazardous Goods */}
-                                                <Grid item xs={12} md={6}>
-                                                    <Box sx={{ mb: 1 }}>
-                                                        <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                            Hazardous Materials
-                                                        </Typography>
-                                                        <FormControl fullWidth size="small">
-                                                            <InputLabel sx={{ fontSize: '12px' }}>Hazardous Goods</InputLabel>
-                                                            <Select
-                                                                value={additionalOptions.hazardousGoods || ''}
-                                                                onChange={(e) => handleAdditionalOptionsChange('hazardousGoods', e.target.value)}
-                                                                label="Hazardous Goods"
-                                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                            >
-                                                                <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
-                                                                <MenuItem value="limited_quantity" sx={{ fontSize: '12px' }}>Limited Quantity</MenuItem>
-                                                                <MenuItem value="500kg_exemption" sx={{ fontSize: '12px' }}>500kg Exemption</MenuItem>
-                                                                <MenuItem value="fully_regulated" sx={{ fontSize: '12px' }}>Fully Regulated</MenuItem>
-                                                            </Select>
-                                                        </FormControl>
-                                                    </Box>
-                                                </Grid>
-
-                                                {/* Courier-specific options */}
-                                                {shipmentInfo.shipmentType === 'courier' && (
-                                                    <>
-                                                        {/* Priority Delivery */}
-                                                        <Grid item xs={12} md={6}>
-                                                            <Box sx={{ mb: 1 }}>
-                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                    Priority Delivery
-                                                                </Typography>
-                                                                <FormControl fullWidth size="small">
-                                                                    <InputLabel sx={{ fontSize: '12px' }}>Priority Options</InputLabel>
-                                                                    <Select
-                                                                        value={additionalOptions.priorityDelivery || ''}
-                                                                        onChange={(e) => handleAdditionalOptionsChange('priorityDelivery', e.target.value)}
-                                                                        label="Priority Options"
-                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                                    >
-                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
-                                                                        <MenuItem value="10am" sx={{ fontSize: '12px' }}>10AM Delivery</MenuItem>
-                                                                        <MenuItem value="noon" sx={{ fontSize: '12px' }}>Noon Delivery</MenuItem>
-                                                                        <MenuItem value="saturday" sx={{ fontSize: '12px' }}>Saturday Delivery</MenuItem>
-                                                                    </Select>
-                                                                </FormControl>
-                                                            </Box>
-                                                        </Grid>
-
-                                                        {/* Signature Options */}
-                                                        <Grid item xs={12} md={6}>
-                                                            <Box sx={{ mb: 1 }}>
-                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                    Signature Requirements
-                                                                </Typography>
-                                                                <FormControl fullWidth size="small">
-                                                                    <InputLabel sx={{ fontSize: '12px' }}>Signature Options</InputLabel>
-                                                                    <Select
-                                                                        value={additionalOptions.signatureOptions || ''}
-                                                                        onChange={(e) => handleAdditionalOptionsChange('signatureOptions', e.target.value)}
-                                                                        label="Signature Options"
-                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                                    >
-                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>No Signature Required</MenuItem>
-                                                                        <MenuItem value="standard" sx={{ fontSize: '12px' }}>Signature Required</MenuItem>
-                                                                        <MenuItem value="adult" sx={{ fontSize: '12px' }}>Adult Signature Required</MenuItem>
-                                                                    </Select>
-                                                                </FormControl>
-                                                            </Box>
-                                                        </Grid>
-                                                    </>
+                                {/* Additional Services Section - Freight and Courier */}
+                                {(shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    cursor: 'pointer',
+                                                    mb: servicesExpanded ? 3 : 0
+                                                }}
+                                                onClick={() => setServicesExpanded(!servicesExpanded)}
+                                            >
+                                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', flex: 1 }}>
+                                                    Additional Services
+                                                    {additionalServices.length > 0 && (
+                                                        <Chip
+                                                            label={`${additionalServices.length} selected`}
+                                                            size="small"
+                                                            sx={{
+                                                                ml: 2,
+                                                                bgcolor: '#7c3aed',
+                                                                color: 'white',
+                                                                fontSize: '11px',
+                                                                height: '20px'
+                                                            }}
+                                                        />
+                                                    )}
+                                                </Typography>
+                                                {servicesExpanded ? (
+                                                    <ExpandLessIcon sx={{ color: '#666' }} />
+                                                ) : (
+                                                    <ExpandMoreIcon sx={{ color: '#666' }} />
                                                 )}
+                                            </Box>
 
-                                                {/* Freight-specific options */}
-                                                {shipmentInfo.shipmentType === 'freight' && (
-                                                    <>
-                                                        {/* Liftgate Service */}
-                                                        <Grid item xs={12} md={6}>
-                                                            <Box sx={{ mb: 1 }}>
-                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                    Liftgate Service
-                                                                </Typography>
-                                                                <FormControl fullWidth size="small">
-                                                                    <InputLabel sx={{ fontSize: '12px' }}>Liftgate Options</InputLabel>
-                                                                    <Select
-                                                                        value={additionalOptions.liftgateService || ''}
-                                                                        onChange={(e) => handleAdditionalOptionsChange('liftgateService', e.target.value)}
-                                                                        label="Liftgate Options"
-                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                                    >
-                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>No Liftgate Required</MenuItem>
-                                                                        <MenuItem value="pickup" sx={{ fontSize: '12px' }}>Liftgate at Pickup</MenuItem>
-                                                                        <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Liftgate at Delivery</MenuItem>
-                                                                        <MenuItem value="both" sx={{ fontSize: '12px' }}>Liftgate at Both</MenuItem>
-                                                                    </Select>
-                                                                </FormControl>
-                                                            </Box>
-                                                        </Grid>
-
-                                                        {/* Inside Delivery */}
-                                                        <Grid item xs={12} md={6}>
-                                                            <Box sx={{ mb: 1 }}>
-                                                                <Typography variant="subtitle2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                    Inside Delivery
-                                                                </Typography>
-                                                                <FormControl fullWidth size="small">
-                                                                    <InputLabel sx={{ fontSize: '12px' }}>Inside Delivery</InputLabel>
-                                                                    <Select
-                                                                        value={additionalOptions.insideDelivery || ''}
-                                                                        onChange={(e) => handleAdditionalOptionsChange('insideDelivery', e.target.value)}
-                                                                        label="Inside Delivery"
-                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                                    >
-                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>Standard Delivery</MenuItem>
-                                                                        <MenuItem value="inside" sx={{ fontSize: '12px' }}>Inside Delivery</MenuItem>
-                                                                        <MenuItem value="threshold" sx={{ fontSize: '12px' }}>Threshold Delivery</MenuItem>
-                                                                    </Select>
-                                                                </FormControl>
-                                                            </Box>
-                                                        </Grid>
-                                                    </>
+                                            <Collapse in={servicesExpanded}>
+                                                {(() => {
+                                                    console.log('🔧 Rendering services UI - loadingServices:', loadingServices, 'availableServices:', availableServices);
+                                                    return null;
+                                                })()}
+                                                {loadingServices ? (
+                                                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                                                        <CircularProgress sx={{ mr: 2 }} />
+                                                        <Typography sx={{ fontSize: '14px', color: '#6b7280' }}>
+                                                            Loading additional services...
+                                                        </Typography>
+                                                    </Box>
+                                                ) : availableServices.length === 0 ? (
+                                                    <Box sx={{
+                                                        p: 4,
+                                                        textAlign: 'center',
+                                                        bgcolor: '#f9fafb',
+                                                        borderRadius: 2,
+                                                        border: '1px solid #e5e7eb'
+                                                    }}>
+                                                        <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                            No additional services available
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                            Additional services can be configured in System Configuration
+                                                        </Typography>
+                                                    </Box>
+                                                ) : (
+                                                    <Grid container spacing={2}>
+                                                        {availableServices.map((service) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={service.id}>
+                                                                <Box
+                                                                    sx={{
+                                                                        p: 2,
+                                                                        border: '1px solid #e5e7eb',
+                                                                        borderRadius: 2,
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.2s ease',
+                                                                        bgcolor: isServiceSelected(service.id) ? '#f0f9ff' : '#fff',
+                                                                        borderColor: isServiceSelected(service.id) ? '#0ea5e9' : '#e5e7eb',
+                                                                        '&:hover': {
+                                                                            borderColor: '#0ea5e9',
+                                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleServiceToggle(service)}
+                                                                >
+                                                                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                                                                        <Checkbox
+                                                                            checked={isServiceSelected(service.id)}
+                                                                            onChange={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleServiceToggle(service);
+                                                                            }}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                            }}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                color: '#6b7280',
+                                                                                '&.Mui-checked': {
+                                                                                    color: '#0ea5e9'
+                                                                                },
+                                                                                mt: -0.5
+                                                                            }}
+                                                                        />
+                                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                            <Typography sx={{
+                                                                                fontSize: '12px',
+                                                                                fontWeight: 500,
+                                                                                color: '#374151',
+                                                                                mb: 0.5,
+                                                                                lineHeight: 1.3
+                                                                            }}>
+                                                                                {service.label}
+                                                                            </Typography>
+                                                                            {service.description && (
+                                                                                <Typography sx={{
+                                                                                    fontSize: '11px',
+                                                                                    color: '#6b7280',
+                                                                                    lineHeight: 1.3,
+                                                                                    fontWeight: 400
+                                                                                }}>
+                                                                                    {service.description}
+                                                                                </Typography>
+                                                                            )}
+                                                                        </Box>
+                                                                    </Box>
+                                                                </Box>
+                                                            </Grid>
+                                                        ))}
+                                                    </Grid>
                                                 )}
-                                            </Grid>
-                                        </Collapse>
-                                    </CardContent>
-                                </Card>
+                                            </Collapse>
+                                        </CardContent>
+                                    </Card>
+                                )}
 
                                 {/* Rates Section */}
                                 {

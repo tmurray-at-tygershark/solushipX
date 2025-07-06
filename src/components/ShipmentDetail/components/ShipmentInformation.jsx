@@ -1420,6 +1420,46 @@ const ShipmentInformation = ({
                     </Box>
                 </Grid>
 
+                {/* Additional Services Information */}
+                {shipment?.additionalServices && shipment.additionalServices.length > 0 && (
+                    <Grid item xs={12} md={3}>
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: 'background.default',
+                            borderRadius: 1,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            height: '100%'
+                        }}>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                Additional Services
+                            </Typography>
+                            <Stack spacing={1}>
+                                {shipment.additionalServices.map((service, index) => (
+                                    <Box key={index}>
+                                        <Chip
+                                            label={service.label || service.code}
+                                            size="small"
+                                            sx={{
+                                                bgcolor: '#7c3aed',
+                                                color: 'white',
+                                                fontSize: '11px',
+                                                height: '20px',
+                                                mb: 0.5
+                                            }}
+                                        />
+                                        {service.description && (
+                                            <Typography variant="caption" sx={{ fontSize: '10px', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                                                {service.description}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                ))}
+                            </Stack>
+                        </Box>
+                    </Grid>
+                )}
+
                 {/* Tracking Information */}
                 <Grid item xs={12} md={3}>
                     <Box sx={{
