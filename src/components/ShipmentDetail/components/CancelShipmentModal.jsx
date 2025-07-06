@@ -14,10 +14,10 @@ import {
     IconButton,
     Divider,
     LinearProgress,
-    RadioGroup,
-    Radio,
     FormControl,
-    FormLabel
+    InputLabel,
+    Select,
+    MenuItem
 } from '@mui/material';
 import {
     Close as CloseIcon,
@@ -29,6 +29,7 @@ import {
 } from '@mui/icons-material';
 import { functions } from '../../../firebase';
 import { httpsCallable } from 'firebase/functions';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const CancelShipmentModal = ({
     open,
@@ -37,12 +38,18 @@ const CancelShipmentModal = ({
     onShipmentCancelled,
     showNotification
 }) => {
+    const { currentUser } = useAuth();
+
     // Form state
     const [cancellationReason, setCancellationReason] = useState('');
     const [selectedReasonType, setSelectedReasonType] = useState('customer_request');
     const [notifyCarrier, setNotifyCarrier] = useState(true);
     const [notifyShipper, setNotifyShipper] = useState(true);
     const [loading, setLoading] = useState(false);
+    const [chargesToCancel, setChargesToCancel] = useState([]);
+
+    // Check if user is admin or super admin
+    const isAdminUser = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
     // Predefined cancellation reasons
     const cancellationReasons = {
@@ -110,6 +117,66 @@ const CancelShipmentModal = ({
 
     const warning = getCancellationWarning();
 
+    // Get available charges for selection
+    const getAvailableCharges = () => {
+        const charges = [];
+
+        // Add manual rates
+        if (shipment?.manualRates && shipment.manualRates.length > 0) {
+            shipment.manualRates.forEach((rate, index) => {
+                const charge = parseFloat(rate.charge) || 0;
+                const cost = parseFloat(rate.cost) || 0;
+
+                if (charge > 0 || cost > 0) {
+                    charges.push({
+                        id: rate.id || `manual_${index}`,
+                        name: rate.chargeName || rate.name || `Charge ${index + 1}`,
+                        charge: charge,
+                        cost: cost,
+                        currency: rate.currency || shipment.currency || 'CAD',
+                        type: 'manual'
+                    });
+                }
+            });
+        }
+
+        // Add carrier confirmation rates if no manual rates
+        if (charges.length === 0 && shipment?.carrierConfirmationRates && shipment.carrierConfirmationRates.length > 0) {
+            shipment.carrierConfirmationRates.forEach((rate, index) => {
+                const charge = parseFloat(rate.charge) || 0;
+                const cost = parseFloat(rate.cost) || 0;
+
+                if (charge > 0 || cost > 0) {
+                    charges.push({
+                        id: rate.id || `carrier_${index}`,
+                        name: rate.chargeName || rate.name || `Charge ${index + 1}`,
+                        charge: charge,
+                        cost: cost,
+                        currency: rate.currency || shipment.currency || 'CAD',
+                        type: 'carrier'
+                    });
+                }
+            });
+        }
+
+        return charges;
+    };
+
+    const availableCharges = getAvailableCharges();
+
+    // Handle charge selection
+    const handleChargeToggle = (chargeId) => {
+        setChargesToCancel(prev => {
+            if (prev.includes(chargeId)) {
+                return prev.filter(id => id !== chargeId);
+            } else {
+                return [...prev, chargeId];
+            }
+        });
+    };
+
+    // No smart defaults - preserve all charges by default
+
     // Handle cancellation
     const handleCancelShipment = async () => {
         if (!canCancelShipment()) {
@@ -136,7 +203,8 @@ const CancelShipmentModal = ({
                 firebaseDocId: shipment.id,
                 reason: finalReason,
                 notifyCarrier: notifyCarrier,
-                notifyShipper: notifyShipper
+                notifyShipper: notifyShipper,
+                chargesToCancel: chargesToCancel.length > 0 ? chargesToCancel : null
             });
 
             if (result.data && result.data.success) {
@@ -233,48 +301,53 @@ const CancelShipmentModal = ({
 
                 {/* Cancellation reason selection */}
                 <Box sx={{ mb: 3 }}>
-                    <FormControl component="fieldset" fullWidth>
-                        <FormLabel component="legend" sx={{ fontWeight: 600, mb: 1 }}>
-                            Reason for Cancellation *
-                        </FormLabel>
-                        <RadioGroup
+                    <FormControl fullWidth required>
+                        <InputLabel id="cancellation-reason-label">Reason for Cancellation</InputLabel>
+                        <Select
+                            labelId="cancellation-reason-label"
                             value={selectedReasonType}
                             onChange={(e) => setSelectedReasonType(e.target.value)}
+                            label="Reason for Cancellation"
+                            size="medium"
                         >
                             {Object.entries(cancellationReasons).map(([key, label]) => (
-                                <FormControlLabel
-                                    key={key}
-                                    value={key}
-                                    control={<Radio size="small" />}
-                                    label={label}
-                                    sx={{
-                                        '& .MuiFormControlLabel-label': {
-                                            fontSize: '14px'
-                                        }
-                                    }}
-                                />
+                                <MenuItem key={key} value={key}>
+                                    {label}
+                                </MenuItem>
                             ))}
-                        </RadioGroup>
+                        </Select>
                     </FormControl>
                 </Box>
 
-                {/* Additional details */}
-                <Box sx={{ mb: 3 }}>
-                    <TextField
-                        fullWidth
-                        label={selectedReasonType === 'other' ? "Cancellation Reason *" : "Additional Details (Optional)"}
-                        multiline
-                        rows={3}
-                        value={cancellationReason}
-                        onChange={(e) => setCancellationReason(e.target.value)}
-                        placeholder={selectedReasonType === 'other'
-                            ? "Please specify the reason for cancellation..."
-                            : "Any additional details about the cancellation..."
-                        }
-                        required={selectedReasonType === 'other'}
-                        variant="outlined"
-                    />
-                </Box>
+                {/* Additional details - only show for "other" or as optional for non-other */}
+                {selectedReasonType === 'other' ? (
+                    <Box sx={{ mb: 3 }}>
+                        <TextField
+                            fullWidth
+                            label="Cancellation Reason *"
+                            multiline
+                            rows={3}
+                            value={cancellationReason}
+                            onChange={(e) => setCancellationReason(e.target.value)}
+                            placeholder="Please specify the reason for cancellation..."
+                            required
+                            variant="outlined"
+                        />
+                    </Box>
+                ) : (
+                    <Box sx={{ mb: 3 }}>
+                        <TextField
+                            fullWidth
+                            label="Additional Details (Optional)"
+                            multiline
+                            rows={3}
+                            value={cancellationReason}
+                            onChange={(e) => setCancellationReason(e.target.value)}
+                            placeholder="Any additional details about the cancellation..."
+                            variant="outlined"
+                        />
+                    </Box>
+                )}
 
                 <Divider sx={{ my: 3 }} />
 
@@ -336,29 +409,92 @@ const CancelShipmentModal = ({
                     />
                 </Box>
 
-                {/* Shipment summary */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        Shipment Summary:
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                        <strong>From:</strong> {shipment?.shipFrom?.companyName || shipment?.shipFrom?.name || 'N/A'}
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                        <strong>To:</strong> {shipment?.shipTo?.companyName || shipment?.shipTo?.name || 'N/A'}
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                        <strong>Carrier:</strong> {shipment?.selectedCarrier || shipment?.carrier || 'N/A'}
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                        <strong>Status:</strong> {shipment?.status || 'N/A'}
-                    </Typography>
-                    {shipment?.selectedRate?.totalCost && (
-                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                            <strong>Cost:</strong> ${shipment.selectedRate.totalCost} {shipment.selectedRate.currency || 'CAD'}
+                {/* Charge Selection - Only for Admin/Super Admin */}
+                {availableCharges.length > 0 && isAdminUser && (
+                    <>
+                        <Divider sx={{ my: 3 }} />
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                            <RefundIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                            Charge Cancellation
                         </Typography>
-                    )}
-                </Box>
+                        <Alert severity="info" sx={{ mb: 2 }}>
+                            <strong>Admin Control:</strong> By default, all charges are preserved when cancelling shipments.
+                            As an admin, you can select specific charges to cancel if needed.
+                        </Alert>
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 1 }}>
+                            {availableCharges.map((charge) => {
+                                const isSelected = chargesToCancel.includes(charge.id);
+
+                                return (
+                                    <FormControlLabel
+                                        key={charge.id}
+                                        control={
+                                            <Checkbox
+                                                checked={isSelected}
+                                                onChange={() => handleChargeToggle(charge.id)}
+                                                disabled={loading}
+                                            />
+                                        }
+                                        label={
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                                <Box>
+                                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                        {charge.name}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {isSelected ? 'Will be cancelled' : 'Will be preserved (default)'}
+                                                    </Typography>
+                                                </Box>
+                                                <Typography variant="body2" sx={{
+                                                    fontWeight: 600,
+                                                    color: isSelected ? 'error.main' : 'success.main'
+                                                }}>
+                                                    ${charge.charge.toFixed(2)} {charge.currency}
+                                                </Typography>
+                                            </Box>
+                                        }
+                                        sx={{
+                                            alignItems: 'flex-start',
+                                            '& .MuiFormControlLabel-label': { width: '100%' }
+                                        }}
+                                    />
+                                );
+                            })}
+                        </Box>
+
+                        {/* Charge summary */}
+                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                                Cancellation Summary:
+                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                    <strong>Charges to Cancel:</strong>
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'error.main', fontWeight: 600 }}>
+                                    ${availableCharges
+                                        .filter(charge => chargesToCancel.includes(charge.id))
+                                        .reduce((sum, charge) => sum + charge.charge, 0)
+                                        .toFixed(2)} {availableCharges[0]?.currency || 'CAD'}
+                                </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                    <strong>Charges to Preserve:</strong>
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: 'success.main', fontWeight: 600 }}>
+                                    ${availableCharges
+                                        .filter(charge => !chargesToCancel.includes(charge.id))
+                                        .reduce((sum, charge) => sum + charge.charge, 0)
+                                        .toFixed(2)} {availableCharges[0]?.currency || 'CAD'}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </>
+                )}
+
+
             </DialogContent>
 
             <Divider />

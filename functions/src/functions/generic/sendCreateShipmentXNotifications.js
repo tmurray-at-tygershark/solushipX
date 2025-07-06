@@ -1054,6 +1054,8 @@ SHIPMENT INFORMATION
 - Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}
 - Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
+${shipmentData.shipmentInfo?.eta1 ? `- ETA 1: ${formatDate(shipmentData.shipmentInfo.eta1)}` : ''}
+${shipmentData.shipmentInfo?.eta2 ? `- ETA 2: ${formatDate(shipmentData.shipmentInfo.eta2)}` : ''}
 ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}` : ''}
 
 CARRIER & SERVICE
@@ -1150,6 +1152,8 @@ function generateCreateShipmentXCarrierHTML(shipmentData, totalPieces, totalWeig
                         }
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Bill Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${shipmentData.shipmentInfo?.billType || 'third_party'}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Ship Date:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo?.shipmentDate)}</td></tr>
+                        ${shipmentData.shipmentInfo?.eta1 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>ETA 1:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo.eta1)}</td></tr>` : ''}
+                        ${shipmentData.shipmentInfo?.eta2 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>ETA 2:</strong></td><td style="padding: 8px 0;">${formatDate(shipmentData.shipmentInfo.eta2)}</td></tr>` : ''}
                         ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}</td></tr>` : ''}
                     </table>
                 </div>
@@ -1268,6 +1272,8 @@ SHIPMENT INFORMATION
 - Reference #: ${shipmentData.shipmentInfo?.shipperReferenceNumber || shipmentData.shipmentID || shipmentData.id}
 - Bill Type: ${getBillTypeLabel(shipmentData.shipmentInfo?.billType || 'third_party')}
 - Ship Date: ${formatDate(shipmentData.shipmentInfo?.shipmentDate)}
+${shipmentData.shipmentInfo?.eta1 ? `- ETA 1: ${formatDate(shipmentData.shipmentInfo.eta1)}` : ''}
+${shipmentData.shipmentInfo?.eta2 ? `- ETA 2: ${formatDate(shipmentData.shipmentInfo.eta2)}` : ''}
 ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber ? `- Tracking #: ${shipmentData.trackingNumber || shipmentData.shipmentInfo?.carrierTrackingNumber}` : ''}
 
 CARRIER CONTACT INFORMATION

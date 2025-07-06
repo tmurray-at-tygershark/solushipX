@@ -21,7 +21,9 @@ import {
     CalendarToday as CalendarIcon,
     HelpOutline as HelpOutlineIcon,
     CheckCircleOutline as CheckCircleOutlineIcon,
-    Info as InfoIcon
+    Info as InfoIcon,
+    Description as DescriptionIcon,
+    Assignment as AssignmentIcon
 } from '@mui/icons-material';
 
 // Consistent helper functions (can be moved to a utils file later)
@@ -101,21 +103,85 @@ const formatTimestamp = (timestamp) => {
     }
 };
 
-const getStatusColor = (status) => {
+const getStatusColor = (status, eventType) => {
+    // First check eventType for specific colors
+    if (eventType) {
+        const eventTypeStr = eventType.toLowerCase();
+        if (eventTypeStr === 'document_generated') return 'success.main'; // Green for documents
+        if (eventTypeStr === 'booking_confirmed') return 'primary.main'; // Blue for booking
+        if (eventTypeStr === 'shipment_cancelled') return 'error.main'; // Red for cancellation
+        if (eventTypeStr === 'created') return 'info.main'; // Light blue for creation
+        if (eventTypeStr === 'status_update') return 'warning.main'; // Orange for updates
+        if (eventTypeStr === 'user_action') return 'secondary.main'; // Purple for user actions
+        if (eventTypeStr === 'tracking_update') return 'primary.main'; // Blue for tracking
+        if (eventTypeStr === 'carrier_update') return 'primary.main'; // Blue for carrier updates
+    }
+
+    // Fallback to status-based colors
     const s = status?.toLowerCase() || '';
     if (s.includes('delivered')) return 'success.main';
     if (s.includes('picked up') || s.includes('departed') || s.includes('in transit') || s.includes('arrived') || s.includes('in_transit')) return 'primary.main';
     if (s.includes('exception') || s.includes('issue') || s.includes('on hold') || s.includes('on_hold')) return 'error.main';
     if (s.includes('pending') || s.includes('created')) return 'warning.main';
     if (s.includes('scheduled')) return 'info.main';
-    if (s.includes('booked')) return 'secondary.main';
-    if (s.includes('cancelled') || s.includes('canceled') || s.includes('void')) return 'error.dark';
+    if (s.includes('booked') || s.includes('booking confirmed')) return 'primary.main';
+    if (s.includes('cancelled') || s.includes('canceled') || s.includes('void')) return 'error.main';
     if (s.includes('draft')) return 'grey.500';
-    return 'action.active';
+    if (s.includes('generated') || s.includes('confirmation') || s.includes('bol')) return 'success.main';
+    return 'grey.600'; // Default grey for unknown events
 };
 
-const getStatusIcon = (status) => {
-    if (!status) return <HelpOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+const getStatusIcon = (status, eventType) => {
+    if (!status && !eventType) return <HelpOutlineIcon sx={{ fontSize: '1.2rem', color: 'grey.500' }} />;
+
+    // First check eventType for specific event types
+    if (eventType) {
+        const eventTypeStr = eventType.toLowerCase();
+        // Document generation events
+        if (eventTypeStr === 'document_generated') {
+            // Check the title to determine specific document type
+            const titleStr = status?.toLowerCase() || '';
+            if (titleStr.includes('bol')) {
+                return <DescriptionIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+            }
+            if (titleStr.includes('confirmation')) {
+                return <AssignmentIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+            }
+            return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Booking confirmation events
+        if (eventTypeStr === 'booking_confirmed') {
+            return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Cancellation events
+        if (eventTypeStr === 'shipment_cancelled') {
+            return <CancelIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Creation events
+        if (eventTypeStr === 'created') {
+            return <AccessTimeIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Status update events
+        if (eventTypeStr === 'status_update') {
+            return <InfoIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // User action events
+        if (eventTypeStr === 'user_action') {
+            return <EditIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Tracking update events
+        if (eventTypeStr === 'tracking_update') {
+            return <LocalShippingIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+        // Carrier update events
+        if (eventTypeStr === 'carrier_update') {
+            return <LocalShippingIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+        }
+    }
+
+    // Fallback to status-based icon detection
+    if (!status) return <HelpOutlineIcon sx={{ fontSize: '1.2rem', color: 'grey.500' }} />;
+
     // Normalize: remove common prefixes and trim
     let s = status.toLowerCase().trim();
     // Remove 'status updated:' or 'status updated -' prefix
@@ -126,25 +192,29 @@ const getStatusIcon = (status) => {
     s = s.replace(/^status[:\-]?\s*/i, '');
 
     // Status update events
-    if (status.toLowerCase().includes('status updated') || status.toLowerCase().includes('status_update')) return <InfoIcon sx={{ fontSize: '1.2rem' }} />;
+    if (status.toLowerCase().includes('status updated') || status.toLowerCase().includes('status_update')) return <InfoIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     // Booking events
-    if (s.includes('booking confirmed') || s.includes('booking_confirmed')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('booking confirmed') || s.includes('booking_confirmed')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    // Document generation events
+    if (s.includes('bol generated') || s.includes('bol')) return <DescriptionIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('confirmation generated') || s.includes('carrier confirmation')) return <AssignmentIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('generated')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     // Status-specific icons
-    if (s.includes('delivered')) return <CheckCircleIcon sx={{ fontSize: '1.2rem' }} />;
+    if (s.includes('delivered')) return <CheckCircleIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     if (s.includes('in transit') || s.includes('in_transit') || s.includes('picked up') || s.includes('departed') || s.includes('arrived'))
-        return <LocalShippingIcon sx={{ fontSize: '1.2rem' }} />;
+        return <LocalShippingIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     if (s.includes('awaiting_shipment') || s.includes('awaiting shipment') || s.includes('label_created'))
-        return <AccessTimeIcon sx={{ fontSize: '1.2rem' }} />;
+        return <AccessTimeIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     if (s.includes('on_hold') || s.includes('on hold') || s.includes('exception') || s.includes('issue'))
-        return <ErrorOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+        return <ErrorOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     if (s.includes('canceled') || s.includes('cancelled') || s.includes('void'))
-        return <CancelIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('draft')) return <EditIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('booked')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('scheduled')) return <CalendarIcon sx={{ fontSize: '1.2rem' }} />;
-    if (s.includes('pending') || s.includes('created')) return <AccessTimeIcon sx={{ fontSize: '1.2rem' }} />;
+        return <CancelIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('draft')) return <EditIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('booked')) return <CheckCircleOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('scheduled')) return <CalendarIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
+    if (s.includes('pending') || s.includes('created')) return <AccessTimeIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
     // Default icon for unknown status
-    return <HelpOutlineIcon sx={{ fontSize: '1.2rem' }} />;
+    return <HelpOutlineIcon sx={{ fontSize: '1.2rem', color: 'white' }} />;
 };
 
 
@@ -246,11 +316,13 @@ const ShipmentTimeline = ({ events }) => {
                     <TimelineSeparator>
                         <TimelineDot
                             sx={{
-                                bgcolor: getStatusColor(event.status || event.eventType),
-                                color: 'common.white',
+                                bgcolor: getStatusColor(event.status || event.title, event.eventType),
+                                '& .MuiSvgIcon-root': {
+                                    color: 'white !important'
+                                }
                             }}
                         >
-                            {getStatusIcon(event.status || event.eventType)}
+                            {getStatusIcon(event.status || event.title, event.eventType)}
                         </TimelineDot>
                         <TimelineConnector />
                     </TimelineSeparator>

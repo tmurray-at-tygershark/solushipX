@@ -147,6 +147,11 @@ if (carrierApiFunctions && carrierApiFunctions.getRatesCanpar) {
 exports.bookRateUniversal = bookRateUniversal;
 console.log('LOG-MAIN-INDEX: exports.bookRateUniversal defined.');
 
+// General cancellation function - TEMPORARILY COMMENTED OUT FOR TESTING
+// const { cancelShipment } = require('./cancelShipment');
+// exports.cancelShipment = cancelShipment;
+// console.log('LOG-MAIN-INDEX: exports.cancelShipment defined.');
+
 // AI Agent functions
 exports.createShippingOrigin = createShippingOrigin;
 console.log('LOG-MAIN-INDEX: exports.createShippingOrigin defined.');

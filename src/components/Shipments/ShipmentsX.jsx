@@ -3029,9 +3029,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         // Navigate to the shipment detail view and trigger edit mode
         // This will open the shipment detail and automatically open the edit modal
         pushView({
+            key: `shipment-detail-${shipment.id}-edit`,
             component: 'shipment-detail',
-            shipmentId: shipment.id,
-            editMode: true // Flag to automatically open edit modal
+            props: {
+                shipmentId: shipment.id,
+                editMode: true // Flag to automatically open edit modal
+            }
         });
     }, [pushView]);
 

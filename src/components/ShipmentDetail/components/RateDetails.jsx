@@ -335,16 +335,6 @@ const RateDetails = ({
     return (
         <Grid item xs={12} sx={{ mb: 1 }}>
             <Paper>
-                <Box
-                    sx={{
-                        p: 2,
-                        borderBottom: '1px solid #e0e0e0'
-                    }}
-                >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#000', fontSize: '16px' }}>
-                        Rate Details
-                    </Typography>
-                </Box>
                 <Box sx={{ p: 2 }}>
                     {/* Admin Markup Summary */}
                     {enhancedIsAdmin && markupSummary?.hasMarkup && (
@@ -365,65 +355,9 @@ const RateDetails = ({
                         </Box>
                     )}
 
-                    {/* Service Information Table */}
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
-                            Service Information
-                        </Typography>
-                        <TableContainer>
-                            <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
-                                <TableBody>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '30%', bgcolor: '#f8fafc' }}>
-                                            Carrier
-                                        </TableCell>
-                                        <TableCell sx={{ fontSize: '12px' }}>
-                                            <CarrierDisplay
-                                                carrierName={serviceInfo.carrier}
-                                                carrierData={carrierData}
-                                                size="small"
-                                                isIntegrationCarrier={serviceInfo.isIntegrationCarrier}
-                                            />
-                                        </TableCell>
-                                    </TableRow>
-                                    {serviceInfo.service !== 'N/A' && (
-                                        <TableRow>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
-                                                Service
-                                            </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                {serviceInfo.service}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                    {serviceInfo.transitTime !== 'N/A' && (
-                                        <TableRow>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
-                                                Transit Time
-                                            </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                {serviceInfo.transitTime}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                    {serviceInfo.estimatedDelivery !== 'N/A' && (
-                                        <TableRow>
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
-                                                Estimated Delivery
-                                            </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                {serviceInfo.estimatedDelivery}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Box>
-
                     {/* Rate Breakdown Table */}
                     <Box sx={{ mb: 3 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '16px', color: '#374151' }}>
                             Rate Breakdown
                         </Typography>
                         <TableContainer>

@@ -775,6 +775,12 @@ const ShipmentInformation = ({
             }
             // Handle objects that might have a different structure
             else if (timestamp && typeof timestamp === 'object') {
+                // Handle serverTimestamp placeholders (these should not exist in production)
+                if (timestamp._methodName === 'serverTimestamp') {
+                    console.warn('Found serverTimestamp placeholder in data - this should not happen in production:', timestamp);
+                    return 'Pending...';
+                }
+
                 // Try to extract a date value from the object
                 if (timestamp.date) {
                     date = new Date(timestamp.date);
@@ -1205,21 +1211,21 @@ const ShipmentInformation = ({
                         borderColor: 'divider',
                         height: '100%'
                     }}>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                             Basic Information
                         </Typography>
                         <Stack spacing={2}>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Company ID</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Company ID</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{shipment?.companyID || 'N/A'}</Typography>
                             </Box>
 
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Shipment Type</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Shipment Type</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Reference Numbers</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Reference Numbers</Typography>
                                 {/* Primary reference */}
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                                     <Typography variant="body2" sx={{ fontSize: '12px' }}>
@@ -1269,7 +1275,7 @@ const ShipmentInformation = ({
                                 )}
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Bill Type</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Bill Type</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {formatBillType(shipment?.shipmentInfo?.shipmentBillType || shipment?.shipmentInfo?.billType)}
                                 </Typography>
@@ -1288,18 +1294,18 @@ const ShipmentInformation = ({
                         borderColor: 'divider',
                         height: '100%'
                     }}>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                             Timing Information
                         </Typography>
                         <Stack spacing={2}>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Created At</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Created At</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {formatTimestamp(shipment?.createdAt)}
                                 </Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Shipment Date</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Shipment Date</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {formatShipmentDate(shipment?.shipmentInfo?.shipmentDate)}
                                 </Typography>
@@ -1307,7 +1313,7 @@ const ShipmentInformation = ({
                             {/* Hide Estimated Delivery for QuickShip */}
                             {shipment?.creationMethod !== 'quickship' && (
                                 <Box>
-                                    <Typography variant="caption" color="text.secondary">Estimated Delivery</Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Estimated Delivery</Typography>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: '0.9rem' }} />
                                         <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px' }}>
@@ -1337,7 +1343,7 @@ const ShipmentInformation = ({
                                 </Box>
                             )}
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Origin Operating Hours</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Origin Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {(() => {
                                         const openTime = extractOpenTime(shipment?.shipFrom);
@@ -1349,7 +1355,7 @@ const ShipmentInformation = ({
                                 </Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Destination Operating Hours</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Destination Operating Hours</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {(() => {
                                         const openTime = extractOpenTime(shipment?.shipTo);
@@ -1360,6 +1366,56 @@ const ShipmentInformation = ({
                                     })()}
                                 </Typography>
                             </Box>
+
+                            {/* ETA Fields */}
+                            {(shipment?.shipmentInfo?.eta1 || shipment?.shipmentInfo?.eta2) && (
+                                <>
+                                    {shipment?.shipmentInfo?.eta1 && (
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>ETA 1</Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {(() => {
+                                                    try {
+                                                        const date = shipment.shipmentInfo.eta1?.toDate ?
+                                                            shipment.shipmentInfo.eta1.toDate() :
+                                                            new Date(shipment.shipmentInfo.eta1);
+                                                        return date.toLocaleDateString('en-US', {
+                                                            weekday: 'short',
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric'
+                                                        });
+                                                    } catch (error) {
+                                                        return 'Invalid Date';
+                                                    }
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                    {shipment?.shipmentInfo?.eta2 && (
+                                        <Box>
+                                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>ETA 2</Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                {(() => {
+                                                    try {
+                                                        const date = shipment.shipmentInfo.eta2?.toDate ?
+                                                            shipment.shipmentInfo.eta2.toDate() :
+                                                            new Date(shipment.shipmentInfo.eta2);
+                                                        return date.toLocaleDateString('en-US', {
+                                                            weekday: 'short',
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric'
+                                                        });
+                                                    } catch (error) {
+                                                        return 'Invalid Date';
+                                                    }
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                </>
+                            )}
                         </Stack>
                     </Box>
                 </Grid>
@@ -1374,12 +1430,12 @@ const ShipmentInformation = ({
                         borderColor: 'divider',
                         height: '100%'
                     }}>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                             Tracking & Status
                         </Typography>
                         <Stack spacing={2}>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Current Status</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Current Status</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
                                     <ManualStatusOverride
                                         shipment={shipment}
@@ -1405,7 +1461,7 @@ const ShipmentInformation = ({
                                 </Box>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Carrier</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Carrier</Typography>
                                 <CarrierDisplay
                                     carrierName={shipment?.creationMethod === 'quickship' ?
                                         (shipment?.selectedCarrier || shipment?.carrier) :
@@ -1419,14 +1475,14 @@ const ShipmentInformation = ({
                             {/* Hide Service for QuickShip */}
                             {shipment?.creationMethod !== 'quickship' && (
                                 <Box>
-                                    <Typography variant="caption" color="text.secondary">Service</Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Service</Typography>
                                     <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                         {getBestRateInfo?.service || 'N/A'}
                                     </Typography>
                                 </Box>
                             )}
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Tracking Number</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Tracking Number</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                     {onOpenTrackingDrawer ? (
                                         <Box sx={{
@@ -1482,7 +1538,7 @@ const ShipmentInformation = ({
                                 </Box>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Last Updated</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Last Updated</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {(() => {
                                         const lastUpdated = getLastUpdatedTimestamp(shipment, mergedEvents);
@@ -1511,12 +1567,12 @@ const ShipmentInformation = ({
                         borderColor: 'divider',
                         height: '100%'
                     }}>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                             Locations
                         </Typography>
                         <Stack spacing={2}>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Ship From</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Ship From</Typography>
                                 <Box
                                     sx={{
                                         mb: 1,
@@ -1555,7 +1611,7 @@ const ShipmentInformation = ({
                                 </Box>
                             </Box>
                             <Box>
-                                <Typography variant="caption" color="text.secondary">Ship To</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Ship To</Typography>
                                 <Box
                                     sx={{
                                         mb: 1,

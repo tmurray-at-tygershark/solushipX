@@ -148,6 +148,9 @@ const { regenerateBOL, regenerateCarrierConfirmation, regenerateAllDocuments } =
 // Shipment management functions
 const { updateShipment } = require('./src/shipment-management/updateShipment');
 
+// Import general cancellation function
+const { cancelShipment } = require('./src/cancelShipment');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -277,6 +280,9 @@ exports.regenerateAllDocuments = regenerateAllDocuments;
 
 // Export shipment management function
 exports.updateShipment = updateShipment;
+
+// Export general cancellation function
+exports.cancelShipment = cancelShipment;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

@@ -62,7 +62,7 @@ import {
     Map as MapIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, getDoc, limit, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -73,6 +73,9 @@ import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 
 // Import sophisticated rate components from Rates.jsx
 import EnhancedRateCard from './EnhancedRateCard';
@@ -257,7 +260,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         shipmentDate: new Date().toISOString().split('T')[0],
         shipperReferenceNumber: '',
         referenceNumbers: [], // Array for multiple reference numbers
-        billType: 'third_party'
+        billType: 'third_party',
+        eta1: null,
+        eta2: null
     });
 
     // Draft and shipment ID management
@@ -1060,8 +1065,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     creationMethod: 'advanced', // Mark as advanced shipment
                     companyID: companyData.companyID,
                     createdBy: user.uid, // Now guaranteed to be defined
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
 
                     // Initialize with default values
                     shipmentInfo: {
@@ -1711,7 +1716,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 creationMethod: 'advanced',
                 companyID: companyData.companyID,
                 createdBy: user.uid, // This is now guaranteed to exist
-                updatedAt: serverTimestamp(),
+                updatedAt: new Date(),
 
                 // Shipment information - save whatever is entered
                 shipmentInfo: {
@@ -1738,7 +1743,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                 // Draft specific fields
                 isDraft: true,
-                draftSavedAt: serverTimestamp(),
+                draftSavedAt: new Date(),
                 draftVersion: increment(1)
             };
 
@@ -1747,7 +1752,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 const docId = activeDraftId || draftIdToLoad;
                 await updateDoc(doc(db, 'shipments', docId), {
                     ...draftData,
-                    updatedAt: serverTimestamp()
+                    updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
                 showMessage('Draft updated successfully');
@@ -1755,7 +1760,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Update the initial draft we created
                 await updateDoc(doc(db, 'shipments', activeDraftId), {
                     ...draftData,
-                    updatedAt: serverTimestamp()
+                    updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
                 showMessage('Draft saved successfully');
@@ -1763,7 +1768,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Create new draft (fallback)
                 const docRef = await addDoc(collection(db, 'shipments'), {
                     ...draftData,
-                    createdAt: serverTimestamp()
+                    createdAt: new Date()
                 });
                 setActiveDraftId(docRef.id);
                 setFormErrors({}); // Clear form errors on successful save
@@ -1981,8 +1986,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 creationMethod: 'advanced',
                 companyID: companyData.companyID,
                 createdBy: user.uid,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                createdAt: new Date(),
+                updatedAt: new Date(),
 
                 // Shipment information
                 shipmentInfo: {
@@ -2299,7 +2304,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
                 // Status and metadata
                 status: 'selected_for_booking',
-                createdAt: serverTimestamp(),
+                createdAt: new Date(),
                 selectedFor: 'booking'
             };
 
@@ -2820,24 +2825,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         </Button>
                                                     </Box>
 
-                                                    {/* Single reference number field (for backward compatibility) */}
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        label="Primary Reference Number"
-                                                        value={shipmentInfo.shipperReferenceNumber}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                                        autoComplete="off"
-                                                        sx={{
-                                                            mb: shipmentInfo.referenceNumbers?.length > 0 ? 2 : 0,
-                                                            '& .MuiInputBase-input': {
-                                                                fontSize: '12px',
-                                                                '&::placeholder': { fontSize: '12px' }
-                                                            },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                    />
-
                                                     {/* Multiple reference numbers */}
                                                     {shipmentInfo.referenceNumbers?.map((ref, index) => (
                                                         <Box key={ref.id} sx={{ display: 'flex', gap: 1, mb: 1 }}>
@@ -2859,6 +2846,35 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                     },
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
                                                                 }}
+                                                                InputProps={{
+                                                                    endAdornment: ref.value && (
+                                                                        <InputAdornment position="end">
+                                                                            <Tooltip title="Copy Reference Number">
+                                                                                <IconButton
+                                                                                    onClick={async () => {
+                                                                                        try {
+                                                                                            await navigator.clipboard.writeText(ref.value);
+                                                                                            showMessage('Reference number copied to clipboard!', 'success');
+                                                                                        } catch (error) {
+                                                                                            console.error('Failed to copy reference number:', error);
+                                                                                            showMessage('Failed to copy reference number', 'error');
+                                                                                        }
+                                                                                    }}
+                                                                                    size="small"
+                                                                                    sx={{
+                                                                                        color: '#6b7280',
+                                                                                        '&:hover': {
+                                                                                            color: '#1976d2',
+                                                                                            backgroundColor: 'rgba(25, 118, 210, 0.1)'
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    <ContentCopyIcon fontSize="small" />
+                                                                                </IconButton>
+                                                                            </Tooltip>
+                                                                        </InputAdornment>
+                                                                    )
+                                                                }}
                                                             />
                                                             <IconButton
                                                                 size="small"
@@ -2877,6 +2893,53 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                             </IconButton>
                                                         </Box>
                                                     ))}
+
+                                                    {/* Primary reference number field also gets copy functionality */}
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Primary Reference Number"
+                                                        value={shipmentInfo.shipperReferenceNumber}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                        autoComplete="off"
+                                                        sx={{
+                                                            mb: shipmentInfo.referenceNumbers?.length > 0 ? 2 : 0,
+                                                            '& .MuiInputBase-input': {
+                                                                fontSize: '12px',
+                                                                '&::placeholder': { fontSize: '12px' }
+                                                            },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                        InputProps={{
+                                                            endAdornment: shipmentInfo.shipperReferenceNumber && (
+                                                                <InputAdornment position="end">
+                                                                    <Tooltip title="Copy Reference Number">
+                                                                        <IconButton
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await navigator.clipboard.writeText(shipmentInfo.shipperReferenceNumber);
+                                                                                    showMessage('Reference number copied to clipboard!', 'success');
+                                                                                } catch (error) {
+                                                                                    console.error('Failed to copy reference number:', error);
+                                                                                    showMessage('Failed to copy reference number', 'error');
+                                                                                }
+                                                                            }}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                color: '#6b7280',
+                                                                                '&:hover': {
+                                                                                    color: '#1976d2',
+                                                                                    backgroundColor: 'rgba(25, 118, 210, 0.1)'
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            <ContentCopyIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                </InputAdornment>
+                                                            )
+                                                        }}
+                                                    />
                                                 </Box>
                                             </Grid>
                                             <Grid item xs={12} md={6}>
@@ -2933,6 +2996,82 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     />
                                                 </Grid>
                                             )}
+
+                                            {/* ETA Fields - Matching Shipment Date Design */}
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="ETA 1"
+                                                    type="date"
+                                                    value={shipmentInfo.eta1 || ''}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                        sx: { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="ETA 2"
+                                                    type="date"
+                                                    value={shipmentInfo.eta2 || ''}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                        sx: { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
                                         </Grid>
                                     </CardContent>
                                 </Card>

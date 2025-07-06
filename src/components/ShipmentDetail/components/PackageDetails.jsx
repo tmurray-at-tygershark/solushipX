@@ -100,7 +100,7 @@ const PackageDetails = ({ packages = [] }) => {
                     <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <InventoryIcon sx={{ color: '#666', fontSize: '20px' }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#000', fontSize: '16px' }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                                 Packages
                             </Typography>
                         </Box>
@@ -123,7 +123,7 @@ const PackageDetails = ({ packages = [] }) => {
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <InventoryIcon sx={{ color: '#666', fontSize: '20px' }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#000', fontSize: '16px' }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                                 Packages ({processedPackages.length})
                             </Typography>
                         </Box>

@@ -192,7 +192,11 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     const handleShipmentCancelled = useCallback((cancelledShipment) => {
         // Refresh the shipment data after successful cancellation
-        refreshShipment();
+        // Add a small delay to ensure the event has been written to the database
+        setTimeout(() => {
+            refreshShipment();
+        }, 1000); // 1 second delay to allow event recording to complete
+
         showSnackbar('Shipment cancelled successfully! Status updated.', 'success');
         setCancelModalOpen(false);
 

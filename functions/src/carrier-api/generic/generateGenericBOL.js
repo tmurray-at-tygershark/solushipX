@@ -165,10 +165,12 @@ function extractBOLData(shipmentData, shipmentId) {
         day: '2-digit'
     });
     
-    // Extract Pro Number from QuickShip
-    const proNumber = shipmentData.shipmentInfo?.carrierTrackingNumber || 
-                     shipmentData.carrierTrackingNumber ||
-                     `P${Math.floor(Math.random() * 90000000) + 10000000}`;
+            // Extract Pro Number from QuickShip
+        const proNumber = shipmentData.shipmentInfo?.carrierTrackingNumber || 
+                         shipmentData.carrierTrackingNumber ||
+                         `P${Math.floor(Math.random() * 90000000) + 10000000}`;
+
+        // ETA information removed from BOL generation
     
     // Calculate total weight and piece count with enhanced extraction
     let totalWeight = 0;
@@ -292,14 +294,14 @@ function extractBOLData(shipmentData, shipmentId) {
         });
     }
     
-    return {
-        // Header Information
-        bolNumber: bolNumber.toString(),
-        shipDate: formattedShipDate,
-        carrier: carrierName,
-        proNumber: proNumber,
-        customerRef: referenceNumber,
-        referenceNumbers: referenceNumbers,
+            return {
+            // Header Information
+            bolNumber: bolNumber.toString(),
+            shipDate: formattedShipDate,
+            carrier: carrierName,
+            proNumber: proNumber,
+            customerRef: referenceNumber,
+            referenceNumbers: referenceNumbers,
         
         // Ship From Information - Enhanced extraction for QuickShip
         shipFrom: {
@@ -693,7 +695,7 @@ function drawExactShippingSection(doc, bolData) {
        .fontSize(7)
        .text(bolData.shipFrom.closeTime, 255, 115); // FIXED: Use direct data
     
-    // Ship date and carrier info (right side) - REPOSITIONED for better layout
+    // Ship date and carrier info (right side) - REPOSITIONED for better layout with fixed spacing
     doc.font('Helvetica-Bold')
        .fontSize(8) // Increased font size
        .text('Ship Date:', 320, 105)
@@ -710,10 +712,12 @@ function drawExactShippingSection(doc, bolData) {
     
     doc.font('Helvetica-Bold')
        .fontSize(8)
-       .text('Pro Number:', 320, 135)
+       .text('Pro Number:', 320, 128)  // FIXED: Reduced gap from 131 to 128
        .font('Helvetica')
        .fontSize(8)
-       .text(bolData.proNumber, 385, 135);
+       .text(bolData.proNumber, 385, 128);
+
+    // ETA Fields removed from BOL generation
     
     // Ship To section - IMPROVED spacing and layout
     doc.lineWidth(1)

@@ -214,11 +214,29 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
     });
     
     // Calculate agreed rate with comprehensive logic - use COST for carrier confirmation
-    const agreedRate = shipmentData.totalCost || 
-                      manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0) ||
-                      booking.totalCost ||
-                      booking.totalCharges ||
-                      500.00; // Default rate (lower since this is cost, not customer charge)
+    // FIXED: Check if shipment is cancelled and use 0 for cancelled shipments
+    let agreedRate = 0;
+    
+    if (shipmentData.status === 'cancelled' || shipmentData.status === 'canceled') {
+        // For cancelled shipments, always use 0
+        agreedRate = 0;
+        console.log('🚫 CARRIER CONFIRMATION: Using $0 for cancelled shipment');
+    } else {
+        // For active shipments, use proper cost calculation
+        agreedRate = shipmentData.totalCost || 
+                    manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0) ||
+                    booking.totalCost ||
+                    booking.totalCharges ||
+                    0; // FIXED: Use 0 instead of hardcoded 500.00 fallback
+        
+        console.log('💰 CARRIER CONFIRMATION: Calculated agreed rate:', {
+            totalCost: shipmentData.totalCost,
+            manualRatesTotal: manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0),
+            bookingTotalCost: booking.totalCost,
+            bookingTotalCharges: booking.totalCharges,
+            finalAgreedRate: agreedRate
+        });
+    }
     
     // DEBUG: Log account resolution for debugging the TS issue
     const accountResolution = {

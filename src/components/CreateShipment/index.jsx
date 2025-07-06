@@ -277,7 +277,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                 readableShipmentID: newShipmentID,
                 shipmentID: newShipmentID,
                 status: 'draft',
-                createdAt: serverTimestamp(),
+                createdAt: new Date(),
                 companyID: companyIdForAddress,
                 userID: currentUser.uid,
                 shipFrom: emptyAddress(),
@@ -609,7 +609,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                     // Prepare update data
                     const updateData = {
                         shipmentID: newShipmentID,
-                        updatedAt: serverTimestamp()
+                        updatedAt: new Date()
                     };
 
                     // If no reference number is set, use the shipment ID as fallback
@@ -654,7 +654,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
                         // Prepare update data
                         const updateData = {
                             shipmentID: fallbackId,
-                            updatedAt: serverTimestamp()
+                            updatedAt: new Date()
                         };
 
                         // If no reference number is set, use the shipment ID as fallback
@@ -727,7 +727,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
             const shipmentDocRef = doc(db, 'shipments', activeDraftId);
             await updateDoc(shipmentDocRef, {
                 [sectionKeyForFirestore]: dataForSection, // Use the correct camelCase key
-                updatedAt: serverTimestamp()
+                updatedAt: new Date()
             });
             console.log(`CreateShipment: Section '${sectionKeyForFirestore}' saved successfully to ${activeDraftId}.`);
         } catch (err) {
@@ -832,7 +832,7 @@ const CreateShipmentContent = ({ isModal = false, onClose = null, onReturnToShip
         console.log('Final form data from context for submission:', formData);
         if (activeDraftId) {
             const shipmentDocRef = doc(db, 'shipments', activeDraftId);
-            updateDoc(shipmentDocRef, { status: 'processing', updatedAt: serverTimestamp() })
+            updateDoc(shipmentDocRef, { status: 'processing', updatedAt: new Date() })
                 .then(async () => {
                     console.log(`Shipment ${activeDraftId} status updated to processing.`);
 

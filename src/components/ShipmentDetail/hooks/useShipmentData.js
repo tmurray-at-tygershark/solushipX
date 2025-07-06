@@ -491,42 +491,81 @@ export const useShipmentData = (shipmentId) => {
             // Parse the createdAt timestamp properly
             let createdTimestamp;
             try {
-                if (shipment.createdAt.toDate && typeof shipment.createdAt.toDate === 'function') {
+                // Handle serverTimestamp placeholders that shouldn't be in production
+                if (shipment.createdAt && typeof shipment.createdAt === 'object' && shipment.createdAt._methodName === 'serverTimestamp') {
+                    console.warn('Found serverTimestamp placeholder in createdAt - this should not happen in production:', shipment.createdAt);
+                    // Try to get the actual timestamp from other sources
+                    if (shipment.draftSavedAt) {
+                        createdTimestamp = shipment.draftSavedAt.toDate ? shipment.draftSavedAt.toDate() : new Date(shipment.draftSavedAt);
+                    } else if (shipment.bookedAt) {
+                        createdTimestamp = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+                    } else {
+                        // Last resort - don't create a synthetic event with wrong timestamp
+                        console.error('Cannot determine actual creation timestamp - skipping synthetic created event');
+                        createdTimestamp = null;
+                    }
+                } else if (shipment.createdAt.toDate && typeof shipment.createdAt.toDate === 'function') {
+                    // Firestore Timestamp object
                     createdTimestamp = shipment.createdAt.toDate();
                 } else if (shipment.createdAt.seconds !== undefined) {
+                    // Firestore Timestamp-like object with seconds
                     createdTimestamp = new Date(shipment.createdAt.seconds * 1000 + (shipment.createdAt.nanoseconds || 0) / 1000000);
                 } else if (shipment.createdAt._seconds !== undefined) {
+                    // Alternative Firestore Timestamp format
                     createdTimestamp = new Date(shipment.createdAt._seconds * 1000 + (shipment.createdAt._nanoseconds || 0) / 1000000);
                 } else {
+                    // Regular date string or timestamp
                     createdTimestamp = new Date(shipment.createdAt);
                 }
                 
-                // Validate the timestamp
-                if (isNaN(createdTimestamp.getTime())) {
-                    console.warn('Invalid createdAt timestamp:', shipment.createdAt);
-                    createdTimestamp = new Date(); // Fallback to current date
+                // Validate the timestamp - but don't fall back to current date
+                if (createdTimestamp && isNaN(createdTimestamp.getTime())) {
+                    console.warn('Invalid createdAt timestamp after parsing:', shipment.createdAt);
+                    // Try alternative timestamps instead of current date
+                    if (shipment.draftSavedAt) {
+                        createdTimestamp = shipment.draftSavedAt.toDate ? shipment.draftSavedAt.toDate() : new Date(shipment.draftSavedAt);
+                    } else if (shipment.bookedAt) {
+                        createdTimestamp = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+                    } else {
+                        createdTimestamp = null; // Don't create synthetic event with wrong timestamp
+                    }
                 }
             } catch (error) {
                 console.error('Error parsing createdAt timestamp:', error, shipment.createdAt);
-                createdTimestamp = new Date(); // Fallback to current date
+                // Try alternative timestamps instead of falling back to current date
+                try {
+                    if (shipment.draftSavedAt) {
+                        createdTimestamp = shipment.draftSavedAt.toDate ? shipment.draftSavedAt.toDate() : new Date(shipment.draftSavedAt);
+                    } else if (shipment.bookedAt) {
+                        createdTimestamp = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+                    } else {
+                        createdTimestamp = null; // Don't create synthetic event with wrong timestamp
+                    }
+                } catch (fallbackError) {
+                    console.error('All timestamp parsing failed:', fallbackError);
+                    createdTimestamp = null;
+                }
             }
             
-            all.push({
-                id: 'created-' + (shipment.id || shipment.shipmentID),
-                status: 'Created',
-                description: 'Shipment was created',
-                location: { city: '', state: '', postalCode: '' },
-                timestamp: createdTimestamp,
-                color: getStatusColor('created'),
-                icon: getStatusIcon('created'),
-                eventType: 'created',
-                source: 'user',
-                userData: {
-                    email: shipment.createdByEmail || shipment.createdBy || shipment.userEmail || null,
-                    userId: shipment.createdBy || null,
-                    userName: shipment.createdByName || null
-                }
-            });
+            // Only add the created event if we have a valid timestamp
+            if (createdTimestamp) {
+                all.push({
+                    id: 'created-' + (shipment.id || shipment.shipmentID),
+                    status: 'Created',
+                    description: 'Shipment was created',
+                    location: { city: '', state: '', postalCode: '' },
+                    timestamp: createdTimestamp,
+                    color: getStatusColor('created'),
+                    icon: getStatusIcon('created'),
+                    eventType: 'created',
+                    source: 'user',
+                    userData: {
+                        email: shipment.createdByEmail || shipment.createdBy || shipment.userEmail || null,
+                        userId: shipment.createdBy || null,
+                        userName: shipment.createdByName || null
+                    }
+                });
+            }
         }
 
         return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));

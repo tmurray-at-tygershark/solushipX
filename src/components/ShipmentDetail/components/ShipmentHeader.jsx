@@ -189,7 +189,7 @@ const ShipmentHeader = ({
                                 label={shipment?.status || 'Unknown'}
                                 color={getStatusColor(shipment?.status)}
                                 size="small"
-                                sx={{ fontWeight: 500 }}
+                                sx={{ fontWeight: 500, fontSize: '11px' }}
                             />
 
                             {shipment?.shipmentInfo?.shipmentType && (
@@ -197,6 +197,7 @@ const ShipmentHeader = ({
                                     label={shipment.shipmentInfo.shipmentType.toUpperCase()}
                                     variant="outlined"
                                     size="small"
+                                    sx={{ fontSize: '11px' }}
                                 />
                             )}
 
@@ -217,7 +218,7 @@ const ShipmentHeader = ({
                                 startIcon={<EditIcon />}
                                 onClick={onEditShipment}
                                 disabled={actionStates.editShipment?.loading}
-                                sx={{ minWidth: 120 }}
+                                sx={{ minWidth: 120, fontSize: '12px' }}
                             >
                                 Edit
                             </Button>
@@ -230,7 +231,7 @@ const ShipmentHeader = ({
                                 startIcon={actionStates.printBOL?.loading ? <RefreshIcon sx={{ animation: 'spin 1s linear infinite' }} /> : <PdfIcon />}
                                 onClick={onPrintBOL}
                                 disabled={actionStates.printBOL?.loading}
-                                sx={{ minWidth: 100 }}
+                                sx={{ minWidth: 100, fontSize: '12px' }}
                             >
                                 {actionStates.printBOL?.loading ? 'Generating...' : 'BOL'}
                             </Button>
@@ -243,7 +244,7 @@ const ShipmentHeader = ({
                                 startIcon={actionStates.printConfirmation?.loading ? <RefreshIcon sx={{ animation: 'spin 1s linear infinite' }} /> : <DocumentIcon />}
                                 onClick={onPrintConfirmation}
                                 disabled={actionStates.printConfirmation?.loading}
-                                sx={{ minWidth: 100 }}
+                                sx={{ minWidth: 100, fontSize: '12px' }}
                             >
                                 {actionStates.printConfirmation?.loading ? 'Generating...' : 'Confirmation'}
                             </Button>
@@ -288,17 +289,17 @@ const ShipmentHeader = ({
                 >
                     <MenuItem onClick={() => handleDocumentAction('printBOL')}>
                         <ListItemIcon><PdfIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Print BOL" />
+                        <ListItemText primary="Print BOL" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <MenuItem onClick={() => handleDocumentAction('printConfirmation')}>
                         <ListItemIcon><DocumentIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Print Confirmation" />
+                        <ListItemText primary="Print Confirmation" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <MenuItem onClick={() => handleDocumentAction('printLabel')}>
                         <ListItemIcon><PrintIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Print Label" />
+                        <ListItemText primary="Print Label" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <Divider />
@@ -317,7 +318,10 @@ const ShipmentHeader = ({
                         <ListItemText
                             primary={actionStates.regenerateBOL?.loading ? "Regenerating BOL..." : "Regenerate BOL"}
                             secondary={actionStates.regenerateBOL?.loading ? "Please wait..." : "Creates new version"}
-                            sx={{ '& .MuiListItemText-secondary': { fontSize: '11px' } }}
+                            sx={{
+                                '& .MuiListItemText-primary': { fontSize: '12px' },
+                                '& .MuiListItemText-secondary': { fontSize: '11px' }
+                            }}
                         />
                     </MenuItem>
 
@@ -335,7 +339,10 @@ const ShipmentHeader = ({
                         <ListItemText
                             primary={actionStates.regenerateConfirmation?.loading ? "Regenerating Confirmation..." : "Regenerate Confirmation"}
                             secondary={actionStates.regenerateConfirmation?.loading ? "Please wait..." : "Creates new version"}
-                            sx={{ '& .MuiListItemText-secondary': { fontSize: '11px' } }}
+                            sx={{
+                                '& .MuiListItemText-primary': { fontSize: '12px' },
+                                '& .MuiListItemText-secondary': { fontSize: '11px' }
+                            }}
                         />
                     </MenuItem>
                 </Menu>
@@ -351,17 +358,17 @@ const ShipmentHeader = ({
                 >
                     <MenuItem onClick={() => handleAction('refreshStatus')}>
                         <ListItemIcon><RefreshIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Refresh Status" />
+                        <ListItemText primary="Refresh Status" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <MenuItem onClick={() => handleAction('duplicate')}>
                         <ListItemIcon><DuplicateIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Duplicate Shipment" />
+                        <ListItemText primary="Duplicate Shipment" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <MenuItem onClick={() => handleAction('archive')}>
                         <ListItemIcon><ArchiveIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Archive" />
+                        <ListItemText primary="Archive" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
                     <Divider />
@@ -372,7 +379,7 @@ const ShipmentHeader = ({
                             sx={{ color: 'error.main' }}
                         >
                             <ListItemIcon><CancelIcon fontSize="small" color="error" /></ListItemIcon>
-                            <ListItemText primary="Cancel Shipment" />
+                            <ListItemText primary="Cancel Shipment" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                         </MenuItem>
                     )}
                 </Menu>
@@ -398,7 +405,7 @@ const ShipmentHeader = ({
                         </DialogContentText>
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={handleCancelRegenerate}>
+                        <Button onClick={handleCancelRegenerate} sx={{ fontSize: '12px' }}>
                             Cancel
                         </Button>
                         <Button
@@ -406,6 +413,7 @@ const ShipmentHeader = ({
                             variant="contained"
                             color="warning"
                             startIcon={<RefreshIcon />}
+                            sx={{ fontSize: '12px' }}
                         >
                             Regenerate {confirmRegenerateDialog.type}
                         </Button>

@@ -60,7 +60,7 @@ import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, serverTimestamp, increment, limit, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
@@ -68,6 +68,9 @@ import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
 import EmailSelectorDropdown from '../common/EmailSelectorDropdown';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 
 // Lazy load other components
 const QuickShipCarrierDialog = lazy(() => import('./QuickShipCarrierDialog'));
@@ -362,7 +365,10 @@ const QuickShip = ({
         signatureServiceType: 'none',
         notes: '',
         // New field for multiple references
-        referenceNumbers: []
+        referenceNumbers: [],
+        // ETA fields
+        eta1: null,
+        eta2: null
     });
 
     // Address state - simplified to use AddressBook
@@ -740,8 +746,8 @@ const QuickShip = ({
                     creationMethod: 'quickship', // This is the key field
                     companyID: companyIdForAddress,
                     createdBy: currentUser.uid,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
 
                     // Initialize with empty/default values
                     shipmentInfo: {
@@ -1431,8 +1437,8 @@ const QuickShip = ({
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
                 createdBy: currentUser.uid,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                createdAt: new Date(),
+                updatedAt: new Date(),
 
                 // Shipment details with complete information
                 shipmentInfo: {
@@ -2103,7 +2109,7 @@ const QuickShip = ({
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
                 createdBy: currentUser?.uid || 'unknown',
-                updatedAt: serverTimestamp(),
+                updatedAt: new Date(),
 
                 // Comprehensive shipment information - save whatever is entered
                 shipmentInfo: {
@@ -2155,7 +2161,7 @@ const QuickShip = ({
 
                 // Draft specific fields
                 isDraft: true,
-                draftSavedAt: serverTimestamp(),
+                draftSavedAt: new Date(),
                 draftVersion: increment(1) // Increment version on each save
             };
 
@@ -2184,7 +2190,7 @@ const QuickShip = ({
                 console.log('QuickShip draft updated successfully:', docId);
             } else {
                 // Create a new draft document with auto-generated ID
-                draftData.createdAt = serverTimestamp();
+                draftData.createdAt = new Date();
                 docRef = await addDoc(collection(db, 'shipments'), draftData);
                 docId = docRef.id;
                 setActiveDraftId(docId); // Store the new document ID
@@ -2788,7 +2794,7 @@ const QuickShip = ({
                 status: editShipment.status || 'booked',
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
-                updatedAt: serverTimestamp(),
+                updatedAt: new Date(),
                 shipmentInfo: {
                     ...shipmentInfo,
                     unitSystem,
@@ -3347,6 +3353,82 @@ const QuickShip = ({
                                                     )}
                                                     sx={{
                                                         '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+
+                                            {/* ETA Fields - Matching Shipment Date Design */}
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="ETA 1"
+                                                    type="date"
+                                                    value={shipmentInfo.eta1 || ''}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                        sx: { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="ETA 2"
+                                                    type="date"
+                                                    value={shipmentInfo.eta2 || ''}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
+                                                    autoComplete="off"
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                        sx: { fontSize: '12px' }
                                                     }}
                                                 />
                                             </Grid>
