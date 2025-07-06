@@ -29,7 +29,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // Components
 import ShipmentHeader from './components/ShipmentHeader';
 import ShipmentInformation from './components/ShipmentInformation';
-import ShipmentDocuments from './components/ShipmentDocuments';
+import DocumentsSection from './components/DocumentsSection';
 import RateDetails from './components/RateDetails';
 import PackageDetails from './components/PackageDetails';
 import ShipmentHistory from './components/ShipmentHistory';
@@ -796,6 +796,18 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         onRetryFetch={fetchShipmentDocuments}
                         onViewPdf={viewPdfInModal}
                     /> */}
+
+                    {/* Documents Section */}
+                    <DocumentsSection
+                        shipment={shipment}
+                        shipmentDocuments={shipmentDocuments}
+                        documentsLoading={documentsLoading}
+                        documentsError={documentsError}
+                        onRetryFetch={fetchShipmentDocuments}
+                        onViewPdf={viewPdfInModal}
+                        onDocumentUploaded={fetchShipmentDocuments}
+                        showNotification={showSnackbar}
+                    />
 
                     {/* Main Content Grid */}
                     <Grid container spacing={1} sx={{ mt: 1 }}>

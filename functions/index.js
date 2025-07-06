@@ -151,6 +151,9 @@ const { updateShipment } = require('./src/shipment-management/updateShipment');
 // Import general cancellation function
 const { cancelShipment } = require('./src/cancelShipment');
 
+// Import document upload functions
+const { uploadShipmentDocument, deleteShipmentDocument, getShipmentDocuments: getShipmentDocsNew } = require('./src/uploadShipmentDocument');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -283,6 +286,11 @@ exports.updateShipment = updateShipment;
 
 // Export general cancellation function
 exports.cancelShipment = cancelShipment;
+
+// Export document upload functions
+exports.uploadShipmentDocument = uploadShipmentDocument;
+exports.deleteShipmentDocument = deleteShipmentDocument;
+exports.getShipmentDocumentsNew = getShipmentDocsNew;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(
