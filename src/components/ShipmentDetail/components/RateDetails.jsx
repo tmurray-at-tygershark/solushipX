@@ -135,12 +135,30 @@ const RateDetails = ({
         if (!isQuickShip || !shipment?.manualRates) return null;
 
         const rates = shipment.manualRates;
+
+        // Get currency from shipment data with proper priority
+        const getCurrencyFromShipment = () => {
+            // 1. Check shipment.currency first
+            if (shipment?.currency) return shipment.currency;
+
+            // 2. Check first manual rate's currency
+            if (rates?.[0]?.chargeCurrency) return rates[0].chargeCurrency;
+
+            // 3. Check any manual rate's currency
+            for (const rate of rates) {
+                if (rate?.chargeCurrency) return rate.chargeCurrency;
+            }
+
+            // 4. Fallback to CAD
+            return 'CAD';
+        };
+
         const rateData = {
             carrier: shipment?.selectedCarrier || shipment?.carrier || 'N/A',
             charges: [],
             total: 0,
             totalCost: 0,
-            currency: 'CAD'
+            currency: getCurrencyFromShipment()
         };
 
         // Process manual rate line items with separate cost and charge

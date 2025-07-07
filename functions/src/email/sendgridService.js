@@ -53,6 +53,62 @@ function getServiceName(data) {
 }
 
 /**
+ * Convert status codes to properly formatted display names
+ */
+function getStatusDisplayName(status) {
+    if (!status) return 'Unknown';
+    
+    const statusMap = {
+        'draft': 'Draft',
+        'pending': 'Pending',
+        'booked': 'Booked',
+        'scheduled': 'Scheduled',
+        'picked_up': 'Picked Up',
+        'in_transit': 'In Transit',
+        'out_for_delivery': 'Out for Delivery',
+        'delivered': 'Delivered',
+        'delayed': 'Delayed',
+        'exception': 'Exception',
+        'on_hold': 'On Hold',
+        'cancelled': 'Cancelled',
+        'canceled': 'Cancelled',
+        'void': 'Void',
+        'voided': 'Voided',
+        'ready_for_pickup': 'Ready for Pickup',
+        'returned': 'Returned'
+    };
+    
+    return statusMap[status.toLowerCase()] || status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+/**
+ * Format date in Eastern Standard Time (EST/EDT)
+ */
+function formatDateTimeEST(date) {
+    if (!date) return 'N/A';
+    
+    try {
+        const dateObj = date instanceof Date ? date : new Date(date);
+        if (isNaN(dateObj.getTime())) return 'Invalid Date';
+        
+        // Format in Eastern Time with proper timezone handling
+        return dateObj.toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        });
+    } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Date Format Error';
+    }
+}
+
+/**
  * Email templates and utilities
  */
 const EMAIL_TEMPLATES = {
@@ -376,9 +432,9 @@ Questions? Contact support@integratedcarriers.com
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Status Update</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Previous Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.previousStatus}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Current Status:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d; text-transform: capitalize;">${data.currentStatus}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Updated:</strong></td><td style="padding: 8px 0;">${new Date(data.updatedAt).toLocaleString()}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Previous Status:</strong></td><td style="padding: 8px 0;">${getStatusDisplayName(data.previousStatus)}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Current Status:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${getStatusDisplayName(data.currentStatus)}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Updated:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.updatedAt)}</td></tr>
                         </table>
                     </div>
 
@@ -457,9 +513,9 @@ Shipment Status Update
 
 STATUS UPDATE
 - Shipment #: ${data.shipmentNumber}
-- Previous Status: ${data.previousStatus}
-- Current Status: ${data.currentStatus}
-- Updated: ${new Date(data.updatedAt).toLocaleString()}
+- Previous Status: ${getStatusDisplayName(data.previousStatus)}
+- Current Status: ${getStatusDisplayName(data.currentStatus)}
+- Updated: ${formatDateTimeEST(data.updatedAt)}
 
 TRACKING INFORMATION
 - Carrier: ${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}

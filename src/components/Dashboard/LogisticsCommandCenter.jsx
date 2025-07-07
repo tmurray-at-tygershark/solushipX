@@ -27,7 +27,8 @@ import {
     LocationOn as LocationIcon,
     Traffic as TrafficIcon,
     Inventory as BoxIcon, // Box icon for Ready to Ship
-    Satellite as SatelliteIcon // For satellite view toggle
+    Satellite as SatelliteIcon, // For satellite view toggle
+    SwapHoriz as SwapHorizIcon // For company switcher
 } from '@mui/icons-material';
 
 import { collection, getDocs, getFirestore } from 'firebase/firestore';
@@ -47,9 +48,19 @@ const SHIPMENT_STATUSES = {
 
 
 
-const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick }) => {
-    // Get company data for displaying company name and ID
-    const { companyData } = useCompany();
+const LogisticsCommandCenter = ({
+    shipments = [],
+    onShipmentSelect,
+    onRouteClick,
+    companyData,
+    userRole,
+    currentUser,
+    companyIdForAddress,
+    onOpenCompanySwitcher
+}) => {
+    // Get company data for displaying company name and ID from props or context
+    const { companyData: contextCompanyData } = useCompany();
+    const finalCompanyData = companyData || contextCompanyData;
 
     // Core state
     const [selectedShipment, setSelectedShipment] = useState(null);
@@ -615,16 +626,37 @@ const LogisticsCommandCenter = ({ shipments = [], onShipmentSelect, onRouteClick
                         color: 'rgba(255,255,255,0.7)',
                         fontSize: '0.75rem'
                     }}>
-                        {companyData?.name || 'Company Name'}
+                        {finalCompanyData?.name || 'Company Name'}
                     </Typography>
-                    <Typography variant="caption" sx={{
-                        color: 'rgba(255,255,255,0.5)',
-                        fontSize: '0.65rem',
-                        display: 'block',
-                        mt: -0.25
-                    }}>
-                        ID: {companyData?.companyID?.toLowerCase() || 'n/a'}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" sx={{
+                            color: 'rgba(255,255,255,0.5)',
+                            fontSize: '0.65rem',
+                            mt: -0.25
+                        }}>
+                            ID: {finalCompanyData?.companyID?.toLowerCase() || 'n/a'}
+                        </Typography>
+                        {/* Company Switcher Icon - Only show for Super Admins and Multi-Company Admins */}
+                        {finalCompanyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) && onOpenCompanySwitcher && (
+                            <IconButton
+                                size="small"
+                                onClick={onOpenCompanySwitcher}
+                                sx={{
+                                    color: 'rgba(255, 255, 255, 0.6)',
+                                    padding: '2px',
+                                    marginLeft: '4px',
+                                    marginTop: '-2px',
+                                    '&:hover': {
+                                        color: 'rgba(255, 255, 255, 0.9)',
+                                        backgroundColor: 'rgba(255, 255, 255, 0.1)'
+                                    }
+                                }}
+                                title="Switch Company"
+                            >
+                                <SwapHorizIcon sx={{ fontSize: '14px' }} />
+                            </IconButton>
+                        )}
+                    </Box>
                 </Box>
 
                 {/* Compact Scorecards */}

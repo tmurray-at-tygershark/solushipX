@@ -157,16 +157,21 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
     const [mapError, setMapError] = useState(null);
     const [mapsApiKey, setMapsApiKey] = useState(null);
 
-    // Get recent shipments with valid routes
+    // Get recent shipments with valid routes (excluding all cancelled variants)
     const routeShipments = useMemo(() => {
         const validShipments = shipments
             .filter(shipment => {
                 try {
+                    const status = shipment.status?.toLowerCase();
                     return shipment &&
                         shipment.shipFrom &&
                         shipment.shipTo &&
-                        shipment.status !== 'delivered' &&
-                        shipment.status !== 'cancelled';
+                        status !== 'delivered' &&
+                        status !== 'cancelled' &&
+                        status !== 'canceled' &&
+                        status !== 'void' &&
+                        status !== 'voided' &&
+                        status !== 'draft';
                 } catch (error) {
                     console.warn('Error filtering shipment:', error, shipment);
                     return false;
@@ -1146,36 +1151,43 @@ const DashboardStatsOverlay = ({
             return new Date(timestamp);
         };
 
-        // Current metrics
-        const activeShipments = shipments.filter(s =>
+        // Filter out cancelled shipments completely from all calculations
+        const validShipments = shipments.filter(s => {
+            const status = s.status?.toLowerCase();
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+        });
+
+        // Current metrics (using validShipments without cancelled)
+        const activeShipments = validShipments.filter(s =>
             s.status !== 'delivered' &&
             s.status !== 'cancelled' &&
+            s.status !== 'canceled' &&
             s.status !== 'draft'
         );
 
-        const inTransit = shipments.filter(s => s.status === 'in_transit').length;
-        const delivered = shipments.filter(s => s.status === 'delivered').length;
-        const pending = shipments.filter(s => s.status === 'pending').length;
-        const delayed = shipments.filter(s =>
+        const inTransit = validShipments.filter(s => s.status === 'in_transit').length;
+        const delivered = validShipments.filter(s => s.status === 'delivered').length;
+        const pending = validShipments.filter(s => s.status === 'pending').length;
+        const delayed = validShipments.filter(s =>
             s.status === 'delayed' ||
             s.status === 'exception' ||
             s.status === 'on_hold'
         ).length;
 
-        // Today's metrics
-        const todayShipments = shipments.filter(s => {
+        // Today's metrics (using validShipments without cancelled)
+        const todayShipments = validShipments.filter(s => {
             const date = getShipmentDate(s);
             return date && date.toDateString() === now.toDateString();
         });
 
-        // Yesterday's metrics for comparison
-        const yesterdayShipments = shipments.filter(s => {
+        // Yesterday's metrics for comparison (using validShipments without cancelled)
+        const yesterdayShipments = validShipments.filter(s => {
             const date = getShipmentDate(s);
             return date && date.toDateString() === yesterday.toDateString();
         });
 
-        // Week's metrics
-        const weekShipments = shipments.filter(s => {
+        // Week's metrics (using validShipments without cancelled)
+        const weekShipments = validShipments.filter(s => {
             const date = getShipmentDate(s);
             return date && date >= weekAgo;
         });
@@ -1186,8 +1198,8 @@ const DashboardStatsOverlay = ({
             return ((current - previous) / previous * 100);
         };
 
-        // Revenue estimation (if cost data is available)
-        const estimatedRevenue = shipments.reduce((sum, shipment) => {
+        // Revenue estimation (if cost data is available) - using validShipments without cancelled
+        const estimatedRevenue = validShipments.reduce((sum, shipment) => {
             const amount = shipment.selectedRate?.amount ||
                 shipment.totalCharges ||
                 shipment.cost || 0;
@@ -1195,8 +1207,8 @@ const DashboardStatsOverlay = ({
         }, 0);
 
         return {
-            // Core metrics
-            total: shipments.length,
+            // Core metrics (using validShipments without cancelled)
+            total: validShipments.length,
             active: activeShipments.length,
             inTransit,
             delivered,
@@ -1216,9 +1228,9 @@ const DashboardStatsOverlay = ({
             weeklyVolume: weekShipments.length,
             estimatedRevenue: Math.round(estimatedRevenue),
 
-            // Quick insights
-            avgDailyVolume: Math.round(shipments.length / 7), // Last 7 days average
-            criticalAlerts: delayed + shipments.filter(s => s.status === 'exception').length
+            // Quick insights (using validShipments without cancelled)
+            avgDailyVolume: Math.round(validShipments.length / 7), // Last 7 days average
+            criticalAlerts: delayed + validShipments.filter(s => s.status === 'exception').length
         };
     }, [shipments]);
 
@@ -1661,7 +1673,13 @@ const RecentActivityFeed = ({ shipments }) => {
         // Get recent shipments and status changes
         const activities = [];
 
-        shipments.forEach(shipment => {
+        // Filter out cancelled shipments from activity feed
+        const validShipments = shipments.filter(s => {
+            const status = s.status?.toLowerCase();
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+        });
+
+        validShipments.forEach(shipment => {
             const getDate = (timestamp) => {
                 if (!timestamp) return null;
                 if (timestamp.toDate) return timestamp.toDate();
@@ -1894,17 +1912,21 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
         fetchApiKey();
     }, []);
 
-    // Get active shipments for route display
+    // Get active shipments for route display (excluding all cancelled variants)
     const activeShipments = useMemo(() => {
         return shipments
-            .filter(shipment =>
-                shipment &&
-                shipment.shipFrom &&
-                shipment.shipTo &&
-                shipment.status !== 'delivered' &&
-                shipment.status !== 'cancelled' &&
-                shipment.status !== 'draft'
-            )
+            .filter(shipment => {
+                const status = shipment?.status?.toLowerCase();
+                return shipment &&
+                    shipment.shipFrom &&
+                    shipment.shipTo &&
+                    status !== 'delivered' &&
+                    status !== 'cancelled' &&
+                    status !== 'canceled' &&
+                    status !== 'void' &&
+                    status !== 'voided' &&
+                    status !== 'draft';
+            })
             .slice(0, 10); // Limit to 10 routes for performance
     }, [shipments]);
 
@@ -2739,6 +2761,14 @@ const Dashboard = () => {
                     createdAt: validTimestamp
                 };
             }).filter(shipment => {
+                const status = shipment.status?.toLowerCase();
+
+                // EXCLUDE ALL CANCELLED/CANCELED SHIPMENTS COMPLETELY
+                if (status === 'cancelled' || status === 'canceled' || status === 'cancelled' || status === 'cancelled' || status === 'void' || status === 'voided') {
+                    console.log(`❌ Excluding cancelled shipment ${shipment.shipmentID} with status ${shipment.status}`);
+                    return false;
+                }
+
                 // Special debugging for QuickShip shipments
                 if (shipment.creationMethod === 'quickship') {
                     console.log(`🚛 QuickShip shipment found: ${shipment.shipmentID} - status: ${shipment.status} - isDraft: ${shipment.isDraft}`);
@@ -2746,8 +2776,8 @@ const Dashboard = () => {
 
                 // More lenient filtering for QuickShip shipments
                 if (shipment.creationMethod === 'quickship') {
-                    // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft)
-                    const keepShipment = shipment.status && shipment.status.toLowerCase() !== 'draft';
+                    // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft or cancelled)
+                    const keepShipment = shipment.status && status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
                     if (keepShipment) {
                         console.log(`✅ Keeping QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
                     } else {
@@ -2757,8 +2787,7 @@ const Dashboard = () => {
                 }
 
                 // Normal filtering for regular shipments - exclude drafts and cancelled
-                const status = shipment.status?.toLowerCase();
-                return status !== 'draft' && status !== 'cancelled' && status !== 'canceled';
+                return status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
             });
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
@@ -2823,10 +2852,22 @@ const Dashboard = () => {
                     );
 
                 const companiesSnapshot = await getDocs(companiesQuery);
-                const companiesData = companiesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+                const companiesData = companiesSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    console.log('Company data for logo debugging:', {
+                        name: data.name,
+                        companyID: data.companyID,
+                        logo: data.logo,
+                        logoURL: data.logoURL,
+                        logoUrl: data.logoUrl,
+                        companyLogo: data.companyLogo,
+                        allFields: Object.keys(data)
+                    });
+                    return {
+                        id: doc.id,
+                        ...data
+                    };
+                });
 
                 setAvailableCompanies(companiesData);
                 setFilteredCompanies(companiesData);
@@ -2939,9 +2980,15 @@ const Dashboard = () => {
         };
     }, []);
 
-    // Calculate status counts for the Globe
+    // Calculate status counts for the Globe (excluding all cancelled variants)
     const statusCounts = useMemo(() => {
-        return shipments.reduce((counts, shipment) => {
+        // Filter out cancelled shipments completely from status counts
+        const validShipments = shipments.filter(s => {
+            const status = s.status?.toLowerCase();
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+        });
+
+        return validShipments.reduce((counts, shipment) => {
             const status = shipment.status?.toLowerCase();
             if (status === 'pending' || status === 'scheduled' || status === 'awaiting_shipment' || status === 'booked') {
                 counts.pending = (counts.pending || 0) + 1;
@@ -4569,17 +4616,33 @@ const Dashboard = () => {
                                     >
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                             {/* Company Logo */}
-                                            <Avatar
-                                                src={company.logo || company.logoURL}
-                                                sx={{
-                                                    width: 40,
-                                                    height: 40,
-                                                    bgcolor: '#f3f4f6',
-                                                    border: '1px solid #e5e7eb'
-                                                }}
-                                            >
-                                                <BusinessIcon sx={{ fontSize: 20, color: '#6b7280' }} />
-                                            </Avatar>
+                                            {(() => {
+                                                const logoUrl = company.logo || company.logoURL || company.logoUrl || company.companyLogo;
+                                                console.log('Logo URL for', company.name, ':', logoUrl);
+
+                                                return (
+                                                    <Avatar
+                                                        src={logoUrl}
+                                                        sx={{
+                                                            width: 40,
+                                                            height: 40,
+                                                            bgcolor: '#f3f4f6',
+                                                            border: '1px solid #e5e7eb'
+                                                        }}
+                                                        imgProps={{
+                                                            onError: (e) => {
+                                                                console.log('Company logo failed to load for:', company.name, 'URL:', e.target.src);
+                                                                e.target.style.display = 'none';
+                                                            },
+                                                            onLoad: (e) => {
+                                                                console.log('Company logo loaded successfully for:', company.name);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <BusinessIcon sx={{ fontSize: 20, color: '#6b7280' }} />
+                                                    </Avatar>
+                                                );
+                                            })()}
 
                                             {/* Company Info */}
                                             <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -4709,6 +4772,11 @@ const Dashboard = () => {
                         shipments={shipments}
                         onShipmentSelect={handleViewShipmentFromCommandCenter}
                         onRouteClick={handleRouteClick}
+                        companyData={companyData}
+                        userRole={userRole}
+                        currentUser={currentUser}
+                        companyIdForAddress={companyIdForAddress}
+                        onOpenCompanySwitcher={() => setIsCompanySwitcherOpen(true)}
                     />
                 </LazyComponentWrapper>
             </Box>
