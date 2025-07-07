@@ -12,7 +12,8 @@ import {
     Edit as EditIcon,
     Description as DescriptionIcon,
     Warning as WarningIcon,
-    Repeat as RepeatIcon
+    Repeat as RepeatIcon,
+    Archive as ArchiveIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,6 +29,7 @@ const ShipmentActionMenu = ({
     onRepeatShipment,
     onEditDraftShipment,
     onEditShipment,
+    onArchiveShipment,
     documentAvailability,
     checkingDocuments
 }) => {
@@ -72,12 +74,20 @@ const ShipmentActionMenu = ({
         }
     };
 
+    const handleArchiveShipment = () => {
+        onClose();
+        if (onArchiveShipment) {
+            onArchiveShipment(selectedShipment);
+        }
+    };
+
     // Check shipment status for edit availability
     const shipmentStatus = selectedShipment?.status?.toLowerCase() || '';
     const isDraft = shipmentStatus === 'draft';
     const isCancelled = ['cancelled', 'canceled', 'void', 'voided'].includes(shipmentStatus);
     const isDelivered = shipmentStatus === 'delivered';
-    const canEditShipment = !isDraft && !isCancelled && !isDelivered;
+    const isArchived = shipmentStatus === 'archived';
+    const canEditShipment = !isDraft && !isCancelled && !isDelivered && !isArchived;
 
     return (
         <Menu
@@ -100,7 +110,7 @@ const ShipmentActionMenu = ({
                         View Details
                     </MenuItem>
 
-                    {/* Edit Shipment - Only for non-draft, non-cancelled, non-delivered shipments */}
+                    {/* Edit Shipment - Only for non-draft, non-cancelled, non-delivered, non-archived shipments */}
                     {canEditShipment && onEditShipment && (
                         <MenuItem onClick={handleEditShipment}>
                             <ListItemIcon>
@@ -184,6 +194,16 @@ const ShipmentActionMenu = ({
                         No documents available
                     </MenuItem>
                 )}
+
+            {/* Archive option - Only for non-draft, non-archived shipments */}
+            {selectedShipment?.status !== 'draft' && !isArchived && onArchiveShipment && (
+                <MenuItem onClick={handleArchiveShipment}>
+                    <ListItemIcon>
+                        <ArchiveIcon sx={{ fontSize: '14px' }} />
+                    </ListItemIcon>
+                    Archive
+                </MenuItem>
+            )}
         </Menu>
     );
 };

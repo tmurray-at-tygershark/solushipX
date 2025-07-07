@@ -59,6 +59,7 @@ const QuickShipCarrierDialog = ({
         carrierId: '',
         accountNumber: '',
         phone: '',
+        type: 'courier', // Default to courier, can be 'courier' or 'freight'
         emailContacts: [], // New terminal-based structure
         // Legacy fields for backward compatibility
         contactEmail: '',
@@ -101,6 +102,7 @@ const QuickShipCarrierDialog = ({
                 carrierId: editingCarrier.carrierId || '',
                 accountNumber: editingCarrier.accountNumber || '',
                 phone: editingCarrier.phone || '',
+                type: editingCarrier.type || 'courier', // Default to courier if not set
                 emailContacts: emailContacts,
                 // Maintain legacy fields for backward compatibility
                 contactEmail: editingCarrier.contactEmail || '',
@@ -135,6 +137,7 @@ const QuickShipCarrierDialog = ({
                 carrierId: '',
                 accountNumber: '',
                 phone: '',
+                type: 'courier', // Default to courier for new carriers
                 emailContacts: [defaultTerminal],
                 contactEmail: '',
                 billingEmail: '',
@@ -313,6 +316,7 @@ const QuickShipCarrierDialog = ({
                 carrierId: formData.carrierId.trim(),
                 accountNumber: formData.accountNumber.trim(),
                 phone: formData.phone.trim(),
+                type: formData.type, // Include carrier type (courier/freight)
                 emailContacts: formData.emailContacts,
                 // Maintain legacy fields for backward compatibility
                 contactEmail: formData.contactEmail,
@@ -366,6 +370,7 @@ const QuickShipCarrierDialog = ({
             carrierId: '',
             accountNumber: '',
             phone: '',
+            type: 'courier', // Default to courier for new carriers
             emailContacts: [{
                 id: 'default',
                 name: 'Default Terminal',
@@ -475,6 +480,24 @@ const QuickShipCarrierDialog = ({
                                 InputLabelProps={{ sx: { fontSize: '12px' } }}
                                 InputProps={{ sx: { fontSize: '12px' } }}
                             />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Carrier Type</InputLabel>
+                                <Select
+                                    value={formData.type}
+                                    onChange={(e) => handleInputChange('type', e.target.value)}
+                                    label="Carrier Type"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="courier" sx={{ fontSize: '12px' }}>
+                                        Courier (Express/Ground)
+                                    </MenuItem>
+                                    <MenuItem value="freight" sx={{ fontSize: '12px' }}>
+                                        Freight (LTL/FTL)
+                                    </MenuItem>
+                                </Select>
+                            </FormControl>
                         </Grid>
                     </Grid>
 

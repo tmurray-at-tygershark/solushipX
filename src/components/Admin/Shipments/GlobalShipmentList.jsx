@@ -283,6 +283,12 @@ const GlobalShipmentList = () => {
                         const shipmentDoc = snapshot.docs[0];
                         const shipmentData = shipmentDoc.data();
 
+                        // Skip archived shipments
+                        if (shipmentData.status?.toLowerCase()?.trim() === 'archived') {
+                            console.log('🚫 Found shipment is archived, skipping');
+                            return;
+                        }
+
                         console.log('🎯 Found exact shipment ID match, navigating directly to detail:', value);
 
                         // Set the company context to match the shipment's company

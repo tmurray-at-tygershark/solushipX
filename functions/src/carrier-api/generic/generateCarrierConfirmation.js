@@ -522,12 +522,39 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         // Special instructions - combined from all sources
         specialInstructions: specialInstructions.join(' | ') || '',
         
-        // Broker information (empty as requested)
-        broker: '',
-        brokerPhone: '',
-        brokerFax: '',
-        port: '',
-        brokerRef: '',
+        // Broker information - now populated from shipment data with enhanced debugging
+        broker: (() => {
+            const brokerName = shipmentData.brokerDetails?.name || shipmentData.selectedBroker || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker name extracted:', {
+                brokerDetailsName: shipmentData.brokerDetails?.name,
+                selectedBroker: shipmentData.selectedBroker,
+                finalBrokerName: brokerName,
+                hasBrokerDetails: !!shipmentData.brokerDetails,
+                brokerDetailsKeys: shipmentData.brokerDetails ? Object.keys(shipmentData.brokerDetails) : []
+            });
+            return brokerName;
+        })(),
+        brokerPhone: (() => {
+            const phone = shipmentData.brokerDetails?.phone || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker phone extracted:', phone);
+            return phone;
+        })(),
+        brokerEmail: (() => {
+            const email = shipmentData.brokerDetails?.email || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker email extracted:', email);
+            return email;
+        })(),
+        brokerFax: '', // Keep empty as not used
+        port: (() => {
+            const port = shipmentData.brokerPort || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker port extracted:', port);
+            return port;
+        })(),
+        brokerRef: (() => {
+            const ref = shipmentData.brokerReference || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker reference extracted:', ref);
+            return ref;
+        })(),
         
         // Financial information - use cost currency for carrier confirmation
         agreedRate: agreedRate.toFixed(2) + ' ' + (manualRates[0]?.costCurrency || shipmentData.currency || 'CAD'),
@@ -837,7 +864,15 @@ function buildEnhancedConfirmation(doc, data) {
         drawEnhancedSpecialInstructions(doc, data);
     }
     
-    // Broker section (layout only as requested)
+    // Broker section - ALWAYS draw the section, even with empty values
+    console.log('🏢 CARRIER CONFIRMATION: Drawing broker section with data:', {
+        broker: data.broker || '',
+        brokerPhone: data.brokerPhone || '',
+        brokerEmail: data.brokerEmail || '',
+        port: data.port || '',
+        brokerRef: data.brokerRef || ''
+    });
+    
     drawEnhancedBrokerSection(doc, data);
     
     // Load information with detailed table
@@ -1309,14 +1344,11 @@ function drawEnhancedSpecialInstructions(doc, data) {
 }
 
 /**
- * Draws enhanced broker section
+ * Draws enhanced broker section with OPTIMIZED 3-COLUMN layout
  */
 function drawEnhancedBrokerSection(doc, data) {
-    const sectionY = 455; // MOVED DOWN: Add 10px padding from yellow banner above (was 445)
+    const sectionY = 455;
     const labelX = 35;
-    const valueX = 105; // FIXED: Reduced from 145 to 105 (40px closer)
-    const rightLabelX = 340;
-    const rightValueX = 395; // FIXED: Reduced from 450 to 395 (55px closer)
     
     // Section header
     doc.font('Helvetica-Bold')
@@ -1333,58 +1365,85 @@ function drawEnhancedBrokerSection(doc, data) {
     
     let yPos = sectionY + 20;
     
-    // Broker
+    // **OPTIMIZED 3-COLUMN LAYOUT - MAXIMUM SPACE UTILIZATION**
+    
+    // Define column positions for 3 columns
+    const col1LabelX = 35;
+    const col1ValueX = 85;    // Reduced gap
+    const col2LabelX = 210;   // Second column
+    const col2ValueX = 260;   // Second column value
+    const col3LabelX = 385;   // Third column
+    const col3ValueX = 435;   // Third column value
+    
+    // Row 1: Broker Name, Phone, Port (3 columns)
+    // Column 1: Broker Name
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Broker'), labelX, yPos);
+       .text(upperCaseText('Broker'), col1LabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
+       .text(':', col1ValueX - 5, yPos);
     
     doc.font('Helvetica')
-       .text(data.broker, valueX, yPos);
+       .text(data.broker || '', col1ValueX, yPos, { width: 115 });
     
-    // Phone
+    // Column 2: Phone
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Phone'), rightLabelX, yPos);
+       .text(upperCaseText('Phone'), col2LabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
+       .text(':', col2ValueX - 5, yPos);
     
     doc.font('Helvetica')
-       .text(data.brokerPhone, rightValueX, yPos);
+       .text(data.brokerPhone || '', col2ValueX, yPos, { width: 115 });
     
-    // Reference and Port
-    yPos += 14;
+    // Column 3: Port
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Reference'), labelX, yPos);
+       .text(upperCaseText('Port'), col3LabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
+       .text(':', col3ValueX - 5, yPos);
     
     doc.font('Helvetica')
-       .text(data.brokerRef, valueX, yPos);
+       .text(data.port || '', col3ValueX, yPos, { width: 140 });
     
-    // Port
+    // Row 2: Email and Reference (2 columns spanning more space)
+    yPos += 16;
+    
+    // Email (spans first two columns)
     doc.font('Helvetica-Bold')
+       .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Port'), rightLabelX, yPos);
+       .text(upperCaseText('Email'), col1LabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
+       .text(':', col1ValueX - 5, yPos);
     
     doc.font('Helvetica')
-       .text(data.port, rightValueX, yPos);
+       .fontSize(8)
+       .text(data.brokerEmail || '', col1ValueX, yPos, { width: 240 });
+    
+    // Reference (third column area) - FIXED: Moved value 30px to the right
+    doc.font('Helvetica-Bold')
+       .fontSize(9)
+       .fillColor('#333333')
+       .text(upperCaseText('Reference'), col3LabelX, yPos);
+    
+    doc.fillColor('#000000')
+       .text(':', col3ValueX + 25, yPos);  // Moved colon 30px right
+    
+    doc.font('Helvetica')
+       .text(data.brokerRef || '', col3ValueX + 30, yPos, { width: 110 });  // Moved value 30px right
 }
 
 /**
  * Draws enhanced load information section with detailed table
  */
 function drawEnhancedLoadInfoSection(doc, data) {
-    const tableY = 505; // MOVED DOWN: Adjusted for broker section move (was 495)
+    const tableY = 520; // MOVED DOWN: Adjusted for 2-row broker section (was 535, now 520)
     
     // Table header background
     doc.rect(25, tableY, 562, 20)
@@ -1485,7 +1544,7 @@ function drawEnhancedLoadInfoSection(doc, data) {
  * Draws enhanced terms and conditions section with full text
  */
 function drawEnhancedTermsSection(doc, data) {
-    const termsY = 635; // FINE-TUNED: moved back up 15px from 650 to 635 for perfect spacing
+    const termsY = 650; // MOVED DOWN: Adjusted for 2-row broker section (was 665, now 650)
     
     // Terms header
     doc.rect(25, termsY, 562, 18)
@@ -1519,7 +1578,7 @@ function drawEnhancedTermsSection(doc, data) {
  * Draws enhanced signature section
  */
 function drawEnhancedSignatureSection(doc, data) {
-    const sigY = 705; // MOVED DOWN 20PX: from 685 to 705
+    const sigY = 720; // MOVED DOWN: Adjusted for 2-row broker section (was 735, now 720)
     
     // Signature area background - MOVED DOWN ENTIRE SECTION
     doc.rect(25, sigY, 562, 35)

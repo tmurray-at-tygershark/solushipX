@@ -159,6 +159,9 @@ const { getShipmentAuditLog } = require('./src/getShipmentAuditLog');
 const { updateShipmentDocument } = require('./src/updateShipmentDocument');
 const { updateShipmentField } = require('./src/updateShipmentField');
 
+// Import archive shipment function
+const { archiveShipment } = require('./src/archiveShipment');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -301,6 +304,9 @@ exports.getShipmentDocumentsNew = getShipmentDocsNew;
 exports.getShipmentAuditLog = getShipmentAuditLog;
 exports.updateShipmentDocument = updateShipmentDocument;
 exports.updateShipmentField = updateShipmentField;
+
+// Export archive shipment function
+exports.archiveShipment = archiveShipment;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

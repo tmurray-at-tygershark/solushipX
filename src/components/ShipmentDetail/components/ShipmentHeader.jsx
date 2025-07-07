@@ -59,6 +59,7 @@ const ShipmentHeader = ({
     onRegenerateBOL,
     onRegenerateCarrierConfirmation,
     onRefreshShipment,
+    onArchiveShipment,
     actionStates = {}
 }) => {
     // Menu states
@@ -70,6 +71,7 @@ const ShipmentHeader = ({
     const isDraft = shipmentStatus === 'draft';
     const isCancelled = ['cancelled', 'canceled', 'void', 'voided'].includes(shipmentStatus);
     const isDelivered = shipmentStatus === 'delivered';
+    const isArchived = shipmentStatus === 'archived';
 
     // Determine if this is a freight shipment
     const isFreightShipment = shipment?.shipmentInfo?.shipmentType === 'freight' ||
@@ -129,6 +131,7 @@ const ShipmentHeader = ({
         switch (action) {
             case 'refreshStatus': onRefreshShipment?.(); break;
             case 'cancel': onCancelShipment?.(); break;
+            case 'archive': onArchiveShipment?.(); break;
             default: break;
         }
     };
@@ -366,10 +369,24 @@ const ShipmentHeader = ({
                         <ListItemText primary="Duplicate Shipment" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
-                    <MenuItem onClick={() => handleAction('archive')}>
-                        <ListItemIcon><ArchiveIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Archive" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
-                    </MenuItem>
+                    {!isDraft && !isArchived && (
+                        <MenuItem
+                            onClick={() => handleAction('archive')}
+                            disabled={actionStates.archiveShipment?.loading}
+                        >
+                            <ListItemIcon>
+                                {actionStates.archiveShipment?.loading ? (
+                                    <CircularProgress size={16} />
+                                ) : (
+                                    <ArchiveIcon fontSize="small" />
+                                )}
+                            </ListItemIcon>
+                            <ListItemText
+                                primary={actionStates.archiveShipment?.loading ? "Archiving..." : "Archive"}
+                                sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }}
+                            />
+                        </MenuItem>
+                    )}
 
                     <Divider />
 

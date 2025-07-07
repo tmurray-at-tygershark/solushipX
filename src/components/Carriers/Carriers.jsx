@@ -619,7 +619,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                     <TableCell>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                             <Avatar
-                                                src={carrier.logoURL && !carrier.logoURL.startsWith('blob:') ? carrier.logoURL : null}
+                                                src={carrier.logo && !carrier.logo.startsWith('blob:') ? carrier.logo : null}
                                                 sx={{ width: 32, height: 32, bgcolor: '#f3f4f6' }}
                                             >
                                                 <LocalShippingIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
@@ -636,10 +636,10 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                     </TableCell>
                                     <TableCell>
                                         <Chip
-                                            label={carrier.carrierType || 'courier'}
+                                            label={carrier.type || 'courier'}
                                             size="small"
                                             sx={{
-                                                ...getCarrierTypeColor(carrier.carrierType),
+                                                ...getCarrierTypeColor(carrier.type),
                                                 fontSize: '11px',
                                                 fontWeight: 500
                                             }}
@@ -865,10 +865,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     setShowCarrierDialog(false);
                     setEditingCarrier(null);
                 }}
-                onCarrierSaved={handleCarrierSaved}
+                onSuccess={handleCarrierSaved}
                 companyId={companyId}
                 editingCarrier={editingCarrier}
-                isEditMode={!!editingCarrier}
                 existingCarriers={quickShipCarriers}
             />
 

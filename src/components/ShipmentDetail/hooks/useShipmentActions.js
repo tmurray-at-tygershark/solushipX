@@ -16,7 +16,8 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         cancelShipment: { loading: false, error: null },
         regenerateBOL: { loading: false, error: null },
         regenerateConfirmation: { loading: false, error: null },
-        editShipment: { loading: false, error: null }
+        editShipment: { loading: false, error: null },
+        archiveShipment: { loading: false, error: null }
     });
 
     // Snackbar for user feedback
@@ -581,6 +582,41 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }, 500);
     }, [setActionLoading, showSnackbar]);
 
+    const handleArchiveShipment = useCallback(async () => {
+        try {
+            setActionLoading('archiveShipment', true);
+            showSnackbar('Archiving shipment...', 'info');
+            
+            // Call the archive cloud function
+            const archiveShipmentFunction = httpsCallable(functions, 'archiveShipment');
+            const result = await archiveShipmentFunction({
+                shipmentId: shipment?.shipmentID || shipment?.id,
+                firebaseDocId: shipment?.id,
+                reason: 'User requested archive from shipment detail'
+            });
+
+            if (result.data && result.data.success) {
+                showSnackbar('Shipment archived successfully', 'success');
+                
+                // Refresh the shipment data to reflect the change
+                if (statusUpdateFunctions.refreshShipment) {
+                    await statusUpdateFunctions.refreshShipment();
+                }
+                
+                // Optionally, navigate back to the shipments list after a delay
+                // This will be handled by the parent component if needed
+            } else {
+                throw new Error(result.data?.error || 'Failed to archive shipment');
+            }
+        } catch (error) {
+            console.error('Error archiving shipment:', error);
+            const errorMessage = error.message || 'Unknown error occurred';
+            showSnackbar(`Failed to archive shipment: ${errorMessage}`, 'error');
+        } finally {
+            setActionLoading('archiveShipment', false);
+        }
+    }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar, statusUpdateFunctions]);
+
     return {
         actionStates,
         snackbar,
@@ -594,6 +630,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         handleRegenerateBOL,
         handleRegenerateCarrierConfirmation,
         handleEditShipment,
+        handleArchiveShipment,
         showSnackbar,
         setSnackbar,
         setActionLoading,

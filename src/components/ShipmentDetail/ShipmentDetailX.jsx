@@ -162,6 +162,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         handleRegenerateBOL,
         handleRegenerateCarrierConfirmation,
         handleEditShipment,
+        handleArchiveShipment,
         showRegenerationDialog,
         closeRegenerationDialog
     } = useShipmentActions(shipment, carrierData, shipmentDocuments, viewPdfInModal, {
@@ -766,6 +767,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onRegenerateBOL={handleRegenerateBOL}
                     onRegenerateCarrierConfirmation={handleRegenerateCarrierConfirmation}
                     onEditShipment={handleEditShipmentClick}
+                    onArchiveShipment={handleArchiveShipment}
                     isAdmin={isAdmin}
                 />
 

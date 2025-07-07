@@ -73,6 +73,11 @@ const AdminCustomerList = lazy(() => import('./components/Admin/Customers/Custom
 const AdminCustomerDetail = lazy(() => import('./components/Admin/Customers/CustomerDetail'));
 const AdminCustomerForm = lazy(() => import('./components/Admin/Customers/CustomerForm'));
 
+// Admin Brokers Components (New)
+const BrokerList = lazy(() => import('./components/Admin/Brokers/BrokerList'));
+const BrokerDetail = lazy(() => import('./components/Admin/Brokers/BrokerDetail'));
+const BrokerForm = lazy(() => import('./components/Admin/Brokers/BrokerForm'));
+
 // Markups Page (New)
 const MarkupsPage = lazy(() => import('./components/Admin/Markups/MarkupsPage'));
 
@@ -248,6 +253,10 @@ function AppRoutes() {
                     <Route path="customers/new" element={<AdminCustomerForm />} />
                     <Route path="customers/:id" element={<AdminCustomerDetail />} />
                     <Route path="customers/:id/edit" element={<AdminCustomerForm />} />
+                    <Route path="brokers" element={<BrokerList />} />
+                    <Route path="brokers/new" element={<BrokerForm />} />
+                    <Route path="brokers/:id" element={<BrokerDetail />} />
+                    <Route path="brokers/:id/edit" element={<BrokerDetail />} />
                     <Route path="organizations" element={<OrganizationList />} />
                     <Route path="organizations/new" element={<OrganizationForm />} />
                     <Route path="organizations/:id" element={<OrganizationDetail />} />

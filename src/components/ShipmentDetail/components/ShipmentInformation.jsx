@@ -13,7 +13,13 @@ import {
     Button,
     Dialog,
     DialogTitle,
-    DialogContent
+    DialogContent,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow
 } from '@mui/material';
 import {
     LocalShipping as LocalShippingIcon,
@@ -1667,6 +1673,78 @@ const ShipmentInformation = ({
                         </Stack>
                     </Box>
                 </Grid>
+
+                {/* Broker Information - Full width table format - Only show if broker data exists */}
+                {(shipment?.selectedBroker || shipment?.brokerDetails) && (
+                    <Grid item xs={12}>
+                        <Paper sx={{ mb: 2 }}>
+                            <Box sx={{ p: 2 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151', mb: 2 }}>
+                                    Broker Information
+                                </Typography>
+                                <TableContainer>
+                                    <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '200px' }}>
+                                                    Broker Name
+                                                </TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '150px' }}>
+                                                    Phone
+                                                </TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '200px' }}>
+                                                    Email
+                                                </TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '120px' }}>
+                                                    Port
+                                                </TableCell>
+                                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                                    Reference
+                                                </TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            <TableRow sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                                    {shipment?.brokerDetails?.name || shipment?.selectedBroker || 'N/A'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                                    {shipment?.brokerDetails?.phone || 'N/A'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                                    {shipment?.brokerDetails?.email || 'N/A'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                                    {shipment?.brokerPort || 'N/A'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                                    {shipment?.brokerReference ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                                {shipment.brokerReference}
+                                                            </Typography>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(shipment.brokerReference);
+                                                                    onShowSnackbar('Broker reference copied!', 'success');
+                                                                }}
+                                                                sx={{ padding: '2px' }}
+                                                                title="Copy broker reference"
+                                                            >
+                                                                <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                                            </IconButton>
+                                                        </Box>
+                                                    ) : 'N/A'}
+                                                </TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Box>
+                        </Paper>
+                    </Grid>
+                )}
             </Grid>
 
             {/* Map Dialog */}

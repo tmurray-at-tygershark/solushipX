@@ -35,7 +35,8 @@ import {
     MenuItem,
     Divider,
     Collapse,
-    Paper
+    Paper,
+    Alert
 } from '@mui/material';
 import {
     Menu as MenuIcon,
@@ -139,6 +140,9 @@ const AddressBookComponent = lazy(() => import('../AddressBook/AddressBook'));
 
 // Lazy load the Billing component for the modal
 const BillingComponent = lazy(() => import('../Billing/Billing'));
+
+// Lazy load the Brokers component for the modal
+const BrokersComponent = lazy(() => import('../Brokers/Brokers'));
 
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
@@ -2444,7 +2448,7 @@ const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
-    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath, clearStoredCompanyContext } = useCompany();
+    const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath, clearStoredCompanyContext, setCompanyContext } = useCompany();
     const navigate = useNavigate();
     const location = useLocation();
     const { logout, userRole, currentUser } = useAuth();
@@ -2463,8 +2467,14 @@ const Dashboard = () => {
     const [isAddressBookModalOpen, setIsAddressBookModalOpen] = useState(false);
     const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
     const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+    const [isBrokersModalOpen, setIsBrokersModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
+
+    // Company switcher state
+    const [isCompanySwitcherOpen, setIsCompanySwitcherOpen] = useState(false);
+    const [availableCompanies, setAvailableCompanies] = useState([]);
+    const [loadingCompanies, setLoadingCompanies] = useState(false);
 
     // Profile menu state
     const [profileMenuAnchor, setProfileMenuAnchor] = useState(null);
@@ -2694,8 +2704,9 @@ const Dashboard = () => {
                     return keepShipment;
                 }
 
-                // Normal filtering for regular shipments
-                return shipment.status?.toLowerCase() !== 'draft';
+                // Normal filtering for regular shipments - exclude drafts and cancelled
+                const status = shipment.status?.toLowerCase();
+                return status !== 'draft' && status !== 'cancelled' && status !== 'canceled';
             });
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
@@ -2744,6 +2755,39 @@ const Dashboard = () => {
             unsubscribeNormal();
         };
     }, [companyIdForAddress, companyLoading, thirtyDaysAgo]);
+
+    // Load available companies for switcher
+    useEffect(() => {
+        const loadAvailableCompanies = async () => {
+            if (!currentUser || (!isAdmin && userRole !== 'superadmin')) return;
+
+            setLoadingCompanies(true);
+            try {
+                const companiesQuery = userRole === 'superadmin'
+                    ? query(collection(db, 'companies'))
+                    : query(
+                        collection(db, 'companies'),
+                        where('companyID', 'in', currentUser.connectedCompanies?.companies || [])
+                    );
+
+                const companiesSnapshot = await getDocs(companiesQuery);
+                const companiesData = companiesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                setAvailableCompanies(companiesData);
+            } catch (error) {
+                console.error('Error loading companies:', error);
+            } finally {
+                setLoadingCompanies(false);
+            }
+        };
+
+        if (isCompanySwitcherOpen) {
+            loadAvailableCompanies();
+        }
+    }, [isCompanySwitcherOpen, currentUser, userRole, isAdmin]);
 
     // Load user profile data
     useEffect(() => {
@@ -2904,6 +2948,8 @@ const Dashboard = () => {
             setIsNotificationsModalOpen(true);
         } else if (action === 'carriers') {
             setIsCarriersModalOpen(true);
+        } else if (action === 'brokers') {
+            setIsBrokersModalOpen(true);
         }
     };
 
@@ -3383,6 +3429,24 @@ const Dashboard = () => {
                         Carriers
                     </Typography>
                 </MenuItem>
+
+                <MenuItem
+                    onClick={() => handleSettingsMenuAction('brokers')}
+                    sx={{
+                        py: 1.5,
+                        px: 2,
+                        '&:hover': {
+                            bgcolor: 'rgba(0, 0, 0, 0.04)'
+                        }
+                    }}
+                >
+                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                        <BusinessIcon fontSize="small" />
+                    </ListItemIcon>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Brokers
+                    </Typography>
+                </MenuItem>
             </Menu>
 
             {/* Left Side Navigation Panel */}
@@ -3418,7 +3482,8 @@ const Dashboard = () => {
                 <Box sx={{
                     p: { xs: 1.3, sm: 1.7 }, // Reduced by 15% from 1.5, 2
                     display: 'flex',
-                    justifyContent: 'flex-start',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
                     position: 'relative',
                     zIndex: 1,
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
@@ -3428,6 +3493,46 @@ const Dashboard = () => {
                         alt="SoluShipX"
                         style={{ height: 51 }} // Reduced by 15% from 60px
                     />
+
+                    {/* Company Info and Switcher - Only show for Super Admins and Multi-Company Admins */}
+                    {companyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) && (
+                        <Box sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-end',
+                            gap: 0.5
+                        }}>
+                            <Typography sx={{
+                                fontSize: '11px',
+                                color: 'rgba(255, 255, 255, 0.9)',
+                                fontWeight: 600
+                            }}>
+                                {companyData.name || 'Company'}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography sx={{
+                                    fontSize: '10px',
+                                    color: 'rgba(255, 255, 255, 0.6)'
+                                }}>
+                                    ID: {companyData.companyID || companyIdForAddress}
+                                </Typography>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => setIsCompanySwitcherOpen(true)}
+                                    sx={{
+                                        p: 0.25,
+                                        color: 'rgba(255, 255, 255, 0.7)',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            color: 'rgba(255, 255, 255, 0.9)'
+                                        }
+                                    }}
+                                >
+                                    <SwapHorizIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                            </Box>
+                        </Box>
+                    )}
                 </Box>
 
                 {/* Tracking Search Box */}
@@ -4229,6 +4334,164 @@ const Dashboard = () => {
                         </ShipmentFormProvider>
                     </LazyComponentWrapper>
                 </Box>
+            </Dialog>
+
+            {/* Brokers Fullscreen Modal */}
+            <Dialog
+                open={isBrokersModalOpen}
+                onClose={() => setIsBrokersModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <BrokersComponent
+                            isModal={true}
+                            onClose={() => setIsBrokersModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Company Switcher Dialog */}
+            <Dialog
+                open={isCompanySwitcherOpen}
+                onClose={() => setIsCompanySwitcherOpen(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    borderBottom: '1px solid #e5e7eb',
+                    pb: 2
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SwapHorizIcon sx={{ color: '#3b82f6' }} />
+                            <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600 }}>
+                                Switch Company
+                            </Typography>
+                        </Box>
+                        <IconButton
+                            size="small"
+                            onClick={() => setIsCompanySwitcherOpen(false)}
+                            sx={{ color: '#6b7280' }}
+                        >
+                            <CloseIcon fontSize="small" />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ mt: 2 }}>
+                    {loadingCompanies ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                            <CircularProgress size={32} />
+                        </Box>
+                    ) : availableCompanies.length === 0 ? (
+                        <Alert severity="info">No companies available to switch to.</Alert>
+                    ) : (
+                        <Stack spacing={1}>
+                            {availableCompanies.map((company) => (
+                                <Paper
+                                    key={company.id}
+                                    sx={{
+                                        p: 2,
+                                        cursor: 'pointer',
+                                        border: '1px solid',
+                                        borderColor: company.companyID === companyIdForAddress ? '#3b82f6' : '#e5e7eb',
+                                        backgroundColor: company.companyID === companyIdForAddress ? 'rgba(59, 130, 246, 0.05)' : 'white',
+                                        '&:hover': {
+                                            borderColor: '#3b82f6',
+                                            backgroundColor: 'rgba(59, 130, 246, 0.05)'
+                                        },
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onClick={async () => {
+                                        if (company.companyID !== companyIdForAddress) {
+                                            try {
+                                                // Update company context
+                                                await setCompanyContext(company);
+
+                                                setIsCompanySwitcherOpen(false);
+
+                                                // Show success message
+                                                console.log('Switched to company:', company.name);
+
+                                                // Reload the page to ensure all data is refreshed
+                                                window.location.reload();
+                                            } catch (error) {
+                                                console.error('Error switching company:', error);
+                                                alert('Failed to switch company. Please try again.');
+                                            }
+                                        }
+                                    }}
+                                >
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <Box>
+                                            <Typography sx={{ fontWeight: 600, fontSize: '14px', mb: 0.5 }}>
+                                                {company.name}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                ID: {company.companyID}
+                                            </Typography>
+                                        </Box>
+                                        {company.companyID === companyIdForAddress && (
+                                            <Chip
+                                                label="Current"
+                                                size="small"
+                                                sx={{
+                                                    backgroundColor: '#3b82f6',
+                                                    color: 'white',
+                                                    fontSize: '11px',
+                                                    height: 22
+                                                }}
+                                            />
+                                        )}
+                                    </Box>
+                                </Paper>
+                            ))}
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ borderTop: '1px solid #e5e7eb', px: 3, py: 2 }}>
+                    <Button
+                        onClick={() => setIsCompanySwitcherOpen(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                </DialogActions>
             </Dialog>
 
             {/* AI Shipping Agent Overlay - HIDDEN FOR NOW */}

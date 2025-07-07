@@ -1426,6 +1426,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             console.log(`📊 Loaded ${shipmentsData.length} total shipments from database (sorted by createdAt)`);
 
+            // CRITICAL: Exclude archived shipments from ALL views
+            shipmentsData = shipmentsData.filter(s => {
+                const status = s.status?.toLowerCase()?.trim();
+                return status !== 'archived';
+            });
+
+            console.log(`📊 After excluding archived: ${shipmentsData.length} shipments remaining`);
+
             // Store all shipments for stats
             setAllShipments(shipmentsData);
 
@@ -3044,6 +3052,32 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         showSnackbar('Refreshing shipments data...', 'info');
     }, [reloadShipments, showSnackbar]);
 
+    // Handle archive shipment
+    const handleArchiveShipment = useCallback(async (shipment) => {
+        try {
+            console.log('📦 Archiving shipment:', shipment.shipmentID || shipment.id);
+
+            // Call the archive cloud function
+            const archiveShipmentFunction = httpsCallable(functions, 'archiveShipment');
+            const result = await archiveShipmentFunction({
+                shipmentId: shipment.shipmentID || shipment.id,
+                firebaseDocId: shipment.id,
+                reason: 'User requested archive from shipments table'
+            });
+
+            if (result.data.success) {
+                showSnackbar('Shipment archived successfully', 'success');
+                // Reload shipments to reflect the change
+                loadShipments();
+            } else {
+                showSnackbar('Failed to archive shipment', 'error');
+            }
+        } catch (error) {
+            console.error('Error archiving shipment:', error);
+            showSnackbar(error.message || 'Error archiving shipment', 'error');
+        }
+    }, [showSnackbar, loadShipments]);
+
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {
         const currentView = navigationStack[navigationStack.length - 1];
@@ -3193,6 +3227,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 onRepeatShipment={handleRepeatShipment}
                 onEditDraftShipment={handleEditDraftShipment}
                 onEditShipment={handleEditShipment}
+                onArchiveShipment={handleArchiveShipment}
                 onPrintLabel={async (shipment) => {
                     try {
                         // Get document availability using the same logic as the menu

@@ -59,7 +59,8 @@ import {
     Business as BusinessIcon,
     Description as DescriptionIcon,
     Cancel as CancelIcon,
-    Map as MapIcon
+    Map as MapIcon,
+    Clear as ClearIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy } from 'firebase/firestore';
@@ -89,6 +90,7 @@ import { Suspense } from 'react';
 
 // Lazy load the address dialog component
 const AddressFormDialog = React.lazy(() => import('../AddressBook/AddressFormDialog'));
+const QuickShipBrokerDialog = React.lazy(() => import('./QuickShipBrokerDialog'));
 
 // Packaging types for shipments
 const PACKAGING_TYPES = [
@@ -230,7 +232,7 @@ const FREIGHT_CLASSES = [
     }
 ];
 
-const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData, onShipmentUpdated = null, onDraftSaved = null }) => {
+const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData, onShipmentUpdated = null, onDraftSaved = null, editMode = false, editShipment = null }) => {
     const { companyData, companyIdForAddress, loading: companyLoading, setCompanyContext } = useCompany();
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const debounceTimeoutRef = useRef(null);
@@ -318,6 +320,17 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [formErrors, setFormErrors] = useState({});
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+    // Broker state
+    const [companyBrokers, setCompanyBrokers] = useState([]);
+    const [selectedBroker, setSelectedBroker] = useState('');
+    const [brokerPort, setBrokerPort] = useState('');
+    const [brokerReference, setBrokerReference] = useState('');
+    const [loadingBrokers, setLoadingBrokers] = useState(false);
+    const [showBrokerDialog, setShowBrokerDialog] = useState(false);
+    const [editingBroker, setEditingBroker] = useState(null);
+    const [brokerSuccessMessage, setBrokerSuccessMessage] = useState('');
+    const [brokerExpanded, setBrokerExpanded] = useState(false);
+
     // Address dialog state
     const [addressEditMode, setAddressEditMode] = useState(null);
     const [currentView, setCurrentView] = useState('createshipment');
@@ -349,6 +362,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     // Extract draft ID from prePopulatedData or props
     const draftIdToLoad = prePopulatedData?.editDraftId || draftId;
 
+    // Check if we're editing an existing shipment
+    const isEditingExistingShipment = editMode && editShipment && editShipment.status !== 'draft';
+
     // Company selection state for super admins
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
@@ -360,6 +376,38 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
+
+    // Helper function to determine if broker section should be visible (US shipments only)
+    const shouldShowBrokerSection = useMemo(() => {
+        const fromCountry = shipFromAddress?.country;
+        const toCountry = shipToAddress?.country;
+
+        // Show if either origin or destination is US
+        return fromCountry === 'US' || toCountry === 'US';
+    }, [shipFromAddress?.country, shipToAddress?.country]);
+
+    // Helper function to determine if broker section should be expanded
+    const shouldExpandBrokerSection = useMemo(() => {
+        // Auto-expand if a broker is selected
+        return selectedBroker !== '';
+    }, [selectedBroker]);
+
+    // Update broker expansion state when conditions change
+    useEffect(() => {
+        if (shouldExpandBrokerSection && !brokerExpanded) {
+            setBrokerExpanded(true);
+        }
+    }, [shouldExpandBrokerSection, brokerExpanded]);
+
+    // Reset broker data when section becomes hidden
+    useEffect(() => {
+        if (!shouldShowBrokerSection) {
+            setSelectedBroker('');
+            setBrokerPort('');
+            setBrokerReference('');
+            setBrokerExpanded(false);
+        }
+    }, [shouldShowBrokerSection]);
 
     // Load customers for selected company (super admin)
     const loadCustomersForCompany = useCallback(async (companyId) => {
@@ -587,6 +635,83 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         };
         loadCustomers();
     }, [companyIdForAddress]);
+
+    // Load Company Brokers
+    const loadCompanyBrokers = useCallback(async () => {
+        const currentCompanyId = selectedCompanyId || companyIdForAddress;
+        if (!currentCompanyId) return;
+
+        setLoadingBrokers(true);
+        try {
+            const brokersQuery = query(
+                collection(db, 'companyBrokers'),
+                where('companyID', '==', currentCompanyId),
+                where('enabled', '==', true)
+            );
+            const brokersSnapshot = await getDocs(brokersQuery);
+            const brokers = brokersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            console.log('📋 Loaded company brokers:', brokers.length, 'brokers for company:', currentCompanyId);
+            setCompanyBrokers(brokers);
+        } catch (error) {
+            console.error('Error loading company brokers:', error);
+        } finally {
+            setLoadingBrokers(false);
+        }
+    }, [selectedCompanyId, companyIdForAddress]);
+
+    // Load brokers when company changes
+    useEffect(() => {
+        loadCompanyBrokers();
+    }, [loadCompanyBrokers]);
+
+    // Broker management functions
+    const handleAddBroker = () => {
+        setEditingBroker(null);
+        setShowBrokerDialog(true);
+    };
+
+    const handleEditBroker = (broker) => {
+        setEditingBroker(broker);
+        setShowBrokerDialog(true);
+    };
+
+    const handleBrokerSuccess = async (savedBroker, isEdit = false) => {
+        if (isEdit) {
+            // Update existing broker in local state immediately
+            setCompanyBrokers(prev => prev.map(b =>
+                b.id === savedBroker.id ? savedBroker : b
+            ));
+            setBrokerSuccessMessage(`Broker "${savedBroker.name}" has been updated successfully.`);
+
+            // If the edited broker is currently selected, update the selection with new name
+            if (selectedBroker && companyBrokers.find(b => b.id === savedBroker.id)) {
+                setSelectedBroker(savedBroker.name);
+            }
+
+            // Reload brokers from database to ensure we have the latest data
+            try {
+                await loadCompanyBrokers();
+            } catch (error) {
+                console.error('Error reloading brokers after edit:', error);
+            }
+        } else {
+            // Add new broker to local state
+            setCompanyBrokers(prev => [...prev, savedBroker]);
+            setBrokerSuccessMessage(`Broker "${savedBroker.name}" has been added successfully.`);
+            setSelectedBroker(savedBroker.name);
+        }
+
+        setShowBrokerDialog(false);
+        setEditingBroker(null);
+
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+            setBrokerSuccessMessage('');
+        }, 3000);
+    };
 
     // Load customers for initial company (super admin)
     useEffect(() => {
@@ -1055,6 +1180,22 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             setAdditionalServices(draftData.additionalServices);
                         }
 
+                        // Load broker information
+                        if (draftData.selectedBroker) {
+                            setSelectedBroker(draftData.selectedBroker);
+                        }
+                        if (draftData.brokerPort) {
+                            setBrokerPort(draftData.brokerPort);
+                        }
+                        if (draftData.brokerReference) {
+                            setBrokerReference(draftData.brokerReference);
+                        }
+
+                        // Auto-expand broker section if broker data exists
+                        if (draftData.selectedBroker || draftData.brokerPort || draftData.brokerReference) {
+                            setBrokerExpanded(true);
+                        }
+
                         // Load customer filter for super admins
                         if (userRole === 'superadmin' && draftData.selectedCustomerId) {
                             setSelectedCustomerId(draftData.selectedCustomerId);
@@ -1086,6 +1227,100 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
         loadDraft();
     }, [draftIdToLoad, onReturnToShipments]);
+
+    // Load existing shipment data when editing
+    useEffect(() => {
+        const loadEditShipmentData = async () => {
+            if (!isEditingExistingShipment || !editShipment) return;
+
+            console.log('🔄 Loading existing shipment for editing:', editShipment);
+
+            try {
+                // Set the shipment ID
+                setShipmentID(editShipment.shipmentID || editShipment.id);
+                setActiveDraftId(editShipment.id);
+                setIsEditingDraft(false); // Not a draft, it's an existing shipment
+
+                // Load shipment info
+                if (editShipment.shipmentInfo) {
+                    setShipmentInfo({
+                        ...shipmentInfo,
+                        ...editShipment.shipmentInfo,
+                        referenceNumbers: editShipment.shipmentInfo.referenceNumbers || []
+                    });
+                }
+
+                // Load addresses
+                if (editShipment.shipFrom || editShipment.shipFromAddress) {
+                    const fromAddress = editShipment.shipFrom || editShipment.shipFromAddress;
+                    setShipFromAddress(fromAddress);
+                }
+                if (editShipment.shipTo || editShipment.shipToAddress) {
+                    const toAddress = editShipment.shipTo || editShipment.shipToAddress;
+                    setShipToAddress(toAddress);
+                    // Set selected customer based on ship to address
+                    if (toAddress.customerID && customers.length > 0) {
+                        const customer = customers.find(c => c.id === toAddress.customerID);
+                        if (customer) {
+                            setSelectedCustomer(customer);
+                        }
+                    }
+                }
+
+                // Load packages
+                if (editShipment.packages && Array.isArray(editShipment.packages) && editShipment.packages.length > 0) {
+                    console.log('Loading packages from shipment:', editShipment.packages);
+                    const validatedPackages = editShipment.packages.map(pkg => ({
+                        ...pkg,
+                        id: pkg.id || Math.random(),
+                        unitSystem: pkg.unitSystem || editShipment.unitSystem || 'imperial'
+                    }));
+                    setPackages(validatedPackages);
+                }
+
+                // Load broker information
+                if (editShipment.selectedBroker) {
+                    setSelectedBroker(editShipment.selectedBroker);
+                }
+                if (editShipment.brokerPort) {
+                    setBrokerPort(editShipment.brokerPort);
+                }
+                if (editShipment.brokerReference) {
+                    setBrokerReference(editShipment.brokerReference);
+                }
+
+                // Auto-expand broker section if broker data exists
+                if (editShipment.selectedBroker || editShipment.brokerPort || editShipment.brokerReference) {
+                    setBrokerExpanded(true);
+                }
+
+                // Load additional services
+                if (editShipment.additionalServices && Array.isArray(editShipment.additionalServices)) {
+                    setAdditionalServices(editShipment.additionalServices);
+                }
+
+                // Load selected rate if available
+                if (editShipment.selectedRate) {
+                    setSelectedRate(editShipment.selectedRate);
+                    setShowRates(true);
+
+                    // Also load all rates if available
+                    if (editShipment.rates && Array.isArray(editShipment.rates)) {
+                        setRates(editShipment.rates);
+                        setFilteredRates(editShipment.rates);
+                    }
+                }
+
+                console.log('✅ Loaded existing shipment data for editing');
+
+            } catch (error) {
+                console.error('❌ Error loading existing shipment data:', error);
+                showMessage('Error loading shipment data for editing', 'error');
+            }
+        };
+
+        loadEditShipmentData();
+    }, [isEditingExistingShipment, editShipment, customers]);
 
     // Generate shipment ID and create initial draft (similar to QuickShip)
     useEffect(() => {
@@ -1946,6 +2181,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Additional Services (freight and courier)
                 additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
 
+                // Broker information
+                selectedBroker: selectedBroker || '',
+                brokerDetails: selectedBroker ? companyBrokers.find(b => b.name === selectedBroker) : null,
+                brokerPort: brokerPort || '', // Add shipment-level broker port
+                brokerReference: brokerReference || '', // Add shipment-level broker reference
+
                 // Customer filter for super admins
                 ...(userRole === 'superadmin' && selectedCustomerId ? { selectedCustomerId } : {}),
 
@@ -2225,6 +2466,12 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 // Additional Services (freight and courier)
                 additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
 
+                // Broker information
+                selectedBroker: selectedBroker || '',
+                brokerDetails: selectedBroker ? companyBrokers.find(b => b.name === selectedBroker) : null,
+                brokerPort: brokerPort || '', // Add shipment-level broker port
+                brokerReference: brokerReference || '', // Add shipment-level broker reference
+
                 // Selected rate and carrier information (clean undefined values)
                 selectedRate: cleanUndefinedValues(selectedRate),
                 carrier: selectedRate?.carrier?.name || selectedRate?.sourceCarrierName || 'Unknown',
@@ -2408,7 +2655,15 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
             // First save the shipment to Firestore
             let draftFirestoreDocId;
-            if (isEditingDraft && (activeDraftId || draftIdToLoad)) {
+            if (editMode && editShipment) {
+                // Update existing shipment
+                draftFirestoreDocId = editShipment.id;
+                await updateDoc(doc(db, 'shipments', draftFirestoreDocId), {
+                    ...shipmentData,
+                    updatedAt: new Date(),
+                    status: 'booked' // Keep the booked status
+                });
+            } else if (isEditingDraft && (activeDraftId || draftIdToLoad)) {
                 // Update existing draft
                 draftFirestoreDocId = activeDraftId || draftIdToLoad;
                 await updateDoc(doc(db, 'shipments', draftFirestoreDocId), shipmentData);
@@ -3304,6 +3559,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         </Grid>
                                     </CardContent>
                                 </Card>
+
+
 
                                 {/* Ship From Section */}
                                 <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
@@ -4310,6 +4567,238 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                     </Card>
                                 )}
 
+                                {/* Broker Information Section - Only show for US shipments */}
+                                {shouldShowBrokerSection && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                        Broker Information
+                                                    </Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    {selectedBroker && (
+                                                        <Chip
+                                                            label="Selected"
+                                                            size="small"
+                                                            color="success"
+                                                            sx={{ fontSize: '12px' }}
+                                                        />
+                                                    )}
+                                                    <IconButton
+                                                        onClick={() => setBrokerExpanded(!brokerExpanded)}
+                                                        size="small"
+                                                        sx={{ color: '#6b7280' }}
+                                                    >
+                                                        {brokerExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                                    </IconButton>
+                                                </Box>
+                                            </Box>
+
+                                            <Collapse in={brokerExpanded}>
+
+                                                {/* Broker Selection */}
+                                                <Box sx={{
+                                                    border: selectedBroker ? '2px solid #4caf50' : '2px solid #e0e0e0',
+                                                    borderRadius: 2,
+                                                    p: 2,
+                                                    mb: 2,
+                                                    backgroundColor: selectedBroker ? '#f8fff8' : '#ffffff',
+                                                    transition: 'all 0.3s ease'
+                                                }}>
+                                                    <Box display="flex" alignItems="center" mb={2}>
+                                                        <Box sx={{
+                                                            width: '24px',
+                                                            height: '24px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: selectedBroker ? '#4caf50' : '#e0e0e0',
+                                                            color: 'white',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            mr: 1,
+                                                            transition: 'all 0.3s ease'
+                                                        }}>
+                                                            {selectedBroker ? '✓' : 'B'}
+                                                        </Box>
+                                                        <Typography variant="body2" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                            Select Broker (Optional)
+                                                        </Typography>
+                                                        {selectedBroker && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setSelectedBroker('')}
+                                                                sx={{ ml: 'auto' }}
+                                                            >
+                                                                <ClearIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        )}
+                                                    </Box>
+
+                                                    {/* Broker Dropdown */}
+                                                    <Autocomplete
+                                                        options={companyBrokers}
+                                                        getOptionLabel={(option) => option.name || ''}
+                                                        value={companyBrokers.find(broker => broker.name === selectedBroker) || null}
+                                                        onChange={(event, newValue) => {
+                                                            setSelectedBroker(newValue ? newValue.name : '');
+                                                        }}
+                                                        renderInput={(params) => (
+                                                            <TextField
+                                                                {...params}
+                                                                placeholder={selectedBroker ? "Change broker..." : "Choose a broker..."}
+                                                                size="small"
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                        )}
+                                                        renderOption={(props, option) => (
+                                                            <Box component="li" {...props} sx={{ p: 1 }}>
+                                                                <Box display="flex" alignItems="center" width="100%">
+                                                                    <Box flex={1}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                                            {option.name}
+                                                                        </Typography>
+                                                                        {(option.reference || option.phone || option.port) && (
+                                                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#666' }}>
+                                                                                {[option.reference && `Ref: ${option.reference}`, option.phone && `📞 ${option.phone}`, option.port && `Port: ${option.port}`].filter(Boolean).join(' • ')}
+                                                                            </Typography>
+                                                                        )}
+                                                                    </Box>
+                                                                </Box>
+                                                            </Box>
+                                                        )}
+                                                        sx={{ width: '100%' }}
+                                                        loading={loadingBrokers}
+                                                    />
+
+                                                    {/* Broker Action Buttons */}
+                                                    <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                                        {/* Edit Selected Broker Button - Only show when broker is selected */}
+                                                        {selectedBroker && (
+                                                            <Button
+                                                                variant="outlined"
+                                                                size="small"
+                                                                startIcon={<EditIcon />}
+                                                                onClick={() => {
+                                                                    const brokerToEdit = companyBrokers.find(b => b.name === selectedBroker);
+                                                                    if (brokerToEdit) {
+                                                                        handleEditBroker(brokerToEdit);
+                                                                    }
+                                                                }}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    borderColor: '#2196f3',
+                                                                    color: '#2196f3',
+                                                                    '&:hover': {
+                                                                        borderColor: '#1976d2',
+                                                                        backgroundColor: '#f3f8ff'
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Edit Broker
+                                                            </Button>
+                                                        )}
+
+                                                        {/* Add New Broker Button */}
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<AddIcon />}
+                                                            onClick={handleAddBroker}
+                                                            tabIndex={-1}
+                                                            sx={{
+                                                                fontSize: '12px',
+                                                                borderColor: '#e0e0e0',
+                                                                color: '#666'
+                                                            }}
+                                                        >
+                                                            Add New Broker
+                                                        </Button>
+                                                    </Box>
+                                                </Box>
+
+                                                {/* Selected Broker Details - Compact Single Row Layout */}
+                                                {selectedBroker && (() => {
+                                                    const brokerDetails = companyBrokers.find(b => b.name === selectedBroker);
+                                                    return brokerDetails ? (
+                                                        <Box sx={{
+                                                            mt: 2,
+                                                            p: 2,
+                                                            bgcolor: '#f0f9ff',
+                                                            borderRadius: 2,
+                                                            border: '1px solid #bae6fd'
+                                                        }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                                                Selected Broker
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                                    <strong>Name:</strong> {brokerDetails.name}
+                                                                </Typography>
+                                                                {brokerDetails.reference && (
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                                        <strong>Reference:</strong> {brokerDetails.reference}
+                                                                    </Typography>
+                                                                )}
+                                                                {brokerDetails.phone && (
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                                        <strong>Phone:</strong> {brokerDetails.phone}
+                                                                    </Typography>
+                                                                )}
+                                                                {brokerDetails.port && (
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                                                        <strong>Port:</strong> {brokerDetails.port}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </Box>
+                                                    ) : null;
+                                                })()}
+
+                                                {/* Shipment-level Broker Fields */}
+                                                <Box sx={{ mt: 2 }}>
+                                                    <Grid container spacing={2}>
+                                                        <Grid item xs={12} md={6}>
+                                                            <TextField
+                                                                fullWidth
+                                                                label="Port"
+                                                                value={brokerPort}
+                                                                onChange={(e) => setBrokerPort(e.target.value)}
+                                                                size="small"
+                                                                placeholder="Enter port..."
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                        </Grid>
+                                                        <Grid item xs={12} md={6}>
+                                                            <TextField
+                                                                fullWidth
+                                                                label="Reference"
+                                                                value={brokerReference}
+                                                                onChange={(e) => setBrokerReference(e.target.value)}
+                                                                size="small"
+                                                                placeholder="Enter reference..."
+                                                                sx={{
+                                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                        </Grid>
+                                                    </Grid>
+                                                </Box>
+                                            </Collapse>
+                                        </CardContent>
+                                    </Card>
+                                )}
+
                                 {/* Rates Section */}
                                 {
                                     showRates && (
@@ -4854,6 +5343,40 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     customerId={selectedCustomer?.customerID || selectedCustomer?.id}
                 />
             </Suspense>
+
+            {/* Broker Dialog */}
+            <Suspense fallback={<CircularProgress />}>
+                <QuickShipBrokerDialog
+                    open={showBrokerDialog}
+                    onClose={() => {
+                        setShowBrokerDialog(false);
+                        setEditingBroker(null);
+                        setBrokerSuccessMessage('');
+                    }}
+                    onSuccess={handleBrokerSuccess}
+                    editingBroker={editingBroker}
+                    existingBrokers={companyBrokers}
+                    companyId={selectedCompanyId || companyIdForAddress}
+                />
+            </Suspense>
+
+            {/* Broker Success Message */}
+            {brokerSuccessMessage && (
+                <Snackbar
+                    open={!!brokerSuccessMessage}
+                    autoHideDuration={4000}
+                    onClose={() => setBrokerSuccessMessage('')}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                >
+                    <Alert
+                        onClose={() => setBrokerSuccessMessage('')}
+                        severity="success"
+                        sx={{ width: '100%' }}
+                    >
+                        {brokerSuccessMessage}
+                    </Alert>
+                </Snackbar>
+            )}
         </Box>
     );
 };
