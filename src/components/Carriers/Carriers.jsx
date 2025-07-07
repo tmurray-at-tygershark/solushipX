@@ -636,7 +636,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                     </TableCell>
                                     <TableCell>
                                         <Chip
-                                            label={carrier.type || 'courier'}
+                                            label={carrier.type || 'freight'}
                                             size="small"
                                             sx={{
                                                 ...getCarrierTypeColor(carrier.type),

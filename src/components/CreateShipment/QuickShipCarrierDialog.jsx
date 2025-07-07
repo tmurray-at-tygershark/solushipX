@@ -59,7 +59,7 @@ const QuickShipCarrierDialog = ({
         carrierId: '',
         accountNumber: '',
         phone: '',
-        type: 'courier', // Default to courier, can be 'courier' or 'freight'
+        type: 'freight', // Default to freight for QuickShip carriers
         emailContacts: [], // New terminal-based structure
         // Legacy fields for backward compatibility
         contactEmail: '',
@@ -102,7 +102,7 @@ const QuickShipCarrierDialog = ({
                 carrierId: editingCarrier.carrierId || '',
                 accountNumber: editingCarrier.accountNumber || '',
                 phone: editingCarrier.phone || '',
-                type: editingCarrier.type || 'courier', // Default to courier if not set
+                type: editingCarrier.type || 'freight', // Default to freight if not set
                 emailContacts: emailContacts,
                 // Maintain legacy fields for backward compatibility
                 contactEmail: editingCarrier.contactEmail || '',
@@ -137,7 +137,7 @@ const QuickShipCarrierDialog = ({
                 carrierId: '',
                 accountNumber: '',
                 phone: '',
-                type: 'courier', // Default to courier for new carriers
+                type: 'freight', // Default to freight for new carriers
                 emailContacts: [defaultTerminal],
                 contactEmail: '',
                 billingEmail: '',
@@ -370,7 +370,7 @@ const QuickShipCarrierDialog = ({
             carrierId: '',
             accountNumber: '',
             phone: '',
-            type: 'courier', // Default to courier for new carriers
+            type: 'freight', // Default to freight for new carriers
             emailContacts: [{
                 id: 'default',
                 name: 'Default Terminal',
@@ -491,10 +491,10 @@ const QuickShipCarrierDialog = ({
                                     sx={{ fontSize: '12px' }}
                                 >
                                     <MenuItem value="courier" sx={{ fontSize: '12px' }}>
-                                        Courier (Express/Ground)
+                                        Courier
                                     </MenuItem>
                                     <MenuItem value="freight" sx={{ fontSize: '12px' }}>
-                                        Freight (LTL/FTL)
+                                        Freight
                                     </MenuItem>
                                 </Select>
                             </FormControl>
