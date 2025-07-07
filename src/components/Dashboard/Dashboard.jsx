@@ -1124,7 +1124,12 @@ const DashboardStatsOverlay = ({
     shipments,
     onOpenCreateShipment,
     onOpenShipments,
-    onOpenReports
+    onOpenReports,
+    companyData,
+    userRole,
+    currentUser,
+    companyIdForAddress,
+    onOpenCompanySwitcher
 }) => {
     const stats = useMemo(() => {
         const now = new Date();
@@ -1242,16 +1247,61 @@ const DashboardStatsOverlay = ({
                 <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
                     {/* Header */}
                     <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography variant="h6" sx={{
-                            fontSize: '1.1rem',
-                            fontWeight: 700,
-                            color: '#1a1a1a',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1
-                        }}>
-                            📊 Logistics Command Center
-                        </Typography>
+                        {/* Company Switcher - Only show for Super Admins and Multi-Company Admins */}
+                        {companyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                <Typography variant="h6" sx={{
+                                    fontSize: '1.1rem',
+                                    fontWeight: 700,
+                                    color: '#1a1a1a',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1
+                                }}>
+                                    🏢 {companyData.name || 'Company'}
+                                </Typography>
+                                <Chip
+                                    label={`ID: ${companyData.companyID || companyIdForAddress}`}
+                                    size="small"
+                                    sx={{
+                                        bgcolor: '#f3f4f6',
+                                        color: '#374151',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 500
+                                    }}
+                                />
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<SwapHorizIcon />}
+                                    onClick={onOpenCompanySwitcher}
+                                    sx={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 500,
+                                        textTransform: 'none',
+                                        borderColor: '#d1d5db',
+                                        color: '#374151',
+                                        '&:hover': {
+                                            borderColor: '#9ca3af',
+                                            backgroundColor: '#f9fafb'
+                                        }
+                                    }}
+                                >
+                                    Switch Company
+                                </Button>
+                            </Box>
+                        ) : (
+                            <Typography variant="h6" sx={{
+                                fontSize: '1.1rem',
+                                fontWeight: 700,
+                                color: '#1a1a1a',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 1
+                            }}>
+                                📊 Logistics Command Center
+                            </Typography>
+                        )}
                         <Chip
                             label={`${stats.todayTotal} Today`}
                             size="small"
@@ -2475,6 +2525,8 @@ const Dashboard = () => {
     const [isCompanySwitcherOpen, setIsCompanySwitcherOpen] = useState(false);
     const [availableCompanies, setAvailableCompanies] = useState([]);
     const [loadingCompanies, setLoadingCompanies] = useState(false);
+    const [companySearchTerm, setCompanySearchTerm] = useState('');
+    const [filteredCompanies, setFilteredCompanies] = useState([]);
 
     // Profile menu state
     const [profileMenuAnchor, setProfileMenuAnchor] = useState(null);
@@ -2777,6 +2829,7 @@ const Dashboard = () => {
                 }));
 
                 setAvailableCompanies(companiesData);
+                setFilteredCompanies(companiesData);
             } catch (error) {
                 console.error('Error loading companies:', error);
             } finally {
@@ -2788,6 +2841,19 @@ const Dashboard = () => {
             loadAvailableCompanies();
         }
     }, [isCompanySwitcherOpen, currentUser, userRole, isAdmin]);
+
+    // Filter companies based on search term
+    useEffect(() => {
+        if (!companySearchTerm.trim()) {
+            setFilteredCompanies(availableCompanies);
+        } else {
+            const filtered = availableCompanies.filter(company =>
+                company.name?.toLowerCase().includes(companySearchTerm.toLowerCase()) ||
+                company.companyID?.toLowerCase().includes(companySearchTerm.toLowerCase())
+            );
+            setFilteredCompanies(filtered);
+        }
+    }, [companySearchTerm, availableCompanies]);
 
     // Load user profile data
     useEffect(() => {
@@ -3494,45 +3560,7 @@ const Dashboard = () => {
                         style={{ height: 51 }} // Reduced by 15% from 60px
                     />
 
-                    {/* Company Info and Switcher - Only show for Super Admins and Multi-Company Admins */}
-                    {companyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) && (
-                        <Box sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'flex-end',
-                            gap: 0.5
-                        }}>
-                            <Typography sx={{
-                                fontSize: '11px',
-                                color: 'rgba(255, 255, 255, 0.9)',
-                                fontWeight: 600
-                            }}>
-                                {companyData.name || 'Company'}
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <Typography sx={{
-                                    fontSize: '10px',
-                                    color: 'rgba(255, 255, 255, 0.6)'
-                                }}>
-                                    ID: {companyData.companyID || companyIdForAddress}
-                                </Typography>
-                                <IconButton
-                                    size="small"
-                                    onClick={() => setIsCompanySwitcherOpen(true)}
-                                    sx={{
-                                        p: 0.25,
-                                        color: 'rgba(255, 255, 255, 0.7)',
-                                        '&:hover': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            color: 'rgba(255, 255, 255, 0.9)'
-                                        }
-                                    }}
-                                >
-                                    <SwapHorizIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                            </Box>
-                        </Box>
-                    )}
+
                 </Box>
 
                 {/* Tracking Search Box */}
@@ -4379,16 +4407,20 @@ const Dashboard = () => {
                 </Box>
             </Dialog>
 
-            {/* Company Switcher Dialog */}
+            {/* Enhanced Company Switcher Dialog */}
             <Dialog
                 open={isCompanySwitcherOpen}
-                onClose={() => setIsCompanySwitcherOpen(false)}
-                maxWidth="sm"
+                onClose={() => {
+                    setIsCompanySwitcherOpen(false);
+                    setCompanySearchTerm('');
+                }}
+                maxWidth="md"
                 fullWidth
                 PaperProps={{
                     sx: {
                         borderRadius: 2,
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)'
+                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+                        maxHeight: '80vh'
                     }
                 }}
             >
@@ -4402,90 +4434,222 @@ const Dashboard = () => {
                             <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600 }}>
                                 Switch Company
                             </Typography>
+                            <Chip
+                                label={`${filteredCompanies.length} of ${availableCompanies.length}`}
+                                size="small"
+                                sx={{
+                                    bgcolor: '#f3f4f6',
+                                    color: '#374151',
+                                    fontSize: '11px',
+                                    height: 20
+                                }}
+                            />
                         </Box>
                         <IconButton
                             size="small"
-                            onClick={() => setIsCompanySwitcherOpen(false)}
+                            onClick={() => {
+                                setIsCompanySwitcherOpen(false);
+                                setCompanySearchTerm('');
+                            }}
                             sx={{ color: '#6b7280' }}
                         >
                             <CloseIcon fontSize="small" />
                         </IconButton>
                     </Box>
                 </DialogTitle>
-                <DialogContent sx={{ mt: 2 }}>
+                <DialogContent sx={{ pt: 2, pb: 1 }}>
+                    {/* Search Field */}
+                    <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Search companies by name or ID..."
+                        value={companySearchTerm}
+                        onChange={(e) => setCompanySearchTerm(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon sx={{ color: '#6b7280', fontSize: 20 }} />
+                                </InputAdornment>
+                            ),
+                            sx: {
+                                fontSize: '14px',
+                                '& input::placeholder': {
+                                    fontSize: '14px'
+                                }
+                            }
+                        }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiOutlinedInput-root': {
+                                '& fieldset': {
+                                    borderColor: '#d1d5db',
+                                },
+                                '&:hover fieldset': {
+                                    borderColor: '#9ca3af',
+                                },
+                                '&.Mui-focused fieldset': {
+                                    borderColor: '#3b82f6',
+                                },
+                            }
+                        }}
+                    />
+
+                    {/* Companies List */}
                     {loadingCompanies ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                             <CircularProgress size={32} />
                         </Box>
-                    ) : availableCompanies.length === 0 ? (
-                        <Alert severity="info">No companies available to switch to.</Alert>
+                    ) : filteredCompanies.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                            {companySearchTerm ? (
+                                <Alert severity="info">
+                                    No companies found matching "{companySearchTerm}". Try a different search term.
+                                </Alert>
+                            ) : (
+                                <Alert severity="info">No companies available to switch to.</Alert>
+                            )}
+                        </Box>
                     ) : (
-                        <Stack spacing={1}>
-                            {availableCompanies.map((company) => (
-                                <Paper
-                                    key={company.id}
-                                    sx={{
-                                        p: 2,
-                                        cursor: 'pointer',
-                                        border: '1px solid',
-                                        borderColor: company.companyID === companyIdForAddress ? '#3b82f6' : '#e5e7eb',
-                                        backgroundColor: company.companyID === companyIdForAddress ? 'rgba(59, 130, 246, 0.05)' : 'white',
-                                        '&:hover': {
-                                            borderColor: '#3b82f6',
-                                            backgroundColor: 'rgba(59, 130, 246, 0.05)'
-                                        },
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                    onClick={async () => {
-                                        if (company.companyID !== companyIdForAddress) {
-                                            try {
-                                                // Update company context
-                                                await setCompanyContext(company);
+                        <Box sx={{
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            '&::-webkit-scrollbar': {
+                                width: '6px'
+                            },
+                            '&::-webkit-scrollbar-track': {
+                                background: '#f1f1f1',
+                                borderRadius: '3px'
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                                background: '#c1c1c1',
+                                borderRadius: '3px'
+                            },
+                            '&::-webkit-scrollbar-thumb:hover': {
+                                background: '#a8a8a8'
+                            }
+                        }}>
+                            <Stack spacing={1}>
+                                {filteredCompanies.map((company) => (
+                                    <Paper
+                                        key={company.id}
+                                        sx={{
+                                            p: 1.5,
+                                            cursor: 'pointer',
+                                            border: '1px solid',
+                                            borderColor: company.companyID === companyIdForAddress ? '#3b82f6' : '#e5e7eb',
+                                            backgroundColor: company.companyID === companyIdForAddress ? 'rgba(59, 130, 246, 0.05)' : 'white',
+                                            '&:hover': {
+                                                borderColor: '#3b82f6',
+                                                backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                                                transform: 'translateY(-1px)',
+                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                            },
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                        onClick={async () => {
+                                            if (company.companyID !== companyIdForAddress) {
+                                                try {
+                                                    // Update company context
+                                                    await setCompanyContext(company);
 
-                                                setIsCompanySwitcherOpen(false);
+                                                    setIsCompanySwitcherOpen(false);
+                                                    setCompanySearchTerm('');
 
-                                                // Show success message
-                                                console.log('Switched to company:', company.name);
+                                                    // Show success message
+                                                    console.log('Switched to company:', company.name);
 
-                                                // Reload the page to ensure all data is refreshed
-                                                window.location.reload();
-                                            } catch (error) {
-                                                console.error('Error switching company:', error);
-                                                alert('Failed to switch company. Please try again.');
+                                                    // Reload the page to ensure all data is refreshed
+                                                    window.location.reload();
+                                                } catch (error) {
+                                                    console.error('Error switching company:', error);
+                                                    alert('Failed to switch company. Please try again.');
+                                                }
                                             }
-                                        }
-                                    }}
-                                >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <Box>
-                                            <Typography sx={{ fontWeight: 600, fontSize: '14px', mb: 0.5 }}>
-                                                {company.name}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                ID: {company.companyID}
-                                            </Typography>
-                                        </Box>
-                                        {company.companyID === companyIdForAddress && (
-                                            <Chip
-                                                label="Current"
-                                                size="small"
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                            {/* Company Logo */}
+                                            <Avatar
+                                                src={company.logo || company.logoURL}
                                                 sx={{
-                                                    backgroundColor: '#3b82f6',
-                                                    color: 'white',
-                                                    fontSize: '11px',
-                                                    height: 22
+                                                    width: 40,
+                                                    height: 40,
+                                                    bgcolor: '#f3f4f6',
+                                                    border: '1px solid #e5e7eb'
                                                 }}
-                                            />
-                                        )}
-                                    </Box>
-                                </Paper>
-                            ))}
-                        </Stack>
+                                            >
+                                                <BusinessIcon sx={{ fontSize: 20, color: '#6b7280' }} />
+                                            </Avatar>
+
+                                            {/* Company Info */}
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography sx={{
+                                                    fontWeight: 600,
+                                                    fontSize: '14px',
+                                                    mb: 0.25,
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap'
+                                                }}>
+                                                    {company.name}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Chip
+                                                        label={`ID: ${company.companyID}`}
+                                                        size="small"
+                                                        sx={{
+                                                            bgcolor: '#f8fafc',
+                                                            color: '#64748b',
+                                                            fontSize: '11px',
+                                                            height: 20,
+                                                            fontFamily: 'monospace'
+                                                        }}
+                                                    />
+                                                    {company.status && (
+                                                        <Chip
+                                                            label={company.status}
+                                                            size="small"
+                                                            sx={{
+                                                                bgcolor: company.status === 'active' ? '#dcfce7' : '#fef2f2',
+                                                                color: company.status === 'active' ? '#166534' : '#dc2626',
+                                                                fontSize: '11px',
+                                                                height: 20
+                                                            }}
+                                                        />
+                                                    )}
+                                                </Box>
+                                            </Box>
+
+                                            {/* Current Company Badge */}
+                                            {company.companyID === companyIdForAddress && (
+                                                <Chip
+                                                    label="Current"
+                                                    size="small"
+                                                    sx={{
+                                                        backgroundColor: '#3b82f6',
+                                                        color: 'white',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        height: 24
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
+                                    </Paper>
+                                ))}
+                            </Stack>
+                        </Box>
                     )}
                 </DialogContent>
                 <DialogActions sx={{ borderTop: '1px solid #e5e7eb', px: 3, py: 2 }}>
+                    <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '12px', flex: 1 }}>
+                        {userRole === 'superadmin' ? 'All companies' : 'Connected companies only'}
+                    </Typography>
                     <Button
-                        onClick={() => setIsCompanySwitcherOpen(false)}
+                        onClick={() => {
+                            setIsCompanySwitcherOpen(false);
+                            setCompanySearchTerm('');
+                        }}
                         size="small"
                         sx={{ fontSize: '12px' }}
                     >
@@ -4577,6 +4741,11 @@ const Dashboard = () => {
                     onOpenCreateShipment={() => handleOpenCreateShipmentModal()}
                     onOpenShipments={() => setIsShipmentsModalOpen(true)}
                     onOpenReports={() => setIsReportsModalOpen(true)}
+                    companyData={companyData}
+                    userRole={userRole}
+                    currentUser={currentUser}
+                    companyIdForAddress={companyIdForAddress}
+                    onOpenCompanySwitcher={() => setIsCompanySwitcherOpen(true)}
                 />
             )}
 
