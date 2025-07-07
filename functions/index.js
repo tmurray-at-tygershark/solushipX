@@ -34,7 +34,7 @@ const db = admin.firestore();
 // Import function handlers
 const { getRatesEShipPlus } = require('./src/carrier-api/eshipplus/getRates');
 const { cancelShipmentEShipPlus } = require('./src/carrier-api/eshipplus/cancelShipment');
-const { generateEShipPlusBOL } = require('./src/carrier-api/eshipplus/generateBOL');
+// const { generateEShipPlusBOL } = require('./src/carrier-api/eshipplus/generateBOL'); // Removed - using Generic BOL instead
 const { getRatesCanpar } = require('./src/carrier-api/canpar/getRates');
 const { cancelShipmentCanpar } = require('./src/carrier-api/canpar/cancelShipment');
 const { getHistoryCanpar } = require("./src/carrier-api/canpar/getHistory");
@@ -154,10 +154,15 @@ const { cancelShipment } = require('./src/cancelShipment');
 // Import document upload functions
 const { uploadShipmentDocument, deleteShipmentDocument, getShipmentDocuments: getShipmentDocsNew } = require('./src/uploadShipmentDocument');
 
+// Import missing document management functions
+const { getShipmentAuditLog } = require('./src/getShipmentAuditLog');
+const { updateShipmentDocument } = require('./src/updateShipmentDocument');
+const { updateShipmentField } = require('./src/updateShipmentField');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
-exports.generateEShipPlusBOL = generateEShipPlusBOL;
+// exports.generateEShipPlusBOL = generateEShipPlusBOL; // Removed - using Generic BOL instead
 exports.getRatesCanpar = getRatesCanpar;
 exports.cancelShipmentCanpar = cancelShipmentCanpar;
 exports.generateCanparLabel = generateCanparLabel;
@@ -291,6 +296,11 @@ exports.cancelShipment = cancelShipment;
 exports.uploadShipmentDocument = uploadShipmentDocument;
 exports.deleteShipmentDocument = deleteShipmentDocument;
 exports.getShipmentDocumentsNew = getShipmentDocsNew;
+
+// Export missing document management functions
+exports.getShipmentAuditLog = getShipmentAuditLog;
+exports.updateShipmentDocument = updateShipmentDocument;
+exports.updateShipmentField = updateShipmentField;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

@@ -1,0 +1,100 @@
+{
+    "serviceLevels": [
+        {
+            "type": "courier",
+            "code": "any",
+            "label": "Any",
+            "description": "Any available courier service",
+            "enabled": true,
+            "sortOrder": 0
+        },
+        {
+            "type": "courier",
+            "code": "economy",
+            "label": "Economy",
+            "description": "Standard delivery, typically 3-5 business days",
+            "enabled": true,
+            "sortOrder": 1
+        },
+        {
+            "type": "courier",
+            "code": "express",
+            "label": "Express",
+            "description": "Fast delivery, typically 1-2 business days",
+            "enabled": true,
+            "sortOrder": 2
+        },
+        {
+            "type": "courier",
+            "code": "priority",
+            "label": "Priority",
+            "description": "Priority delivery with enhanced service",
+            "enabled": true,
+            "sortOrder": 3
+        },
+        {
+            "type": "courier",
+            "code": "overnight",
+            "label": "Overnight",
+            "description": "Next business day delivery",
+            "enabled": true,
+            "sortOrder": 4
+        },
+        {
+            "type": "courier",
+            "code": "same_day",
+            "label": "Same Day",
+            "description": "Same day delivery service",
+            "enabled": true,
+            "sortOrder": 5
+        },
+        {
+            "type": "freight",
+            "code": "any",
+            "label": "Any",
+            "description": "Any available freight service",
+            "enabled": true,
+            "sortOrder": 0
+        },
+        {
+            "type": "freight",
+            "code": "ltl_standard",
+            "label": "LTL Standard",
+            "description": "Less Than Truckload standard service",
+            "enabled": true,
+            "sortOrder": 1
+        },
+        {
+            "type": "freight",
+            "code": "ltl_expedited",
+            "label": "LTL Expedited",
+            "description": "Less Than Truckload expedited service",
+            "enabled": true,
+            "sortOrder": 2
+        },
+        {
+            "type": "freight",
+            "code": "ftl_standard",
+            "label": "FTL Standard",
+            "description": "Full Truckload standard service",
+            "enabled": true,
+            "sortOrder": 3
+        },
+        {
+            "type": "freight",
+            "code": "ftl_expedited",
+            "label": "FTL Expedited",
+            "description": "Full Truckload expedited service",
+            "enabled": true,
+            "sortOrder": 4
+        },
+        {
+            "type": "freight",
+            "code": "overnight",
+            "label": "Overnight",
+            "description": "Next business day freight delivery",
+            "enabled": true,
+            "sortOrder": 5
+        }
+    ]
+}

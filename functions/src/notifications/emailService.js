@@ -396,7 +396,9 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
             // Carrier and Service Information
             carrier: {
                 name: rateInfo.carrier || newData.carrier || 'Unknown',
-                service: rateInfo.service || rateInfo.serviceName || 'Standard Service',
+                service: (rateInfo.service && typeof rateInfo.service === 'object' ? rateInfo.service.name : rateInfo.service) || 
+                        (rateInfo.serviceName && typeof rateInfo.serviceName === 'object' ? rateInfo.serviceName.name : rateInfo.serviceName) || 
+                        'Standard Service',
                 displayCarrierId: rateInfo.displayCarrierId,
                 sourceCarrierName: rateInfo.sourceCarrierName
             },

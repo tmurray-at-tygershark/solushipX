@@ -1,6 +1,74 @@
 {
     "indexes": [
         {
+            "collectionGroup": "addressBook",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "addressClass",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "addressClassID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "addressType",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "addressBook",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "addressBook",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "companyName",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "customerNotes",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "customerID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "customers",
             "queryScope": "COLLECTION",
             "fields": [
@@ -29,11 +97,235 @@
             ]
         },
         {
+            "collectionGroup": "markups",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "markupScope",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "notes",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "customerID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "quickshipCarriers",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "name",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "reportEmailGroups",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "reportSchedules",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "savedReports",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "serviceLevels",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "enabled",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "type",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "sortOrder",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "label",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "serviceLevels",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "type",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "sortOrder",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "label",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "serviceLevels",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "type",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "enabled",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "sortOrder",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipmentDocuments",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "shipmentId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipmentEvents",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "eventType",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "shipmentId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "timestamp",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipmentEvents",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "eventType",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "shipmentId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "timestamp",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "shipments",
             "queryScope": "COLLECTION",
             "fields": [
                 {
                     "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipments",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipments",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "shipmentType",
                     "order": "ASCENDING"
                 },
                 {
@@ -61,11 +353,15 @@
             ]
         },
         {
-            "collectionGroup": "shipmentDocuments",
+            "collectionGroup": "shipments",
             "queryScope": "COLLECTION",
             "fields": [
                 {
-                    "fieldPath": "shipmentId",
+                    "fieldPath": "companyID",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "status",
                     "order": "ASCENDING"
                 },
                 {
@@ -75,11 +371,25 @@
             ]
         },
         {
-            "collectionGroup": "savedReports",
+            "collectionGroup": "shipments",
             "queryScope": "COLLECTION",
             "fields": [
                 {
-                    "fieldPath": "companyId",
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                },
+                {
+                    "fieldPath": "status",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipments",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "invoiced",
                     "order": "ASCENDING"
                 },
                 {
@@ -89,16 +399,52 @@
             ]
         },
         {
-            "collectionGroup": "reportEmailGroups",
+            "collectionGroup": "shipments",
             "queryScope": "COLLECTION",
             "fields": [
                 {
-                    "fieldPath": "companyId",
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "statusLastChecked",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipments",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "status",
                     "order": "ASCENDING"
                 },
                 {
                     "fieldPath": "createdAt",
                     "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipmentServices",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "type",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "sortOrder",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "label",
+                    "order": "ASCENDING"
                 }
             ]
         }

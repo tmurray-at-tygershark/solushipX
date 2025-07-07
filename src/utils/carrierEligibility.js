@@ -376,7 +376,7 @@ class CarrierEligibilityService {
     }
 
     /**
-     * Enhanced eligibility check for database carriers
+     * Enhanced eligibility check for database carriers with service level support
      */
     async checkCarrierEligibility(carrierData, shipmentData) {
         const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
@@ -388,16 +388,22 @@ class CarrierEligibilityService {
         const destinationCountry = shipTo?.country || 'CA';
         const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
         const isInternational = originCountry !== destinationCountry;
+        const requestedServiceLevel = shipmentInfo?.serviceLevel;
 
         console.log(`\n🔍 Checking ${carrierData.name} eligibility (Database Carrier):`);
+        console.log(`    📋 Shipment details: ${shipmentType}, Service Level: ${requestedServiceLevel || 'any'}`);
 
-        // 1. Check supported services
-        const hasCompatibleServices = this.checkServiceCompatibility(supportedServices, shipmentType);
+        // 1. Check supported services with service level compatibility
+        const hasCompatibleServices = await this.checkServiceCompatibility(
+            supportedServices, 
+            shipmentType, 
+            requestedServiceLevel
+        );
         if (!hasCompatibleServices) {
-            console.log(`  ❌ Services: ${shipmentType} not supported`);
+            console.log(`  ❌ Services: ${shipmentType} with service level '${requestedServiceLevel}' not supported`);
             return false;
         }
-        console.log(`  ✅ Services: ${shipmentType} supported`);
+        console.log(`  ✅ Services: ${shipmentType} with service level '${requestedServiceLevel}' supported`);
 
         // 2. Check geographic eligibility
         const isGeographicallyEligible = this.checkGeographicEligibility(eligibilityRules?.geographicRouting, shipFrom, shipTo, isInternational);
@@ -418,29 +424,30 @@ class CarrierEligibilityService {
         // 4. Check dimension restrictions
         const isDimensionEligible = this.checkDimensionEligibility(eligibilityRules?.dimensionRestrictions, packages);
         if (!isDimensionEligible) {
-            console.log(`  ❌ Dimensions: Package dimensions exceed limits`);
+            console.log(`  ❌ Dimensions: Package dimensions exceed carrier limits`);
             return false;
         }
-        console.log(`  ✅ Dimensions: Within limits`);
+        console.log(`  ✅ Dimensions: Package dimensions within limits`);
 
         // 5. Check package type restrictions
         const isPackageTypeEligible = this.checkPackageTypeEligibility(eligibilityRules?.packageTypeRestrictions, packages);
         if (!isPackageTypeEligible) {
-            console.log(`  ❌ Package Types: Required package types not found or quantities outside limits`);
+            console.log(`  ❌ Package Types: Not compatible with carrier restrictions`);
             return false;
         }
-        console.log(`  ✅ Package Types: Compatible with carrier requirements`);
+        console.log(`  ✅ Package Types: Compatible with carrier restrictions`);
 
-        console.log(`  🎯 ${carrierData.name} is ELIGIBLE (Database Carrier)`);
+        console.log(`  🎯 ${carrierData.name} is ELIGIBLE for this shipment`);
         return true;
     }
 
     /**
-     * Check service compatibility
+     * Enhanced service compatibility check using dynamic service levels
      */
-    checkServiceCompatibility(supportedServices, shipmentType) {
-        console.log('    📦 Service compatibility check:', {
+    async checkServiceCompatibility(supportedServices, shipmentType, requestedServiceLevel = null) {
+        console.log('    📦 Enhanced service compatibility check:', {
             shipmentType,
+            requestedServiceLevel,
             hasServices: !!supportedServices,
             courierServices: supportedServices?.courier?.length || 0,
             freightServices: supportedServices?.freight?.length || 0
@@ -450,7 +457,77 @@ class CarrierEligibilityService {
             console.log('    ❌ No supported services defined');
             return false;
         }
+
+        // First check if carrier supports the basic shipment type
+        const hasBasicSupport = this.checkBasicServiceSupport(supportedServices, shipmentType);
+        if (!hasBasicSupport) {
+            return false;
+        }
+
+        // If no specific service level requested, basic support is sufficient
+        if (!requestedServiceLevel || requestedServiceLevel === 'any') {
+            console.log('    ✅ No specific service level requested, basic support sufficient');
+            return true;
+        }
+
+        // Check if the requested service level is supported by this carrier
+        const carrierServices = supportedServices[shipmentType] || [];
         
+        // Load available service levels from database to get service codes
+        try {
+            const serviceLevelsRef = collection(db, 'serviceLevels');
+            const q = query(
+                serviceLevelsRef,
+                where('type', '==', shipmentType),
+                where('enabled', '==', true)
+            );
+            const querySnapshot = await getDocs(q);
+            
+            const availableServiceLevels = [];
+            querySnapshot.forEach((doc) => {
+                availableServiceLevels.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            // Find the requested service level details
+            const requestedServiceDetails = availableServiceLevels.find(sl => sl.code === requestedServiceLevel);
+            
+            if (!requestedServiceDetails) {
+                console.log(`    ⚠️ Unknown service level code: ${requestedServiceLevel}`);
+                return true; // Allow unknown service levels to pass through
+            }
+
+            // Check if carrier supports this specific service level
+            // The carrier's supportedServices should contain service codes that match the service level codes
+            const supportsRequestedService = carrierServices.some(service => {
+                // Handle both string codes and service objects
+                const serviceCode = typeof service === 'string' ? service : service.code || service.name;
+                return serviceCode === requestedServiceLevel;
+            });
+
+            if (supportsRequestedService) {
+                console.log(`    ✅ Carrier supports requested service level: ${requestedServiceLevel}`);
+                return true;
+            } else {
+                console.log(`    ❌ Carrier does not support service level: ${requestedServiceLevel}`);
+                console.log(`    📋 Carrier supported services:`, carrierServices);
+                console.log(`    📋 Available system service levels:`, availableServiceLevels.map(sl => sl.code));
+                return false;
+            }
+
+        } catch (error) {
+            console.error('    ❌ Error checking service level compatibility:', error);
+            // Fallback to basic support check if service level lookup fails
+            return hasBasicSupport;
+        }
+    }
+
+    /**
+     * Basic service support check (shipment type level)
+     */
+    checkBasicServiceSupport(supportedServices, shipmentType) {
         switch (shipmentType) {
             case 'courier':
                 const hasCourierServices = supportedServices.courier && supportedServices.courier.length > 0;
@@ -839,11 +916,12 @@ const carrierEligibilityService = new CarrierEligibilityService();
 
 /**
  * Enhanced function to determine eligible carriers for a shipment using database + static carriers
+ * Now includes service level filtering
  * @param {Object} shipmentData - Universal shipment data
  * @returns {Array} - Array of eligible carrier configurations
  */
 export async function getEligibleCarriers(shipmentData) {
-    console.log('🌟 Enhanced Multi-Carrier Eligibility Check with Database Integration');
+    console.log('🌟 Enhanced Multi-Carrier Eligibility Check with Service Level Support');
     
     try {
         // Get all carriers (database + static)
@@ -856,20 +934,22 @@ export async function getEligibleCarriers(shipmentData) {
 
         console.log(`📋 Checking ${allCarriers.length} total carriers (database + static)`);
 
-    const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
-    
-    // Determine shipment characteristics
-    const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
+        const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
+        
+        // Determine shipment characteristics
+        const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
         const originCountry = carrierEligibilityService.normalizeCountryCode(shipFrom?.country);
         const destinationCountry = carrierEligibilityService.normalizeCountryCode(shipTo?.country);
-    const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
-    
-    // Determine route type (domestic vs international)
-    const isInternational = originCountry !== destinationCountry;
-    const routeType = isInternational ? 'international' : 'domestic';
-    
+        const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
+        const requestedServiceLevel = shipmentInfo?.serviceLevel;
+        
+        // Determine route type (domestic vs international)
+        const isInternational = originCountry !== destinationCountry;
+        const routeType = isInternational ? 'international' : 'domestic';
+        
         console.log('🔍 Enhanced Eligibility Check:', {
             shipmentType,
+            serviceLevel: requestedServiceLevel || 'any',
             route: `${originCountry} → ${destinationCountry}`,
             routeType: routeType + (isInternational ? ' (cross-border)' : ' (same country)'),
             totalWeight: `${totalWeight} lbs`,
@@ -880,7 +960,7 @@ export async function getEligibleCarriers(shipmentData) {
         
         for (const carrier of allCarriers) {
             if (carrier.isCustomCarrier) {
-                // Database carrier - use enhanced eligibility check
+                // Database carrier - use enhanced eligibility check with service level support
                 const isEligible = await carrierEligibilityService.checkCarrierEligibility(
                     carrierEligibilityService.databaseCarriers.get(carrier.key), 
                     shipmentData
@@ -889,7 +969,7 @@ export async function getEligibleCarriers(shipmentData) {
                     eligibleCarriers.push(carrier);
                 }
             } else {
-                // Static carrier - use original logic
+                // Static carrier - use enhanced static logic with service level support
                 const { eligibility } = carrier;
                 console.log(`\n🧪 Checking ${carrier.name} (Static):`);
                 
@@ -899,6 +979,17 @@ export async function getEligibleCarriers(shipmentData) {
                     continue;
                 }
                 console.log(`  ✅ Shipment type: ${shipmentType} supported`);
+                
+                // Enhanced service level check for static carriers
+                if (requestedServiceLevel && requestedServiceLevel !== 'any') {
+                    // Check if static carrier supports the requested service level
+                    const supportsServiceLevel = await checkStaticCarrierServiceLevel(carrier, shipmentType, requestedServiceLevel);
+                    if (!supportsServiceLevel) {
+                        console.log(`  ❌ Service level: ${requestedServiceLevel} not supported by ${carrier.name}`);
+                        continue;
+                    }
+                    console.log(`  ✅ Service level: ${requestedServiceLevel} supported`);
+                }
                 
                 // Check countries
                 if (!eligibility.countries.includes(originCountry) || !eligibility.countries.includes(destinationCountry)) {
@@ -929,113 +1020,82 @@ export async function getEligibleCarriers(shipmentData) {
         // Sort by priority
         eligibleCarriers.sort((a, b) => a.priority - b.priority);
         
-        console.log(`\n🌟 Final Eligible Carriers: ${eligibleCarriers.length} carriers:`,
-            eligibleCarriers.map(c => `${c.name} (P${c.priority}, ${c.isCustomCarrier ? 'DB' : 'Static'})`));
+        console.log(`\n🎯 Final eligible carriers (${eligibleCarriers.length}):`);
+        eligibleCarriers.forEach((carrier, index) => {
+            console.log(`  ${index + 1}. ${carrier.name} (Priority: ${carrier.priority}, Type: ${carrier.isCustomCarrier ? 'Database' : 'Static'})`);
+        });
         
         return eligibleCarriers;
         
     } catch (error) {
-        console.error('❌ Error in enhanced eligibility check:', error);
-        
-        // Fallback to static carriers only
-        console.log('🔄 Falling back to static carrier eligibility check');
+        console.error('❌ Error in enhanced eligibility check, falling back to static:', error);
         return getStaticEligibleCarriers(shipmentData);
     }
 }
 
 /**
- * Fallback function for static carrier eligibility (original logic)
+ * Check if a static carrier supports a specific service level
+ * @param {Object} carrier - Static carrier configuration
+ * @param {string} shipmentType - Shipment type (freight/courier)
+ * @param {string} serviceLevel - Requested service level code
+ * @returns {Promise<boolean>} - Whether the carrier supports the service level
  */
-function getStaticEligibleCarriers(shipmentData) {
-    const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
-    
-    // Determine shipment characteristics
-    const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
-    const originCountry = carrierEligibilityService.normalizeCountryCode(shipFrom?.country);
-    const destinationCountry = carrierEligibilityService.normalizeCountryCode(shipTo?.country);
-    const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
-    
-    // Determine route type (domestic vs international)
-    const isInternational = originCountry !== destinationCountry;
-    const routeType = isInternational ? 'international' : 'domestic';
-    
-    console.log('🔍 Static Multi-Carrier Eligibility Check:', {
-        shipmentType,
-        route: `${originCountry} → ${destinationCountry}`,
-        routeType: routeType + (isInternational ? ' (cross-border)' : ' (same country)'),
-        totalWeight: `${totalWeight} lbs`,
-        packagesCount: packages?.length || 0
-    });
-    
-    // Filter carriers based on eligibility
-    const eligibleCarriers = Object.values(CARRIER_CONFIG).filter(carrier => {
-        const { eligibility } = carrier;
-        console.log(`\n🧪 Checking ${carrier.name}:`);
-        
-        // Check shipment type
-        if (!eligibility.shipmentTypes.includes(shipmentType)) {
-            console.log(`  ❌ Shipment type: ${shipmentType} not in [${eligibility.shipmentTypes.join(', ')}]`);
-            return false;
-        }
-        console.log(`  ✅ Shipment type: ${shipmentType} supported`);
-        
-        // Check countries
-        if (!eligibility.countries.includes(originCountry) || !eligibility.countries.includes(destinationCountry)) {
-            console.log(`  ❌ Countries: ${originCountry}->${destinationCountry} not supported by [${eligibility.countries.join(', ')}]`);
-            return false;
-        }
-        console.log(`  ✅ Countries: ${originCountry}->${destinationCountry} supported`);
-        
-        // Check route type (domestic vs international)
-        if (eligibility.routeTypes && !eligibility.routeTypes.includes(routeType)) {
-            console.log(`  ❌ Route type: ${routeType} not in [${eligibility.routeTypes.join(', ')}]`);
-            return false;
-        }
-        console.log(`  ✅ Route type: ${routeType} supported`);
-        
-        // Check weight limits
-        if (totalWeight < eligibility.minWeight || totalWeight > eligibility.maxWeight) {
-            console.log(`  ❌ Weight: ${totalWeight}lbs outside limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
-            return false;
-        }
-        console.log(`  ✅ Weight: ${totalWeight}lbs within limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
-        
-        console.log(`  🎯 ${carrier.name} is ELIGIBLE (Priority: ${carrier.priority})`);
-        return true;
-    });
-    
-    // Sort by priority
-    eligibleCarriers.sort((a, b) => a.priority - b.priority);
-    
-    console.log(`\n🌟 Static Eligible Carriers: ${eligibleCarriers.length} carriers:`,
-        eligibleCarriers.map(c => `${c.name} (P${c.priority})`));
-    
-    return eligibleCarriers;
-}
-
-/**
- * Enhanced getAllCarriers that includes database carriers
- * @returns {Array} - Array of all carrier configurations
- */
-export async function getAllCarriers() {
+async function checkStaticCarrierServiceLevel(carrier, shipmentType, serviceLevel) {
     try {
-        return await carrierEligibilityService.getAllCarriers();
+        // Load available service levels from database
+        const serviceLevelsRef = collection(db, 'serviceLevels');
+        const q = query(
+            serviceLevelsRef,
+            where('type', '==', shipmentType),
+            where('code', '==', serviceLevel),
+            where('enabled', '==', true)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            console.log(`    ⚠️ Service level ${serviceLevel} not found in system`);
+            return true; // Allow unknown service levels for static carriers
+        }
+
+        // For static carriers, we can implement specific service level mappings
+        // This is where you would add carrier-specific service level support logic
+        
+        // For now, we'll use a simple mapping based on common service levels
+        const commonServiceLevelMappings = {
+            'ESHIPPLUS': {
+                'freight': ['ANY', 'ECONOMY', 'STANDARD', 'LTL_STANDARD', 'LTL_ECONOMY', 'FTL_STANDARD'],
+                'courier': ['ANY', 'ECONOMY', 'EXPRESS', 'PRIORITY', 'GROUND']
+            },
+            'CANPAR': {
+                'freight': ['ANY', 'ECONOMY', 'STANDARD', 'LTL_STANDARD'],
+                'courier': ['ANY', 'ECONOMY', 'EXPRESS', 'GROUND']
+            },
+            'POLARISTRANSPORTATION': {
+                'freight': ['ANY', 'ECONOMY', 'STANDARD', 'LTL_STANDARD', 'LTL_ECONOMY', 'FTL_STANDARD'],
+                'courier': ['ANY', 'ECONOMY', 'EXPRESS']
+            }
+        };
+
+        const carrierSupportedLevels = commonServiceLevelMappings[carrier.key]?.[shipmentType] || [];
+        const supportsLevel = carrierSupportedLevels.includes(serviceLevel.toUpperCase()) || 
+                             carrierSupportedLevels.includes('ANY');
+
+        console.log(`    📋 ${carrier.name} service level check:`, {
+            requestedLevel: serviceLevel,
+            supportedLevels: carrierSupportedLevels,
+            isSupported: supportsLevel
+        });
+
+        return supportsLevel;
+
     } catch (error) {
-        console.error('❌ Error fetching all carriers, falling back to static:', error);
-        return Object.values(CARRIER_CONFIG);
+        console.error(`    ❌ Error checking service level for ${carrier.name}:`, error);
+        return true; // Default to allowing the carrier if check fails
     }
 }
 
 /**
- * Get static carriers only (for backward compatibility)
- * @returns {Array} - Array of static carrier configurations
- */
-export function getStaticCarriers() {
-    return Object.values(CARRIER_CONFIG);
-}
-
-/**
- * Fetch rates from a single carrier
+ * Fetch rates from a single carrier with enhanced service level support
  * @param {Object} carrier - Carrier configuration
  * @param {Object} shipmentData - Universal shipment data
  * @returns {Promise<Object>} - Rate fetch result
@@ -1051,18 +1111,55 @@ async function fetchCarrierRates(carrier, shipmentData) {
         const carrierRequest = carrier.translator.toRequest(shipmentData);
         console.log(`🔍 ${carrier.name} carrierRequest after translation:`, JSON.stringify(carrierRequest, null, 2));
         
-        // Add service level information for multi-service carriers
-        if (shipmentData.shipmentInfo?.serviceLevel && shipmentData.shipmentInfo.serviceLevel !== 'any') {
-            // Convert single service level to array for consistency
-            carrierRequest.serviceLevels = [shipmentData.shipmentInfo.serviceLevel];
+        // Enhanced service level handling
+        const requestedServiceLevel = shipmentData.shipmentInfo?.serviceLevel;
+        const shipmentType = shipmentData.shipmentInfo?.shipmentType;
+        
+        if (requestedServiceLevel && requestedServiceLevel !== 'any') {
+            // Pass the specific service level requested
+            carrierRequest.serviceLevels = [requestedServiceLevel];
+            console.log(`🎯 ${carrier.name}: Requesting specific service level: ${requestedServiceLevel}`);
         } else {
-            // Default service levels based on shipment type
-            if (shipmentData.shipmentInfo?.shipmentType === 'courier') {
-                carrierRequest.serviceLevels = ['economy', 'express', 'priority'];
-            } else if (shipmentData.shipmentInfo?.shipmentType === 'freight') {
-                carrierRequest.serviceLevels = ['economy']; // Default to economy for freight
-            } else {
-                carrierRequest.serviceLevels = ['economy']; // Safe default
+            // Load available service levels from database for this shipment type
+            try {
+                const serviceLevelsRef = collection(db, 'serviceLevels');
+                const q = query(
+                    serviceLevelsRef,
+                    where('type', '==', shipmentType),
+                    where('enabled', '==', true)
+                );
+                const querySnapshot = await getDocs(q);
+                
+                const availableServiceLevels = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    availableServiceLevels.push(data.code);
+                });
+
+                if (availableServiceLevels.length > 0) {
+                    carrierRequest.serviceLevels = availableServiceLevels;
+                    console.log(`🎯 ${carrier.name}: Requesting all available service levels:`, availableServiceLevels);
+                } else {
+                    // Fallback to default service levels if none found in database
+                    if (shipmentType === 'courier') {
+                        carrierRequest.serviceLevels = ['ECONOMY', 'EXPRESS', 'PRIORITY'];
+                    } else if (shipmentType === 'freight') {
+                        carrierRequest.serviceLevels = ['ECONOMY', 'STANDARD'];
+                    } else {
+                        carrierRequest.serviceLevels = ['ECONOMY'];
+                    }
+                    console.log(`🎯 ${carrier.name}: Using fallback service levels:`, carrierRequest.serviceLevels);
+                }
+            } catch (serviceError) {
+                console.warn(`⚠️ ${carrier.name}: Error loading service levels, using fallback:`, serviceError);
+                // Fallback to default service levels
+                if (shipmentType === 'courier') {
+                    carrierRequest.serviceLevels = ['ECONOMY', 'EXPRESS', 'PRIORITY'];
+                } else if (shipmentType === 'freight') {
+                    carrierRequest.serviceLevels = ['ECONOMY', 'STANDARD'];
+                } else {
+                    carrierRequest.serviceLevels = ['ECONOMY'];
+                }
             }
         }
         
@@ -1510,6 +1607,99 @@ export async function fetchMultiCarrierRates(shipmentData, options = {}) {
             markupProcessingEnabled: !!otherOptions.companyId
         }
     };
+}
+
+/**
+ * Fallback function for static carrier eligibility (original logic)
+ */
+function getStaticEligibleCarriers(shipmentData) {
+    const { shipFrom, shipTo, packages, shipmentInfo } = shipmentData;
+    
+    // Determine shipment characteristics
+    const shipmentType = normalizeShipmentType(shipmentInfo?.shipmentType);
+    const originCountry = carrierEligibilityService.normalizeCountryCode(shipFrom?.country);
+    const destinationCountry = carrierEligibilityService.normalizeCountryCode(shipTo?.country);
+    const totalWeight = packages?.reduce((sum, pkg) => sum + (parseFloat(pkg.weight) || 0), 0) || 0;
+    const requestedServiceLevel = shipmentInfo?.serviceLevel;
+    
+    // Determine route type (domestic vs international)
+    const isInternational = originCountry !== destinationCountry;
+    const routeType = isInternational ? 'international' : 'domestic';
+    
+    console.log('🔍 Static Multi-Carrier Eligibility Check:', {
+        shipmentType,
+        serviceLevel: requestedServiceLevel || 'any',
+        route: `${originCountry} → ${destinationCountry}`,
+        routeType: routeType + (isInternational ? ' (cross-border)' : ' (same country)'),
+        totalWeight: `${totalWeight} lbs`,
+        packagesCount: packages?.length || 0
+    });
+    
+    // Filter carriers based on eligibility
+    const eligibleCarriers = Object.values(CARRIER_CONFIG).filter(carrier => {
+        const { eligibility } = carrier;
+        console.log(`\n🧪 Checking ${carrier.name} (Static Fallback):`);
+        
+        // Check shipment type
+        if (!eligibility.shipmentTypes.includes(shipmentType)) {
+            console.log(`  ❌ Shipment type: ${shipmentType} not in [${eligibility.shipmentTypes.join(', ')}]`);
+            return false;
+        }
+        console.log(`  ✅ Shipment type: ${shipmentType} supported`);
+        
+        // Check countries
+        if (!eligibility.countries.includes(originCountry) || !eligibility.countries.includes(destinationCountry)) {
+            console.log(`  ❌ Countries: ${originCountry}->${destinationCountry} not supported by [${eligibility.countries.join(', ')}]`);
+            return false;
+        }
+        console.log(`  ✅ Countries: ${originCountry}->${destinationCountry} supported`);
+        
+        // Check route type (domestic vs international)
+        if (eligibility.routeTypes && !eligibility.routeTypes.includes(routeType)) {
+            console.log(`  ❌ Route type: ${routeType} not in [${eligibility.routeTypes.join(', ')}]`);
+            return false;
+        }
+        console.log(`  ✅ Route type: ${routeType} supported`);
+        
+        // Check weight limits
+        if (totalWeight < eligibility.minWeight || totalWeight > eligibility.maxWeight) {
+            console.log(`  ❌ Weight: ${totalWeight}lbs outside limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
+            return false;
+        }
+        console.log(`  ✅ Weight: ${totalWeight}lbs within limits [${eligibility.minWeight}-${eligibility.maxWeight} lbs]`);
+        
+        console.log(`  🎯 ${carrier.name} is ELIGIBLE (Priority: ${carrier.priority})`);
+        return true;
+    });
+    
+    // Sort by priority
+    eligibleCarriers.sort((a, b) => a.priority - b.priority);
+    
+    console.log(`\n🌟 Static Eligible Carriers: ${eligibleCarriers.length} carriers:`,
+        eligibleCarriers.map(c => `${c.name} (P${c.priority})`));
+    
+    return eligibleCarriers;
+}
+
+/**
+ * Enhanced getAllCarriers that includes database carriers
+ * @returns {Array} - Array of all carrier configurations
+ */
+export async function getAllCarriers() {
+    try {
+        return await carrierEligibilityService.getAllCarriers();
+    } catch (error) {
+        console.error('❌ Error fetching all carriers, falling back to static:', error);
+        return Object.values(CARRIER_CONFIG);
+    }
+}
+
+/**
+ * Get static carriers only (for backward compatibility)
+ * @returns {Array} - Array of static carrier configurations
+ */
+export function getStaticCarriers() {
+    return Object.values(CARRIER_CONFIG);
 }
 
 /**

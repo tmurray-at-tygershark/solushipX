@@ -386,8 +386,8 @@ Questions? Contact support@integratedcarriers.com
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Tracking Information</h2>
                         <table style="width: 100%; border-collapse: collapse;">
-                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.service) || 'Standard Service'}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${getServiceName(data) || (data.carrier && data.carrier.service && typeof data.carrier.service === 'string' ? data.carrier.service : 'Standard Service')}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.trackingNumber || 'N/A'}</td></tr>
                             ${data.estimatedDeliveryDate ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Est. Delivery:</strong></td><td style="padding: 8px 0;">${new Date(data.estimatedDeliveryDate).toLocaleDateString()}</td></tr>` : ''}
                             ${data.transitDays > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Transit Time:</strong></td><td style="padding: 8px 0;">${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}</td></tr>` : ''}
@@ -462,8 +462,8 @@ STATUS UPDATE
 - Updated: ${new Date(data.updatedAt).toLocaleString()}
 
 TRACKING INFORMATION
-- Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
-- Service: ${(data.carrier && data.carrier.service) || 'Standard Service'}
+- Carrier: ${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}
+- Service: ${getServiceName(data) || (data.carrier && data.carrier.service && typeof data.carrier.service === 'string' ? data.carrier.service : 'Standard Service')}
 - Tracking #: ${data.trackingNumber || 'N/A'}
 ${data.estimatedDeliveryDate ? `- Est. Delivery: ${new Date(data.estimatedDeliveryDate).toLocaleDateString()}` : ''}
 ${data.transitDays > 0 ? `- Transit Time: ${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}` : ''}

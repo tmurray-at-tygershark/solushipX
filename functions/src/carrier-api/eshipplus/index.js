@@ -3,7 +3,7 @@ const { bookRateEShipPlus, bookEShipPlusShipment } = require('./bookRate');
 const { getStatusEShipPlus } = require('./getStatus');
 const { fetchAndTransformEShipPlusHistory } = require('./getHistory');
 const { cancelEShipPlusShipment, processCancelRequest, cancelShipmentEShipPlus } = require('./cancelShipment');
-const { generateEShipPlusBOL } = require('./generateBOL');
+// Note: generateEShipPlusBOL removed - using Generic BOL generation instead for consistency
 
 module.exports = {
     getRatesEShipPlus,
@@ -14,5 +14,5 @@ module.exports = {
     cancelEShipPlusShipment,
     processCancelRequest,
     cancelShipmentEShipPlus,
-    generateEShipPlusBOL,
+    // generateEShipPlusBOL removed - using Generic BOL generation instead
 }; 

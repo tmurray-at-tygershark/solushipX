@@ -698,27 +698,46 @@ const ShipmentTableRow = ({
                                     const eta1Formatted = formatEtaDate(eta1);
                                     const eta2Formatted = formatEtaDate(eta2);
 
-                                    if (!eta1Formatted && !eta2Formatted) {
+                                    // If we have ETA1 or ETA2, show them
+                                    if (eta1Formatted || eta2Formatted) {
                                         return (
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
-                                                N/A
-                                            </Typography>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                                {eta1Formatted && (
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                        ETA1: {eta1Formatted}
+                                                    </Typography>
+                                                )}
+                                                {eta2Formatted && (
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                        ETA2: {eta2Formatted}
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         );
                                     }
 
+                                    // Fallback to carrier estimated delivery date
+                                    const carrierEstimatedDelivery =
+                                        shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                        shipment.selectedRate?.transit?.estimatedDelivery ||
+                                        shipment.selectedRate?.estimatedDeliveryDate;
+
+                                    if (carrierEstimatedDelivery) {
+                                        const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
+                                        if (formattedCarrierDate) {
+                                            return (
+                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                    {formattedCarrierDate}
+                                                </Typography>
+                                            );
+                                        }
+                                    }
+
+                                    // No ETA available
                                     return (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                            {eta1Formatted && (
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
-                                                    ETA1: {eta1Formatted}
-                                                </Typography>
-                                            )}
-                                            {eta2Formatted && (
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
-                                                    ETA2: {eta2Formatted}
-                                                </Typography>
-                                            )}
-                                        </Box>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                            N/A
+                                        </Typography>
                                     );
                                 })()}
                             </TableCell>
@@ -1106,27 +1125,46 @@ const ShipmentTableRow = ({
                                 const eta1Formatted = formatEtaDate(eta1);
                                 const eta2Formatted = formatEtaDate(eta2);
 
-                                if (!eta1Formatted && !eta2Formatted) {
+                                // If we have ETA1 or ETA2, show them
+                                if (eta1Formatted || eta2Formatted) {
                                     return (
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
-                                            N/A
-                                        </Typography>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                            {eta1Formatted && (
+                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                    ETA1: {eta1Formatted}
+                                                </Typography>
+                                            )}
+                                            {eta2Formatted && (
+                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                    ETA2: {eta2Formatted}
+                                                </Typography>
+                                            )}
+                                        </Box>
                                     );
                                 }
 
+                                // Fallback to carrier estimated delivery date
+                                const carrierEstimatedDelivery =
+                                    shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                    shipment.selectedRate?.transit?.estimatedDelivery ||
+                                    shipment.selectedRate?.estimatedDeliveryDate;
+
+                                if (carrierEstimatedDelivery) {
+                                    const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
+                                    if (formattedCarrierDate) {
+                                        return (
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                {formattedCarrierDate}
+                                            </Typography>
+                                        );
+                                    }
+                                }
+
+                                // No ETA available
                                 return (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                        {eta1Formatted && (
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
-                                                ETA1: {eta1Formatted}
-                                            </Typography>
-                                        )}
-                                        {eta2Formatted && (
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
-                                                ETA2: {eta2Formatted}
-                                            </Typography>
-                                        )}
-                                    </Box>
+                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                        N/A
+                                    </Typography>
                                 );
                             })()}
                         </TableCell>

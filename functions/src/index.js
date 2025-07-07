@@ -422,4 +422,22 @@ if (salesCommissionFunctions && salesCommissionFunctions.getSalesPersonCommissio
     console.log('LOG-MAIN-INDEX: exports.getSalesPersonCommissionSummary defined.');
 }
 
+// Import and export document management functions
+const { getShipmentAuditLog } = require('./getShipmentAuditLog');
+const { updateShipmentDocument } = require('./updateShipmentDocument');
+const { updateShipmentField } = require('./updateShipmentField');
+const { uploadShipmentDocument } = require('./uploadShipmentDocument');
+
+exports.getShipmentAuditLog = getShipmentAuditLog;
+console.log('LOG-MAIN-INDEX: exports.getShipmentAuditLog defined.');
+
+exports.updateShipmentDocument = updateShipmentDocument;
+console.log('LOG-MAIN-INDEX: exports.updateShipmentDocument defined.');
+
+exports.updateShipmentField = updateShipmentField;
+console.log('LOG-MAIN-INDEX: exports.updateShipmentField defined.');
+
+exports.uploadShipmentDocument = uploadShipmentDocument;
+console.log('LOG-MAIN-INDEX: exports.uploadShipmentDocument defined.');
+
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

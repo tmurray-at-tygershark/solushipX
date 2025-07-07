@@ -970,11 +970,11 @@ function drawEnhancedCarrierSection(doc, data) {
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Carrier'), labelX, yPos);
+       .text(upperCaseText('CARRIER'), labelX, yPos);
     
     doc.fontSize(9)
        .fillColor('#000000')
-       .text(':', valueX - 5, yPos); // FIXED: Reduced gap from -10 to -5
+       .text(': ', valueX - 5, yPos); // FIXED: Added space after colon
     
     doc.font('Helvetica')
        .text(upperCaseText(data.carrier), valueX, yPos);
@@ -982,10 +982,10 @@ function drawEnhancedCarrierSection(doc, data) {
     // Attention
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Attention'), rightLabelX, yPos);
+       .text(upperCaseText('ATTENTION'), rightLabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 5, yPos); // FIXED: Reduced gap from -10 to -5
+       .text(': ', rightValueX - 5, yPos); // FIXED: Added space after colon
     
     doc.font('Helvetica')
        .text(upperCaseText(data.attention), rightValueX, yPos);
@@ -994,10 +994,10 @@ function drawEnhancedCarrierSection(doc, data) {
     yPos += 14;
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Telephone'), labelX, yPos);
+       .text(upperCaseText('TELEPHONE'), labelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', valueX - 5, yPos); // FIXED: Reduced gap from -10 to -5
+       .text(': ', valueX - 5, yPos); // FIXED: Added space after colon
     
     doc.font('Helvetica')
        .text(upperCaseText(data.carrierPhone), valueX, yPos);
@@ -1005,10 +1005,10 @@ function drawEnhancedCarrierSection(doc, data) {
     // Email (changed from Fax)
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Email'), rightLabelX, yPos);
+       .text(upperCaseText('EMAIL'), rightLabelX, yPos);
     
     doc.fillColor('#000000')
-       .text(':', rightValueX - 5, yPos); // FIXED: Reduced gap from -10 to -5
+       .text(': ', rightValueX - 5, yPos); // FIXED: Added space after colon
     
     doc.font('Helvetica')
        .text(upperCaseText(data.carrierEmail), rightValueX, yPos);
@@ -1047,7 +1047,7 @@ function drawEnhancedShipperSection(doc, data) {
     let yPos = sectionY + 20;
     let rightYPos = sectionY + 20;
     
-    // Company name directly (no redundant "Shipper" label)
+    // Company name (removed redundant "Shipper" label)
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#000000')
@@ -1075,47 +1075,49 @@ function drawEnhancedShipperSection(doc, data) {
     yPos += 9;
     doc.text(upperCaseText(`${data.shipper.state}     ${data.shipper.postalCode}     ${data.shipper.country}`), labelX, yPos);
     
-    // Right column - aligned with top - INCREASED SPACING
-    // Reference Number
+    // Right column - aligned with top - DYNAMIC SPACING BASED ON LABEL LENGTH
+    const rightSpacing = 16; // INCREASED: from 14 to 16 for better readability
+    
+    // Reference Number - Short label
     doc.font('Helvetica-Bold')
+       .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Reference:'), rightLabelX, rightYPos);
+       .text(upperCaseText('REFERENCE'), rightLabelX, rightYPos);
     
     doc.font('Helvetica')
        .fillColor('#000000')
-       .text(upperCaseText(data.shipper.refNumber || data.shipper.poNumber), rightLabelX + 75, rightYPos); // FIXED: Increased spacing from rightValueX to rightLabelX + 75
+       .text(': ', rightLabelX + 70, rightYPos) // FIXED: Dynamic positioning + space after colon
+       .text(upperCaseText(data.shipper.refNumber || data.shipper.poNumber), rightLabelX + 75, rightYPos);
     
-    // Contact
-    rightYPos += 14;
+    // Contact - Medium label
+    rightYPos += rightSpacing;
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Contact:'), rightLabelX, rightYPos);
+       .text(upperCaseText('CONTACT'), rightLabelX, rightYPos);
     
     doc.font('Helvetica')
        .fillColor('#000000')
-       .text(upperCaseText(data.shipper.contact), rightLabelX + 75, rightYPos); // FIXED: Increased spacing
+       .text(': ', rightLabelX + 55, rightYPos) // FIXED: Dynamic positioning + space after colon
+       .text(upperCaseText(data.shipper.contact), rightLabelX + 60, rightYPos);
     
-    // Phone
-    rightYPos += 14;
+    // Phone - Long label
+    rightYPos += rightSpacing;
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Telephone:'), rightLabelX, rightYPos);
+       .text(upperCaseText('TELEPHONE'), rightLabelX, rightYPos);
     
     doc.font('Helvetica')
        .fillColor('#000000')
-       .text(upperCaseText(data.shipper.phone), rightLabelX + 75, rightYPos); // FIXED: Increased spacing
+       .text(': ', rightLabelX + 70, rightYPos) // FIXED: Dynamic positioning + space after colon
+       .text(upperCaseText(data.shipper.phone), rightLabelX + 75, rightYPos);
     
-    // Instructions - FIXED: Better positioning to prevent overlap
+    // Instructions - Display directly without label
     if (data.shipper.specialInstructions) {
-        rightYPos += 14;
-        doc.font('Helvetica-Bold')
-           .fillColor('#333333')
-           .text(upperCaseText('Instructions:'), rightLabelX, rightYPos);
-        
+        rightYPos += rightSpacing;
         doc.font('Helvetica')
            .fontSize(8)
            .fillColor('#000000')
-           .text(upperCaseText(data.shipper.specialInstructions), rightLabelX + 75, rightYPos, { width: 165 }); // FIXED: Increased spacing and width
+           .text(upperCaseText(data.shipper.specialInstructions), rightLabelX, rightYPos, { width: 200 }); // INCREASED: from 160 to 200 for better readability
     }
     
     // FIXED: Changed "Date Ready" to "Shipment Date" and improved spacing
@@ -1128,32 +1130,32 @@ function drawEnhancedShipperSection(doc, data) {
        .text(upperCaseText('Shipment Date'), labelX, yPos); // FIXED: Changed from "Date Ready" to "Shipment Date"
     
     doc.fillColor('#000000')
-       .text(':', 130, yPos);  // FIXED: Increased spacing - moved colon to fixed position
+       .text(':', valueX - 5, yPos);  // FIXED: Reduced gap from -10 to -5
     
     doc.font('Helvetica')
-       .text(upperCaseText(data.dateReady), 140, yPos); // FIXED: Increased spacing for date value
+       .text(upperCaseText(data.dateReady), valueX, yPos);
     
     // Ready time - FIXED: Much closer spacing with guaranteed display
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Open'), 220, yPos);  // FIXED: Moved right to avoid overlap
+       .text(upperCaseText('Open'), 180, yPos);  // FIXED: Moved left from 240 to 180
     
     doc.fillColor('#000000')
-       .text(':', 245, yPos);     // FIXED: Moved right accordingly
+       .text(':', 205, yPos);     // FIXED: Moved left from 280 to 205
     
     doc.font('Helvetica')
-       .text(upperCaseText(data.readyTime), 250, yPos); // FIXED: Moved right accordingly
+       .text(upperCaseText(data.readyTime), 210, yPos);
     
     // Close time - FIXED: Much closer spacing, moved further left to avoid overlap with guaranteed display
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Close'), 300, yPos);  // FIXED: Moved further right to avoid overlap
+       .text(upperCaseText('Close'), 260, yPos);  // FIXED: Moved even further left from 280 to 260
     
     doc.fillColor('#000000')
-       .text(':', 325, yPos);      // FIXED: Moved right accordingly
+       .text(':', 285, yPos);      // FIXED: Moved left to 285
     
     doc.font('Helvetica')
-       .text(upperCaseText(data.closeTime), 335, yPos); // FIXED: Added 5 more pixels (was 330, now 335)
+       .text(upperCaseText(data.closeTime), 290, yPos);
 }
 
 /**
@@ -1182,7 +1184,7 @@ function drawEnhancedConsigneeSection(doc, data) {
     let yPos = sectionY + 20;
     let rightYPos = sectionY + 20;
     
-    // Company name directly (no redundant "Consignee" label)
+    // Company name (removed redundant "Consignee" label)
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#000000')
@@ -1210,37 +1212,38 @@ function drawEnhancedConsigneeSection(doc, data) {
     yPos += 9;
     doc.text(upperCaseText(`${data.consignee.state}     ${data.consignee.postalCode}     ${data.consignee.country}`), labelX, yPos);
     
-    // Right column - aligned with top
-    // Contact
+    // Right column - aligned with top - DYNAMIC SPACING BASED ON LABEL LENGTH
+    const rightSpacing = 16; // INCREASED: from 14 to 16 for better readability
+    
+    // Contact - Medium label
     doc.font('Helvetica-Bold')
+       .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Contact:'), rightLabelX, rightYPos);
+       .text(upperCaseText('CONTACT'), rightLabelX, rightYPos);
     
     doc.font('Helvetica')
        .fillColor('#000000')
-       .text(upperCaseText(data.consignee.contact), rightLabelX + 75, rightYPos); // FIXED: Increased spacing
+       .text(': ', rightLabelX + 55, rightYPos) // FIXED: Dynamic positioning + space after colon
+       .text(upperCaseText(data.consignee.contact), rightLabelX + 60, rightYPos);
     
-    // Phone
-    rightYPos += 14;
+    // Phone - Long label
+    rightYPos += rightSpacing;
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Telephone:'), rightLabelX, rightYPos);
+       .text(upperCaseText('TELEPHONE'), rightLabelX, rightYPos);
     
     doc.font('Helvetica')
        .fillColor('#000000')
-       .text(upperCaseText(data.consignee.phone), rightLabelX + 75, rightYPos); // FIXED: Increased spacing
+       .text(': ', rightLabelX + 70, rightYPos) // FIXED: Dynamic positioning + space after colon
+       .text(upperCaseText(data.consignee.phone), rightLabelX + 75, rightYPos);
     
-    // Instructions - FIXED: Proper positioning to prevent overlap
+    // Instructions - Display directly without label
     if (data.consignee.specialInstructions) {
-        rightYPos += 14;
-        doc.font('Helvetica-Bold')
-           .fillColor('#333333')
-           .text(upperCaseText('Instructions:'), rightLabelX, rightYPos);
-        
+        rightYPos += rightSpacing;
         doc.font('Helvetica')
            .fontSize(8)
            .fillColor('#000000')
-           .text(upperCaseText(data.consignee.specialInstructions), rightLabelX + 75, rightYPos, { width: 165 }); // FIXED: Increased spacing and width
+           .text(upperCaseText(data.consignee.specialInstructions), rightLabelX, rightYPos, { width: 200 }); // INCREASED: from 160 to 200 for better readability
     }
     
     // ADDED BACK: Open and Close times (without Deliver On date)
@@ -1250,24 +1253,24 @@ function drawEnhancedConsigneeSection(doc, data) {
     doc.font('Helvetica-Bold')
        .fontSize(9)
        .fillColor('#333333')
-       .text(upperCaseText('Open'), 220, yPos); // FIXED: Moved right to match shipper section
+       .text(upperCaseText('Open'), 180, yPos); // Position similar to shipper section
     
     doc.fillColor('#000000')
-       .text(':', 245, yPos); // FIXED: Moved right accordingly
+       .text(':', 205, yPos);
     
     doc.font('Helvetica')
-       .text(upperCaseText(data.deliverOpen), 250, yPos); // FIXED: Moved right accordingly
+       .text(upperCaseText(data.deliverOpen), 210, yPos);
     
     // Close time
     doc.font('Helvetica-Bold')
        .fillColor('#333333')
-       .text(upperCaseText('Close'), 300, yPos); // FIXED: Moved right to match shipper section
+       .text(upperCaseText('Close'), 260, yPos);
     
     doc.fillColor('#000000')
-       .text(':', 325, yPos); // FIXED: Moved right accordingly
+       .text(':', 285, yPos);
     
     doc.font('Helvetica')
-       .text(upperCaseText(data.deliverClose), 335, yPos); // FIXED: Added 5 more pixels (was 330, now 335)
+       .text(upperCaseText(data.deliverClose), 290, yPos);
 }
 
 /**

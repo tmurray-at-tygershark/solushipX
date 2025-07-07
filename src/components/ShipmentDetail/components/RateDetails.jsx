@@ -368,55 +368,50 @@ const RateDetails = ({
             };
 
             const freight = getActualVsMarkupAmount('freight');
-            if (freight.markup > 0) {
-                breakdown.push({
-                    description: 'Freight Charges',
-                    amount: freight.markup,
-                    cost: freight.actual,
-                    code: 'FRT'
-                });
-            }
+            // Always show freight charges, even if $0.00
+            breakdown.push({
+                description: 'Freight Charges',
+                amount: freight.markup,
+                cost: freight.actual,
+                code: 'FRT'
+            });
 
             const fuel = getActualVsMarkupAmount('fuel');
-            if (fuel.markup > 0) {
-                breakdown.push({
-                    description: 'Fuel Charges',
-                    amount: fuel.markup,
-                    cost: fuel.actual,
-                    code: 'FUE'
-                });
-            }
+            // Always show fuel charges, even if $0.00
+            breakdown.push({
+                description: 'Fuel Charges',
+                amount: fuel.markup,
+                cost: fuel.actual,
+                code: 'FUE'
+            });
 
             const service = getActualVsMarkupAmount('service');
-            if (service.markup > 0) {
-                breakdown.push({
-                    description: 'Service Charges',
-                    amount: service.markup,
-                    cost: service.actual,
-                    code: 'MSC'
-                });
-            }
+            // Always show service charges, even if $0.00
+            breakdown.push({
+                description: 'Service Charges',
+                amount: service.markup,
+                cost: service.actual,
+                code: 'MSC'
+            });
 
             const accessorial = getActualVsMarkupAmount('accessorial');
-            if (accessorial.markup > 0) {
-                breakdown.push({
-                    description: 'Accessorial Charges',
-                    amount: accessorial.markup,
-                    cost: accessorial.actual,
-                    code: 'ACC'
-                });
-            }
+            // Always show accessorial charges, even if $0.00
+            breakdown.push({
+                description: 'Accessorial Charges',
+                amount: accessorial.markup,
+                cost: accessorial.actual,
+                code: 'ACC'
+            });
 
             if (getBestRateInfo?.guaranteed) {
                 const guarantee = getActualVsMarkupAmount('guarantee');
-                if (guarantee.markup > 0) {
-                    breakdown.push({
-                        description: 'Guarantee Charge',
-                        amount: guarantee.markup,
-                        cost: guarantee.actual,
-                        code: 'SUR'
-                    });
-                }
+                // Always show guarantee charges, even if $0.00
+                breakdown.push({
+                    description: 'Guarantee Charge',
+                    amount: guarantee.markup,
+                    cost: guarantee.actual,
+                    code: 'SUR'
+                });
             }
         }
 
@@ -723,89 +718,37 @@ const RateDetails = ({
                         </TableContainer>
                     </Box>
 
-                    {/* Additional Services Section */}
-                    {(() => {
-                        const additionalServices = [];
+                    {/* Additional Services Section - Dynamic Services from Database */}
+                    {shipment?.additionalServices && shipment.additionalServices.length > 0 && (
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
+                                Additional Services
+                            </Typography>
+                            <TableContainer>
+                                <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
+                                    <TableBody>
+                                        {shipment.additionalServices.map((service, index) => (
+                                            <TableRow key={index}>
+                                                <TableCell sx={{ fontSize: '12px', py: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            {service.label || service.code}
+                                                        </Typography>
+                                                        {service.description && (
+                                                            <Typography sx={{ fontSize: '11px', color: 'text.secondary' }}>
+                                                                - {service.description}
+                                                            </Typography>
+                                                        )}
+                                                    </Box>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
+                    )}
 
-                        // Check for signature service
-                        if (shipment?.shipmentInfo?.signatureServiceType && shipment.shipmentInfo.signatureServiceType !== 'none') {
-                            additionalServices.push(`Signature Service (${shipment.shipmentInfo.signatureServiceType})`);
-                        } else if (shipment?.shipmentInfo?.signatureRequired) {
-                            additionalServices.push('Signature Required');
-                        }
-
-                        // Check for international shipment
-                        if (shipment?.shipmentInfo?.internationalShipment) {
-                            additionalServices.push('International Shipment');
-                        } else if (shipment?.shipFrom?.country && shipment?.shipTo?.country) {
-                            // Also check by comparing countries directly
-                            const originCountry = shipment.shipFrom.country;
-                            const destinationCountry = shipment.shipTo.country;
-                            if (originCountry !== destinationCountry) {
-                                additionalServices.push('International Shipment');
-                            }
-                        }
-
-                        // Check for dangerous goods
-                        if (shipment?.shipmentInfo?.dangerousGoodsType && shipment.shipmentInfo.dangerousGoodsType !== 'none') {
-                            additionalServices.push(`Dangerous Goods (${shipment.shipmentInfo.dangerousGoodsType})`);
-                        }
-
-                        // Check for Saturday delivery
-                        if (shipment?.shipmentInfo?.saturdayDelivery) {
-                            additionalServices.push('Saturday Delivery');
-                        }
-
-                        // Check for hold for pickup
-                        if (shipment?.shipmentInfo?.holdForPickup) {
-                            additionalServices.push('Hold for Pickup');
-                        }
-
-                        // Check for guaranteed service
-                        if (getBestRateInfo?.guaranteed) {
-                            additionalServices.push('Guaranteed Service');
-                        }
-
-                        // Check for insurance/declared value
-                        if (shipment?.packages && shipment.packages.length > 0) {
-                            const totalDeclaredValue = shipment.packages.reduce((total, pkg) => {
-                                return total + (parseFloat(pkg.declaredValue) || 0);
-                            }, 0);
-                            if (totalDeclaredValue > 0) {
-                                additionalServices.push(`Insurance Coverage (${currencySymbol}${totalDeclaredValue.toFixed(2)})`);
-                            }
-                        }
-
-                        // Check for special delivery times
-                        if (shipment?.shipmentInfo?.earliestDeliveryTime && shipment?.shipmentInfo?.latestDeliveryTime) {
-                            const earliestTime = shipment.shipmentInfo.earliestDeliveryTime;
-                            const latestTime = shipment.shipmentInfo.latestDeliveryTime;
-                            if (earliestTime !== '09:00' || latestTime !== '17:00') {
-                                additionalServices.push(`Delivery Window (${earliestTime} - ${latestTime})`);
-                            }
-                        }
-
-                        return additionalServices.length > 0 ? (
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, fontSize: '14px' }}>
-                                    Additional Services
-                                </Typography>
-                                <TableContainer>
-                                    <Table size="small" sx={{ border: '1px solid #e0e0e0' }}>
-                                        <TableBody>
-                                            {additionalServices.map((service, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell sx={{ fontSize: '12px', py: 1 }}>
-                                                        {service}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </Box>
-                        ) : null;
-                    })()}
                 </Box>
             </Paper>
         </Grid>

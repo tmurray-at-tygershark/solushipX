@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -19,7 +19,8 @@ import {
     Divider,
     InputLabel,
     Select,
-    MenuItem
+    MenuItem,
+    CircularProgress
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -30,13 +31,8 @@ import {
     CheckCircle as CheckCircleIcon,
     Info as InfoIcon
 } from '@mui/icons-material';
-
-// Service options from ShipmentInfo.jsx (removed "Any" options per user feedback)
-const courierServices = [
-    { value: 'economy', label: 'Economy', description: 'Cost-effective courier delivery' },
-    { value: 'express', label: 'Express', description: 'Fast courier delivery' },
-    { value: 'priority', label: 'Priority', description: 'Premium courier service' }
-];
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../../../../firebase/firebase';
 
 // Package types available for restrictions (from CreateShipmentX.jsx)
 const PACKAGING_TYPES = [
@@ -74,33 +70,6 @@ const PACKAGING_TYPES = [
     { value: 273, label: 'BLADE(S)' },
     { value: 274, label: 'RACKS' },
     { value: 275, label: 'GAYLORDS' }
-];
-
-const freightServices = [
-    { value: 'ltl_standard_sk', label: 'LTL Standard - SK', description: 'Less than truckload standard service - Skid' },
-    { value: 'ltl_economy_lb', label: 'LTL Economy - LB', description: 'Less than truckload economy service - per pound' },
-    { value: 'ltl_economy_sk', label: 'LTL Economy - SK', description: 'Less than truckload economy service - Skid' },
-    { value: 'ltl_expedited_lb', label: 'LTL Expedited - LB', description: 'Expedited LTL service - per pound' },
-    { value: 'ltl_expedited_sk', label: 'LTL Expedited - SK', description: 'Expedited LTL service - Skid' },
-    { value: 'ltl_economy_skid', label: 'LTL Economy Skid', description: 'Economy skid-based LTL service' },
-    { value: 'ltl_skid_sk', label: 'LTL Skid - SK', description: 'Skid-based LTL service - Skid' },
-    { value: 'ltl_customer_specific', label: 'LTL Customer Specific', description: 'Custom LTL arrangements' },
-    { value: 'ltl_standard_class', label: 'LTL Standard - Class', description: 'Class-based LTL standard service' },
-    { value: 'same_day_regular', label: 'Same Day Regular', description: 'Same day delivery (booked before 11:00 AM)' },
-    { value: 'same_day_rush', label: 'Same Day Rush', description: '2-4 hours delivery (booked after 11:00 AM or downtown)' },
-    { value: 'same_day_direct', label: 'Same Day Direct', description: 'Door-to-door same day service' },
-    { value: 'same_day_after_hours', label: 'Same Day After Hours', description: 'After hours delivery (6:00 PM to 6:00 AM)' },
-    { value: 'same_day_direct_weekends', label: 'Same Day Direct [Weekends]', description: 'Weekend same day service' },
-    { value: 'next_day_regular', label: 'Next Day Regular', description: 'Next business day delivery' },
-    { value: 'next_day_rush', label: 'Next Day Rush', description: 'Priority next day delivery' },
-    { value: 'dedicated_truck_hourly', label: 'Dedicated Truck Hourly', description: 'Hourly dedicated truck service' },
-    { value: 'ftl_53_dry_van', label: 'FTL - 53\' Dry Van', description: 'Full truckload 53-foot dry van' },
-    { value: 'ftl_24_straight_truck', label: 'FTL - 24\' Straight Truck', description: 'Full truckload 24-foot straight truck' },
-    { value: 'ftl_sprinter_van', label: 'FTL - Sprinter Van', description: 'Full truckload sprinter van service' },
-    { value: 'ftl_expedited', label: 'FTL Expedited', description: 'Expedited full truckload service' },
-    { value: 'ftl_standard', label: 'FTL Standard', description: 'Standard full truckload service' },
-    { value: 'ftl_economy', label: 'FTL Economy', description: 'Economy full truckload service' },
-    { value: 'ftl_flatbed', label: 'FTL Flatbed', description: 'Full truckload flatbed service' }
 ];
 
 // Geographic data for province-state mapping
@@ -912,6 +881,81 @@ const PackageTypeRestrictionsComponent = ({ packageTypeRestrictions, onUpdate, e
 };
 
 const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = false }) => {
+    // State for dynamic service levels
+    const [courierServices, setCourierServices] = useState([]);
+    const [freightServices, setFreightServices] = useState([]);
+    const [loadingServices, setLoadingServices] = useState(true);
+    const [servicesError, setServicesError] = useState(null);
+
+    // Load service levels from database
+    useEffect(() => {
+        const loadServiceLevels = async () => {
+            try {
+                setLoadingServices(true);
+                console.log('🔄 [ServicesEligibilityStep] Starting service levels load...');
+                console.log('🔄 [ServicesEligibilityStep] Database object:', db);
+
+                // Load courier services
+                const courierQuery = query(
+                    collection(db, 'serviceLevels'),
+                    where('type', '==', 'courier'),
+                    where('enabled', '==', true),
+                    orderBy('sortOrder', 'asc')
+                );
+
+                // Load freight services
+                const freightQuery = query(
+                    collection(db, 'serviceLevels'),
+                    where('type', '==', 'freight'),
+                    where('enabled', '==', true),
+                    orderBy('sortOrder', 'asc')
+                );
+
+                const [courierSnapshot, freightSnapshot] = await Promise.all([
+                    getDocs(courierQuery),
+                    getDocs(freightQuery)
+                ]);
+
+                const courierData = courierSnapshot.docs.map(doc => ({
+                    value: doc.data().code,
+                    label: doc.data().label,
+                    description: doc.data().description || `${doc.data().label} service`,
+                    ...doc.data()
+                }));
+
+                const freightData = freightSnapshot.docs.map(doc => ({
+                    value: doc.data().code,
+                    label: doc.data().label,
+                    description: doc.data().description || `${doc.data().label} service`,
+                    ...doc.data()
+                }));
+
+                console.log('✅ Service levels loaded:', {
+                    courier: courierData.length,
+                    freight: freightData.length,
+                    courierData,
+                    freightData
+                });
+
+                setCourierServices(courierData);
+                setFreightServices(freightData);
+                setServicesError(null);
+            } catch (error) {
+                console.error('❌ Error loading service levels:', error);
+                console.error('❌ Error details:', error.message, error.code);
+                setServicesError('Failed to load service levels from database. Contact support.');
+
+                // NO FALLBACK - Force database usage only
+                setCourierServices([]);
+                setFreightServices([]);
+            } finally {
+                setLoadingServices(false);
+            }
+        };
+
+        loadServiceLevels();
+    }, []);
+
     // Handle service selection
     const handleServiceToggle = useCallback((serviceType, serviceValue) => {
         const currentServices = data.supportedServices[serviceType] || [];
@@ -1095,153 +1139,171 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                         </Alert>
                     )}
 
+                    {/* Services Loading Error */}
+                    {servicesError && (
+                        <Alert severity="error" sx={{ fontSize: '12px', mb: 3 }}>
+                            {servicesError}
+                        </Alert>
+                    )}
+
                     <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
                         Select all service types this carrier can handle. You can choose from both courier and freight categories.
                     </Typography>
 
-                    <Grid container spacing={3}>
-                        {/* Courier Services - Only show for courier or hybrid carriers */}
-                        {showCourierServices && (
-                            <Grid item xs={12} md={showFreightServices ? 6 : 12}>
-                                <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
-                                    <Box sx={{ p: 2, bgcolor: '#eff6ff', borderBottom: '1px solid #e5e7eb' }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <CourierIcon sx={{ fontSize: '18px', color: '#2563eb' }} />
-                                                <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
-                                                    Courier Services
-                                                </Typography>
-                                                <Chip
-                                                    label={courierCount}
-                                                    size="small"
-                                                    sx={{ fontSize: '10px', height: '18px' }}
-                                                    color={courierCount > 0 ? 'primary' : 'default'}
-                                                />
+                    {/* Loading State */}
+                    {loadingServices ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                            <CircularProgress size={24} sx={{ mr: 2 }} />
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                Loading service levels...
+                            </Typography>
+                        </Box>
+                    ) : (
+
+                        <Grid container spacing={3}>
+                            {/* Courier Services - Only show for courier or hybrid carriers */}
+                            {showCourierServices && (
+                                <Grid item xs={12} md={showFreightServices ? 6 : 12}>
+                                    <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
+                                        <Box sx={{ p: 2, bgcolor: '#eff6ff', borderBottom: '1px solid #e5e7eb' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <CourierIcon sx={{ fontSize: '18px', color: '#2563eb' }} />
+                                                    <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                                        Courier Services
+                                                    </Typography>
+                                                    <Chip
+                                                        label={courierCount}
+                                                        size="small"
+                                                        sx={{ fontSize: '10px', height: '18px' }}
+                                                        color={courierCount > 0 ? 'primary' : 'default'}
+                                                    />
+                                                </Box>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => handleSelectAllServices('courier')}
+                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                    >
+                                                        All
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => handleDeselectAllServices('courier')}
+                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                    >
+                                                        None
+                                                    </Button>
+                                                </Box>
                                             </Box>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => handleSelectAllServices('courier')}
-                                                    sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                                >
-                                                    All
-                                                </Button>
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => handleDeselectAllServices('courier')}
-                                                    sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                                >
-                                                    None
-                                                </Button>
-                                            </Box>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Small package and document delivery services
+                                            </Typography>
                                         </Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Small package and document delivery services
-                                        </Typography>
-                                    </Box>
 
-                                    <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
-                                        <FormGroup>
-                                            {courierServices.map((service) => (
-                                                <FormControlLabel
-                                                    key={service.value}
-                                                    control={
-                                                        <Checkbox
-                                                            size="small"
-                                                            checked={(data.supportedServices.courier || []).includes(service.value)}
-                                                            onChange={() => handleServiceToggle('courier', service.value)}
-                                                        />
-                                                    }
-                                                    label={
-                                                        <Box>
-                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                {service.label}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                {service.description}
-                                                            </Typography>
-                                                        </Box>
-                                                    }
-                                                    sx={{ mb: 1, alignItems: 'flex-start' }}
-                                                />
-                                            ))}
-                                        </FormGroup>
-                                    </Box>
-                                </Paper>
-                            </Grid>
-                        )}
-
-                        {/* Freight Services - Only show for freight or hybrid carriers */}
-                        {showFreightServices && (
-                            <Grid item xs={12} md={showCourierServices ? 6 : 12}>
-                                <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
-                                    <Box sx={{ p: 2, bgcolor: '#fef3ff', borderBottom: '1px solid #e5e7eb' }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <FreightIcon sx={{ fontSize: '18px', color: '#7c3aed' }} />
-                                                <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
-                                                    Freight Services
-                                                </Typography>
-                                                <Chip
-                                                    label={freightCount}
-                                                    size="small"
-                                                    sx={{ fontSize: '10px', height: '18px' }}
-                                                    color={freightCount > 0 ? 'secondary' : 'default'}
-                                                />
-                                            </Box>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => handleSelectAllServices('freight')}
-                                                    sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                                >
-                                                    All
-                                                </Button>
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => handleDeselectAllServices('freight')}
-                                                    sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
-                                                >
-                                                    None
-                                                </Button>
-                                            </Box>
+                                        <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
+                                            <FormGroup>
+                                                {courierServices.map((service) => (
+                                                    <FormControlLabel
+                                                        key={service.value}
+                                                        control={
+                                                            <Checkbox
+                                                                size="small"
+                                                                checked={(data.supportedServices.courier || []).includes(service.value)}
+                                                                onChange={() => handleServiceToggle('courier', service.value)}
+                                                            />
+                                                        }
+                                                        label={
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {service.label}
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    {service.description}
+                                                                </Typography>
+                                                            </Box>
+                                                        }
+                                                        sx={{ mb: 1, alignItems: 'flex-start' }}
+                                                    />
+                                                ))}
+                                            </FormGroup>
                                         </Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            LTL, FTL, and specialized freight services
-                                        </Typography>
-                                    </Box>
+                                    </Paper>
+                                </Grid>
+                            )}
 
-                                    <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
-                                        <FormGroup>
-                                            {freightServices.map((service) => (
-                                                <FormControlLabel
-                                                    key={service.value}
-                                                    control={
-                                                        <Checkbox
-                                                            size="small"
-                                                            checked={(data.supportedServices.freight || []).includes(service.value)}
-                                                            onChange={() => handleServiceToggle('freight', service.value)}
-                                                        />
-                                                    }
-                                                    label={
-                                                        <Box>
-                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                {service.label}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                {service.description}
-                                                            </Typography>
-                                                        </Box>
-                                                    }
-                                                    sx={{ mb: 1, alignItems: 'flex-start' }}
-                                                />
-                                            ))}
-                                        </FormGroup>
-                                    </Box>
-                                </Paper>
-                            </Grid>
-                        )}
-                    </Grid>
+                            {/* Freight Services - Only show for freight or hybrid carriers */}
+                            {showFreightServices && (
+                                <Grid item xs={12} md={showCourierServices ? 6 : 12}>
+                                    <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
+                                        <Box sx={{ p: 2, bgcolor: '#fef3ff', borderBottom: '1px solid #e5e7eb' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <FreightIcon sx={{ fontSize: '18px', color: '#7c3aed' }} />
+                                                    <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                                        Freight Services
+                                                    </Typography>
+                                                    <Chip
+                                                        label={freightCount}
+                                                        size="small"
+                                                        sx={{ fontSize: '10px', height: '18px' }}
+                                                        color={freightCount > 0 ? 'secondary' : 'default'}
+                                                    />
+                                                </Box>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => handleSelectAllServices('freight')}
+                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                    >
+                                                        All
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => handleDeselectAllServices('freight')}
+                                                        sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                    >
+                                                        None
+                                                    </Button>
+                                                </Box>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                LTL, FTL, and specialized freight services
+                                            </Typography>
+                                        </Box>
+
+                                        <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
+                                            <FormGroup>
+                                                {freightServices.map((service) => (
+                                                    <FormControlLabel
+                                                        key={service.value}
+                                                        control={
+                                                            <Checkbox
+                                                                size="small"
+                                                                checked={(data.supportedServices.freight || []).includes(service.value)}
+                                                                onChange={() => handleServiceToggle('freight', service.value)}
+                                                            />
+                                                        }
+                                                        label={
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {service.label}
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    {service.description}
+                                                                </Typography>
+                                                            </Box>
+                                                        }
+                                                        sx={{ mb: 1, alignItems: 'flex-start' }}
+                                                    />
+                                                ))}
+                                            </FormGroup>
+                                        </Box>
+                                    </Paper>
+                                </Grid>
+                            )}
+                        </Grid>
+                    )}
 
                     {/* Selected Services Summary */}
                     {totalServices > 0 && (

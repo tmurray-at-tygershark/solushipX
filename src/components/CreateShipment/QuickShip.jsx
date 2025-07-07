@@ -60,7 +60,7 @@ import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
@@ -415,6 +415,10 @@ const QuickShip = ({
     const [availableServices, setAvailableServices] = useState([]);
     const [loadingServices, setLoadingServices] = useState(false);
     const [servicesExpanded, setServicesExpanded] = useState(false);
+
+    // Service Levels state
+    const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
+    const [loadingServiceLevels, setLoadingServiceLevels] = useState(false);
 
     // Manual rates state - with default FRT and FUE charges
     const [manualRates, setManualRates] = useState([
@@ -1095,6 +1099,42 @@ const QuickShip = ({
             }
             return rate;
         }));
+    };
+
+    // Load Service Levels function
+    const loadServiceLevels = async () => {
+        console.log('🔧 QuickShip: loadServiceLevels called, shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 QuickShip: loadServiceLevels function started');
+
+        try {
+            setLoadingServiceLevels(true);
+            const serviceLevelsRef = collection(db, 'serviceLevels');
+            const q = query(
+                serviceLevelsRef,
+                where('type', '==', shipmentInfo.shipmentType),
+                where('enabled', '==', true),
+                orderBy('sortOrder'),
+                orderBy('label')
+            );
+            const querySnapshot = await getDocs(q);
+
+            const levels = [];
+            querySnapshot.forEach((doc) => {
+                levels.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            console.log('🔧 Loaded service levels from database:', levels);
+            setAvailableServiceLevels(levels);
+        } catch (error) {
+            console.error('🔧 Error loading service levels:', error);
+            // Fallback to default 'any' option if loading fails
+            setAvailableServiceLevels([{ code: 'any', label: 'Any' }]);
+        } finally {
+            setLoadingServiceLevels(false);
+        }
     };
 
     // Additional Services functions
@@ -2999,15 +3039,26 @@ const QuickShip = ({
         }
     };
 
-    // Load additional services when shipment type changes to freight or courier
+    // Load service levels on component mount and when shipment type changes
     useEffect(() => {
+        console.log('🔧 QuickShip: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 QuickShip: Current shipmentInfo object:', shipmentInfo);
         if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
+            console.log('🔧 QuickShip: Loading services for shipment type:', shipmentInfo.shipmentType);
             loadAdditionalServices();
+            loadServiceLevels();
         } else {
+            console.log('🔧 QuickShip: Clearing services for shipment type:', shipmentInfo.shipmentType);
             setAdditionalServices([]);
             setAvailableServices([]);
+            setAvailableServiceLevels([]);
         }
     }, [shipmentInfo.shipmentType]);
+
+    // Debug useEffect to see when shipmentInfo changes
+    useEffect(() => {
+        console.log('🔧 QuickShip: shipmentInfo changed:', shipmentInfo);
+    }, [shipmentInfo]);
 
     // When loading a draft, if selectedCarrier is set but selectedCarrierContactId is not, default to first terminal
     useEffect(() => {
@@ -3348,6 +3399,62 @@ const QuickShip = ({
                                                 </FormControl>
                                             </Grid>
                                             <Grid item xs={12} md={6}>
+                                                <Autocomplete
+                                                    size="small"
+                                                    options={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ]}
+                                                    getOptionLabel={(option) => option.label || option.code}
+                                                    value={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
+                                                    onChange={(event, newValue) => {
+                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
+                                                    }}
+                                                    isOptionEqualToValue={(option, value) => option.code === value.code}
+                                                    loading={loadingServiceLevels}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Service Level"
+                                                            tabIndex={10}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                ...params.InputProps,
+                                                                endAdornment: (
+                                                                    <>
+                                                                        {loadingServiceLevels ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                        {params.InputProps.endAdornment}
+                                                                    </>
+                                                                ),
+                                                            }}
+                                                        />
+                                                    )}
+                                                    renderOption={(props, option) => (
+                                                        <Box component="li" {...props} sx={{ p: 1.5 }}>
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {option.label}
+                                                                </Typography>
+                                                                {option.description && (
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {option.description}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </Box>
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={6}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
@@ -3357,7 +3464,7 @@ const QuickShip = ({
                                                     onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
                                                     required
                                                     autoComplete="off"
-                                                    tabIndex={10}
+                                                    tabIndex={11}
                                                     onKeyDown={(e) => handleKeyDown(e, 'navigate')}
                                                     sx={{
                                                         '& .MuiInputBase-input': {
@@ -3527,6 +3634,8 @@ const QuickShip = ({
                                                     }}
                                                 />
                                             </Grid>
+
+
 
                                             {/* ETA Fields - Matching Shipment Date Design */}
                                             <Grid item xs={12} md={6}>

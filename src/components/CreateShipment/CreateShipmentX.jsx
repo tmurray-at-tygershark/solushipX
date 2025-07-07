@@ -62,7 +62,7 @@ import {
     Map as MapIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -128,23 +128,7 @@ const PACKAGING_TYPES = [
     { value: 275, label: 'GAYLORDS' }
 ];
 
-// Service level options for different shipment types
-const COURIER_SERVICE_LEVELS = [
-    { value: 'any', label: 'Any' },
-    { value: 'economy', label: 'Economy' },
-    { value: 'express', label: 'Express' },
-    { value: 'priority', label: 'Priority' }
-];
-
-const FREIGHT_SERVICE_LEVELS = [
-    { value: 'any', label: 'Any' },
-    { value: 'ltl_standard', label: 'LTL Standard' },
-    { value: 'ltl_expedited', label: 'LTL Expedited' },
-    { value: 'ftl_standard', label: 'FTL Standard' },
-    { value: 'ftl_expedited', label: 'FTL Expedited' },
-    { value: 'same_day', label: 'Same Day' },
-    { value: 'next_day', label: 'Next Day' }
-];
+// Service level options are now loaded dynamically from the database via the "Service Levels" module in System Configuration
 
 // Freight class options (same as QuickShip)
 const FREIGHT_CLASSES = [
@@ -325,6 +309,10 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const [availableServices, setAvailableServices] = useState([]);
     const [loadingServices, setLoadingServices] = useState(false);
     const [servicesExpanded, setServicesExpanded] = useState(false);
+
+    // Service Levels state
+    const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
+    const [loadingServiceLevels, setLoadingServiceLevels] = useState(false);
 
     // Additional state for improved UX
     const [formErrors, setFormErrors] = useState({});
@@ -699,7 +687,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 packagingQuantity: p.packagingQuantity
             })),
             shipmentType: shipmentInfo.shipmentType,
-            serviceLevel: shipmentInfo.serviceLevel
+            serviceLevel: shipmentInfo.serviceLevel,
+            shipmentDate: shipmentInfo.shipmentDate
         });
     }, [shipFromAddress, shipToAddress, packages, shipmentInfo]);
 
@@ -1003,12 +992,52 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                             });
                         }
 
-                        // Load addresses
+                        // Load addresses with transformation
                         if (draftData.shipFrom) {
-                            setShipFromAddress(draftData.shipFrom);
+                            const transformedShipFrom = {
+                                ...draftData.shipFrom,
+                                // Map database fields to standardized fields
+                                companyName: draftData.shipFrom.companyName || draftData.shipFrom.company || '',
+                                street: draftData.shipFrom.address1 || draftData.shipFrom.street || '',
+                                street2: draftData.shipFrom.address2 || draftData.shipFrom.street2 || '',
+                                city: draftData.shipFrom.city || '',
+                                state: draftData.shipFrom.stateProv || draftData.shipFrom.state || '',
+                                postalCode: draftData.shipFrom.zipPostal || draftData.shipFrom.postalCode || '',
+                                country: draftData.shipFrom.country || 'CA',
+                                // Contact information with proper field mapping
+                                contactName: draftData.shipFrom.contactName || `${draftData.shipFrom.firstName || ''} ${draftData.shipFrom.lastName || ''}`.trim() || draftData.shipFrom.nickname || '',
+                                contactPhone: draftData.shipFrom.contactPhone || draftData.shipFrom.phone || '',
+                                contactEmail: draftData.shipFrom.contactEmail || draftData.shipFrom.email || '',
+                                // Keep original fields as fallbacks
+                                firstName: draftData.shipFrom.firstName || '',
+                                lastName: draftData.shipFrom.lastName || '',
+                                phone: draftData.shipFrom.phone || '',
+                                email: draftData.shipFrom.email || ''
+                            };
+                            setShipFromAddress(transformedShipFrom);
                         }
                         if (draftData.shipTo) {
-                            setShipToAddress(draftData.shipTo);
+                            const transformedShipTo = {
+                                ...draftData.shipTo,
+                                // Map database fields to standardized fields
+                                companyName: draftData.shipTo.companyName || draftData.shipTo.company || '',
+                                street: draftData.shipTo.address1 || draftData.shipTo.street || '',
+                                street2: draftData.shipTo.address2 || draftData.shipTo.street2 || '',
+                                city: draftData.shipTo.city || '',
+                                state: draftData.shipTo.stateProv || draftData.shipTo.state || '',
+                                postalCode: draftData.shipTo.zipPostal || draftData.shipTo.postalCode || '',
+                                country: draftData.shipTo.country || 'CA',
+                                // Contact information with proper field mapping
+                                contactName: draftData.shipTo.contactName || `${draftData.shipTo.firstName || ''} ${draftData.shipTo.lastName || ''}`.trim() || draftData.shipTo.nickname || '',
+                                contactPhone: draftData.shipTo.contactPhone || draftData.shipTo.phone || '',
+                                contactEmail: draftData.shipTo.contactEmail || draftData.shipTo.email || '',
+                                // Keep original fields as fallbacks
+                                firstName: draftData.shipTo.firstName || '',
+                                lastName: draftData.shipTo.lastName || '',
+                                phone: draftData.shipTo.phone || '',
+                                email: draftData.shipTo.email || ''
+                            };
+                            setShipToAddress(transformedShipTo);
                         }
 
                         // Load packages
@@ -1122,16 +1151,27 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         initializeShipment();
     }, [companyData?.companyID, user?.uid, shipmentID, isEditingDraft, draftIdToLoad]);
 
-    // Load additional services when shipment type changes
+    // Load service levels on component mount and when shipment type changes
     useEffect(() => {
+        console.log('🔧 CreateShipmentX: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 CreateShipmentX: Current shipmentInfo object:', shipmentInfo);
         if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
+            console.log('🔧 CreateShipmentX: Loading services for shipment type:', shipmentInfo.shipmentType);
             loadAdditionalServices();
+            loadServiceLevels();
         } else {
+            console.log('🔧 CreateShipmentX: Clearing services for shipment type:', shipmentInfo.shipmentType);
             // Clear services if not freight or courier
             setAvailableServices([]);
             setAdditionalServices([]);
+            setAvailableServiceLevels([]);
         }
     }, [shipmentInfo.shipmentType]);
+
+    // Debug useEffect to see when shipmentInfo changes
+    useEffect(() => {
+        console.log('🔧 CreateShipmentX: shipmentInfo changed:', shipmentInfo);
+    }, [shipmentInfo]);
 
     // Update package defaults when shipment type changes
     useEffect(() => {
@@ -1323,12 +1363,37 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
     // Handlers
     const handleAddressSelect = (address, type) => {
+        if (!address) return;
+
+        // Transform raw database address to standardized format
+        const transformedAddress = {
+            ...address,
+            // Map database fields to standardized fields
+            companyName: address.companyName || address.company || '',
+            street: address.address1 || address.street || '',
+            street2: address.address2 || address.street2 || '',
+            city: address.city || '',
+            state: address.stateProv || address.state || '',
+            postalCode: address.zipPostal || address.postalCode || '',
+            country: address.country || 'CA',
+            // Contact information with proper field mapping
+            contactName: address.contactName || `${address.firstName || ''} ${address.lastName || ''}`.trim() || address.nickname || '',
+            contactPhone: address.contactPhone || address.phone || '',
+            contactEmail: address.contactEmail || address.email || '',
+            // Keep original fields as fallbacks
+            firstName: address.firstName || '',
+            lastName: address.lastName || '',
+            phone: address.phone || '',
+            email: address.email || '',
+            specialInstructions: address.specialInstructions || ''
+        };
+
         if (type === 'from') {
-            setShipFromAddress(address);
+            setShipFromAddress(transformedAddress);
 
             // Extract timing from pickup address
-            const openTime = extractOpenTime(address);
-            const closeTime = extractCloseTime(address);
+            const openTime = extractOpenTime(transformedAddress);
+            const closeTime = extractCloseTime(transformedAddress);
 
             // Update shipment info with extracted pickup times
             setShipmentInfo(prev => ({
@@ -1338,11 +1403,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             }));
 
         } else {
-            setShipToAddress(address);
+            setShipToAddress(transformedAddress);
 
             // Extract timing from delivery address
-            const openTime = extractOpenTime(address);
-            const closeTime = extractCloseTime(address);
+            const openTime = extractOpenTime(transformedAddress);
+            const closeTime = extractCloseTime(transformedAddress);
 
             // Update shipment info with extracted delivery times
             setShipmentInfo(prev => ({
@@ -1554,6 +1619,42 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         }));
     };
 
+    // Load Service Levels function
+    const loadServiceLevels = async () => {
+        console.log('🔧 CreateShipmentX: loadServiceLevels called, shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 CreateShipmentX: loadServiceLevels function started');
+
+        try {
+            setLoadingServiceLevels(true);
+            const serviceLevelsRef = collection(db, 'serviceLevels');
+            const q = query(
+                serviceLevelsRef,
+                where('type', '==', shipmentInfo.shipmentType),
+                where('enabled', '==', true),
+                orderBy('sortOrder'),
+                orderBy('label')
+            );
+            const querySnapshot = await getDocs(q);
+
+            const levels = [];
+            querySnapshot.forEach((doc) => {
+                levels.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            console.log('🔧 Loaded service levels from database:', levels);
+            setAvailableServiceLevels(levels);
+        } catch (error) {
+            console.error('🔧 Error loading service levels:', error);
+            // Fallback to default 'any' option if loading fails
+            setAvailableServiceLevels([{ code: 'any', label: 'Any' }]);
+        } finally {
+            setLoadingServiceLevels(false);
+        }
+    };
+
     // Additional Services functions
     const loadAdditionalServices = async () => {
         console.log('🔧 loadAdditionalServices called, shipmentType:', shipmentInfo.shipmentType);
@@ -1664,12 +1765,35 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             // Fetch the updated address data from the database
             const addressDoc = await getDoc(doc(db, 'addressBook', addressId));
             if (addressDoc.exists()) {
-                const updatedAddress = { id: addressDoc.id, ...addressDoc.data() };
+                const rawAddress = { id: addressDoc.id, ...addressDoc.data() };
+
+                // Transform the address data to standardized format
+                const transformedAddress = {
+                    ...rawAddress,
+                    // Map database fields to standardized fields
+                    companyName: rawAddress.companyName || rawAddress.company || '',
+                    street: rawAddress.address1 || rawAddress.street || '',
+                    street2: rawAddress.address2 || rawAddress.street2 || '',
+                    city: rawAddress.city || '',
+                    state: rawAddress.stateProv || rawAddress.state || '',
+                    postalCode: rawAddress.zipPostal || rawAddress.postalCode || '',
+                    country: rawAddress.country || 'CA',
+                    // Contact information with proper field mapping
+                    contactName: rawAddress.contactName || `${rawAddress.firstName || ''} ${rawAddress.lastName || ''}`.trim() || rawAddress.nickname || '',
+                    contactPhone: rawAddress.contactPhone || rawAddress.phone || '',
+                    contactEmail: rawAddress.contactEmail || rawAddress.email || '',
+                    // Keep original fields as fallbacks
+                    firstName: rawAddress.firstName || '',
+                    lastName: rawAddress.lastName || '',
+                    phone: rawAddress.phone || '',
+                    email: rawAddress.email || '',
+                    specialInstructions: rawAddress.specialInstructions || ''
+                };
 
                 if (editingAddressType === 'from') {
-                    setShipFromAddress(updatedAddress);
+                    setShipFromAddress(transformedAddress);
                 } else {
-                    setShipToAddress(updatedAddress);
+                    setShipToAddress(transformedAddress);
                 }
                 showMessage('Address updated successfully', 'success');
             } else {
@@ -1962,9 +2086,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         Name: shipFromAddress.country === 'CA' ? 'Canada' : 'United States',
                         UsesPostalCode: true
                     },
-                    Contact: `${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim(),
-                    Phone: shipFromAddress.phone || '',
-                    Email: shipFromAddress.email || '',
+                    Contact: shipFromAddress.contactName || `${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim() || '',
+                    Phone: shipFromAddress.contactPhone || shipFromAddress.phone || '',
+                    Email: shipFromAddress.contactEmail || shipFromAddress.email || '',
                     Fax: '',
                     Mobile: '',
                     SpecialInstructions: shipFromAddress.specialInstructions || 'none'
@@ -1983,9 +2107,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         Name: shipToAddress.country === 'CA' ? 'Canada' : 'United States',
                         UsesPostalCode: true
                     },
-                    Contact: `${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim(),
-                    Phone: shipToAddress.phone || '',
-                    Email: shipToAddress.email || '',
+                    Contact: shipToAddress.contactName || `${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim() || '',
+                    Phone: shipToAddress.contactPhone || shipToAddress.phone || '',
+                    Email: shipToAddress.contactEmail || shipToAddress.email || '',
                     Fax: '',
                     Mobile: '',
                     SpecialInstructions: shipToAddress.specialInstructions || 'none'
@@ -2603,6 +2727,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                 required={true}
                                 label="Select Company to Create Shipment"
                                 placeholder="Choose a company to create shipment on their behalf..."
+                                showDescription={false}
                             />
                         )}
 
@@ -2803,36 +2928,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             Shipment Information
                                         </Typography>
                                         <Grid container spacing={3}>
-                                            <Grid item xs={12} md={6}>
-                                                <Autocomplete
-                                                    size="small"
-                                                    options={[
-                                                        { value: 'courier', label: 'Courier' },
-                                                        { value: 'freight', label: 'Freight' }
-                                                    ]}
-                                                    getOptionLabel={(option) => option.label}
-                                                    value={{ value: shipmentInfo.shipmentType, label: shipmentInfo.shipmentType === 'courier' ? 'Courier' : 'Freight' }}
-                                                    onChange={(event, newValue) => {
-                                                        setShipmentInfo(prev => ({ ...prev, shipmentType: newValue ? newValue.value : 'freight' }));
-                                                    }}
-                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
-                                                    renderInput={(params) => (
-                                                        <TextField
-                                                            {...params}
-                                                            label="Shipment Type"
-                                                            tabIndex={10}
-                                                            sx={{
-                                                                '& .MuiInputBase-root': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
-                                                    )}
-                                                    sx={{
-                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
+                                            {/* Row 1: Shipment Date - Full width */}
+                                            <Grid item xs={12}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
@@ -2865,21 +2962,26 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
+
+                                            {/* Row 2: Shipment Type, Service Level, and Bill Type */}
+                                            <Grid item xs={12} md={4}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS}
+                                                    options={[
+                                                        { value: 'courier', label: 'Courier' },
+                                                        { value: 'freight', label: 'Freight' }
+                                                    ]}
                                                     getOptionLabel={(option) => option.label}
-                                                    value={(shipmentInfo.shipmentType === 'courier' ? COURIER_SERVICE_LEVELS : FREIGHT_SERVICE_LEVELS).find(level => level.value === shipmentInfo.serviceLevel)}
+                                                    value={{ value: shipmentInfo.shipmentType, label: shipmentInfo.shipmentType === 'courier' ? 'Courier' : 'Freight' }}
                                                     onChange={(event, newValue) => {
-                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.value : 'any' }));
+                                                        setShipmentInfo(prev => ({ ...prev, shipmentType: newValue ? newValue.value : 'freight' }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.value === value.value}
                                                     renderInput={(params) => (
                                                         <TextField
                                                             {...params}
-                                                            label="Service Level"
-                                                            tabIndex={11}
+                                                            label="Shipment Type"
+                                                            tabIndex={10}
                                                             sx={{
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -2891,30 +2993,165 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
-                                                            Reference Numbers
-                                                        </Typography>
-                                                        <Button
-                                                            size="small"
-                                                            startIcon={<AddIcon />}
-                                                            onClick={() => {
-                                                                setShipmentInfo(prev => ({
-                                                                    ...prev,
-                                                                    referenceNumbers: [...(prev.referenceNumbers || []), { id: Date.now(), value: '' }]
-                                                                }));
+                                            <Grid item xs={12} md={4}>
+                                                <Autocomplete
+                                                    size="small"
+                                                    options={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ]}
+                                                    getOptionLabel={(option) => option.label || option.code}
+                                                    value={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
+                                                    onChange={(event, newValue) => {
+                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
+                                                    }}
+                                                    isOptionEqualToValue={(option, value) => option.code === value.code}
+                                                    loading={loadingServiceLevels}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Service Level"
+                                                            tabIndex={11}
+                                                            sx={{
+                                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
                                                             }}
-                                                            sx={{ fontSize: '11px', textTransform: 'none', minHeight: '24px' }}
-                                                        >
-                                                            Add Reference
-                                                        </Button>
+                                                            InputProps={{
+                                                                ...params.InputProps,
+                                                                endAdornment: (
+                                                                    <>
+                                                                        {loadingServiceLevels ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                        {params.InputProps.endAdornment}
+                                                                    </>
+                                                                ),
+                                                            }}
+                                                        />
+                                                    )}
+                                                    renderOption={(props, option) => (
+                                                        <Box component="li" {...props} sx={{ p: 1.5 }}>
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {option.label}
+                                                                </Typography>
+                                                                {option.description && (
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {option.description}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        </Box>
+                                                    )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                    }}
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} md={4}>
+                                                <FormControl fullWidth size="small">
+                                                    <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
+                                                    <Select
+                                                        value={shipmentInfo.billType}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
+                                                        label="Bill Type"
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                                        }}
+                                                    >
+                                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            </Grid>
+
+
+
+
+
+                                            {/* Row 4: Reference Number with inline + button, ETA1, and ETA2 in the same row */}
+                                            <Grid item xs={12} md={4}>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                    {/* Primary Reference Number with Add Button */}
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="Primary Reference Number"
+                                                            value={shipmentInfo.shipperReferenceNumber}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    '&::placeholder': { fontSize: '12px' }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                endAdornment: shipmentInfo.shipperReferenceNumber && (
+                                                                    <InputAdornment position="end">
+                                                                        <Tooltip title="Copy Reference Number">
+                                                                            <IconButton
+                                                                                onClick={async () => {
+                                                                                    try {
+                                                                                        await navigator.clipboard.writeText(shipmentInfo.shipperReferenceNumber);
+                                                                                        showMessage('Reference number copied to clipboard!', 'success');
+                                                                                    } catch (error) {
+                                                                                        console.error('Failed to copy reference number:', error);
+                                                                                        showMessage('Failed to copy reference number', 'error');
+                                                                                    }
+                                                                                }}
+                                                                                size="small"
+                                                                                sx={{
+                                                                                    color: '#6b7280',
+                                                                                    '&:hover': {
+                                                                                        color: '#1976d2',
+                                                                                        backgroundColor: 'rgba(25, 118, 210, 0.1)'
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <ContentCopyIcon fontSize="small" />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    </InputAdornment>
+                                                                )
+                                                            }}
+                                                        />
+                                                        <Tooltip title="Add Reference">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    setShipmentInfo(prev => ({
+                                                                        ...prev,
+                                                                        referenceNumbers: [
+                                                                            ...(prev.referenceNumbers || []),
+                                                                            { id: Date.now(), value: '' }
+                                                                        ]
+                                                                    }));
+                                                                }}
+                                                                sx={{
+                                                                    color: '#4caf50',
+                                                                    '&:hover': {
+                                                                        backgroundColor: '#e8f5e8',
+                                                                        color: '#2e7d32',
+                                                                    },
+                                                                    minWidth: 'auto',
+                                                                    width: 32,
+                                                                    height: 32,
+                                                                }}
+                                                            >
+                                                                <AddIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
                                                     </Box>
 
-                                                    {/* Multiple reference numbers */}
+                                                    {/* Additional Reference Numbers - Stacked Vertically */}
                                                     {shipmentInfo.referenceNumbers?.map((ref, index) => (
-                                                        <Box key={ref.id} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                                        <Box key={ref.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <TextField
                                                                 fullWidth
                                                                 size="small"
@@ -2963,129 +3200,34 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                     )
                                                                 }}
                                                             />
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => {
-                                                                    setShipmentInfo(prev => ({
-                                                                        ...prev,
-                                                                        referenceNumbers: prev.referenceNumbers.filter((_, i) => i !== index)
-                                                                    }));
-                                                                }}
-                                                                sx={{
-                                                                    color: '#ef4444',
-                                                                    '&:hover': { backgroundColor: '#fee2e2' }
-                                                                }}
-                                                            >
-                                                                <DeleteIcon fontSize="small" />
-                                                            </IconButton>
+                                                            <Tooltip title="Remove Reference">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        setShipmentInfo(prev => ({
+                                                                            ...prev,
+                                                                            referenceNumbers: prev.referenceNumbers.filter((_, i) => i !== index)
+                                                                        }));
+                                                                    }}
+                                                                    sx={{
+                                                                        color: '#ef4444',
+                                                                        '&:hover': {
+                                                                            backgroundColor: '#fee2e2',
+                                                                            color: '#dc2626'
+                                                                        },
+                                                                        minWidth: 'auto',
+                                                                        width: 32,
+                                                                        height: 32,
+                                                                    }}
+                                                                >
+                                                                    <DeleteIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
                                                         </Box>
                                                     ))}
-
-                                                    {/* Primary reference number field also gets copy functionality */}
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        label="Primary Reference Number"
-                                                        value={shipmentInfo.shipperReferenceNumber}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                                        autoComplete="off"
-                                                        sx={{
-                                                            mb: shipmentInfo.referenceNumbers?.length > 0 ? 2 : 0,
-                                                            '& .MuiInputBase-input': {
-                                                                fontSize: '12px',
-                                                                '&::placeholder': { fontSize: '12px' }
-                                                            },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                        InputProps={{
-                                                            endAdornment: shipmentInfo.shipperReferenceNumber && (
-                                                                <InputAdornment position="end">
-                                                                    <Tooltip title="Copy Reference Number">
-                                                                        <IconButton
-                                                                            onClick={async () => {
-                                                                                try {
-                                                                                    await navigator.clipboard.writeText(shipmentInfo.shipperReferenceNumber);
-                                                                                    showMessage('Reference number copied to clipboard!', 'success');
-                                                                                } catch (error) {
-                                                                                    console.error('Failed to copy reference number:', error);
-                                                                                    showMessage('Failed to copy reference number', 'error');
-                                                                                }
-                                                                            }}
-                                                                            size="small"
-                                                                            sx={{
-                                                                                color: '#6b7280',
-                                                                                '&:hover': {
-                                                                                    color: '#1976d2',
-                                                                                    backgroundColor: 'rgba(25, 118, 210, 0.1)'
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            <ContentCopyIcon fontSize="small" />
-                                                                        </IconButton>
-                                                                    </Tooltip>
-                                                                </InputAdornment>
-                                                            )
-                                                        }}
-                                                    />
                                                 </Box>
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
-                                                    <Select
-                                                        value={shipmentInfo.billType}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
-                                                        label="Bill Type"
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            '& .MuiSelect-select': { fontSize: '12px' }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
-                                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
-                                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
-                                                    </Select>
-                                                </FormControl>
-                                            </Grid>
-                                            {shipmentID && (
-                                                <Grid item xs={12} md={6}>
-                                                    <TextField
-                                                        fullWidth
-                                                        size="small"
-                                                        label="Shipment ID"
-                                                        value={shipmentID}
-                                                        InputProps={{
-                                                            readOnly: true,
-                                                            endAdornment: (
-                                                                <InputAdornment position="end">
-                                                                    <Tooltip title="Copy Shipment ID">
-                                                                        <IconButton
-                                                                            onClick={handleCopyShipmentId}
-                                                                            size="small"
-                                                                            sx={{
-                                                                                color: '#6b7280',
-                                                                                '&:hover': {
-                                                                                    color: '#1976d2',
-                                                                                    backgroundColor: 'rgba(25, 118, 210, 0.1)'
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            <ContentCopyIcon fontSize="small" />
-                                                                        </IconButton>
-                                                                    </Tooltip>
-                                                                </InputAdornment>
-                                                            )
-                                                        }}
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontWeight: 600, color: '#1976d2', fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                    />
-                                                </Grid>
-                                            )}
-
-                                            {/* ETA Fields - Matching Shipment Date Design */}
-                                            <Grid item xs={12} md={6}>
+                                            <Grid item xs={12} md={4}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
@@ -3122,7 +3264,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={6}>
+                                            <Grid item xs={12} md={4}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"

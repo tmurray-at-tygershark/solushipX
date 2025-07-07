@@ -530,7 +530,29 @@ const DocumentsSection = ({
                                         {doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : '-'}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        {formatTimestamp(doc.createdAt)}
+                                        {(() => {
+                                            // Debug logging for timestamp issue
+                                            console.log('Document timestamp debug:', {
+                                                docId: doc.id,
+                                                filename: doc.filename,
+                                                createdAt: doc.createdAt,
+                                                createdAtType: typeof doc.createdAt,
+                                                uploadedAt: doc.uploadedAt,
+                                                timestamp: doc.timestamp,
+                                                metadata: doc.metadata,
+                                                allFields: Object.keys(doc)
+                                            });
+
+                                            // Try multiple timestamp fields
+                                            const timestamp = doc.createdAt ||
+                                                doc.uploadedAt ||
+                                                doc.timestamp ||
+                                                doc.metadata?.createdAt ||
+                                                doc.metadata?.uploadedAt ||
+                                                doc.metadata?.timestamp;
+
+                                            return formatTimestamp(timestamp);
+                                        })()}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
                                         {doc.uploadedByEmail || doc.metadata?.uploadedByEmail || 'System'}
