@@ -1206,8 +1206,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             );
         };
 
-        // Extract live shipment results (limit to first 200 for performance)
-        shipments.slice(0, 200).forEach(shipment => {
+        // Extract live shipment results from ALL shipments, including drafts (limit to first 200 for performance)
+        allShipments.slice(0, 200).forEach(shipment => {
             if (shipmentMatches(shipment)) {
                 // Get shipment date
                 const getShipmentDate = (s) => {
@@ -1265,9 +1265,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         if (results.length === 0) {
             const quickSuggestions = [];
 
-            // Status suggestions
+            // Status suggestions (including draft)
             const statusSuggestions = [
-                'pending', 'in_transit', 'delivered', 'delayed', 'cancelled', 'out_for_delivery'
+                'draft', 'pending', 'in_transit', 'delivered', 'delayed', 'cancelled', 'out_for_delivery'
             ];
 
             statusSuggestions.forEach(status => {
@@ -1307,7 +1307,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         return results
             .sort((a, b) => b.score - a.score)
             .slice(0, 6);
-    }, []);
+    }, [allShipments]);
 
     // ENHANCED CARRIER FILTER FUNCTION (stable)
     const applyCarrierFilter = useCallback((shipments, carrierFilter, carrierDataMap) => {
@@ -2215,27 +2215,110 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             // ENTERPRISE SEARCH AND FILTER SYSTEM
             let filteredData = [...shipmentsData];
 
-            // 1. APPLY UNIFIED SEARCH (Primary search - wildcard across all fields)
+            // 1. APPLY UNIFIED SEARCH (Primary search - wildcard across ALL fields including DRAFTS)
             if (unifiedSearch && unifiedSearch.trim()) {
-                console.log('🚀 ENTERPRISE UNIFIED SEARCH:', unifiedSearch);
-                console.log('🔍 Input data before search:', filteredData.length, 'shipments');
+                console.log('🚀 ENTERPRISE UNIFIED SEARCH INCLUDING DRAFTS:', unifiedSearch);
+                console.log('🔍 Input data before search:', filteredData.length, 'shipments (tab-filtered)');
+                console.log('🔍 All shipments available for search:', allShipments.length, 'shipments (including drafts)');
 
-                // 🧠 USE SEMANTIC SEARCH RESULTS IF AVAILABLE
+                // 🧠 USE SEMANTIC SEARCH RESULTS IF AVAILABLE (search across ALL shipments)
                 if (isSemanticMode && semanticSearchResults && semanticSearchResults.results) {
                     console.log('🧠 Using semantic search results for filtering', semanticSearchResults.results.length, 'results');
                     // The semantic search results ARE the filtered shipments, not just IDs
-                    filteredData = semanticSearchResults.results;
-                    console.log(`🧠 After semantic search: ${filteredData.length} shipments remaining`);
+                    // Apply tab filter to semantic results since they include drafts
+                    let semanticFilteredResults = semanticSearchResults.results;
+
+                    // Apply the same tab filtering to semantic results
+                    if (activeTab === 'all') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status !== 'draft';
+                        });
+                    } else if (activeTab === 'draft') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'draft';
+                        });
+                    } else if (activeTab === 'Awaiting Shipment') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'pending' || status === 'scheduled' || status === 'booked' ||
+                                status === 'awaiting_shipment' || status === 'ready_to_ship' || status === 'label_created';
+                        });
+                    } else if (activeTab === 'In Transit') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'in_transit' || status === 'in transit' || status === 'picked_up' ||
+                                status === 'on_route' || status === 'out_for_delivery';
+                        });
+                    } else if (activeTab === 'Delivered') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'delivered' || status === 'completed';
+                        });
+                    } else if (activeTab === 'Cancelled') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided';
+                        });
+                    } else if (activeTab === 'Delayed') {
+                        semanticFilteredResults = semanticFilteredResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'delayed' || status === 'on_hold' || status === 'exception' ||
+                                status === 'returned' || status === 'damaged';
+                        });
+                    }
+
+                    filteredData = semanticFilteredResults;
+                    console.log(`🧠 After semantic search + tab filter: ${filteredData.length} shipments remaining`);
                 } else {
-                    // Fallback to regular unified search
-                    console.log('🔍 Calling performUnifiedSearch with:', {
-                        shipmentsCount: filteredData.length,
-                        searchTerm: unifiedSearch,
-                        customersCount: Object.keys(customers).length,
-                        carrierDataCount: Object.keys(carrierData).length
-                    });
-                    filteredData = performUnifiedSearch(filteredData, unifiedSearch, customers, carrierData);
-                    console.log(`🔍 After unified search: ${filteredData.length} shipments remaining`);
+                    // Fallback to regular unified search - search ALL shipments then apply tab filter
+                    console.log('🔍 Calling performUnifiedSearch on ALL shipments (including drafts)');
+                    const searchResults = performUnifiedSearch(allShipments, unifiedSearch, customers, carrierData);
+                    console.log(`🔍 Search found ${searchResults.length} results across all shipments`);
+
+                    // Now apply tab filter to search results
+                    if (activeTab === 'all') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status !== 'draft';
+                        });
+                    } else if (activeTab === 'draft') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'draft';
+                        });
+                    } else if (activeTab === 'Awaiting Shipment') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'pending' || status === 'scheduled' || status === 'booked' ||
+                                status === 'awaiting_shipment' || status === 'ready_to_ship' || status === 'label_created';
+                        });
+                    } else if (activeTab === 'In Transit') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'in_transit' || status === 'in transit' || status === 'picked_up' ||
+                                status === 'on_route' || status === 'out_for_delivery';
+                        });
+                    } else if (activeTab === 'Delivered') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'delivered' || status === 'completed';
+                        });
+                    } else if (activeTab === 'Cancelled') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'cancelled' || status === 'canceled' || status === 'void' || status === 'voided';
+                        });
+                    } else if (activeTab === 'Delayed') {
+                        filteredData = searchResults.filter(s => {
+                            const status = s.status?.toLowerCase()?.trim();
+                            return status === 'delayed' || status === 'on_hold' || status === 'exception' ||
+                                status === 'returned' || status === 'damaged';
+                        });
+                    }
+
+                    console.log(`🔍 After unified search + tab filter: ${filteredData.length} shipments remaining`);
                 }
             }
 
@@ -2866,15 +2949,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         return naturalPatterns.some(pattern => pattern.test(query));
                                                     };
 
-                                                    // ALWAYS generate live shipment results (existing powerful search)
+                                                    // ALWAYS generate live shipment results from ALL shipments including drafts (existing powerful search)
                                                     if (value.length >= 2) {
-                                                        const results = generateLiveShipmentResults(value, shipments, customers);
+                                                        const results = generateLiveShipmentResults(value, allShipments, customers);
                                                         setLiveResults(results);
                                                         setShowLiveResults(results.length > 0);
 
-                                                        // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language
+                                                        // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language including drafts
                                                         if (value.length >= 5 && isNaturalLanguage(value)) {
-                                                            console.log('🧠 Natural language detected, triggering semantic search');
+                                                            console.log('🧠 Natural language detected, triggering semantic search on ALL shipments including drafts');
                                                             // Trigger semantic search which will be used in the main filtering
                                                             performSemanticSearch(value, allShipments).then(semanticResults => {
                                                                 if (semanticResults && semanticResults.results && semanticResults.results.length > 0) {
@@ -3172,7 +3255,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             onClick={() => {
                                                                 if (result.type === 'live_shipment') {
                                                                     console.log('🎯 Navigating to shipment:', result.shipmentId);
-                                                                    handleViewShipmentDetail(result.documentId);
+                                                                    // Check if this is a draft shipment and handle appropriately
+                                                                    if (result.shipment?.status === 'draft') {
+                                                                        console.log('📝 Draft shipment detected, opening for editing:', result.documentId);
+                                                                        handleEditDraftShipment(result.documentId);
+                                                                    } else {
+                                                                        console.log('📋 Non-draft shipment detected, opening detail view:', result.documentId);
+                                                                        handleViewShipmentDetail(result.documentId);
+                                                                    }
                                                                 } else if (result.type === 'status_filter' || result.type === 'date_filter') {
                                                                     setUnifiedSearch(result.value);
                                                                     reloadShipments();
@@ -3976,6 +4066,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         if (navigationStack.length > 1) {
             console.log('✅ Calling popView()');
             popView();
+        } else if (hasAutoOpenedShipment && isModal) {
+            // SPECIAL CASE: If we auto-opened a shipment from deep link and user wants to go back,
+            // navigate to the shipments table instead of closing the modal entirely
+            console.log('🔄 Auto-opened shipment detected - navigating back to table instead of closing modal');
+            setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
+            setMountedViews(['table']);
+            setIsReturningFromDetail(false); // Reset since we're staying in the modal
         } else if (onModalBack) {
             console.log('✅ Calling onModalBack()');
             onModalBack();
@@ -4003,7 +4100,29 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Handle close button click specifically
     const handleCloseClick = () => {
-        console.log('❌ Close button clicked - resetting state');
+        console.log('❌ Close button clicked - checking navigation state');
+
+        // SPECIAL CASE: If we auto-opened a shipment from deep link and user clicks X button,
+        // check if we should navigate back to table instead of closing modal entirely
+        if (hasAutoOpenedShipment && navigationStack.length <= 1) {
+            console.log('🔄 Auto-opened shipment detected with X button - navigating back to table instead of closing modal');
+
+            // Clear deep link parameters since we're handling the navigation
+            if (onClearDeepLinkParams) {
+                console.log('🧹 Clearing deep link params in handleCloseClick');
+                onClearDeepLinkParams();
+            }
+
+            // Navigate to table view
+            setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
+            setMountedViews(['table']);
+            setIsReturningFromDetail(false); // Reset since we're staying in the modal
+            setHasAutoOpenedShipment(false); // Clear the flag since we've handled it
+            return; // Don't close the modal
+        }
+
+        // STANDARD BEHAVIOR: Normal close button behavior
+        console.log('❌ Standard close button behavior - resetting state and closing modal');
 
         // CRITICAL FIX: Clear deep link parameters FIRST
         if (onClearDeepLinkParams) {

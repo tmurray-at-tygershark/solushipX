@@ -33,7 +33,9 @@ import {
     Switch,
     Tabs,
     Tab,
-    Divider
+    Divider,
+    Popover,
+    ClickAwayListener
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -118,9 +120,11 @@ const SystemConfiguration = () => {
         displayLabel: '',
         description: '',
         color: '#6b7280',
+        fontColor: '#ffffff',
         sortOrder: 0,
         enabled: true
     });
+    const [colorPickerOpen, setColorPickerOpen] = useState(null); // 'background' or 'font'
     const [shipmentStatusForm, setShipmentStatusForm] = useState({
         masterStatus: '',
         statusLabel: '',
@@ -462,6 +466,7 @@ const SystemConfiguration = () => {
             displayLabel: '',
             description: '',
             color: '#6b7280',
+            fontColor: '#ffffff',
             sortOrder: masterStatuses.length,
             enabled: true
         });
@@ -475,6 +480,7 @@ const SystemConfiguration = () => {
             displayLabel: status.displayLabel || '',
             description: status.description || '',
             color: status.color || '#6b7280',
+            fontColor: status.fontColor || '#ffffff',
             sortOrder: status.sortOrder || 0,
             enabled: status.enabled !== false
         });
@@ -495,6 +501,7 @@ const SystemConfiguration = () => {
                 displayLabel: masterStatusForm.displayLabel.trim(),
                 description: masterStatusForm.description.trim(),
                 color: masterStatusForm.color,
+                fontColor: masterStatusForm.fontColor,
                 sortOrder: parseInt(masterStatusForm.sortOrder) || 0,
                 enabled: masterStatusForm.enabled
             };
@@ -987,26 +994,36 @@ const SystemConfiguration = () => {
                                                         </TableRow>
                                                     ) : (
                                                         shipmentStatuses.map((status) => {
-                                                            const masterStatus = masterStatuses.find(ms => ms.label === status.masterStatus);
+                                                            const masterStatus = masterStatuses.find(ms => ms.id === status.masterStatus);
                                                             return (
-                                                                <TableRow key={status.id} sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
+                                                                <TableRow
+                                                                    key={status.id}
+                                                                    sx={{
+                                                                        '&:hover': { bgcolor: '#f8fafc' },
+                                                                        backgroundColor: masterStatus?.color ? `${masterStatus.color}08` : 'transparent'
+                                                                    }}
+                                                                >
                                                                     <TableCell sx={{ fontSize: '12px' }}>
-                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                            {masterStatus && (
-                                                                                <Box
-                                                                                    sx={{
-                                                                                        width: 12,
-                                                                                        height: 12,
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: masterStatus.color,
-                                                                                        border: '1px solid #e5e7eb'
-                                                                                    }}
-                                                                                />
-                                                                            )}
-                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                {masterStatus?.displayLabel || status.masterStatus}
+                                                                        {masterStatus ? (
+                                                                            <Chip
+                                                                                label={masterStatus.displayLabel}
+                                                                                size="small"
+                                                                                sx={{
+                                                                                    fontSize: '10px',
+                                                                                    backgroundColor: masterStatus.color,
+                                                                                    color: masterStatus.fontColor || '#ffffff',
+                                                                                    border: `1px solid ${masterStatus.color}`,
+                                                                                    '& .MuiChip-label': {
+                                                                                        fontSize: '10px',
+                                                                                        fontWeight: 500
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        ) : (
+                                                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                                {status.masterStatus}
                                                                             </Typography>
-                                                                        </Box>
+                                                                        )}
                                                                     </TableCell>
                                                                     <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
                                                                         {status.statusLabel}
@@ -1083,11 +1100,11 @@ const SystemConfiguration = () => {
                                                 <TableHead>
                                                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Color</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Label</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Display Label</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status Code</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Order</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Enabled</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
                                                     </TableRow>
                                                 </TableHead>
@@ -1118,11 +1135,11 @@ const SystemConfiguration = () => {
                                                                         }}
                                                                     />
                                                                 </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                    {status.label}
-                                                                </TableCell>
                                                                 <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
                                                                     {status.displayLabel}
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                    {status.label}
                                                                 </TableCell>
                                                                 <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
                                                                     {status.description || '-'}
@@ -1480,23 +1497,6 @@ const SystemConfiguration = () => {
                         <Grid item xs={12} md={6}>
                             <TextField
                                 fullWidth
-                                label="Status Label"
-                                value={masterStatusForm.label}
-                                onChange={(e) => handleMasterStatusFormChange('label', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
-                                size="small"
-                                required
-                                placeholder="e.g., in_transit"
-                                sx={{
-                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                }}
-                                helperText="Internal identifier (lowercase, underscores)"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
                                 label="Display Label"
                                 value={masterStatusForm.displayLabel}
                                 onChange={(e) => handleMasterStatusFormChange('displayLabel', e.target.value)}
@@ -1508,6 +1508,23 @@ const SystemConfiguration = () => {
                                     '& .MuiInputLabel-root': { fontSize: '12px' }
                                 }}
                                 helperText="User-friendly display name"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Status Code"
+                                value={masterStatusForm.label}
+                                onChange={(e) => handleMasterStatusFormChange('label', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                                size="small"
+                                required
+                                placeholder="e.g., in_transit"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                helperText="Internal identifier (lowercase, underscores)"
                                 FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                             />
                         </Grid>
@@ -1528,28 +1545,24 @@ const SystemConfiguration = () => {
                                 FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={6}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                                 <Typography sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
-                                    Status Color
+                                    Background Color
                                 </Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <Box
+                                        id="background-color-button"
                                         sx={{
                                             width: 32,
                                             height: 32,
                                             borderRadius: 1,
                                             backgroundColor: masterStatusForm.color,
                                             border: '1px solid #e5e7eb',
-                                            cursor: 'pointer'
+                                            cursor: 'pointer',
+                                            position: 'relative'
                                         }}
-                                        onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'color';
-                                            input.value = masterStatusForm.color;
-                                            input.onchange = (e) => handleMasterStatusFormChange('color', e.target.value);
-                                            input.click();
-                                        }}
+                                        onClick={(e) => setColorPickerOpen(colorPickerOpen === 'background' ? null : 'background')}
                                     />
                                     <TextField
                                         value={masterStatusForm.color}
@@ -1564,7 +1577,46 @@ const SystemConfiguration = () => {
                                 </Box>
                             </Box>
                         </Grid>
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={6}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <Typography sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
+                                    Font Color
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box
+                                        id="font-color-button"
+                                        sx={{
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: 1,
+                                            backgroundColor: masterStatusForm.fontColor,
+                                            border: '1px solid #e5e7eb',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            position: 'relative'
+                                        }}
+                                        onClick={(e) => setColorPickerOpen(colorPickerOpen === 'font' ? null : 'font')}
+                                    >
+                                        <Typography sx={{ fontSize: '10px', color: masterStatusForm.fontColor === '#ffffff' ? '#000' : '#fff', fontWeight: 600 }}>
+                                            Aa
+                                        </Typography>
+                                    </Box>
+                                    <TextField
+                                        value={masterStatusForm.fontColor}
+                                        onChange={(e) => handleMasterStatusFormChange('fontColor', e.target.value)}
+                                        size="small"
+                                        sx={{
+                                            flex: 1,
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                        placeholder="#ffffff"
+                                    />
+                                </Box>
+                            </Box>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
                             <TextField
                                 fullWidth
                                 label="Sort Order"
@@ -1579,18 +1631,186 @@ const SystemConfiguration = () => {
                                 FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={4}>
-                            <FormControlLabel
-                                control={
-                                    <Switch
-                                        checked={masterStatusForm.enabled}
-                                        onChange={(e) => handleMasterStatusFormChange('enabled', e.target.checked)}
+                        <Grid item xs={12} md={6}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                                <FormControlLabel
+                                    control={
+                                        <Switch
+                                            checked={masterStatusForm.enabled}
+                                            onChange={(e) => handleMasterStatusFormChange('enabled', e.target.checked)}
+                                        />
+                                    }
+                                    label={<Typography sx={{ fontSize: '12px' }}>Enabled</Typography>}
+                                />
+                            </Box>
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2, p: 2, border: '1px solid #e5e7eb', borderRadius: 1, backgroundColor: '#f8fafc' }}>
+                                <Typography sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
+                                    Preview
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Chip
+                                        label={masterStatusForm.displayLabel || 'Preview'}
+                                        size="small"
+                                        sx={{
+                                            fontSize: '10px',
+                                            backgroundColor: masterStatusForm.color,
+                                            color: masterStatusForm.fontColor,
+                                            border: `1px solid ${masterStatusForm.color}`,
+                                            '& .MuiChip-label': {
+                                                fontSize: '10px',
+                                                fontWeight: 500
+                                            }
+                                        }}
                                     />
-                                }
-                                label={<Typography sx={{ fontSize: '12px' }}>Enabled</Typography>}
-                            />
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        This is how the status will appear in tables and lists
+                                    </Typography>
+                                </Box>
+                            </Box>
                         </Grid>
                     </Grid>
+
+                    {/* Background Color Picker Popover */}
+                    <Popover
+                        open={colorPickerOpen === 'background'}
+                        anchorEl={document.getElementById('background-color-button')}
+                        onClose={() => setColorPickerOpen(null)}
+                        anchorOrigin={{
+                            vertical: 'bottom',
+                            horizontal: 'left',
+                        }}
+                        transformOrigin={{
+                            vertical: 'top',
+                            horizontal: 'left',
+                        }}
+                    >
+                        <ClickAwayListener onClickAway={() => setColorPickerOpen(null)}>
+                            <Box sx={{ p: 2, width: 250 }}>
+                                <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                    Select Background Color
+                                </Typography>
+                                <Box sx={{ mb: 2 }}>
+                                    <input
+                                        type="color"
+                                        value={masterStatusForm.color}
+                                        onChange={(e) => handleMasterStatusFormChange('color', e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            height: '40px',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                </Box>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                                    {['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#374151'].map((color) => (
+                                        <Box
+                                            key={color}
+                                            sx={{
+                                                width: 24,
+                                                height: 24,
+                                                backgroundColor: color,
+                                                borderRadius: 0.5,
+                                                cursor: 'pointer',
+                                                border: masterStatusForm.color === color ? '2px solid #000' : '1px solid #e5e7eb'
+                                            }}
+                                            onClick={() => handleMasterStatusFormChange('color', color)}
+                                        />
+                                    ))}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                        size="small"
+                                        onClick={() => setColorPickerOpen(null)}
+                                        sx={{ fontSize: '11px' }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => setColorPickerOpen(null)}
+                                        sx={{ fontSize: '11px' }}
+                                    >
+                                        Set Color
+                                    </Button>
+                                </Box>
+                            </Box>
+                        </ClickAwayListener>
+                    </Popover>
+
+                    {/* Font Color Picker Popover */}
+                    <Popover
+                        open={colorPickerOpen === 'font'}
+                        anchorEl={document.getElementById('font-color-button')}
+                        onClose={() => setColorPickerOpen(null)}
+                        anchorOrigin={{
+                            vertical: 'bottom',
+                            horizontal: 'left',
+                        }}
+                        transformOrigin={{
+                            vertical: 'top',
+                            horizontal: 'left',
+                        }}
+                    >
+                        <ClickAwayListener onClickAway={() => setColorPickerOpen(null)}>
+                            <Box sx={{ p: 2, width: 250 }}>
+                                <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                    Select Font Color
+                                </Typography>
+                                <Box sx={{ mb: 2 }}>
+                                    <input
+                                        type="color"
+                                        value={masterStatusForm.fontColor}
+                                        onChange={(e) => handleMasterStatusFormChange('fontColor', e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            height: '40px',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                </Box>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                                    {['#ffffff', '#f3f4f6', '#e5e7eb', '#d1d5db', '#9ca3af', '#6b7280', '#374151', '#111827', '#000000'].map((color) => (
+                                        <Box
+                                            key={color}
+                                            sx={{
+                                                width: 24,
+                                                height: 24,
+                                                backgroundColor: color,
+                                                borderRadius: 0.5,
+                                                cursor: 'pointer',
+                                                border: masterStatusForm.fontColor === color ? '2px solid #3b82f6' : '1px solid #e5e7eb'
+                                            }}
+                                            onClick={() => handleMasterStatusFormChange('fontColor', color)}
+                                        />
+                                    ))}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                        size="small"
+                                        onClick={() => setColorPickerOpen(null)}
+                                        sx={{ fontSize: '11px' }}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => setColorPickerOpen(null)}
+                                        sx={{ fontSize: '11px' }}
+                                    >
+                                        Set Color
+                                    </Button>
+                                </Box>
+                            </Box>
+                        </ClickAwayListener>
+                    </Popover>
                 </DialogContent>
                 <DialogActions>
                     <Button

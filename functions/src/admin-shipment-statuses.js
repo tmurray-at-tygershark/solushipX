@@ -54,10 +54,10 @@ exports.createMasterStatus = onCall({
         await validateAdminPermissions(auth.uid);
         
         // Validate required fields
-        const { label, description, color, sortOrder } = data;
+        const { label, displayLabel, description, color, fontColor, sortOrder, enabled } = data;
         
-        if (!label || !description) {
-            throw new Error('Label and description are required');
+        if (!label || !displayLabel) {
+            throw new Error('Label and display label are required');
         }
         
         // Check if master status already exists
@@ -73,11 +73,12 @@ exports.createMasterStatus = onCall({
         // Create master status document
         const masterStatusData = {
             label: label.toLowerCase(), // Store as lowercase for consistency
-            displayLabel: label, // Store original case for display
-            description: description,
+            displayLabel: displayLabel, // Use the provided display label
+            description: description || '',
             color: color || '#6b7280', // Default gray color
+            fontColor: fontColor || '#ffffff', // Default white font color
             sortOrder: sortOrder || 0,
-            enabled: true,
+            enabled: enabled !== false, // Default to enabled unless explicitly disabled
             createdAt: new Date(),
             createdBy: auth.uid,
             updatedAt: new Date(),
@@ -151,10 +152,14 @@ exports.updateMasterStatus = onCall({
             updatedBy: auth.uid
         };
         
-        // If label is updated, update both label and displayLabel
+        // If label is updated, ensure it's lowercase
         if (updates.label) {
             updateData.label = updates.label.toLowerCase();
-            updateData.displayLabel = updates.label;
+        }
+        
+        // Keep displayLabel separate - don't overwrite it with label
+        if (updates.displayLabel) {
+            updateData.displayLabel = updates.displayLabel;
         }
         
         await db.collection('masterStatuses').doc(masterStatusId).update(updateData);
