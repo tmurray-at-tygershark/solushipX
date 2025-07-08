@@ -162,6 +162,18 @@ const { updateShipmentField } = require('./src/updateShipmentField');
 // Import archive shipment function
 const { archiveShipment } = require('./src/archiveShipment');
 
+// Import shipment status management functions
+const {
+    createMasterStatus,
+    updateMasterStatus,
+    deleteMasterStatus,
+    getMasterStatuses,
+    createShipmentStatus,
+    updateShipmentStatus,
+    deleteShipmentStatus,
+    getShipmentStatuses
+} = require('./src/admin-shipment-statuses');
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -307,6 +319,16 @@ exports.updateShipmentField = updateShipmentField;
 
 // Export archive shipment function
 exports.archiveShipment = archiveShipment;
+
+// Export shipment status management functions
+exports.createMasterStatus = createMasterStatus;
+exports.updateMasterStatus = updateMasterStatus;
+exports.deleteMasterStatus = deleteMasterStatus;
+exports.getMasterStatuses = getMasterStatuses;
+exports.createShipmentStatus = createShipmentStatus;
+exports.updateShipmentStatus = updateShipmentStatus;
+exports.deleteShipmentStatus = deleteShipmentStatus;
+exports.getShipmentStatuses = getShipmentStatuses;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

@@ -1205,8 +1205,8 @@ const QuickShip = ({
         const newRate = {
             id: newId,
             carrier: selectedCarrier,
-            code: 'FRT', // Default to FRT - Freight
-            chargeName: 'Freight', // Pre-populate description
+            code: '', // Start with empty code so user can select
+            chargeName: '', // Start with empty name so user can enter
             cost: '',
             costCurrency: 'CAD',
             charge: '',
@@ -1215,8 +1215,7 @@ const QuickShip = ({
 
         setManualRates(prev => {
             const updatedRates = [...prev, newRate];
-            console.log('🔧 Adding new rate line item:', newRate);
-            return deduplicateRates(updatedRates);
+            return updatedRates; // No deduplication - allow multiple same codes
         });
     };
 
@@ -1258,6 +1257,11 @@ const QuickShip = ({
     const deduplicateRates = (rates) => {
         const seen = new Set();
         return rates.filter(rate => {
+            // Skip deduplication if code or chargeName is empty (user is still editing)
+            if (!rate.code || !rate.chargeName) {
+                return true;
+            }
+
             const key = createRateKey(rate);
             if (seen.has(key)) {
                 console.log('🚫 Preventing duplicate rate:', key);
@@ -1380,7 +1384,7 @@ const QuickShip = ({
                             return !isServiceRate;
                         });
                         console.log('🔧 Filtered rates after service removal:', filteredRates);
-                        return deduplicateRates(filteredRates);
+                        return filteredRates; // No deduplication - user manages their own rates
                     });
 
                     return updatedServices;
@@ -1416,7 +1420,7 @@ const QuickShip = ({
 
                         const updatedRates = [...prevRates, newRate];
                         console.log('🔧 Updated manual rates:', updatedRates);
-                        return deduplicateRates(updatedRates);
+                        return updatedRates; // No deduplication - allow multiple service rates
                     });
 
                     return updatedServices;
@@ -2298,7 +2302,7 @@ const QuickShip = ({
                             // Load manual rates with deduplication
                             if (draftData.manualRates && draftData.manualRates.length > 0) {
                                 console.log('🔧 Loading manual rates from draft:', draftData.manualRates.length);
-                                setManualRates(deduplicateRates(draftData.manualRates));
+                                setManualRates(draftData.manualRates); // Load rates exactly as saved - no deduplication
                             }
 
                             // Load additional services and create corresponding rate line items
@@ -2333,10 +2337,10 @@ const QuickShip = ({
                                             }));
 
                                             const combinedRates = [...prevRates, ...newServiceRates];
-                                            return deduplicateRates(combinedRates);
+                                            return combinedRates; // No deduplication when loading drafts
                                         }
 
-                                        return deduplicateRates(prevRates);
+                                        return prevRates; // No deduplication when loading drafts
                                     });
                                 }, 100); // Small delay to ensure other state is loaded first
                             }
@@ -2427,7 +2431,7 @@ const QuickShip = ({
                 // Load manual rates with deduplication
                 if (editShipment.manualRates && editShipment.manualRates.length > 0) {
                     console.log('🔧 Loading manual rates from edit shipment:', editShipment.manualRates.length);
-                    setManualRates(deduplicateRates(editShipment.manualRates));
+                    setManualRates(editShipment.manualRates); // Load rates exactly as saved - no deduplication
                 } else if (editShipment.rates && editShipment.rates.length > 0) {
                     // Convert from stored rates format if needed
                     const convertedRates = editShipment.rates.map((rate, index) => ({
@@ -2441,7 +2445,7 @@ const QuickShip = ({
                         chargeCurrency: rate.chargeCurrency || rate.currency || 'CAD'
                     }));
                     console.log('🔧 Converting rates from edit shipment:', convertedRates.length);
-                    setManualRates(deduplicateRates(convertedRates));
+                    setManualRates(convertedRates); // Load converted rates - no deduplication
                 }
 
                 // Load carrier
@@ -2483,10 +2487,10 @@ const QuickShip = ({
                                 }));
 
                                 const combinedRates = [...prevRates, ...newServiceRates];
-                                return deduplicateRates(combinedRates);
+                                return combinedRates; // No deduplication when loading edit shipment
                             }
 
-                            return deduplicateRates(prevRates);
+                            return prevRates; // No deduplication when loading edit shipment
                         });
                     }, 100); // Small delay to ensure other state is loaded first
                 }

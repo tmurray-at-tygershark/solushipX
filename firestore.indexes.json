@@ -447,6 +447,34 @@
                     "order": "ASCENDING"
                 }
             ]
+        },
+        {
+            "collectionGroup": "masterStatuses",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "sortOrder",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "displayLabel",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "shipmentStatuses",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "masterStatus",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "statusLabel",
+                    "order": "ASCENDING"
+                }
+            ]
         }
     ],
     "fieldOverrides": [
