@@ -4599,50 +4599,75 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         }
 
                         const documents = documentsResult.data.data;
-                        let bolUrl = null;
+                        const bolDocuments = documents.bol || [];
 
-                        // For eShip Plus shipments, prioritize generically generated BOL
-                        const isEShipPlus = shipment.carrier?.toLowerCase().includes('eshipplus') ||
-                            shipment.carrier?.toLowerCase().includes('eShip Plus') ||
-                            shipment.selectedRate?.carrier?.toLowerCase().includes('eshipplus') ||
-                            shipment.selectedRate?.carrier?.toLowerCase().includes('eShip Plus');
-
-                        if (isEShipPlus) {
-                            // Find the generically generated BOL for eShip Plus
-                            const allDocs = Object.entries(documents)
-                                .filter(([key]) => key !== 'bol') // Exclude the dedicated BOL array
-                                .map(([, docs]) => docs)
-                                .flat();
-
-                            const genericBOL = allDocs.find(doc => {
-                                const filename = (doc.filename || '').toLowerCase();
-                                const isGeneratedBOL = doc.isGeneratedBOL === true || doc.metadata?.eshipplus?.generated === true;
-
-                                return (filename.includes('bol') ||
-                                    filename.includes('billoflading') ||
-                                    filename.includes('bill-of-lading') ||
-                                    filename.includes('bill_of_lading')) &&
-                                    isGeneratedBOL;
-                            });
-
-                            if (genericBOL) {
-                                bolUrl = genericBOL.downloadUrl;
-                            }
-                        }
-
-                        // Fallback: Check dedicated BOL array if no generic BOL found
-                        if (!bolUrl && documents.bol && documents.bol.length > 0) {
-                            bolUrl = documents.bol[0].downloadUrl;
-                        }
-
-                        if (!bolUrl) {
+                        if (bolDocuments.length === 0) {
                             showSnackbar('No BOL available for this shipment', 'warning');
                             return;
                         }
 
-                        // Open PDF viewer dialog with BOL
+                        // Enhanced BOL selection with priority for latest regenerated documents
+                        // (Same algorithm as useShipmentActions.js)
+                        const sortedBOLs = [...bolDocuments].sort((a, b) => {
+                            // Priority 1: Documents marked as latest
+                            if (a.isLatest && !b.isLatest) return -1;
+                            if (!a.isLatest && b.isLatest) return 1;
+
+                            // Priority 2: Higher version numbers (more recent regenerations)
+                            const aVersion = a.version || 0;
+                            const bVersion = b.version || 0;
+                            if (aVersion !== bVersion) return bVersion - aVersion;
+
+                            // Priority 3: Most recently regenerated documents
+                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                            if (aRegenTime && bRegenTime) {
+                                return bRegenTime - aRegenTime;
+                            }
+                            if (aRegenTime && !bRegenTime) return -1;
+                            if (!aRegenTime && bRegenTime) return 1;
+
+                            // Priority 4: SOLUSHIP naming convention (our standard format)
+                            const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                            const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                            if (aIsSoluship && !bIsSoluship) return -1;
+                            if (!aIsSoluship && bIsSoluship) return 1;
+
+                            // Priority 5: Generated BOL flags
+                            const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                            const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                            if (aIsGenerated && !bIsGenerated) return -1;
+                            if (!aIsGenerated && bIsGenerated) return 1;
+
+                            // Priority 6: Newest creation date
+                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                            return bCreatedTime - aCreatedTime;
+                        });
+
+                        const selectedBOL = sortedBOLs[0];
+
+                        console.log('✅ ShipmentsX - Selected LATEST BOL document:', {
+                            id: selectedBOL.id,
+                            filename: selectedBOL.filename,
+                            isLatest: selectedBOL.isLatest,
+                            version: selectedBOL.version,
+                            regeneratedAt: selectedBOL.regeneratedAt,
+                            isGeneratedBOL: selectedBOL.isGeneratedBOL,
+                            selectionReason: selectedBOL.isLatest ? 'marked as latest' :
+                                selectedBOL.version > 0 ? `version ${selectedBOL.version}` :
+                                    selectedBOL.regeneratedAt ? 'recently regenerated' :
+                                        (selectedBOL.filename || '').toUpperCase().startsWith('SOLUSHIP-') ? 'SOLUSHIP format' : 'fallback'
+                        });
+
+                        if (!selectedBOL.downloadUrl) {
+                            showSnackbar('BOL document is not accessible', 'error');
+                            return;
+                        }
+
+                        // Open PDF viewer dialog with the latest BOL
                         setPdfViewerOpen(true);
-                        setPdfUrl(bolUrl);
+                        setPdfUrl(selectedBOL.downloadUrl);
                         setPdfTitle(`BOL - ${shipment.shipmentID || shipment.id}`);
                     } catch (error) {
                         console.error('Error handling print BOL:', error);

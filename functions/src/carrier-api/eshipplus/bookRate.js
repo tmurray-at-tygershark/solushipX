@@ -157,39 +157,39 @@ function transformRateDataToBookingRequest(rateRequestData, selectedRateFromFron
         BookingReferenceNumberType: bookingReferenceNumberType,
         ShipmentBillType: 0, // Example: 0
         Origin: {
-            Description: safeAccess(rateRequestData, 'Origin.Description') || safeAccess(rateRequestData, 'Origin.company') || "",
-            Street: safeAccess(rateRequestData, 'Origin.Street') || safeAccess(rateRequestData, 'Origin.street') || "",
+            Description: safeAccess(rateRequestData, 'Origin.Description') || safeAccess(rateRequestData, 'Origin.company') || "N/A",
+            Street: safeAccess(rateRequestData, 'Origin.Street') || safeAccess(rateRequestData, 'Origin.street') || "N/A",
             StreetExtra: safeAccess(rateRequestData, 'Origin.StreetExtra') || safeAccess(rateRequestData, 'Origin.street2') || "",
-            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Origin.PostalCode') || safeAccess(rateRequestData, 'Origin.postalCode') || ""),
-            City: safeAccess(rateRequestData, 'Origin.City') || safeAccess(rateRequestData, 'Origin.city') || "",
-            State: safeAccess(rateRequestData, 'Origin.State') || safeAccess(rateRequestData, 'Origin.state') || "",
+            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Origin.PostalCode') || safeAccess(rateRequestData, 'Origin.postalCode') || "N/A"),
+            City: safeAccess(rateRequestData, 'Origin.City') || safeAccess(rateRequestData, 'Origin.city') || "N/A",
+            State: safeAccess(rateRequestData, 'Origin.State') || safeAccess(rateRequestData, 'Origin.state') || "N/A",
             Country: getCountryDetails(safeAccess(rateRequestData, 'Origin.Country.Code') || safeAccess(rateRequestData, 'Origin.country') || "US"),
-            SpecialInstructions: safeAccess(rateRequestData, 'Origin.SpecialInstructions') || safeAccess(rateRequestData, 'Origin.specialInstructions') || "none",
+            SpecialInstructions: safeAccess(rateRequestData, 'Origin.SpecialInstructions') || safeAccess(rateRequestData, 'Origin.specialInstructions') || "None",
             
-            
-            Email: safeAccess(rateRequestData, 'Origin.Email') || safeAccess(rateRequestData, 'Origin.contactEmail') || "",
-            Contact: safeAccess(rateRequestData, 'Origin.Contact') || safeAccess(rateRequestData, 'Origin.contactName') || "Shipping Dept",
-            Phone: safeAccess(rateRequestData, 'Origin.Phone') || safeAccess(rateRequestData, 'Origin.contactPhone') || "",
-            Fax: "", // Example: ""
-            Mobile: "", // Example: ""
+            // CRITICAL: eShip Plus requires ALL contact fields - add robust fallbacks
+            Email: safeAccess(rateRequestData, 'Origin.Email') || safeAccess(rateRequestData, 'Origin.contactEmail') || "noreply@solushipx.com",
+            Contact: safeAccess(rateRequestData, 'Origin.Contact') || safeAccess(rateRequestData, 'Origin.contactName') || "Shipping Department",
+            Phone: safeAccess(rateRequestData, 'Origin.Phone') || safeAccess(rateRequestData, 'Origin.contactPhone') || "555-000-0000",
+            Fax: "", // eShip Plus accepts empty string for optional fax
+            Mobile: "", // eShip Plus accepts empty string for optional mobile
             
         },
         Destination: {
-            Description: safeAccess(rateRequestData, 'Destination.Description') || safeAccess(rateRequestData, 'Destination.company') || "",
-            Street: safeAccess(rateRequestData, 'Destination.Street') || safeAccess(rateRequestData, 'Destination.street') || "",
+            Description: safeAccess(rateRequestData, 'Destination.Description') || safeAccess(rateRequestData, 'Destination.company') || "N/A",
+            Street: safeAccess(rateRequestData, 'Destination.Street') || safeAccess(rateRequestData, 'Destination.street') || "N/A",
             StreetExtra: safeAccess(rateRequestData, 'Destination.StreetExtra') || safeAccess(rateRequestData, 'Destination.street2') || "",
-            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Destination.PostalCode') || safeAccess(rateRequestData, 'Destination.postalCode') || ""),
-            City: safeAccess(rateRequestData, 'Destination.City') || safeAccess(rateRequestData, 'Destination.city') || "",
-            State: safeAccess(rateRequestData, 'Destination.State') || safeAccess(rateRequestData, 'Destination.state') || "",
+            PostalCode: sanitizePostalCode(safeAccess(rateRequestData, 'Destination.PostalCode') || safeAccess(rateRequestData, 'Destination.postalCode') || "N/A"),
+            City: safeAccess(rateRequestData, 'Destination.City') || safeAccess(rateRequestData, 'Destination.city') || "N/A",
+            State: safeAccess(rateRequestData, 'Destination.State') || safeAccess(rateRequestData, 'Destination.state') || "N/A",
             Country: getCountryDetails(safeAccess(rateRequestData, 'Destination.Country.Code') || safeAccess(rateRequestData, 'Destination.country') || "US"),
             SpecialInstructions: safeAccess(rateRequestData, 'Destination.SpecialInstructions') || safeAccess(rateRequestData, 'Destination.specialInstructions') || "None",
             
-            
-            Email: safeAccess(rateRequestData, 'Destination.Email') || safeAccess(rateRequestData, 'Destination.contactEmail') || "",
-            Contact: safeAccess(rateRequestData, 'Destination.Contact') || safeAccess(rateRequestData, 'Destination.contactName') || "Receiving Dept",
-            Phone: safeAccess(rateRequestData, 'Destination.Phone') || safeAccess(rateRequestData, 'Destination.contactPhone') || "",
-            Fax: "", // Example: ""
-            Mobile: "", // Example: ""
+            // CRITICAL: eShip Plus requires ALL contact fields - add robust fallbacks
+            Email: safeAccess(rateRequestData, 'Destination.Email') || safeAccess(rateRequestData, 'Destination.contactEmail') || "noreply@solushipx.com",
+            Contact: safeAccess(rateRequestData, 'Destination.Contact') || safeAccess(rateRequestData, 'Destination.contactName') || "Receiving Department",
+            Phone: safeAccess(rateRequestData, 'Destination.Phone') || safeAccess(rateRequestData, 'Destination.contactPhone') || "555-000-0000",
+            Fax: "", // eShip Plus accepts empty string for optional fax
+            Mobile: "", // eShip Plus accepts empty string for optional mobile
             
         },
         ReferenceNumber: referenceNumber,

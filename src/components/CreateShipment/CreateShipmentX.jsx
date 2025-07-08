@@ -1121,46 +1121,46 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         if (draftData.shipFrom) {
                             const transformedShipFrom = {
                                 ...draftData.shipFrom,
-                                // Map database fields to standardized fields
-                                companyName: draftData.shipFrom.companyName || draftData.shipFrom.company || '',
-                                street: draftData.shipFrom.address1 || draftData.shipFrom.street || '',
+                                // Map database fields to standardized fields with eShip Plus fallbacks
+                                companyName: draftData.shipFrom.companyName || draftData.shipFrom.company || 'N/A',
+                                street: draftData.shipFrom.address1 || draftData.shipFrom.street || 'N/A',
                                 street2: draftData.shipFrom.address2 || draftData.shipFrom.street2 || '',
-                                city: draftData.shipFrom.city || '',
-                                state: draftData.shipFrom.stateProv || draftData.shipFrom.state || '',
-                                postalCode: draftData.shipFrom.zipPostal || draftData.shipFrom.postalCode || '',
+                                city: draftData.shipFrom.city || 'N/A',
+                                state: draftData.shipFrom.stateProv || draftData.shipFrom.state || 'N/A',
+                                postalCode: draftData.shipFrom.zipPostal || draftData.shipFrom.postalCode || 'N/A',
                                 country: draftData.shipFrom.country || 'CA',
-                                // Contact information with proper field mapping
-                                contactName: draftData.shipFrom.contactName || `${draftData.shipFrom.firstName || ''} ${draftData.shipFrom.lastName || ''}`.trim() || draftData.shipFrom.nickname || '',
-                                contactPhone: draftData.shipFrom.contactPhone || draftData.shipFrom.phone || '',
-                                contactEmail: draftData.shipFrom.contactEmail || draftData.shipFrom.email || '',
+                                // Contact information with proper field mapping and fallbacks
+                                contactName: draftData.shipFrom.contactName || `${draftData.shipFrom.firstName || ''} ${draftData.shipFrom.lastName || ''}`.trim() || draftData.shipFrom.nickname || 'Shipping Department',
+                                contactPhone: draftData.shipFrom.contactPhone || draftData.shipFrom.phone || '555-000-0000',
+                                contactEmail: draftData.shipFrom.contactEmail || draftData.shipFrom.email || 'noreply@solushipx.com',
                                 // Keep original fields as fallbacks
                                 firstName: draftData.shipFrom.firstName || '',
                                 lastName: draftData.shipFrom.lastName || '',
-                                phone: draftData.shipFrom.phone || '',
-                                email: draftData.shipFrom.email || ''
+                                phone: draftData.shipFrom.phone || '555-000-0000',
+                                email: draftData.shipFrom.email || 'noreply@solushipx.com'
                             };
                             setShipFromAddress(transformedShipFrom);
                         }
                         if (draftData.shipTo) {
                             const transformedShipTo = {
                                 ...draftData.shipTo,
-                                // Map database fields to standardized fields
-                                companyName: draftData.shipTo.companyName || draftData.shipTo.company || '',
-                                street: draftData.shipTo.address1 || draftData.shipTo.street || '',
+                                // Map database fields to standardized fields with eShip Plus fallbacks
+                                companyName: draftData.shipTo.companyName || draftData.shipTo.company || 'N/A',
+                                street: draftData.shipTo.address1 || draftData.shipTo.street || 'N/A',
                                 street2: draftData.shipTo.address2 || draftData.shipTo.street2 || '',
-                                city: draftData.shipTo.city || '',
-                                state: draftData.shipTo.stateProv || draftData.shipTo.state || '',
-                                postalCode: draftData.shipTo.zipPostal || draftData.shipTo.postalCode || '',
+                                city: draftData.shipTo.city || 'N/A',
+                                state: draftData.shipTo.stateProv || draftData.shipTo.state || 'N/A',
+                                postalCode: draftData.shipTo.zipPostal || draftData.shipTo.postalCode || 'N/A',
                                 country: draftData.shipTo.country || 'CA',
-                                // Contact information with proper field mapping
-                                contactName: draftData.shipTo.contactName || `${draftData.shipTo.firstName || ''} ${draftData.shipTo.lastName || ''}`.trim() || draftData.shipTo.nickname || '',
-                                contactPhone: draftData.shipTo.contactPhone || draftData.shipTo.phone || '',
-                                contactEmail: draftData.shipTo.contactEmail || draftData.shipTo.email || '',
+                                // Contact information with proper field mapping and fallbacks
+                                contactName: draftData.shipTo.contactName || `${draftData.shipTo.firstName || ''} ${draftData.shipTo.lastName || ''}`.trim() || draftData.shipTo.nickname || 'Receiving Department',
+                                contactPhone: draftData.shipTo.contactPhone || draftData.shipTo.phone || '555-000-0000',
+                                contactEmail: draftData.shipTo.contactEmail || draftData.shipTo.email || 'noreply@solushipx.com',
                                 // Keep original fields as fallbacks
                                 firstName: draftData.shipTo.firstName || '',
                                 lastName: draftData.shipTo.lastName || '',
-                                phone: draftData.shipTo.phone || '',
-                                email: draftData.shipTo.email || ''
+                                phone: draftData.shipTo.phone || '555-000-0000',
+                                email: draftData.shipTo.email || 'noreply@solushipx.com'
                             };
                             setShipToAddress(transformedShipTo);
                         }
@@ -1600,27 +1600,27 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     const handleAddressSelect = (address, type) => {
         if (!address) return;
 
-        // Transform raw database address to standardized format
+        // Transform raw database address to standardized format with eShip Plus fallbacks
         const transformedAddress = {
             ...address,
-            // Map database fields to standardized fields
-            companyName: address.companyName || address.company || '',
-            street: address.address1 || address.street || '',
+            // Map database fields to standardized fields with fallbacks for eShip Plus
+            companyName: address.companyName || address.company || 'N/A',
+            street: address.address1 || address.street || 'N/A',
             street2: address.address2 || address.street2 || '',
-            city: address.city || '',
-            state: address.stateProv || address.state || '',
-            postalCode: address.zipPostal || address.postalCode || '',
+            city: address.city || 'N/A',
+            state: address.stateProv || address.state || 'N/A',
+            postalCode: address.zipPostal || address.postalCode || 'N/A',
             country: address.country || 'CA',
-            // Contact information with proper field mapping
-            contactName: address.contactName || `${address.firstName || ''} ${address.lastName || ''}`.trim() || address.nickname || '',
-            contactPhone: address.contactPhone || address.phone || '',
-            contactEmail: address.contactEmail || address.email || '',
+            // Contact information with proper field mapping and fallbacks
+            contactName: address.contactName || `${address.firstName || ''} ${address.lastName || ''}`.trim() || address.nickname || 'Contact Name',
+            contactPhone: address.contactPhone || address.phone || '555-000-0000',
+            contactEmail: address.contactEmail || address.email || 'noreply@solushipx.com',
             // Keep original fields as fallbacks
             firstName: address.firstName || '',
             lastName: address.lastName || '',
-            phone: address.phone || '',
-            email: address.email || '',
-            specialInstructions: address.specialInstructions || ''
+            phone: address.phone || '555-000-0000',
+            email: address.email || 'noreply@solushipx.com',
+            specialInstructions: address.specialInstructions || 'None'
         };
 
         if (type === 'from') {
@@ -2002,27 +2002,27 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             if (addressDoc.exists()) {
                 const rawAddress = { id: addressDoc.id, ...addressDoc.data() };
 
-                // Transform the address data to standardized format
+                // Transform the address data to standardized format with eShip Plus fallbacks
                 const transformedAddress = {
                     ...rawAddress,
-                    // Map database fields to standardized fields
-                    companyName: rawAddress.companyName || rawAddress.company || '',
-                    street: rawAddress.address1 || rawAddress.street || '',
+                    // Map database fields to standardized fields with eShip Plus fallbacks
+                    companyName: rawAddress.companyName || rawAddress.company || 'N/A',
+                    street: rawAddress.address1 || rawAddress.street || 'N/A',
                     street2: rawAddress.address2 || rawAddress.street2 || '',
-                    city: rawAddress.city || '',
-                    state: rawAddress.stateProv || rawAddress.state || '',
-                    postalCode: rawAddress.zipPostal || rawAddress.postalCode || '',
+                    city: rawAddress.city || 'N/A',
+                    state: rawAddress.stateProv || rawAddress.state || 'N/A',
+                    postalCode: rawAddress.zipPostal || rawAddress.postalCode || 'N/A',
                     country: rawAddress.country || 'CA',
-                    // Contact information with proper field mapping
-                    contactName: rawAddress.contactName || `${rawAddress.firstName || ''} ${rawAddress.lastName || ''}`.trim() || rawAddress.nickname || '',
-                    contactPhone: rawAddress.contactPhone || rawAddress.phone || '',
-                    contactEmail: rawAddress.contactEmail || rawAddress.email || '',
+                    // Contact information with proper field mapping and fallbacks
+                    contactName: rawAddress.contactName || `${rawAddress.firstName || ''} ${rawAddress.lastName || ''}`.trim() || rawAddress.nickname || 'Contact Name',
+                    contactPhone: rawAddress.contactPhone || rawAddress.phone || '555-000-0000',
+                    contactEmail: rawAddress.contactEmail || rawAddress.email || 'noreply@solushipx.com',
                     // Keep original fields as fallbacks
                     firstName: rawAddress.firstName || '',
                     lastName: rawAddress.lastName || '',
-                    phone: rawAddress.phone || '',
-                    email: rawAddress.email || '',
-                    specialInstructions: rawAddress.specialInstructions || ''
+                    phone: rawAddress.phone || '555-000-0000',
+                    email: rawAddress.email || 'noreply@solushipx.com',
+                    specialInstructions: rawAddress.specialInstructions || 'None'
                 };
 
                 if (editingAddressType === 'from') {
@@ -2314,46 +2314,46 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 shipmentID: finalShipmentID,
                 creationMethod: 'advanced',
 
-                // Origin address (shipFrom)
+                // Origin address (shipFrom) - CRITICAL: eShip Plus requires complete contact information
                 Origin: {
-                    Description: shipFromAddress.companyName || '',
-                    Street: shipFromAddress.street || '',
+                    Description: shipFromAddress.companyName || 'N/A',
+                    Street: shipFromAddress.street || 'N/A',
                     StreetExtra: shipFromAddress.street2 || '',
-                    PostalCode: shipFromAddress.postalCode || '',
-                    City: shipFromAddress.city || '',
-                    State: shipFromAddress.state || '',
+                    PostalCode: shipFromAddress.postalCode || 'N/A',
+                    City: shipFromAddress.city || 'N/A',
+                    State: shipFromAddress.state || 'N/A',
                     Country: {
                         Code: shipFromAddress.country || 'CA',
                         Name: shipFromAddress.country === 'CA' ? 'Canada' : 'United States',
                         UsesPostalCode: true
                     },
-                    Contact: shipFromAddress.contactName || `${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim() || '',
-                    Phone: shipFromAddress.contactPhone || shipFromAddress.phone || '',
-                    Email: shipFromAddress.contactEmail || shipFromAddress.email || '',
+                    Contact: shipFromAddress.contactName || `${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim() || 'Shipping Department',
+                    Phone: shipFromAddress.contactPhone || shipFromAddress.phone || '555-000-0000',
+                    Email: shipFromAddress.contactEmail || shipFromAddress.email || 'noreply@solushipx.com',
                     Fax: '',
                     Mobile: '',
-                    SpecialInstructions: shipFromAddress.specialInstructions || 'none'
+                    SpecialInstructions: shipFromAddress.specialInstructions || 'None'
                 },
 
-                // Destination address (shipTo)
+                // Destination address (shipTo) - CRITICAL: eShip Plus requires complete contact information
                 Destination: {
-                    Description: shipToAddress.companyName || '',
-                    Street: shipToAddress.street || '',
+                    Description: shipToAddress.companyName || 'N/A',
+                    Street: shipToAddress.street || 'N/A',
                     StreetExtra: shipToAddress.street2 || '',
-                    PostalCode: shipToAddress.postalCode || '',
-                    City: shipToAddress.city || '',
-                    State: shipToAddress.state || '',
+                    PostalCode: shipToAddress.postalCode || 'N/A',
+                    City: shipToAddress.city || 'N/A',
+                    State: shipToAddress.state || 'N/A',
                     Country: {
                         Code: shipToAddress.country || 'CA',
                         Name: shipToAddress.country === 'CA' ? 'Canada' : 'United States',
                         UsesPostalCode: true
                     },
-                    Contact: shipToAddress.contactName || `${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim() || '',
-                    Phone: shipToAddress.contactPhone || shipToAddress.phone || '',
-                    Email: shipToAddress.contactEmail || shipToAddress.email || '',
+                    Contact: shipToAddress.contactName || `${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim() || 'Receiving Department',
+                    Phone: shipToAddress.contactPhone || shipToAddress.phone || '555-000-0000',
+                    Email: shipToAddress.contactEmail || shipToAddress.email || 'noreply@solushipx.com',
                     Fax: '',
                     Mobile: '',
-                    SpecialInstructions: shipToAddress.specialInstructions || 'none'
+                    SpecialInstructions: shipToAddress.specialInstructions || 'None'
                 },
 
                 // Package information transformed to Items array
@@ -3251,11 +3251,17 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             <Grid item xs={12} md={4}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={availableServiceLevels}
+                                                    options={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ]}
                                                     getOptionLabel={(option) => option.label || option.code}
-                                                    value={availableServiceLevels.find(level => level.code === shipmentInfo.serviceLevel) || availableServiceLevels[0] || null}
+                                                    value={[
+                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                        ...availableServiceLevels
+                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
                                                     onChange={(event, newValue) => {
-                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : (availableServiceLevels[0]?.code || 'any') }));
+                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.code === value.code}
                                                     loading={loadingServiceLevels}
@@ -5040,6 +5046,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                                         onSelect={handleRateSelect}
                                                                         showDetails={showRateDetails}
                                                                         onGuaranteeChange={handleGuaranteeChange}
+                                                                        userRole={userRole}
                                                                     />
                                                                 </Grid>
                                                             ))}

@@ -9,22 +9,66 @@ import {
     Collapse,
     IconButton,
     Divider,
-    Grid
+    Grid,
+    Tooltip
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SecurityIcon from '@mui/icons-material/Security';
+import InfoIcon from '@mui/icons-material/Info';
 
 const EnhancedRateCard = ({
     rate,
     isSelected,
     onSelect,
     showDetails = false,
-    onGuaranteeChange
+    onGuaranteeChange,
+    userRole = 'user'
 }) => {
     const [expanded, setExpanded] = useState(showDetails);
+
+    // Check if user is admin or super admin
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+    // Get cost vs charge information for admins
+    const getCostChargeInfo = () => {
+        if (!isAdmin) return null;
+
+        const hasMarkupMetadata = rate.markupMetadata && rate.markupMetadata.appliedMarkups && rate.markupMetadata.appliedMarkups.length > 0;
+
+        if (hasMarkupMetadata) {
+            // Original cost (what carrier quoted)
+            const originalCost = rate.markupMetadata.originalTotal || 0;
+            // Final charge (after markup)
+            const finalCharge = rate.pricing?.total || rate.totalCharges || rate.price || 0;
+
+            return {
+                cost: originalCost,
+                charge: finalCharge,
+                hasMarkup: true,
+                markupAmount: rate.markupMetadata.totalMarkupAmount || 0,
+                markupPercentage: rate.markupMetadata.totalMarkupAmount && rate.markupMetadata.originalTotal
+                    ? ((rate.markupMetadata.totalMarkupAmount / rate.markupMetadata.originalTotal) * 100).toFixed(1)
+                    : 0,
+                appliedMarkups: rate.markupMetadata.appliedMarkups || []
+            };
+        } else {
+            // No markup applied - cost equals charge
+            const amount = rate.pricing?.total || rate.totalCharges || rate.price || 0;
+            return {
+                cost: amount,
+                charge: amount,
+                hasMarkup: false,
+                markupAmount: 0,
+                markupPercentage: 0,
+                appliedMarkups: []
+            };
+        }
+    };
+
+    const costChargeInfo = getCostChargeInfo();
 
     const getCarrierLogo = (rate) => {
         // Enhanced carrier logo detection that checks master carrier identification
@@ -128,6 +172,35 @@ const EnhancedRateCard = ({
     const isGuaranteed = rate.transit?.guaranteed || rate.guaranteed;
     const guaranteeCharge = rate.pricing?.guarantee || rate.guaranteeCharge || 0;
 
+    // Create markup tooltip content for admins
+    const renderMarkupTooltip = () => {
+        if (!isAdmin || !costChargeInfo?.hasMarkup) return null;
+
+        return (
+            <Box sx={{ p: 1 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>
+                    Applied Markups:
+                </Typography>
+                {costChargeInfo.appliedMarkups.map((markup, index) => (
+                    <Box key={index} sx={{ mb: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                            • {markup.type || 'Unknown'}: {markup.percentage ? `${markup.percentage}%` : `$${(markup.amount || 0).toFixed(2)}`}
+                        </Typography>
+                        {markup.rule && (
+                            <Typography variant="caption" sx={{ fontSize: '9px', color: 'text.secondary', pl: 1, display: 'block' }}>
+                                Rule: {markup.rule}
+                            </Typography>
+                        )}
+                    </Box>
+                ))}
+                <Divider sx={{ my: 0.5 }} />
+                <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 600 }}>
+                    Total Markup: +${costChargeInfo.markupAmount.toFixed(2)} ({costChargeInfo.markupPercentage}%)
+                </Typography>
+            </Box>
+        );
+    };
+
     return (
         <Card
             elevation={isSelected ? 8 : 2}
@@ -166,6 +239,30 @@ const EnhancedRateCard = ({
                     <CheckCircleIcon sx={{ fontSize: '14px' }} />
                     SELECTED
                 </Box>
+            )}
+
+            {/* Admin Markup Info Icon */}
+            {isAdmin && costChargeInfo?.hasMarkup && (
+                <Tooltip title={renderMarkupTooltip()} arrow placement="top">
+                    <IconButton
+                        size="small"
+                        sx={{
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            bgcolor: 'rgba(99, 102, 241, 0.1)',
+                            color: '#6366f1',
+                            width: 24,
+                            height: 24,
+                            '&:hover': {
+                                bgcolor: 'rgba(99, 102, 241, 0.2)',
+                            },
+                            zIndex: 1
+                        }}
+                    >
+                        <InfoIcon sx={{ fontSize: '14px' }} />
+                    </IconButton>
+                </Tooltip>
             )}
 
             <CardContent sx={{ p: 3 }}>
@@ -218,10 +315,16 @@ const EnhancedRateCard = ({
                     {/* Price */}
                     <Grid item xs={6}>
                         <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
-                                <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: 'success.main' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
+                                <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#1f2937' }}>
                                     {formatPrice(totalPrice)}
                                 </Typography>
+                                {/* Admin Cost Display */}
+                                {isAdmin && costChargeInfo && (
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#059669', fontWeight: 600, mt: 0.5 }}>
+                                        {formatPrice(costChargeInfo.cost)}
+                                    </Typography>
+                                )}
                             </Box>
                             <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '10px', color: 'success.dark' }}>
                                 TOTAL COST
@@ -292,20 +395,6 @@ const EnhancedRateCard = ({
                             <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
                                 <Divider sx={{ mb: 2 }} />
 
-                                {/* Enhanced debug logging to see actual rate structure */}
-                                {console.log('🔍 EnhancedRateCard Rate Structure:', {
-                                    hasBillingDetails: !!(rate.billingDetails || rate.pricing?.billingDetails),
-                                    billingDetailsLength: (rate.billingDetails || rate.pricing?.billingDetails)?.length,
-                                    billingDetailsContent: rate.billingDetails || rate.pricing?.billingDetails,
-                                    hasMarkupMetadata: !!rate.markupMetadata,
-                                    markupMetadata: rate.markupMetadata,
-                                    pricingKeys: Object.keys(rate.pricing || {}),
-                                    ratePricingTotal: rate.pricing?.total,
-                                    carrierName: rate.sourceCarrier?.name || rate.carrier?.name,
-                                    topLevelBillingDetails: rate.billingDetails,
-                                    pricingBillingDetails: rate.pricing?.billingDetails
-                                })}
-
                                 <Grid container spacing={2}>
                                     <Grid item xs={6}>
                                         <Typography variant="caption" sx={{ fontSize: '10px', textTransform: 'uppercase', color: 'text.secondary', fontWeight: 500 }}>
@@ -350,9 +439,30 @@ const EnhancedRateCard = ({
                                     </Grid>
                                 </Grid>
 
-                                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontSize: '12px', fontWeight: 600 }}>
-                                    Cost Breakdown
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, mb: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        Cost Breakdown
+                                    </Typography>
+                                    {isAdmin && costChargeInfo?.hasMarkup && (
+                                        <Tooltip title={renderMarkupTooltip()} arrow placement="top">
+                                            <IconButton
+                                                size="small"
+                                                sx={{
+                                                    ml: 1,
+                                                    width: 16,
+                                                    height: 16,
+                                                    bgcolor: 'rgba(99, 102, 241, 0.1)',
+                                                    color: '#6366f1',
+                                                    '&:hover': {
+                                                        bgcolor: 'rgba(99, 102, 241, 0.2)',
+                                                    }
+                                                }}
+                                            >
+                                                <InfoIcon sx={{ fontSize: '12px' }} />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
+                                </Box>
 
                                 {(() => {
                                     // Check for billingDetails in both locations (top-level and pricing)
@@ -365,9 +475,16 @@ const EnhancedRateCard = ({
                                                 <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                     {detail.name || 'Charge'}
                                                 </Typography>
-                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                    {formatPrice(detail.amount)}
-                                                </Typography>
+                                                <Box sx={{ textAlign: 'right' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                        {formatPrice(detail.amount)}
+                                                    </Typography>
+                                                    {isAdmin && (
+                                                        <Typography variant="caption" sx={{ fontSize: '9px', color: '#059669', fontWeight: 500, display: 'block' }}>
+                                                            {formatPrice(detail.actualAmount !== undefined ? detail.actualAmount : detail.amount)}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
                                             </Box>
                                         ));
                                     } else {
@@ -427,6 +544,44 @@ const EnhancedRateCard = ({
                                         const serviceCharge = getChargeAmount('service', serviceAmount);
                                         const taxCharge = getChargeAmount('tax', taxAmount);
 
+                                        // Helper to render cost vs charge for individual line items
+                                        const renderChargeWithCost = (charge, chargeName) => {
+                                            // Calculate cost based on markup metadata if available
+                                            let costAmount = charge.amount;
+
+                                            if (costChargeInfo?.hasMarkup && costChargeInfo.appliedMarkups?.length > 0) {
+                                                // Find markup that applies to this charge type
+                                                const applicableMarkup = costChargeInfo.appliedMarkups.find(markup =>
+                                                    markup.type?.toLowerCase().includes(chargeName?.toLowerCase()) ||
+                                                    markup.rule?.toLowerCase().includes(chargeName?.toLowerCase())
+                                                );
+
+                                                if (applicableMarkup) {
+                                                    if (applicableMarkup.percentage) {
+                                                        costAmount = charge.amount / (1 + (applicableMarkup.percentage / 100));
+                                                    } else if (applicableMarkup.amount) {
+                                                        costAmount = charge.amount - applicableMarkup.amount;
+                                                    }
+                                                } else if (costChargeInfo.markupPercentage > 0) {
+                                                    // Apply overall markup percentage if no specific markup found
+                                                    costAmount = charge.amount / (1 + (costChargeInfo.markupPercentage / 100));
+                                                }
+                                            }
+
+                                            return (
+                                                <Box sx={{ textAlign: 'right' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                        {formatPrice(charge.amount)}
+                                                    </Typography>
+                                                    {isAdmin && (
+                                                        <Typography variant="caption" sx={{ fontSize: '9px', color: '#059669', fontWeight: 500, display: 'block' }}>
+                                                            {formatPrice(costAmount)}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            );
+                                        };
+
                                         return (
                                             <>
                                                 {freightCharge.amount > 0 && (
@@ -434,9 +589,7 @@ const EnhancedRateCard = ({
                                                         <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                             Freight Charges
                                                         </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                            {formatPrice(freightCharge.amount)}
-                                                        </Typography>
+                                                        {renderChargeWithCost(freightCharge, 'freight')}
                                                     </Box>
                                                 )}
                                                 {fuelCharge.amount > 0 && (
@@ -444,9 +597,7 @@ const EnhancedRateCard = ({
                                                         <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                             Fuel Surcharge
                                                         </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                            {formatPrice(fuelCharge.amount)}
-                                                        </Typography>
+                                                        {renderChargeWithCost(fuelCharge, 'fuel')}
                                                     </Box>
                                                 )}
                                                 {serviceCharge.amount > 0 && (
@@ -454,9 +605,7 @@ const EnhancedRateCard = ({
                                                         <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                             Service Charges
                                                         </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                            {formatPrice(serviceCharge.amount)}
-                                                        </Typography>
+                                                        {renderChargeWithCost(serviceCharge, 'service')}
                                                     </Box>
                                                 )}
                                                 {taxCharge.amount > 0 && (
@@ -464,9 +613,7 @@ const EnhancedRateCard = ({
                                                         <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                             Taxes
                                                         </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                            {formatPrice(taxCharge.amount)}
-                                                        </Typography>
+                                                        {renderChargeWithCost(taxCharge, 'tax')}
                                                     </Box>
                                                 )}
                                                 {/* Fallback: If no individual charges found, show at least the total */}
@@ -475,9 +622,16 @@ const EnhancedRateCard = ({
                                                         <Typography variant="body2" sx={{ fontSize: '11px', color: 'text.secondary' }}>
                                                             Total Rate
                                                         </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                            {formatPrice(totalPrice)}
-                                                        </Typography>
+                                                        <Box sx={{ textAlign: 'right' }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
+                                                                {formatPrice(totalPrice)}
+                                                            </Typography>
+                                                            {isAdmin && costChargeInfo && (
+                                                                <Typography variant="caption" sx={{ fontSize: '9px', color: '#059669', fontWeight: 500, display: 'block' }}>
+                                                                    {formatPrice(costChargeInfo.cost)}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
                                                     </Box>
                                                 )}
                                             </>
@@ -490,9 +644,16 @@ const EnhancedRateCard = ({
                                     <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700 }}>
                                         Total
                                     </Typography>
-                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700, color: 'success.main' }}>
-                                        {formatPrice(totalPrice)}
-                                    </Typography>
+                                    <Box sx={{ textAlign: 'right' }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 700, color: '#1f2937' }}>
+                                            {formatPrice(totalPrice)}
+                                        </Typography>
+                                        {isAdmin && costChargeInfo && (
+                                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#059669', fontWeight: 600, display: 'block' }}>
+                                                {formatPrice(costChargeInfo.cost)}
+                                            </Typography>
+                                        )}
+                                    </Box>
                                 </Box>
                             </Box>
                         )}

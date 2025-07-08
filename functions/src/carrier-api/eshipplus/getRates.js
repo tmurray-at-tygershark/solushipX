@@ -139,6 +139,38 @@ async function processRateRequest(data) {
     // We might remove the 'apiKey' field before sending it to eShipPlus.
     const { apiKey: userApiKey, ...eShipPlusRequestData } = data;
 
+    // CRITICAL: Add fallback values for eShip Plus required fields
+    // eShip Plus requires complete contact information and will reject requests without it
+    if (eShipPlusRequestData.Origin) {
+      eShipPlusRequestData.Origin = {
+        ...eShipPlusRequestData.Origin,
+        Description: eShipPlusRequestData.Origin.Description || "N/A",
+        Street: eShipPlusRequestData.Origin.Street || "N/A",
+        City: eShipPlusRequestData.Origin.City || "N/A",
+        State: eShipPlusRequestData.Origin.State || "N/A",
+        PostalCode: eShipPlusRequestData.Origin.PostalCode || "N/A",
+        Contact: eShipPlusRequestData.Origin.Contact || "Shipping Department",
+        Phone: eShipPlusRequestData.Origin.Phone || "555-000-0000",
+        Email: eShipPlusRequestData.Origin.Email || "noreply@solushipx.com",
+        Country: eShipPlusRequestData.Origin.Country || { Code: "US", Name: "United States", UsesPostalCode: true }
+      };
+    }
+
+    if (eShipPlusRequestData.Destination) {
+      eShipPlusRequestData.Destination = {
+        ...eShipPlusRequestData.Destination,
+        Description: eShipPlusRequestData.Destination.Description || "N/A",
+        Street: eShipPlusRequestData.Destination.Street || "N/A",
+        City: eShipPlusRequestData.Destination.City || "N/A",
+        State: eShipPlusRequestData.Destination.State || "N/A",
+        PostalCode: eShipPlusRequestData.Destination.PostalCode || "N/A",
+        Contact: eShipPlusRequestData.Destination.Contact || "Receiving Department",
+        Phone: eShipPlusRequestData.Destination.Phone || "555-000-0000",
+        Email: eShipPlusRequestData.Destination.Email || "noreply@solushipx.com",
+        Country: eShipPlusRequestData.Destination.Country || { Code: "US", Name: "United States", UsesPostalCode: true }
+      };
+    }
+
     // Extract reference number from various possible locations in the request data
     const referenceNumber = eShipPlusRequestData.ReferenceNumber || 
                            eShipPlusRequestData.referenceNumber || 

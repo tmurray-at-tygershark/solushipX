@@ -191,6 +191,12 @@ const DocumentsSection = ({
 
     // Determine document type from filename and category
     const determineDocumentType = useCallback((doc, category) => {
+        // Null check to prevent errors
+        if (!doc) {
+            console.warn('🔍 determineDocumentType called with null document, defaulting to "other"');
+            return 'other';
+        }
+
         // Explicit document type from metadata
         if (doc.documentType && DOCUMENT_TYPES[doc.documentType]) {
             return doc.documentType;
@@ -226,6 +232,11 @@ const DocumentsSection = ({
 
     // Helper function to determine if a document is system-generated
     const isSystemGenerated = useCallback((doc) => {
+        // Null check to prevent errors
+        if (!doc) {
+            return true; // Treat null documents as system-generated for safety
+        }
+
         // Check if uploaded by system or has system indicators
         const uploadedBy = doc.uploadedByEmail || doc.metadata?.uploadedByEmail || '';
         const isUserUploaded = doc.isUserUploaded || doc.metadata?.isUserUploaded;
@@ -251,6 +262,11 @@ const DocumentsSection = ({
 
     // Check if user can delete a specific document
     const canDeleteDocument = useCallback((doc) => {
+        // Null check to prevent errors
+        if (!doc) {
+            return false; // Can't delete null documents
+        }
+
         // Super admins and admins can delete anything
         if (userRole === 'superadmin' || userRole === 'admin') {
             return true;
@@ -430,6 +446,12 @@ const DocumentsSection = ({
         Object.entries(shipmentDocuments).forEach(([category, docs]) => {
             if (Array.isArray(docs)) {
                 docs.forEach(doc => {
+                    // Null check to prevent errors
+                    if (!doc) {
+                        console.warn('🔍 Skipping null document in category:', category);
+                        return;
+                    }
+
                     // Create a unique identifier for deduplication
                     // Use multiple fallbacks to ensure we catch duplicates with different ID formats
                     const docId = doc.id ||
@@ -620,7 +642,7 @@ const DocumentsSection = ({
                                         })()}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px' }}>
-                                        {doc.uploadedByEmail || doc.metadata?.uploadedByEmail || 'System'}
+                                        {doc?.uploadedByEmail || doc?.metadata?.uploadedByEmail || 'System'}
                                     </TableCell>
                                     <TableCell sx={{ fontSize: '12px', textAlign: 'center' }}>
                                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>

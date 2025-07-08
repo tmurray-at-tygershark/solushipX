@@ -179,11 +179,11 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, multiplyPdfLabels, viewPdfInModal]);
 
-    // Enhanced BOL handler - ALWAYS show Generic BOL attached to email confirmations
+    // Enhanced BOL handler - ALWAYS show the LATEST regenerated BOL
     const handlePrintBOL = useCallback(async () => {
         try {
             setActionLoading('printBOL', true);
-            showSnackbar('Loading Generic BOL...', 'info');
+            showSnackbar('Loading Latest BOL...', 'info');
 
             const bolDocuments = shipmentDocuments.bol || [];
 
@@ -194,49 +194,74 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                     isGeneratedBOL: doc.isGeneratedBOL,
                     docType: doc.docType,
                     carrier: doc.carrier,
-                    metadata: doc.metadata
+                    metadata: doc.metadata,
+                    createdAt: doc.createdAt,
+                    regeneratedAt: doc.regeneratedAt,
+                    version: doc.version,
+                    isLatest: doc.isLatest
                 })));
 
-                // ALWAYS prioritize Generic BOL that's attached to email confirmations
-                // Look for the SOLUSHIP-{shipmentID}-BOL.pdf pattern (Generic BOL)
-                const genericBOL = bolDocuments.find(doc => {
-                    const filename = (doc.filename || '').toUpperCase();
-                    return filename.startsWith('SOLUSHIP-') && filename.endsWith('-BOL.PDF');
+                // Smart BOL selection with priority for latest regenerated documents
+                const sortedBOLs = [...bolDocuments].sort((a, b) => {
+                    // Priority 1: Documents marked as latest
+                    if (a.isLatest && !b.isLatest) return -1;
+                    if (!a.isLatest && b.isLatest) return 1;
+                    
+                    // Priority 2: Higher version numbers (more recent regenerations)
+                    const aVersion = a.version || 0;
+                    const bVersion = b.version || 0;
+                    if (aVersion !== bVersion) return bVersion - aVersion;
+                    
+                    // Priority 3: Most recently regenerated documents
+                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                    if (aRegenTime && bRegenTime) {
+                        return bRegenTime - aRegenTime;
+                    }
+                    if (aRegenTime && !bRegenTime) return -1;
+                    if (!aRegenTime && bRegenTime) return 1;
+                    
+                    // Priority 4: SOLUSHIP naming convention (our standard format)
+                    const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                    const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                    if (aIsSoluship && !bIsSoluship) return -1;
+                    if (!aIsSoluship && bIsSoluship) return 1;
+                    
+                    // Priority 5: Generated BOL flags
+                    const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                    const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                    if (aIsGenerated && !bIsGenerated) return -1;
+                    if (!aIsGenerated && bIsGenerated) return 1;
+                    
+                    // Priority 6: Newest creation date
+                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                    return bCreatedTime - aCreatedTime;
                 });
 
-                if (genericBOL) {
-                    console.log('✅ Using Generic BOL (SOLUSHIP pattern):', {
-                        id: genericBOL.id,
-                        filename: genericBOL.filename,
-                        isGeneratedBOL: genericBOL.isGeneratedBOL
-                    });
+                const selectedBOL = sortedBOLs[0];
+                
+                console.log('✅ Selected LATEST BOL document:', {
+                    id: selectedBOL.id,
+                    filename: selectedBOL.filename,
+                    isLatest: selectedBOL.isLatest,
+                    version: selectedBOL.version,
+                    regeneratedAt: selectedBOL.regeneratedAt,
+                    isGeneratedBOL: selectedBOL.isGeneratedBOL,
+                    selectionReason: selectedBOL.isLatest ? 'marked as latest' : 
+                                    selectedBOL.version > 0 ? `version ${selectedBOL.version}` :
+                                    selectedBOL.regeneratedAt ? 'recently regenerated' :
+                                    (selectedBOL.filename || '').toUpperCase().startsWith('SOLUSHIP-') ? 'SOLUSHIP format' : 'fallback'
+                });
 
-                    showSnackbar('Opening Generic BOL...', 'success');
+                showSnackbar('Opening latest BOL...', 'success');
 
-                    await viewPdfInModal(
-                        genericBOL.id,
-                        genericBOL.filename,
-                        `Bill of Lading - ${shipment?.shipmentID}`,
-                        'printBOL'
-                    );
-                } else {
-                    // Fall back to any available BOL if no Generic BOL found
-                    const fallbackBOL = bolDocuments[0];
-                    console.log('⚠️ No Generic BOL found, using fallback BOL:', {
-                        id: fallbackBOL.id,
-                        filename: fallbackBOL.filename,
-                        isGeneratedBOL: fallbackBOL.isGeneratedBOL
-                    });
-
-                    showSnackbar('Opening available BOL...', 'success');
-
-                    await viewPdfInModal(
-                        fallbackBOL.id,
-                        fallbackBOL.filename,
-                        `Bill of Lading - ${shipment?.shipmentID}`,
-                        'printBOL'
-                    );
-                }
+                await viewPdfInModal(
+                    selectedBOL.id,
+                    selectedBOL.filename,
+                    `Bill of Lading - ${shipment?.shipmentID}`,
+                    'printBOL'
+                );
             } else {
                 // No BOL documents found
                 if (shipment?.creationMethod === 'quickship') {
@@ -254,11 +279,11 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.id, shipment?.shipmentID, shipment?.creationMethod, shipmentDocuments, setActionLoading, showSnackbar, viewPdfInModal]);
 
-    // Carrier Confirmation handler - for QuickShip and manual carriers
+    // Enhanced Carrier Confirmation handler - ALWAYS show the LATEST regenerated confirmation
     const handlePrintConfirmation = useCallback(async () => {
         try {
             setActionLoading('printConfirmation', true);
-            showSnackbar('Loading Carrier Confirmation...', 'info');
+            showSnackbar('Loading Latest Carrier Confirmation...', 'info');
 
             // Check all document collections for carrier confirmations
             const allDocs = [
@@ -269,7 +294,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                 ...(shipmentDocuments.labels || []) // Sometimes confirmations are misclassified
             ];
             
-            // Look for carrier confirmation documents
+            // Look for carrier confirmation documents with enhanced filtering
             const confirmationDocuments = allDocs.filter(doc => {
                 const filename = (doc.filename || '').toLowerCase();
                 const documentType = (doc.documentType || '').toLowerCase();
@@ -289,20 +314,60 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
                     filename: doc.filename,
                     docType: doc.docType,
                     documentType: doc.documentType,
-                    carrier: doc.carrier
+                    carrier: doc.carrier,
+                    createdAt: doc.createdAt,
+                    regeneratedAt: doc.regeneratedAt,
+                    version: doc.version,
+                    isLatest: doc.isLatest
                 })));
 
-                // Use the first available carrier confirmation document
-                const selectedDoc = confirmationDocuments[0];
+                // Smart Carrier Confirmation selection with priority for latest regenerated documents
+                const sortedConfirmations = [...confirmationDocuments].sort((a, b) => {
+                    // Priority 1: Documents marked as latest
+                    if (a.isLatest && !b.isLatest) return -1;
+                    if (!a.isLatest && b.isLatest) return 1;
+                    
+                    // Priority 2: Higher version numbers (more recent regenerations)
+                    const aVersion = a.version || 0;
+                    const bVersion = b.version || 0;
+                    if (aVersion !== bVersion) return bVersion - aVersion;
+                    
+                    // Priority 3: Most recently regenerated documents
+                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                    if (aRegenTime && bRegenTime) {
+                        return bRegenTime - aRegenTime;
+                    }
+                    if (aRegenTime && !bRegenTime) return -1;
+                    if (!aRegenTime && bRegenTime) return 1;
+                    
+                    // Priority 4: Carrier confirmation specific document types
+                    if (a.docType === 7 && b.docType !== 7) return -1;
+                    if (a.docType !== 7 && b.docType === 7) return 1;
+                    
+                    // Priority 5: Newest creation date
+                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                    return bCreatedTime - aCreatedTime;
+                });
+
+                const selectedDoc = sortedConfirmations[0];
                 
-                console.log('✅ Selected carrier confirmation document:', {
+                console.log('✅ Selected LATEST carrier confirmation document:', {
                     id: selectedDoc.id,
                     filename: selectedDoc.filename,
                     docType: selectedDoc.docType,
-                    documentType: selectedDoc.documentType
+                    documentType: selectedDoc.documentType,
+                    isLatest: selectedDoc.isLatest,
+                    version: selectedDoc.version,
+                    regeneratedAt: selectedDoc.regeneratedAt,
+                    selectionReason: selectedDoc.isLatest ? 'marked as latest' : 
+                                    selectedDoc.version > 0 ? `version ${selectedDoc.version}` :
+                                    selectedDoc.regeneratedAt ? 'recently regenerated' :
+                                    selectedDoc.docType === 7 ? 'carrier confirmation type' : 'fallback'
                 });
 
-                showSnackbar('Opening carrier confirmation...', 'success');
+                showSnackbar('Opening latest carrier confirmation...', 'success');
 
                 await viewPdfInModal(
                     selectedDoc.id,
