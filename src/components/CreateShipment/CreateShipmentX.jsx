@@ -60,7 +60,8 @@ import {
     Description as DescriptionIcon,
     Cancel as CancelIcon,
     Map as MapIcon,
-    Clear as ClearIcon
+    Clear as ClearIcon,
+    FlashOn as FlashOnIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy } from 'firebase/firestore';
@@ -68,10 +69,13 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchMultiCarrierRates, getAllCarriers, getEligibleCarriers } from '../../utils/carrierEligibility';
+import { smartWarmupCarriers } from '../../utils/warmupCarriers';
 import { validateUniversalRate } from '../../utils/universalDataModel';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
+import { shipmentConverter } from '../../utils/shipmentConversion';
+import ConversionConfirmationDialog from '../common/ConversionConfirmationDialog';
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -232,10 +236,62 @@ const FREIGHT_CLASSES = [
     }
 ];
 
-const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId = null, isModal = false, showCloseButton = true, prePopulatedData, onShipmentUpdated = null, onDraftSaved = null, editMode = false, editShipment = null }) => {
+const CreateShipmentX = (props) => {
+    console.log('🚨🚨🚨 IMMEDIATE RENDER DEBUG - FORCE REFRESH:', {
+        timestamp: Date.now(),
+        hasProps: !!props,
+        propsKeys: Object.keys(props || {}),
+        propsValues: props,
+        onConvertToQuickShip: props?.onConvertToQuickShip,
+        onConvertToQuickShipType: typeof props?.onConvertToQuickShip,
+        onConvertToQuickShipIsFunction: typeof props?.onConvertToQuickShip === 'function',
+        allPropsDetailed: JSON.stringify(props, null, 2)
+    });
+
+    const {
+        onClose,
+        onReturnToShipments,
+        onViewShipment,
+        draftId = null,
+        isModal = false,
+        showCloseButton = true,
+        prePopulatedData,
+        onShipmentUpdated = null,
+        onDraftSaved = null,
+        editMode = false,
+        editShipment = null,
+        onConvertToQuickShip = null
+    } = props;
+
     const { companyData, companyIdForAddress, loading: companyLoading, setCompanyContext } = useCompany();
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const debounceTimeoutRef = useRef(null);
+
+    // Debug props immediately on render (not in useEffect)
+    console.log('🔍 CreateShipmentX: IMMEDIATE props debug on render:', {
+        propsObject: props,
+        propsKeys: Object.keys(props),
+        onConvertToQuickShipFromProps: props.onConvertToQuickShip,
+        onConvertToQuickShipFromPropsType: typeof props.onConvertToQuickShip,
+        destructuredOnConvertToQuickShip: onConvertToQuickShip,
+        destructuredType: typeof onConvertToQuickShip,
+        hasCallback: !!props.onConvertToQuickShip
+    });
+
+    // Debug props on component load - check both props object and destructured values
+    useEffect(() => {
+        console.log('🔍 CreateShipmentX: useEffect props debug:', {
+            onConvertToQuickShip: onConvertToQuickShip,
+            onConvertToQuickShipType: typeof onConvertToQuickShip,
+            onConvertToQuickShipExists: !!onConvertToQuickShip,
+            onConvertToQuickShipFromProps: props.onConvertToQuickShip,
+            onConvertToQuickShipFromPropsType: typeof props.onConvertToQuickShip,
+            isModal,
+            draftId,
+            editMode,
+            propsKeys: Object.keys(props)
+        });
+    }, [props, onConvertToQuickShip, isModal, draftId, editMode]);
 
 
 
@@ -822,7 +878,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         const currentSnapshot = createFormSnapshot();
         return currentSnapshot !== lastFormSnapshot;
     }, [createFormSnapshot, lastFormSnapshot]);
-    // Fetch rates from carriers with progressive loading
+    // Fetch rates from carriers with progressive loading - ENHANCED FOR ESHIP PLUS COLD START
     const fetchRates = useCallback(async (forceRefresh = false) => {
         if (!canFetchRates()) return;
 
@@ -832,13 +888,23 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             return;
         }
 
-        // Cancel any existing request only if we're starting a new one
+        // CRITICAL FIX: Only cancel requests if they're not from eShip Plus or have been running for a reasonable time
         if (activeRateRequest && typeof activeRateRequest.cancel === 'function') {
-            console.log('🚫 Cancelling previous rate request for new significant change');
-            activeRateRequest.cancel();
+            // Don't cancel if request might be eShip Plus cold starting
+            const requestAge = Date.now() - (activeRateRequest.startTime || 0);
+            const hasEshipPlus = loadingCarriers.includes('eShip Plus') || loadingCarriers.includes('ESHIPPLUS');
+
+            if (!hasEshipPlus || requestAge > 30000) { // Only cancel if no eShip Plus or running > 30 seconds
+                console.log('🚫 Cancelling previous rate request for new significant change');
+                activeRateRequest.cancel();
+            } else {
+                console.log('⏳ Keeping active request running (eShip Plus may be cold starting)');
+                return; // Don't start new request while eShip Plus is potentially cold starting
+            }
         }
 
         console.log('🚀 Starting progressive rate fetch...');
+        const fetchStartTime = Date.now();
 
         setIsLoadingRates(true);
         setRatesError(null);
@@ -870,14 +936,42 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
 
             setLoadingCarriers(companyEligibleCarriers.map(c => c.name));
 
-            // Enhanced progressive results with rate accumulation
+            // Preemptive warmup for better cold start handling
+            try {
+                console.log('🔥 Starting smart carrier warmup...');
+                const warmupResult = await smartWarmupCarriers({
+                    shipmentInfo,
+                    packages: packages.filter(p => p.weight && p.length && p.width && p.height),
+                    shipFrom: shipFromAddress,
+                    shipTo: shipToAddress
+                });
+                if (warmupResult.success) {
+                    console.log('🔥 Carrier warmup completed:', warmupResult.results);
+                } else {
+                    console.log('⚠️ Carrier warmup had issues but continuing...');
+                }
+            } catch (warmupError) {
+                console.warn('⚠️ Carrier warmup failed, continuing with rate fetch:', warmupError.message);
+            }
+
+            // ENHANCED: Detect if eShip Plus is in the carrier list for special handling
+            const hasEshipPlus = companyEligibleCarriers.some(carrier =>
+                carrier.name?.toLowerCase().includes('eship') ||
+                carrier.key === 'ESHIPPLUS'
+            );
+
+            // CRITICAL FIX: Extended timeout specifically for eShip Plus cold starts
+            const timeoutDuration = hasEshipPlus ? 90000 : 50000; // 90 seconds for eShip Plus, 50 for others
+            console.log(`⏰ Using ${timeoutDuration / 1000}s timeout (eShip Plus detected: ${hasEshipPlus})`);
+
+            // Enhanced progressive results with better eShip Plus handling
             const multiCarrierResult = await fetchMultiCarrierRates(shipmentData, {
                 customEligibleCarriers: companyEligibleCarriers,
                 progressiveResults: true,
                 includeFailures: true,
-                timeout: 50000, // Increased timeout for eShip Plus
-                retryAttempts: 1,
-                retryDelay: 2000,
+                timeout: timeoutDuration, // Dynamic timeout based on carriers
+                retryAttempts: hasEshipPlus ? 2 : 1, // Extra retry for eShip Plus
+                retryDelay: hasEshipPlus ? 5000 : 2000, // Longer delay for eShip Plus
                 companyId: companyData?.companyID,
                 onProgress: async (progressData) => {
                     console.log('📈 Rate progress update:', progressData);
@@ -930,7 +1024,22 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         return `${rate.id || rate.quoteId || rate.rateId || 'unknown'}-${rate.carrier?.name || rate.sourceCarrierName || 'unknown'}-${rate.pricing?.total || rate.totalCharges || rate.price || 0}`;
                                     };
 
-                                    // Add new rates to progressive display with strict duplicate prevention
+                                    // CRITICAL FIX: Use functional updates to prevent race conditions
+                                    setRates(prev => {
+                                        const existingKeys = prev.map(r => createRateKey(r));
+                                        const uniqueNewRates = newRatesWithMarkup.filter(r =>
+                                            !existingKeys.includes(createRateKey(r))
+                                        );
+
+                                        if (uniqueNewRates.length > 0) {
+                                            const updatedRates = [...prev, ...uniqueNewRates];
+                                            console.log(`📋 Main rates updated: ${updatedRates.length} total rates (${uniqueNewRates.length} new from ${progressData.carrier})`);
+                                            return updatedRates;
+                                        }
+                                        return prev;
+                                    });
+
+                                    // Also update progressive rates for UI consistency
                                     setProgressiveRates(prev => {
                                         const existingKeys = prev.map(r => createRateKey(r));
                                         const uniqueNewRates = newRatesWithMarkup.filter(r =>
@@ -941,22 +1050,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             const updatedRates = [...prev, ...uniqueNewRates];
                                             console.log(`📊 Progressive rates updated: ${updatedRates.length} total rates (${uniqueNewRates.length} new, ${newRatesWithMarkup.length - uniqueNewRates.length} duplicates filtered)`);
                                             return updatedRates;
-                                        } else {
-                                            console.log(`🔄 All ${newRatesWithMarkup.length} rates were duplicates, skipping`);
-                                        }
-                                        return prev;
-                                    });
-
-                                    // Also update main rates state with the same duplicate prevention
-                                    setRates(prev => {
-                                        const existingKeys = prev.map(r => createRateKey(r));
-                                        const uniqueNewRates = newRatesWithMarkup.filter(r =>
-                                            !existingKeys.includes(createRateKey(r))
-                                        );
-
-                                        if (uniqueNewRates.length > 0) {
-                                            console.log(`📋 Main rates updated: ${prev.length + uniqueNewRates.length} total rates (${uniqueNewRates.length} new)`);
-                                            return [...prev, ...uniqueNewRates];
                                         }
                                         return prev;
                                     });
@@ -980,71 +1073,132 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 }
             });
 
-            // Store the request for potential cancellation
-            setActiveRateRequest(multiCarrierResult);
+            // Store the request with start time for better cancellation logic
+            const requestWithMetadata = {
+                ...multiCarrierResult,
+                startTime: fetchStartTime
+            };
+            setActiveRateRequest(requestWithMetadata);
 
             console.log('🏁 Multi-carrier request completed:', multiCarrierResult);
 
-            // Final processing - combine any remaining rates
-            if (multiCarrierResult.success && multiCarrierResult.rates.length > 0) {
-                const allValidRates = multiCarrierResult.rates.filter(rate => {
-                    const validation = validateUniversalRate(rate);
-                    return validation.valid;
-                });
+            // ENHANCED FINAL PROCESSING: Better handling of delayed results
+            if (multiCarrierResult.success) {
+                if (multiCarrierResult.rates && multiCarrierResult.rates.length > 0) {
+                    const allValidRates = multiCarrierResult.rates.filter(rate => {
+                        const validation = validateUniversalRate(rate);
+                        return validation.valid;
+                    });
 
-                if (allValidRates.length > 0) {
-                    console.log(`🏁 Final processing: ${allValidRates.length} valid rates from final result`);
+                    if (allValidRates.length > 0) {
+                        console.log(`🏁 Final processing: ${allValidRates.length} valid rates from final result`);
 
-                    // Enhanced duplicate detection for final rates
-                    const createRateKey = (rate) => {
-                        return `${rate.id || rate.quoteId || rate.rateId || 'unknown'}-${rate.carrier?.name || rate.sourceCarrierName || 'unknown'}-${rate.pricing?.total || rate.totalCharges || rate.price || 0}`;
-                    };
+                        // Apply markup to final rates
+                        const shipmentDataForMarkup = {
+                            shipmentInfo,
+                            packages: packages.filter(p => p.weight && p.length && p.width && p.height),
+                            shipFrom: shipFromAddress,
+                            shipTo: shipToAddress
+                        };
 
-                    // Check if we have any rates that weren't processed progressively
-                    setRates(prevRates => {
-                        const existingKeys = prevRates.map(r => createRateKey(r));
-                        const newRates = allValidRates.filter(r =>
-                            !existingKeys.includes(createRateKey(r))
+                        const finalRatesWithMarkup = await Promise.all(
+                            allValidRates.map(async (rate) => {
+                                try {
+                                    return await markupEngine.applyMarkupToRate(rate, companyData?.companyID, shipmentDataForMarkup);
+                                } catch (markupError) {
+                                    console.warn('⚠️ Failed to apply markup to final rate:', markupError);
+                                    return rate;
+                                }
+                            })
                         );
 
-                        if (newRates.length > 0) {
-                            console.log(`📋 Adding ${newRates.length} final rates that weren't processed progressively (${allValidRates.length - newRates.length} were duplicates)`);
-                            return [...prevRates, ...newRates];
-                        } else {
-                            console.log(`✅ All ${allValidRates.length} final rates were already processed progressively`);
-                        }
-                        return prevRates;
-                    });
+                        // Enhanced duplicate detection for final rates
+                        const createRateKey = (rate) => {
+                            return `${rate.id || rate.quoteId || rate.rateId || 'unknown'}-${rate.carrier?.name || rate.sourceCarrierName || 'unknown'}-${rate.pricing?.total || rate.totalCharges || rate.price || 0}`;
+                        };
+
+                        // CRITICAL FIX: Merge final rates properly, don't overwrite progressive rates
+                        setRates(prevRates => {
+                            const existingKeys = prevRates.map(r => createRateKey(r));
+                            const newRates = finalRatesWithMarkup.filter(r =>
+                                !existingKeys.includes(createRateKey(r))
+                            );
+
+                            if (newRates.length > 0) {
+                                console.log(`📋 Adding ${newRates.length} final rates that weren't processed progressively`);
+                                return [...prevRates, ...newRates];
+                            } else {
+                                console.log(`✅ All ${finalRatesWithMarkup.length} final rates were already processed progressively`);
+                            }
+                            return prevRates;
+                        });
+                    }
                 }
 
                 setRawRateApiResponseData(multiCarrierResult);
-            } else if (rates.length === 0) {
-                // Only show error if we have no rates at all
-                setRatesError('No rates available for this shipment configuration');
-                setRawRateApiResponseData(null);
+
+                // ENHANCED: Don't set error if we have any rates from progressive updates
+                // This prevents the "no rates" error when eShip Plus is slow but other carriers worked
+            } else {
+                // Only show error if we have no rates at all from any source
+                setRates(prevRates => {
+                    if (prevRates.length === 0) {
+                        setRatesError('No rates available for this shipment configuration');
+                        setRawRateApiResponseData(null);
+                    }
+                    return prevRates;
+                });
             }
 
         } catch (error) {
             console.error('❌ Error fetching rates:', error);
-            // Only show error if we don't have any progressive rates
-            if (progressiveRates.length === 0) {
-                setRatesError(`Failed to fetch rates: ${error.message}`);
-                setRates([]);
-                setRawRateApiResponseData(null);
-            } else {
-                console.log('📊 Showing partial results despite error - have progressive rates');
-            }
-        } finally {
-            setIsLoadingRates(false);
-            setActiveRateRequest(null);
-        }
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers, companyData, hasSignificantFormChange, activeRateRequest, createFormSnapshot, progressiveRates, rates]);
 
-    // Smart auto-fetch rates with improved debouncing and duplicate prevention
+            // CRITICAL FIX: Only show error if we don't have any rates from progressive updates
+            setRates(prevRates => {
+                if (prevRates.length === 0) {
+                    setRatesError(`Failed to fetch rates: ${error.message}`);
+                    setRawRateApiResponseData(null);
+                } else {
+                    console.log('📊 Showing partial results despite error - have progressive rates');
+                }
+                return prevRates;
+            });
+        } finally {
+            // ENHANCED: Add delay before clearing loading state for eShip Plus
+            // Re-check for eShip Plus in the final cleanup
+            const hasEshipPlusFinal = loadingCarriers.some(c =>
+                c.toLowerCase().includes('eship') || c === 'ESHIPPLUS'
+            );
+
+            if (hasEshipPlusFinal) {
+                // Small delay to allow any final eShip Plus responses to come in
+                setTimeout(() => {
+                    setIsLoadingRates(false);
+                    setActiveRateRequest(null);
+                }, 2000);
+            } else {
+                setIsLoadingRates(false);
+                setActiveRateRequest(null);
+            }
+        }
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, canFetchRates, getCompanyEligibleCarriers, companyData, hasSignificantFormChange, activeRateRequest, createFormSnapshot, loadingCarriers]);
+
+    // Smart auto-fetch rates with improved debouncing and duplicate prevention - ENHANCED FOR ESHIP PLUS
     useEffect(() => {
         // Don't fetch rates during booking process
         if (isBooking || showBookingDialog) {
             return;
+        }
+
+        // ENHANCED: Don't interrupt ongoing eShip Plus requests
+        if (isLoadingRates && activeRateRequest) {
+            const requestAge = Date.now() - (activeRateRequest.startTime || 0);
+            const hasEshipPlus = loadingCarriers.includes('eShip Plus') || loadingCarriers.includes('ESHIPPLUS');
+
+            if (hasEshipPlus && requestAge < 60000) { // Don't interrupt eShip Plus for 60 seconds
+                console.log('⏳ Waiting for eShip Plus to complete before triggering new fetch');
+                return;
+            }
         }
 
         // Clear debounce timeout when dependencies change
@@ -1060,8 +1214,9 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
             if (isSignificantChange) {
                 console.log('📝 Form change detected, debouncing rate fetch...');
 
-                // Always use debouncing to prevent rapid-fire requests
-                // Increased timeout to prevent single character changes from triggering requests
+                // ENHANCED: Longer debounce if eShip Plus might be involved
+                const debounceTime = 4000; // 4 seconds to allow for thoughtful form completion
+
                 debounceTimeoutRef.current = setTimeout(() => {
                     // Double-check if this is still relevant and form hasn't changed again
                     const latestSnapshot = createFormSnapshot();
@@ -1071,7 +1226,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     } else {
                         console.log('📋 Form changed during debounce, skipping fetch');
                     }
-                }, 3000); // Increased to 3 seconds to prevent single character changes
+                }, debounceTime);
             }
         }
 
@@ -1080,7 +1235,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                 clearTimeout(debounceTimeoutRef.current);
             }
         };
-    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, isBooking, showBookingDialog, canFetchRates, fetchRates, createFormSnapshot, lastFormSnapshot]);
+    }, [shipFromAddress, shipToAddress, packages, shipmentInfo, isBooking, showBookingDialog, canFetchRates, fetchRates, createFormSnapshot, lastFormSnapshot, isLoadingRates, activeRateRequest, loadingCarriers]);
 
     // Load draft data if draftId is provided
     useEffect(() => {
@@ -2909,6 +3064,406 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
     // Calculate base tab index for each package (200 per package for CreateShipmentX)
     const getPackageBaseTabIndex = (packageIndex) => 200 + (packageIndex * 200);
 
+    // Process prePopulatedData from conversion (QuickShip → CreateShipmentX)
+    useEffect(() => {
+        if (prePopulatedData && !isEditingDraft && !activeDraftId) {
+            console.log('🔄 CreateShipmentX processing converted data from QuickShip:', prePopulatedData);
+
+            // Apply converted shipment information
+            if (prePopulatedData.shipmentInfo) {
+                setShipmentInfo(prev => ({
+                    ...prev,
+                    ...prePopulatedData.shipmentInfo
+                }));
+            }
+
+            // Apply address data
+            if (prePopulatedData.shipFromAddress) {
+                setShipFromAddress(prePopulatedData.shipFromAddress);
+            }
+
+            if (prePopulatedData.shipToAddress) {
+                setShipToAddress(prePopulatedData.shipToAddress);
+            }
+
+            // Apply package data
+            if (prePopulatedData.packages && prePopulatedData.packages.length > 0) {
+                setPackages(prePopulatedData.packages);
+            }
+
+            // Apply converted rate as selectedRate (from manual rates)
+            if (prePopulatedData.selectedRate) {
+                setSelectedRate(prePopulatedData.selectedRate);
+            }
+
+            // Apply additional services
+            if (prePopulatedData.additionalServices) {
+                setAdditionalServices(prePopulatedData.additionalServices);
+            }
+
+            // Apply broker information
+            if (prePopulatedData.selectedBroker) {
+                setSelectedBroker(prePopulatedData.selectedBroker);
+            }
+            if (prePopulatedData.brokerPort) {
+                setBrokerPort(prePopulatedData.brokerPort);
+            }
+            if (prePopulatedData.brokerReference) {
+                setBrokerReference(prePopulatedData.brokerReference);
+            }
+
+            // **CRITICAL**: Maintain the same shipmentID for continuity
+            if (prePopulatedData.shipmentID) {
+                setShipmentID(prePopulatedData.shipmentID);
+            }
+
+            // Maintain draft status for seamless conversion
+            if (prePopulatedData.isEditingDraft && prePopulatedData.activeDraftId) {
+                setIsEditingDraft(prePopulatedData.isEditingDraft);
+                setActiveDraftId(prePopulatedData.activeDraftId);
+            }
+
+            console.log('✅ CreateShipmentX conversion from QuickShip completed successfully');
+        }
+    }, [prePopulatedData, isEditingDraft, activeDraftId]);
+
+    // Conversion state
+    const [showConversionDialog, setShowConversionDialog] = useState(false);
+    const [isConverting, setIsConverting] = useState(false);
+
+    // New comprehensive conversion state
+    const [conversionDialog, setConversionDialog] = useState({
+        open: false,
+        loading: false,
+        result: null
+    });
+
+    // Conversion function to transform CreateShipmentX data to QuickShip format
+    const convertToQuickShip = useCallback(() => {
+        console.log('🔄 Converting CreateShipmentX to QuickShip format');
+
+        const convertedData = {
+            // Basic shipment information
+            shipmentInfo: {
+                shipmentType: shipmentInfo.shipmentType || 'freight',
+                shipmentDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
+                shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || shipmentID || '',
+                carrierTrackingNumber: '', // QuickShip allows manual tracking number entry
+                bookingReferenceNumber: '',
+                bookingReferenceType: 'PO',
+                billType: shipmentInfo.billType || 'third_party',
+                serviceLevel: shipmentInfo.serviceLevel || 'any',
+                dangerousGoodsType: 'none',
+                signatureServiceType: 'none',
+                notes: '',
+                referenceNumbers: shipmentInfo.referenceNumbers || []
+            },
+
+            // Address data - direct copy since formats are compatible
+            shipFromAddress: shipFromAddress,
+            shipToAddress: shipToAddress,
+
+            // Package data - transform to QuickShip format
+            packages: packages.map(pkg => ({
+                id: pkg.id,
+                itemDescription: pkg.itemDescription || '',
+                packagingType: pkg.packagingType || 262, // Default to SKID(S)
+                packagingQuantity: pkg.packagingQuantity || 1,
+                weight: pkg.weight || '',
+                length: pkg.length || (shipmentInfo.shipmentType === 'courier' ? '12' : '48'),
+                width: pkg.width || (shipmentInfo.shipmentType === 'courier' ? '12' : '40'),
+                height: pkg.height || (shipmentInfo.shipmentType === 'courier' ? '12' : '48'),
+                freightClass: pkg.freightClass || '',
+                unitSystem: pkg.unitSystem || 'imperial',
+                declaredValue: pkg.declaredValue || '',
+                declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
+            })),
+
+            // Manual rates - convert selected rate to manual rate entries
+            manualRates: (() => {
+                const rates = [];
+                let rateId = 1;
+
+                if (selectedRate) {
+                    console.log('🔄 Converting selected rate to manual rates:', selectedRate);
+
+                    // Extract carrier name
+                    const carrierName = selectedRate.carrier?.name || selectedRate.sourceCarrierName || '';
+
+                    // Main freight charge
+                    if (selectedRate.pricing?.freight || selectedRate.freightCharges) {
+                        rates.push({
+                            id: rateId++,
+                            carrier: carrierName,
+                            code: 'FRT',
+                            chargeName: 'Freight',
+                            cost: (selectedRate.pricing?.freight || selectedRate.freightCharges || 0).toString(),
+                            costCurrency: selectedRate.pricing?.currency || 'CAD',
+                            charge: (selectedRate.pricing?.freight || selectedRate.freightCharges || 0).toString(),
+                            chargeCurrency: selectedRate.pricing?.currency || 'CAD'
+                        });
+                    }
+
+                    // Fuel surcharge
+                    if (selectedRate.pricing?.fuel || selectedRate.fuelCharges) {
+                        rates.push({
+                            id: rateId++,
+                            carrier: carrierName,
+                            code: 'FUE',
+                            chargeName: 'Fuel Surcharge',
+                            cost: (selectedRate.pricing?.fuel || selectedRate.fuelCharges || 0).toString(),
+                            costCurrency: selectedRate.pricing?.currency || 'CAD',
+                            charge: (selectedRate.pricing?.fuel || selectedRate.fuelCharges || 0).toString(),
+                            chargeCurrency: selectedRate.pricing?.currency || 'CAD'
+                        });
+                    }
+
+                    // Service charges
+                    if (selectedRate.pricing?.service || selectedRate.serviceCharges) {
+                        rates.push({
+                            id: rateId++,
+                            carrier: carrierName,
+                            code: 'SUR',
+                            chargeName: 'Service Charges',
+                            cost: (selectedRate.pricing?.service || selectedRate.serviceCharges || 0).toString(),
+                            costCurrency: selectedRate.pricing?.currency || 'CAD',
+                            charge: (selectedRate.pricing?.service || selectedRate.serviceCharges || 0).toString(),
+                            chargeCurrency: selectedRate.pricing?.currency || 'CAD'
+                        });
+                    }
+
+                    // Accessorial charges
+                    if (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges) {
+                        rates.push({
+                            id: rateId++,
+                            carrier: carrierName,
+                            code: 'ACC',
+                            chargeName: 'Accessorial',
+                            cost: (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges || 0).toString(),
+                            costCurrency: selectedRate.pricing?.currency || 'CAD',
+                            charge: (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges || 0).toString(),
+                            chargeCurrency: selectedRate.pricing?.currency || 'CAD'
+                        });
+                    }
+
+                    // If there are billing details, use those instead for more accurate breakdown
+                    if (selectedRate.billingDetails && Array.isArray(selectedRate.billingDetails) && selectedRate.billingDetails.length > 0) {
+                        rates.length = 0; // Clear the above rates
+                        rateId = 1; // Reset ID
+
+                        selectedRate.billingDetails.forEach(detail => {
+                            if (detail.amount && detail.amount > 0) {
+                                // Map charge categories to rate codes
+                                let code = 'MSC'; // Default miscellaneous
+                                if (detail.category === 'freight' || detail.name.toLowerCase().includes('freight')) {
+                                    code = 'FRT';
+                                } else if (detail.category === 'fuel' || detail.name.toLowerCase().includes('fuel')) {
+                                    code = 'FUE';
+                                } else if (detail.category === 'service' || detail.name.toLowerCase().includes('service')) {
+                                    code = 'SUR';
+                                } else if (detail.category === 'accessorial' || detail.name.toLowerCase().includes('accessorial')) {
+                                    code = 'ACC';
+                                }
+
+                                rates.push({
+                                    id: rateId++,
+                                    carrier: carrierName,
+                                    code: code,
+                                    chargeName: detail.name,
+                                    cost: detail.actualAmount ? detail.actualAmount.toString() : detail.amount.toString(),
+                                    costCurrency: selectedRate.pricing?.currency || 'CAD',
+                                    charge: detail.amount.toString(),
+                                    chargeCurrency: selectedRate.pricing?.currency || 'CAD'
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // If no selected rate, create default empty rates
+                if (rates.length === 0) {
+                    rates.push(
+                        {
+                            id: 1,
+                            carrier: '',
+                            code: 'FRT',
+                            chargeName: 'Freight',
+                            cost: '',
+                            costCurrency: 'CAD',
+                            charge: '',
+                            chargeCurrency: 'CAD'
+                        },
+                        {
+                            id: 2,
+                            carrier: '',
+                            code: 'FUE',
+                            chargeName: 'Fuel Surcharge',
+                            cost: '',
+                            costCurrency: 'CAD',
+                            charge: '',
+                            chargeCurrency: 'CAD'
+                        }
+                    );
+                }
+
+                return rates;
+            })(),
+
+            // Carrier information
+            selectedCarrier: selectedRate?.carrier?.name || selectedRate?.sourceCarrierName || '',
+
+            // Additional services - direct copy since format is compatible
+            additionalServices: additionalServices || [],
+
+            // Broker information
+            selectedBroker: selectedBroker || '',
+            brokerPort: brokerPort || '',
+            brokerReference: brokerReference || '',
+
+            // Draft information for continuity
+            shipmentID: shipmentID,
+            isEditingDraft: isEditingDraft,
+            activeDraftId: activeDraftId
+        };
+
+        console.log('🔄 Converted data for QuickShip:', convertedData);
+        return convertedData;
+    }, [shipmentInfo, shipFromAddress, shipToAddress, packages, selectedRate, additionalServices, selectedBroker, brokerPort, brokerReference, shipmentID, isEditingDraft, activeDraftId]);
+
+    // New comprehensive conversion system
+    const handleConvertToQuickShip = () => {
+        // For draft shipments, use the new safe conversion system
+        if (isEditingDraft && activeDraftId) {
+            setConversionDialog({
+                open: true,
+                loading: false,
+                result: null
+            });
+        } else {
+            // For non-draft shipments, use the legacy system for now
+            setShowConversionDialog(true);
+        }
+    };
+
+    // Handle safe conversion confirmation
+    const handleSafeConversionConfirm = async (wantsBackup) => {
+        if (!isEditingDraft || !activeDraftId) {
+            console.error('🚨 Safe conversion only available for draft shipments');
+            return;
+        }
+
+        console.log('🔄 Starting safe conversion to QuickShip format');
+
+        setConversionDialog(prev => ({
+            ...prev,
+            loading: true,
+            result: null
+        }));
+
+        try {
+            // Get current shipment data from the form
+            const currentShipmentData = {
+                shipmentInfo,
+                shipFromAddress,
+                shipToAddress,
+                packages,
+                selectedRate,
+                additionalServices,
+                selectedBroker,
+                brokerPort,
+                brokerReference,
+                shipmentID,
+                creationMethod: 'advanced' // Current format
+            };
+
+            // Convert to QuickShip format
+            const convertedData = convertToQuickShip();
+
+            // Use the safety conversion system
+            const result = await shipmentConverter.convertShipment(
+                activeDraftId, // Firestore document ID
+                'advanced',    // From format
+                'quickship',   // To format
+                convertedData, // Converted data
+                user.email     // User performing conversion
+            );
+
+            console.log('🔄 Conversion result:', result);
+
+            setConversionDialog(prev => ({
+                ...prev,
+                loading: false,
+                result: result
+            }));
+
+            // If successful, call the parent conversion handler
+            if (result.success && typeof onConvertToQuickShip === 'function') {
+                console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with converted data');
+                onConvertToQuickShip(convertedData);
+                showMessage('Shipment successfully converted to QuickShip format!', 'success');
+            }
+
+        } catch (error) {
+            console.error('🚨 Safe conversion failed:', error);
+
+            setConversionDialog(prev => ({
+                ...prev,
+                loading: false,
+                result: {
+                    success: false,
+                    error: error.message,
+                    rollbackSuccessful: false,
+                    message: 'Conversion failed with error: ' + error.message
+                }
+            }));
+        }
+    };
+
+    // Handle conversion dialog close
+    const handleConversionDialogClose = () => {
+        setConversionDialog({
+            open: false,
+            loading: false,
+            result: null
+        });
+    };
+
+    // Legacy conversion for non-draft shipments
+    const confirmConvertToQuickShip = () => {
+        setIsConverting(true);
+        setShowConversionDialog(false);
+
+        try {
+            const convertedData = convertToQuickShip();
+
+            console.log('🔄 CreateShipmentX: About to call onConvertToQuickShip callback');
+            console.log('🔄 CreateShipmentX: onConvertToQuickShip exists?', !!onConvertToQuickShip);
+            console.log('🔄 CreateShipmentX: onConvertToQuickShip type:', typeof onConvertToQuickShip);
+            console.log('🔄 CreateShipmentX: onConvertToQuickShip value:', onConvertToQuickShip);
+
+            // Call the parent conversion handler
+            if (typeof onConvertToQuickShip === 'function') {
+                console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with data:', convertedData);
+                onConvertToQuickShip(convertedData);
+                console.log('🔄 CreateShipmentX: onConvertToQuickShip call completed');
+                showMessage('Successfully converted to QuickShip format!', 'success');
+            } else {
+                console.error('🚨 CreateShipmentX: onConvertToQuickShip callback is not a function!', {
+                    type: typeof onConvertToQuickShip,
+                    value: onConvertToQuickShip,
+                    exists: !!onConvertToQuickShip
+                });
+                showMessage('Conversion callback not available', 'error');
+            }
+
+        } catch (error) {
+            console.error('Error converting to QuickShip:', error);
+            showMessage('Failed to convert to QuickShip format', 'error');
+        } finally {
+            setIsConverting(false);
+        }
+    };
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
@@ -2919,6 +3474,8 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                     showCloseButton={showCloseButton}
                 />
             )}
+
+
 
             {/* Loading state while waiting for authentication and company data */}
             {(authLoading || companyLoading) && (
@@ -3140,15 +3697,16 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                         return optionId === valueId;
                                     }}
                                     filterOptions={(options, { inputValue }) => {
-                                        if (!inputValue) return options;
+                                        const trimmedInput = inputValue?.trim(); // CRITICAL FIX: Strip leading/trailing spaces
+                                        if (!trimmedInput) return options;
 
                                         const filtered = options.filter(option => {
                                             if (option.customerID === 'all' || option.id === 'all') {
-                                                return 'all customers'.includes(inputValue.toLowerCase());
+                                                return 'all customers'.includes(trimmedInput.toLowerCase());
                                             }
                                             const name = (option.name || '').toLowerCase();
                                             const customerId = (option.customerID || option.id || '').toLowerCase();
-                                            const searchTerm = inputValue.toLowerCase();
+                                            const searchTerm = trimmedInput.toLowerCase();
 
                                             return name.includes(searchTerm) || customerId.includes(searchTerm);
                                         });
@@ -5085,12 +5643,28 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             </Typography>
                                         </Box>
 
-                                        {/* Right side - Ready to Ship text and buttons */}
+                                        {/* Right side - Conversion button and action buttons */}
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                    Ready to Ship?
-                                                </Typography>
+                                                <Button
+                                                    variant="outlined"
+                                                    startIcon={<FlashOnIcon />}
+                                                    onClick={handleConvertToQuickShip}
+                                                    disabled={isConverting || isBooking || isSavingDraft}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        minWidth: 140,
+                                                        borderColor: '#d1d5db',
+                                                        color: '#374151',
+                                                        '&:hover': {
+                                                            borderColor: '#9ca3af',
+                                                            backgroundColor: '#f9fafb'
+                                                        }
+                                                    }}
+                                                >
+                                                    {isConverting ? 'Converting...' : 'Convert to QuickShip'}
+                                                </Button>
                                                 <Box sx={{ display: 'flex', gap: 2 }}>
                                                     <Button
                                                         variant="outlined"
@@ -5147,6 +5721,138 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                         )}
                 </Box>
             )}
+
+            {/* Conversion Confirmation Dialog */}
+            <Dialog
+                open={showConversionDialog}
+                onClose={() => setShowConversionDialog(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    textAlign: 'center',
+                    fontWeight: 600,
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1
+                }}>
+                    <FlashOnIcon sx={{ color: '#f59e0b' }} />
+                    Convert to QuickShip
+                </DialogTitle>
+                <DialogContent sx={{ textAlign: 'center', py: 3 }}>
+                    <Typography variant="body1" sx={{ mb: 2, fontSize: '14px' }}>
+                        Switch to manual rate entry for faster processing. Your shipment data will be preserved and you can convert back anytime before booking.
+                    </Typography>
+
+                    {/* Data Transfer Preview */}
+                    <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #0ea5e9' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 2 }}>
+                            📋 Data to be transferred:
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Shipment ID: {shipmentID}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Addresses ({shipFromAddress ? '1' : '0'} from, {shipToAddress ? '1' : '0'} to)
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Packages ({packages.length} items)
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Additional Services ({additionalServices.length})
+                            </Typography>
+                        </Box>
+                    </Box>
+
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Benefits of converting to QuickShip:
+                    </Typography>
+
+                    <Box sx={{ textAlign: 'left', mx: 2, mb: 2 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            All shipment details will be preserved
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            {selectedRate ? 'Selected rate will be converted to manual rate entries' : 'Ready for manual rate entry'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            Faster booking process with manual rates
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            Full control over pricing and carrier selection
+                        </Typography>
+                    </Box>
+
+                    {selectedRate && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>
+                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
+                                Selected Rate Preview:
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
+                                {selectedRate.carrier?.name || selectedRate.sourceCarrierName} - ${(selectedRate.pricing?.total || selectedRate.totalCharges || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
+                    <Button
+                        onClick={() => setShowConversionDialog(false)}
+                        variant="outlined"
+                        size="large"
+                        sx={{ minWidth: 120, fontSize: '14px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={confirmConvertToQuickShip}
+                        variant="contained"
+                        size="large"
+                        sx={{
+                            minWidth: 120,
+                            bgcolor: '#f59e0b',
+                            fontSize: '14px',
+                            '&:hover': {
+                                bgcolor: '#d97706'
+                            }
+                        }}
+                        startIcon={<FlashOnIcon />}
+                    >
+                        Convert Now
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* New Comprehensive Conversion Confirmation Dialog */}
+            <ConversionConfirmationDialog
+                open={conversionDialog.open}
+                onClose={handleConversionDialogClose}
+                onConfirm={handleSafeConversionConfirm}
+                shipmentData={{
+                    shipmentInfo,
+                    shipFromAddress,
+                    shipToAddress,
+                    packages,
+                    selectedRate,
+                    additionalServices,
+                    selectedBroker,
+                    brokerPort,
+                    brokerReference,
+                    shipmentID,
+                    creationMethod: 'advanced'
+                }}
+                fromFormat="advanced"
+                toFormat="quickship"
+                convertedData={convertToQuickShip()}
+                loading={conversionDialog.loading}
+                conversionResult={conversionDialog.result}
+            />
 
             {/* Snackbar for messages */}
             <Snackbar

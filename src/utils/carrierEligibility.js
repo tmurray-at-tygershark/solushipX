@@ -1170,13 +1170,62 @@ async function fetchCarrierRates(carrier, shipmentData) {
         const functions = getFunctions();
         const getRatesFunction = httpsCallable(functions, carrier.functionName);
         
-        // Add timeout protection at Firebase SDK level using carrier-specific timeout
-        const firebaseCallPromise = getRatesFunction(carrierRequest);
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Firebase function ${carrier.functionName} timeout`)), carrier.timeout)
-        );
+        // Enhanced cold start detection and retry for eShip Plus
+        let result;
+        let attempt = 1;
+        const maxAttempts = carrier.key === 'ESHIPPLUS' ? 2 : 1; // Only retry eShip Plus
         
-        const result = await Promise.race([firebaseCallPromise, timeoutPromise]);
+        while (attempt <= maxAttempts) {
+            try {
+                console.log(`🚀 ${carrier.name} attempt ${attempt}/${maxAttempts}...`);
+                
+                // Adjust timeout for first attempt on eShip Plus (allow for cold start)
+                let currentTimeout = carrier.timeout;
+                if (carrier.key === 'ESHIPPLUS' && attempt === 1) {
+                    currentTimeout = Math.max(carrier.timeout, 60000); // Minimum 60s for first eShip Plus attempt
+                    console.log(`🔥 ${carrier.name} cold start protection: extended timeout to ${currentTimeout}ms`);
+                }
+                
+                const firebaseCallPromise = getRatesFunction(carrierRequest);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`Firebase function ${carrier.functionName} timeout (${currentTimeout}ms)`)), currentTimeout)
+                );
+                
+                const startAttemptTime = Date.now();
+                result = await Promise.race([firebaseCallPromise, timeoutPromise]);
+                const attemptTime = Date.now() - startAttemptTime;
+                
+                // Success - check if this was a cold start recovery
+                if (carrier.key === 'ESHIPPLUS' && attempt > 1) {
+                    console.log(`🔥 ${carrier.name} cold start recovery successful on attempt ${attempt} (${attemptTime}ms)`);
+                }
+                
+                break; // Success, exit retry loop
+                
+            } catch (error) {
+                const attemptTime = Date.now() - startTime;
+                
+                // Check if this looks like a cold start issue for eShip Plus
+                const isColdStartIssue = carrier.key === 'ESHIPPLUS' && 
+                    (error.message.includes('timeout') || 
+                     error.message.includes('unavailable') ||
+                     error.message.includes('internal') ||
+                     attemptTime > 30000); // Took longer than 30s
+                
+                if (isColdStartIssue && attempt < maxAttempts) {
+                    console.log(`🔥 ${carrier.name} cold start detected (${attemptTime}ms) - retrying attempt ${attempt + 1}/${maxAttempts}`);
+                    console.log(`🔥 Cold start error: ${error.message}`);
+                    
+                    // Brief delay before retry to let function warm up
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    attempt++;
+                    continue;
+                } else {
+                    // Not a cold start issue, or max attempts reached
+                    throw error;
+                }
+            }
+        }
         
         const responseTime = Date.now() - startTime;
         console.log(`✅ ${carrier.name} responded in ${responseTime}ms`);

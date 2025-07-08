@@ -307,6 +307,21 @@ export const CompanyProvider = ({ children }) => {
                 localStorage.setItem('solushipx_admin_return_path', returnPath);
             }
 
+            // Handle null case (clearing company context)
+            if (!newCompanyData) {
+                setCompanyData(null);
+                setCompanyIdForAddress(null);
+
+                // Clear stored company context from localStorage
+                if (ADMIN_ROLES.includes(userRole)) {
+                    localStorage.removeItem('solushipx_selected_company_id');
+                    localStorage.removeItem('solushipx_selected_company_data');
+                    console.log('🧹 Cleared company context from localStorage');
+                }
+
+                return Promise.resolve();
+            }
+
             // Update state
             setCompanyData(newCompanyData);
             setCompanyIdForAddress(newCompanyData.companyID);

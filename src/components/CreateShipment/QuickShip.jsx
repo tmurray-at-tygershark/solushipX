@@ -55,7 +55,8 @@ import {
     LocationOn as LocationOnIcon,
     Flag as FlagIcon,
     Map as MapIcon,
-    Save as SaveIcon
+    Save as SaveIcon,
+    TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
@@ -72,6 +73,8 @@ import EmailSelectorDropdown from '../common/EmailSelectorDropdown';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { shipmentConverter } from '../../utils/shipmentConversion';
+import ConversionConfirmationDialog from '../common/ConversionConfirmationDialog';
 
 // Lazy load other components
 const QuickShipCarrierDialog = lazy(() => import('./QuickShipCarrierDialog'));
@@ -338,7 +341,9 @@ const QuickShip = ({
     editShipment = null,
     onShipmentUpdated = null,
     showNotification = null,
-    onDraftSaved = null // New callback for when draft is saved
+    onDraftSaved = null, // New callback for when draft is saved
+    onConvertToAdvanced = null, // New callback for conversion
+    prePopulatedData = null // New prop for converted data from CreateShipmentX
 }) => {
     const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, setCompanyContext } = useCompany();
@@ -498,6 +503,17 @@ const QuickShip = ({
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [selectedCompanyData, setSelectedCompanyData] = useState(null);
 
+    // Conversion state
+    const [showConversionDialog, setShowConversionDialog] = useState(false);
+    const [isConverting, setIsConverting] = useState(false);
+
+    // New comprehensive conversion state
+    const [conversionDialog, setConversionDialog] = useState({
+        open: false,
+        loading: false,
+        result: null
+    });
+
     // Customer selection state for super admins  
     const [availableCustomers, setAvailableCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
@@ -588,6 +604,80 @@ const QuickShip = ({
             setLoadingCustomers(false);
         }
     }, []);
+
+    // Process pre-populated data from CreateShipmentX conversion (MAIN CONVERSION LOGIC)
+    useEffect(() => {
+        if (prePopulatedData && !draftId && !isEditingDraft && !editMode) {
+            console.log('🔄 MAIN CONVERSION: Processing converted data from CreateShipmentX:', prePopulatedData);
+
+            try {
+                // CRITICAL: Set shipment ID FIRST to prevent new ID generation
+                if (prePopulatedData.shipmentID) {
+                    console.log('🔄 Setting shipment ID from conversion:', prePopulatedData.shipmentID);
+                    setShipmentID(prePopulatedData.shipmentID);
+                }
+
+                // Populate shipment info
+                if (prePopulatedData.shipmentInfo) {
+                    console.log('🔄 Setting shipment info from conversion');
+                    setShipmentInfo(prev => ({
+                        ...prev,
+                        ...prePopulatedData.shipmentInfo
+                    }));
+                }
+
+                // Populate addresses
+                if (prePopulatedData.shipFromAddress) {
+                    console.log('🔄 Setting ship from address from conversion');
+                    setShipFromAddress(prePopulatedData.shipFromAddress);
+                }
+
+                if (prePopulatedData.shipToAddress) {
+                    console.log('🔄 Setting ship to address from conversion');
+                    setShipToAddress(prePopulatedData.shipToAddress);
+                }
+
+                // Populate packages
+                if (prePopulatedData.packages && prePopulatedData.packages.length > 0) {
+                    console.log('🔄 Setting packages from conversion:', prePopulatedData.packages.length, 'packages');
+                    setPackages(prePopulatedData.packages);
+                }
+
+                // Populate manual rates
+                if (prePopulatedData.manualRates && prePopulatedData.manualRates.length > 0) {
+                    console.log('🔄 Setting manual rates from conversion:', prePopulatedData.manualRates.length, 'rates');
+                    setManualRates(prePopulatedData.manualRates);
+
+                    // Set carrier from first rate
+                    const firstRate = prePopulatedData.manualRates[0];
+                    if (firstRate && firstRate.carrier) {
+                        console.log('🔄 Setting carrier from conversion:', firstRate.carrier);
+                        setSelectedCarrier(firstRate.carrier);
+                    }
+                }
+
+                // Set unit system
+                if (prePopulatedData.unitSystem) {
+                    console.log('🔄 Setting unit system from conversion:', prePopulatedData.unitSystem);
+                    setUnitSystem(prePopulatedData.unitSystem);
+                }
+
+                // Set as editing if there's an activeDraftId
+                if (prePopulatedData.activeDraftId) {
+                    console.log('🔄 Setting active draft ID from conversion:', prePopulatedData.activeDraftId);
+                    setIsEditingDraft(true);
+                    setActiveDraftId(prePopulatedData.activeDraftId);
+                }
+
+                console.log('✅ Successfully populated QuickShip with converted data - MAIN CONVERSION COMPLETE');
+                showSuccess('Converted to QuickShip format successfully!');
+
+            } catch (error) {
+                console.error('❌ Error processing converted data:', error);
+                showError('Failed to process converted data');
+            }
+        }
+    }, [prePopulatedData, draftId, isEditingDraft, editMode]);
 
     // Success message handler
     const showSuccess = (message) => {
@@ -768,6 +858,14 @@ const QuickShip = ({
     // Generate shipment ID early when component initializes
     useEffect(() => {
         if (editMode && editShipment) return; // <-- PATCH: skip in edit mode
+
+        // CRITICAL: Don't generate new shipment ID if we have prePopulated data (conversion)
+        if (prePopulatedData && prePopulatedData.shipmentID) {
+            console.log('🔄 Using shipment ID from conversion data:', prePopulatedData.shipmentID);
+            setShipmentID(prePopulatedData.shipmentID);
+            return;
+        }
+
         const generateInitialShipmentID = async () => {
             // Don't generate if we already have a shipmentID or if we're loading a draft
             if (!companyIdForAddress || shipmentID || draftId) return;
@@ -787,13 +885,19 @@ const QuickShip = ({
         };
 
         generateInitialShipmentID();
-    }, [companyIdForAddress, draftId, editMode, editShipment]); // <-- PATCH: add editMode, editShipment to deps
+    }, [companyIdForAddress, draftId, editMode, editShipment, prePopulatedData]); // Add prePopulatedData dependency
 
     // Create draft in database immediately after shipment ID is generated
     useEffect(() => {
         // Skip entirely if in edit mode - this prevents new drafts from being created when editing existing shipments
         if (editMode && editShipment) {
             console.log('🔄 Edit mode detected - skipping draft creation for existing shipment:', editShipment.id);
+            return;
+        }
+
+        // CRITICAL: Skip draft creation if we have prePopulated data (conversion) - we want to convert, not create new
+        if (prePopulatedData) {
+            console.log('🔄 Conversion detected - skipping new draft creation, using conversion data');
             return;
         }
 
@@ -912,7 +1016,9 @@ const QuickShip = ({
         };
 
         createInitialDraft();
-    }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem, editMode, editShipment]); // <-- PATCH: add editMode, editShipment to deps
+    }, [shipmentID, isEditingDraft, companyIdForAddress, currentUser, unitSystem, editMode, editShipment, prePopulatedData]); // Add prePopulatedData dependency
+
+    // REMOVED: Duplicate prePopulatedData processing - using main conversion logic above
 
     // Remove duplicate carrier loading effect - carriers are now loaded with company switching
 
@@ -3371,6 +3477,243 @@ const QuickShip = ({
     // Calculate base tab index for each package (100 per package)
     const getPackageBaseTabIndex = (packageIndex) => 100 + (packageIndex * 100);
 
+    // Conversion function to transform QuickShip data to CreateShipmentX format
+    const convertToAdvanced = useCallback(() => {
+        console.log('🔄 Converting QuickShip to CreateShipmentX format');
+
+        const convertedData = {
+            // Basic shipment information - map QuickShip format to CreateShipmentX format
+            shipmentInfo: {
+                shipmentType: shipmentInfo.shipmentType || 'freight',
+                shipmentDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0],
+                shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
+                billType: shipmentInfo.billType || 'third_party',
+                serviceLevel: shipmentInfo.serviceLevel || 'any',
+                dangerousGoodsType: shipmentInfo.dangerousGoodsType || 'none',
+                signatureServiceType: shipmentInfo.signatureServiceType || 'none',
+                notes: shipmentInfo.notes || '',
+                referenceNumbers: shipmentInfo.referenceNumbers || []
+            },
+
+            // Address data - direct copy since formats are compatible
+            shipFromAddress: shipFromAddress,
+            shipToAddress: shipToAddress,
+
+            // Package data - transform from QuickShip to CreateShipmentX format
+            packages: packages.map(pkg => ({
+                id: pkg.id,
+                itemDescription: pkg.itemDescription || '',
+                packagingType: pkg.packagingType || 262,
+                packagingQuantity: pkg.packagingQuantity || 1,
+                weight: pkg.weight || '',
+                length: pkg.length || (shipmentInfo.shipmentType === 'courier' ? '12' : '48'),
+                width: pkg.width || (shipmentInfo.shipmentType === 'courier' ? '12' : '40'),
+                height: pkg.height || (shipmentInfo.shipmentType === 'courier' ? '12' : '48'),
+                freightClass: pkg.freightClass || '',
+                unitSystem: pkg.unitSystem || 'imperial',
+                declaredValue: pkg.declaredValue || '',
+                declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
+            })),
+
+            // Rate conversion - convert manual rates to selected rate format for CreateShipmentX
+            selectedRate: (() => {
+                if (manualRates && manualRates.length > 0) {
+                    // Calculate totals from manual rates
+                    const freightRate = manualRates.find(rate => rate.code === 'FRT') || {};
+                    const fuelRate = manualRates.find(rate => rate.code === 'FUE') || {};
+                    const serviceRates = manualRates.filter(rate => rate.code === 'SUR' || rate.code === 'ACC');
+                    const accessorialRates = manualRates.filter(rate => rate.code === 'ACC');
+
+                    const freightCharges = parseFloat(freightRate.charge || 0);
+                    const fuelCharges = parseFloat(fuelRate.charge || 0);
+                    const serviceCharges = serviceRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
+                    const accessorialCharges = accessorialRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
+                    const totalCharges = manualRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
+
+                    return {
+                        carrier: {
+                            name: selectedCarrier || 'Manual Entry',
+                            logo: '/images/integratedcarrriers_logo_blk.png'
+                        },
+                        sourceCarrierName: selectedCarrier || 'Manual Entry',
+                        pricing: {
+                            freight: freightCharges,
+                            fuel: fuelCharges,
+                            service: serviceCharges,
+                            accessorial: accessorialCharges,
+                            total: totalCharges,
+                            currency: manualRates[0]?.chargeCurrency || 'CAD'
+                        },
+                        freightCharges: freightCharges,
+                        fuelCharges: fuelCharges,
+                        serviceCharges: serviceCharges,
+                        accessorialCharges: accessorialCharges,
+                        totalCharges: totalCharges,
+                        serviceType: 'Manual Entry',
+                        transitTime: 'N/A',
+                        source: 'manual',
+                        // Include billing details for better conversion
+                        billingDetails: manualRates.filter(rate => rate.charge && parseFloat(rate.charge) > 0).map(rate => ({
+                            name: rate.chargeName,
+                            amount: parseFloat(rate.charge || 0),
+                            actualAmount: parseFloat(rate.cost || rate.charge || 0),
+                            category: (() => {
+                                if (rate.code === 'FRT') return 'freight';
+                                if (rate.code === 'FUE') return 'fuel';
+                                if (rate.code === 'SUR') return 'service';
+                                if (rate.code === 'ACC') return 'accessorial';
+                                return 'miscellaneous';
+                            })()
+                        }))
+                    };
+                }
+                return null;
+            })(),
+
+            // Additional services - direct copy since format is compatible
+            additionalServices: additionalServices || [],
+
+            // Broker information
+            selectedBroker: selectedBroker || '',
+            brokerPort: brokerPort || '',
+            brokerReference: brokerReference || '',
+
+            // Draft information for continuity
+            shipmentID: shipmentID,
+            isEditingDraft: isEditingDraft,
+            activeDraftId: activeDraftId,
+
+            // Rate source information
+            rateSource: 'converted_from_manual',
+            originalManualRates: manualRates // Keep original rates for reference
+        };
+
+        console.log('🔄 Converted data for CreateShipmentX:', convertedData);
+        return convertedData;
+    }, [shipmentInfo, shipFromAddress, shipToAddress, packages, manualRates, selectedCarrier, additionalServices, selectedBroker, brokerPort, brokerReference, shipmentID, isEditingDraft, activeDraftId]);
+
+    // New comprehensive conversion system
+    const handleConvertToAdvanced = () => {
+        // For draft shipments, use the new safe conversion system
+        if (isEditingDraft && activeDraftId) {
+            setConversionDialog({
+                open: true,
+                loading: false,
+                result: null
+            });
+        } else {
+            // For non-draft shipments, use the legacy system for now
+            setShowConversionDialog(true);
+        }
+    };
+
+    // Handle safe conversion confirmation
+    const handleSafeConversionConfirm = async (wantsBackup) => {
+        if (!isEditingDraft || !activeDraftId) {
+            console.error('🚨 Safe conversion only available for draft shipments');
+            return;
+        }
+
+        console.log('🔄 Starting safe conversion to Advanced format');
+
+        setConversionDialog(prev => ({
+            ...prev,
+            loading: true,
+            result: null
+        }));
+
+        try {
+            // Get current shipment data from the form
+            const currentShipmentData = {
+                shipmentInfo,
+                shipFromAddress,
+                shipToAddress,
+                packages,
+                manualRates,
+                selectedCarrier,
+                additionalServices,
+                selectedBroker,
+                brokerPort,
+                brokerReference,
+                shipmentID,
+                creationMethod: 'quickship' // Current format
+            };
+
+            // Convert to Advanced format
+            const convertedData = convertToAdvanced();
+
+            // Use the safety conversion system
+            const result = await shipmentConverter.convertShipment(
+                activeDraftId, // Firestore document ID
+                'quickship',   // From format
+                'advanced',    // To format
+                convertedData, // Converted data
+                currentUser.email     // User performing conversion
+            );
+
+            console.log('🔄 Conversion result:', result);
+
+            setConversionDialog(prev => ({
+                ...prev,
+                loading: false,
+                result: result
+            }));
+
+            // If successful, call the parent conversion handler
+            if (result.success && onConvertToAdvanced) {
+                console.log('🔄 QuickShip: Calling onConvertToAdvanced with converted data');
+                onConvertToAdvanced(convertedData);
+                showSuccess('Shipment successfully converted to Advanced format!');
+            }
+
+        } catch (error) {
+            console.error('🚨 Safe conversion failed:', error);
+
+            setConversionDialog(prev => ({
+                ...prev,
+                loading: false,
+                result: {
+                    success: false,
+                    error: error.message,
+                    rollbackSuccessful: false,
+                    message: 'Conversion failed with error: ' + error.message
+                }
+            }));
+        }
+    };
+
+    // Handle conversion dialog close
+    const handleConversionDialogClose = () => {
+        setConversionDialog({
+            open: false,
+            loading: false,
+            result: null
+        });
+    };
+
+    // Legacy conversion for non-draft shipments
+    const confirmConvertToAdvanced = () => {
+        setIsConverting(true);
+        setShowConversionDialog(false);
+
+        try {
+            const convertedData = convertToAdvanced();
+
+            // Call the parent conversion handler
+            if (onConvertToAdvanced) {
+                onConvertToAdvanced(convertedData);
+            }
+
+            showSuccess('Successfully converted to Live Rates format!');
+
+        } catch (error) {
+            console.error('Error converting to CreateShipmentX:', error);
+            showError('Failed to convert to Live Rates format');
+        } finally {
+            setIsConverting(false);
+        }
+    };
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
@@ -3389,6 +3732,8 @@ const QuickShip = ({
                     showCloseButton={!!onClose}
                 />
             )}
+
+
 
             {/* Sliding Container */}
             <Box sx={{
@@ -3609,15 +3954,16 @@ const QuickShip = ({
                                     return optionId === valueId;
                                 }}
                                 filterOptions={(options, { inputValue }) => {
-                                    if (!inputValue) return options;
+                                    const trimmedInput = inputValue?.trim(); // CRITICAL FIX: Strip leading/trailing spaces
+                                    if (!trimmedInput) return options;
 
                                     const filtered = options.filter(option => {
                                         if (option.customerID === 'all' || option.id === 'all') {
-                                            return 'all customers'.includes(inputValue.toLowerCase());
+                                            return 'all customers'.includes(trimmedInput.toLowerCase());
                                         }
                                         const name = (option.name || '').toLowerCase();
                                         const customerId = (option.customerID || option.id || '').toLowerCase();
-                                        const searchTerm = inputValue.toLowerCase();
+                                        const searchTerm = trimmedInput.toLowerCase();
 
                                         return name.includes(searchTerm) || customerId.includes(searchTerm);
                                     });
@@ -5854,9 +6200,26 @@ const QuickShip = ({
                                                 {/* Right side - Action buttons (different for edit vs create mode) */}
                                                 <Box sx={{ textAlign: 'right' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                            {isEditingExistingShipment ? 'Update Shipment?' : 'Ready to Ship?'}
-                                                        </Typography>
+                                                        {!isEditingExistingShipment && (
+                                                            <Button
+                                                                variant="outlined"
+                                                                onClick={handleConvertToAdvanced}
+                                                                disabled={isConverting || isBooking || isSavingDraft}
+                                                                startIcon={<TrendingUpIcon />}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    minWidth: '140px'
+                                                                }}
+                                                            >
+                                                                {isConverting ? 'Converting...' : 'Switch to Live Rates'}
+                                                            </Button>
+                                                        )}
+                                                        {isEditingExistingShipment && (
+                                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                                Update Shipment?
+                                                            </Typography>
+                                                        )}
                                                         <Box sx={{ display: 'flex', gap: 2 }}>
                                                             {isEditingExistingShipment ? (
                                                                 // Edit mode buttons
@@ -6241,6 +6604,139 @@ const QuickShip = ({
             </Dialog>
 
 
+
+            {/* Conversion Confirmation Dialog */}
+            <Dialog
+                open={showConversionDialog}
+                onClose={() => setShowConversionDialog(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    textAlign: 'center',
+                    fontWeight: 600,
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1
+                }}>
+                    <TrendingUpIcon sx={{ color: '#059669' }} />
+                    Switch to Live Rates
+                </DialogTitle>
+                <DialogContent sx={{ textAlign: 'center', py: 3 }}>
+                    <Typography variant="body1" sx={{ mb: 2, fontSize: '14px' }}>
+                        Switch to live rates for real-time carrier pricing. Your shipment data will be preserved and you can convert back anytime before booking.
+                    </Typography>
+
+                    {/* Data Transfer Preview */}
+                    <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #0ea5e9' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 2 }}>
+                            📋 Data to be transferred:
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Shipment ID: {shipmentID}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Addresses ({shipFromAddress ? '1' : '0'} from, {shipToAddress ? '1' : '0'} to)
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Packages ({packages.length} items)
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
+                                ✓ Additional Services ({additionalServices.length})
+                            </Typography>
+                        </Box>
+                    </Box>
+
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Benefits of switching to live rates:
+                    </Typography>
+
+                    <Box sx={{ textAlign: 'left', mx: 2, mb: 2 }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            All shipment details will be preserved
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            {manualRates && manualRates.length > 0 ? 'Manual rates will be converted to selected rate' : 'Ready for real-time rate comparison'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            Access to live carrier rates and pricing
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                            Real-time transit times and service options
+                        </Typography>
+                    </Box>
+
+                    {manualRates && manualRates.length > 0 && totalCost > 0 && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: '#fef3c7', borderRadius: 1, border: '1px solid #f59e0b' }}>
+                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#92400e', mb: 1 }}>
+                                Current Manual Rates → Will fetch live rates:
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#451a03' }}>
+                                {selectedCarrier || 'Manual Entry'} - {formatCurrency(totalCost, 'CAD')}
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
+                    <Button
+                        onClick={() => setShowConversionDialog(false)}
+                        variant="outlined"
+                        size="large"
+                        sx={{ minWidth: 120, fontSize: '14px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={confirmConvertToAdvanced}
+                        variant="contained"
+                        size="large"
+                        sx={{
+                            minWidth: 120,
+                            bgcolor: '#059669',
+                            fontSize: '14px',
+                            '&:hover': {
+                                bgcolor: '#047857'
+                            }
+                        }}
+                        startIcon={<TrendingUpIcon />}
+                    >
+                        Switch Now
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* New Comprehensive Conversion Confirmation Dialog */}
+            <ConversionConfirmationDialog
+                open={conversionDialog.open}
+                onClose={handleConversionDialogClose}
+                onConfirm={handleSafeConversionConfirm}
+                shipmentData={{
+                    shipmentInfo,
+                    shipFromAddress,
+                    shipToAddress,
+                    packages,
+                    manualRates,
+                    selectedCarrier,
+                    additionalServices,
+                    selectedBroker,
+                    brokerPort,
+                    brokerReference,
+                    shipmentID,
+                    creationMethod: 'quickship'
+                }}
+                fromFormat="quickship"
+                toFormat="advanced"
+                convertedData={convertToAdvanced()}
+                loading={conversionDialog.loading}
+                conversionResult={conversionDialog.result}
+            />
 
             {/* Error Snackbar */}
             <Snackbar

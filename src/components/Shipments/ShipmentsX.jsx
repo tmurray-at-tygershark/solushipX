@@ -1419,6 +1419,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setHasAutoOpenedShipment(false);
         setIsReturningFromDetail(true);
 
+        // 🔍 CRITICAL FIX: Clear search state when returning from detail view
+        console.log('🔍 Clearing search state when returning from detail view');
+        setUnifiedSearch('');
+        setLiveResults([]);
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+        setIsSemanticMode(false);
+        setSemanticSearchResults(null);
+        setSearchConfidence(0);
+
         // BRUTAL CLEANUP: Clear window storage that might persist across navigation
         if (typeof window !== 'undefined') {
             try {
@@ -1553,11 +1563,32 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     useEffect(() => {
         // 🚨 AGGRESSIVE SAFETY CHECKS: Multiple layers of protection against auto-navigation loops
 
-        // SAFETY CHECK: Only run if we're in table view (not already in detail view)
+        // SAFETY CHECK: Only run if we're in table view OR if we need to switch to a different shipment
         if (navigationStack.length > 1) {
-            console.log('🚫 Skipping auto-open - already in detail view');
-            setIsReturningFromDetail(true); // Mark that we've been in detail view
-            return;
+            // Check if we're trying to navigate to a different shipment
+            const currentShipmentView = navigationStack.find(view => view.component === 'shipment-detail');
+            const currentShipmentDocumentId = currentShipmentView?.props?.shipmentId; // This is actually the document ID
+            const requestedShipmentDocumentId = deepLinkParams?.selectedShipmentId || deepLinkParams?.shipmentId;
+
+            console.log('🔍 Shipment navigation comparison:', {
+                currentShipmentDocumentId,
+                requestedShipmentDocumentId,
+                isCurrentView: navigationStack.length > 1,
+                areTheSame: currentShipmentDocumentId === requestedShipmentDocumentId
+            });
+
+            if (currentShipmentDocumentId && requestedShipmentDocumentId && currentShipmentDocumentId !== requestedShipmentDocumentId) {
+                console.log('🔄 Switching from shipment document', currentShipmentDocumentId, 'to', requestedShipmentDocumentId);
+                // Pop the current detail view and allow navigation to proceed to the new shipment
+                setNavigationStack(prev => prev.slice(0, 1)); // Keep only the table view
+                console.log('🔄 Cleared navigation stack to allow new shipment navigation');
+                // Clear the returning flag since we're switching to a new shipment
+                setIsReturningFromDetail(false);
+                // Continue with navigation logic below
+            } else if (currentShipmentDocumentId === requestedShipmentDocumentId) {
+                console.log('🚫 Skipping auto-open - already viewing requested shipment document:', currentShipmentDocumentId);
+                return;
+            }
         }
 
         // CRITICAL CHECK: Don't auto-navigate if we're returning from detail view
@@ -1595,6 +1626,61 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         if (deepLinkParams.bypassTable && deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId) {
             console.log('🚀 BYPASS TABLE: Direct navigation to shipment detail:', deepLinkParams.selectedShipmentId);
 
+            // Check if we need to switch shipments while already in detail view
+            if (navigationStack.length > 1) {
+                const currentShipmentView = navigationStack.find(view => view.component === 'shipment-detail');
+                const currentShipmentDocumentId = currentShipmentView?.props?.shipmentId; // This is actually the document ID
+
+                console.log('🔍 BYPASS navigation comparison:', {
+                    currentShipmentDocumentId,
+                    requestedShipmentDocumentId: deepLinkParams.selectedShipmentId,
+                    areTheSame: currentShipmentDocumentId === deepLinkParams.selectedShipmentId
+                });
+
+                if (currentShipmentDocumentId && currentShipmentDocumentId !== deepLinkParams.selectedShipmentId) {
+                    console.log('🔄 BYPASS: Switching from shipment document', currentShipmentDocumentId, 'to', deepLinkParams.selectedShipmentId);
+                    // For bypass navigation, directly replace the current detail view instead of using popView
+                    // This avoids the aggressive cleanup animations that cause bouncing
+                    const newDetailView = {
+                        key: `shipment-detail-${deepLinkParams.selectedShipmentId}`,
+                        component: 'shipment-detail',
+                        props: {
+                            shipmentId: deepLinkParams.selectedShipmentId,
+                            isAdmin: adminViewMode !== null
+                        }
+                    };
+
+                    // Replace the current detail view directly in the navigation stack
+                    setNavigationStack(prev => {
+                        const tableView = prev[0]; // Keep the table view
+                        return [tableView, newDetailView]; // Replace detail view
+                    });
+
+                    // Update mounted views to include the new detail view
+                    setMountedViews(prev => {
+                        const withoutOldDetail = prev.filter(view => !view.startsWith('shipment-detail-'));
+                        return [...withoutOldDetail, newDetailView.key];
+                    });
+
+                    console.log('🚀 BYPASS: Directly replaced detail view without animation');
+
+                    // Update modal navigation for proper back button handling
+                    const shipment = allShipments.find(s => s.id === deepLinkParams.selectedShipmentId) || { shipmentID: deepLinkParams.selectedShipmentId };
+                    modalNavigation.navigateTo({
+                        title: `${shipment.shipmentID || deepLinkParams.selectedShipmentId}`,
+                        shortTitle: shipment.shipmentID || deepLinkParams.selectedShipmentId,
+                        component: 'shipment-detail',
+                        data: { shipmentId: deepLinkParams.selectedShipmentId }
+                    });
+                } else {
+                    // Same shipment, no need to navigate
+                    console.log('🚫 BYPASS: Already viewing requested shipment document:', currentShipmentDocumentId);
+                }
+            } else {
+                // Not in detail view, navigate normally
+                handleViewShipmentDetail(deepLinkParams.selectedShipmentId);
+            }
+
             // KILL THE DEEP LINK IMMEDIATELY since we're bypassing the table
             if (onClearDeepLinkParams) {
                 onClearDeepLinkParams();
@@ -1603,9 +1689,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             // Set rate limiting
             window.lastAutoNavigation = now;
-
-            // Navigate directly to detail using the document ID
-            handleViewShipmentDetail(deepLinkParams.selectedShipmentId);
             setHasAutoOpenedShipment(true); // Prevent running again
             console.log('✅ Bypass table navigation completed');
             return;
@@ -1683,7 +1766,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 // Don't kill the deep link params - let it retry when shipments load
             }
         }
-    }, [deepLinkParams, allShipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack, isReturningFromDetail, onClearDeepLinkParams]); // Include all dependencies for proper effect management
+    }, [deepLinkParams, allShipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack, isReturningFromDetail, onClearDeepLinkParams, adminViewMode, modalNavigation]); // Include all dependencies for proper effect management
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
@@ -2647,6 +2730,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         // Clear unified search
         setUnifiedSearch('');
 
+        // 🔍 CRITICAL FIX: Clear all search-related state
+        setLiveResults([]);
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+        setIsSemanticMode(false);
+        setSemanticSearchResults(null);
+        setSearchConfidence(0);
+
         // Clear filters
         setFilters({
             status: 'all',
@@ -2924,7 +3015,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 placeholder="Search"
                                                 value={unifiedSearch}
                                                 onChange={(e) => {
-                                                    const value = e.target.value;
+                                                    const value = e.target.value.trim(); // CRITICAL FIX: Strip leading/trailing spaces
                                                     setUnifiedSearch(value);
 
                                                     // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
@@ -2949,8 +3040,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         return naturalPatterns.some(pattern => pattern.test(query));
                                                     };
 
+                                                    // 🔍 CRITICAL FIX: Reset search state for completely new searches
+                                                    if (value.length < 2) {
+                                                        // Clear everything when search is too short
+                                                        setLiveResults([]);
+                                                        setShowLiveResults(false);
+                                                        setSelectedResultIndex(-1);
+                                                        setIsSemanticMode(false);
+                                                        setSemanticSearchResults(null);
+                                                        setSearchConfidence(0);
+                                                    }
+
                                                     // ALWAYS generate live shipment results from ALL shipments including drafts (existing powerful search)
                                                     if (value.length >= 2) {
+                                                        // 🔍 Reset selection index for new search
+                                                        setSelectedResultIndex(-1);
+
                                                         const results = generateLiveShipmentResults(value, allShipments, customers);
                                                         setLiveResults(results);
                                                         setShowLiveResults(results.length > 0);
@@ -3093,7 +3198,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 }}
                                                 onBlur={() => {
                                                     // Hide results after a delay to allow clicking on them
-                                                    setTimeout(() => setShowLiveResults(false), 200);
+                                                    setTimeout(() => setShowLiveResults(false), 300);
                                                 }}
                                                 onFocus={() => {
                                                     if (unifiedSearch.length >= 2 && liveResults.length > 0) {
@@ -3255,6 +3360,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             onClick={() => {
                                                                 if (result.type === 'live_shipment') {
                                                                     console.log('🎯 Navigating to shipment:', result.shipmentId);
+
+                                                                    // 🔍 CRITICAL FIX: Clear search state BEFORE navigation to prevent sticking
+                                                                    console.log('🔍 Clearing search state before shipment navigation');
+                                                                    setShowLiveResults(false);
+                                                                    setSelectedResultIndex(-1);
+                                                                    // Keep the search term but clear the dropdown state
+
                                                                     // Check if this is a draft shipment and handle appropriately
                                                                     if (result.shipment?.status === 'draft') {
                                                                         console.log('📝 Draft shipment detected, opening for editing:', result.documentId);
@@ -3266,9 +3378,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                 } else if (result.type === 'status_filter' || result.type === 'date_filter') {
                                                                     setUnifiedSearch(result.value);
                                                                     reloadShipments();
+                                                                    setShowLiveResults(false);
+                                                                    setSelectedResultIndex(-1);
                                                                 }
-                                                                setShowLiveResults(false);
-                                                                setSelectedResultIndex(-1);
                                                             }}
                                                         >
                                                             {result.type === 'live_shipment' ? (
@@ -4044,6 +4156,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         console.log('🧹 Destroying all auto-navigation flags during back navigation');
         setHasAutoOpenedShipment(false);
         setIsReturningFromDetail(true); // Mark that we're returning from detail
+
+        // 🔍 CRITICAL FIX: Clear search state when going back
+        console.log('🔍 Clearing search state during back navigation');
+        setUnifiedSearch('');
+        setLiveResults([]);
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+        setIsSemanticMode(false);
+        setSemanticSearchResults(null);
+        setSearchConfidence(0);
 
         // Clear window-level session storage
         if (typeof window !== 'undefined') {

@@ -111,10 +111,10 @@ const warmupRequestData = {
 
 /**
  * Keep eShipPlus function warm
- * Scheduled to run every 5 minutes during business hours
+ * Scheduled to run every 2 minutes during business hours (more aggressive for cold starts)
  */
 exports.keepAliveEShipPlus = onSchedule({
-    schedule: 'every 5 minutes',
+    schedule: 'every 2 minutes',
     timeZone: 'America/Toronto'
 }, async (event) => {
     try {

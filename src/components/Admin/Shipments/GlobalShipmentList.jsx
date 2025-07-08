@@ -600,7 +600,7 @@ const GlobalShipmentList = () => {
 
     // Handle search input change with live results
     const handleSearchChange = useCallback((event) => {
-        const value = event.target.value;
+        const value = event.target.value.trim(); // CRITICAL FIX: Strip leading/trailing spaces
         setSearchValue(value);
 
         // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
@@ -735,11 +735,20 @@ const GlobalShipmentList = () => {
                         setViewMode('single');
                     }
 
-                    // Navigate directly to shipment detail
-                    setShipmentsDeepLinkParams({
-                        directToDetail: true,
-                        selectedShipmentId: selectedResult.documentId
-                    });
+                    // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
+                    console.log('🔄 Enter autocomplete: Clearing existing deep link params before new navigation');
+                    setShipmentsDeepLinkParams(null);
+
+                    // Small delay to ensure clearing is processed, then set new params
+                    setTimeout(() => {
+                        // Navigate directly to shipment detail
+                        setShipmentsDeepLinkParams({
+                            directToDetail: true,
+                            selectedShipmentId: selectedResult.documentId,
+                            // Add timestamp to ensure uniqueness
+                            timestamp: Date.now()
+                        });
+                    }, 50); // Small delay to ensure null is processed first
 
                     setShowLiveResults(false);
                     setSelectedResultIndex(-1);
@@ -842,14 +851,23 @@ const GlobalShipmentList = () => {
                             }
                         }
 
-                        // Navigate directly to shipment detail
-                        setShipmentsDeepLinkParams({
-                            directToDetail: true,
-                            selectedShipmentId: shipmentDoc.id
-                        });
+                        // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
+                        console.log('🔄 Enter key: Clearing existing deep link params before new navigation');
+                        setShipmentsDeepLinkParams(null);
 
-                        // Clear search value after navigation
-                        setSearchValue('');
+                        // Small delay to ensure clearing is processed, then set new params
+                        setTimeout(() => {
+                            // Navigate directly to shipment detail
+                            setShipmentsDeepLinkParams({
+                                directToDetail: true,
+                                selectedShipmentId: shipmentDoc.id,
+                                // Add timestamp to ensure uniqueness
+                                timestamp: Date.now()
+                            });
+
+                            // Clear search value after navigation
+                            setSearchValue('');
+                        }, 50); // Small delay to ensure null is processed first
                         return;
                     }
                 } catch (error) {
@@ -1189,24 +1207,33 @@ const GlobalShipmentList = () => {
 
                                                         console.log('🎯 Admin: Direct navigation - bypassing table, going straight to detail');
 
+                                                        // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
+                                                        console.log('🔄 Clearing existing deep link params before new navigation');
+                                                        setShipmentsDeepLinkParams(null);
+
                                                         // SET NAVIGATION STATE TO PREVENT PREMATURE CLEARING
                                                         setIsNavigating(true);
 
-                                                        // DIRECT NAVIGATION - Skip the table entirely and go straight to detail
-                                                        setShipmentsDeepLinkParams({
-                                                            bypassTable: true,
-                                                            directToDetail: true,
-                                                            selectedShipmentId: result.documentId
-                                                        });
-
-                                                        console.log('🎯 Admin: Set bypass table navigation for shipment:', result.documentId);
-                                                        console.log('🔄 Navigation state set to prevent premature clearing');
-
-                                                        // Clear navigation state after successful navigation
+                                                        // Small delay to ensure clearing is processed, then set new params
                                                         setTimeout(() => {
-                                                            setIsNavigating(false);
-                                                            console.log('✅ Navigation completed, state cleared');
-                                                        }, 2000); // 2 second delay to allow navigation to complete
+                                                            // DIRECT NAVIGATION - Skip the table entirely and go straight to detail
+                                                            setShipmentsDeepLinkParams({
+                                                                bypassTable: true,
+                                                                directToDetail: true,
+                                                                selectedShipmentId: result.documentId,
+                                                                // Add timestamp to ensure uniqueness
+                                                                timestamp: Date.now()
+                                                            });
+
+                                                            console.log('🎯 Admin: Set bypass table navigation for shipment:', result.documentId);
+                                                            console.log('🔄 Navigation state set to prevent premature clearing');
+
+                                                            // Clear navigation state after successful navigation
+                                                            setTimeout(() => {
+                                                                setIsNavigating(false);
+                                                                console.log('✅ Navigation completed, state cleared');
+                                                            }, 2000); // 2 second delay to allow navigation to complete
+                                                        }, 50); // Small delay to ensure null is processed first
                                                     } else if (result.type === 'status_filter' || result.type === 'date_filter') {
                                                         console.log('🎯 Admin: Applying filter:', result.type, result.value);
                                                         setSearchValue(result.value);
@@ -1767,6 +1794,25 @@ const GlobalShipmentList = () => {
                         onViewShipment={handleViewShipment}
                         draftId={draftIdToEdit}
                         prePopulatedData={prePopulatedData}
+                        // Handle conversion to QuickShip
+                        onConvertToQuickShip={(convertedData) => {
+                            console.log('🔄 Admin: Converting CreateShipmentX to QuickShip with data:', convertedData);
+
+                            // CRITICAL: Store the converted data for QuickShip
+                            setPrePopulatedData(convertedData);
+
+                            // Close CreateShipmentX modal
+                            setCreateShipmentOpen(false);
+
+                            // Clear any existing draft ID since we're converting, not editing
+                            setQuickShipDraftId(null);
+
+                            // Open QuickShip modal with converted data
+                            setTimeout(() => {
+                                setQuickShipOpen(true);
+                                console.log('🔄 Admin: QuickShip modal opened with converted data:', convertedData);
+                            }, 300);
+                        }}
                     />
                 </DialogContent>
             </Dialog>
@@ -1779,6 +1825,7 @@ const GlobalShipmentList = () => {
                 TransitionProps={{
                     onExited: () => {
                         setQuickShipDraftId(null);
+                        setPrePopulatedData(null); // Clear converted data on modal close
                     }
                 }}
             >
@@ -1791,6 +1838,21 @@ const GlobalShipmentList = () => {
                             onReturnToShipments={handleReturnToShipments}
                             onViewShipment={handleViewShipment}
                             draftId={quickShipDraftId}
+                            prePopulatedData={prePopulatedData} // CRITICAL: Pass converted data from CreateShipmentX
+                            // Handle conversion to CreateShipmentX
+                            onConvertToAdvanced={(convertedData) => {
+                                console.log('🔄 Admin: Converting QuickShip to CreateShipmentX with data:', convertedData);
+                                // Close QuickShip modal
+                                setQuickShipOpen(false);
+                                // Set prePopulated data for CreateShipmentX
+                                setPrePopulatedData(convertedData);
+                                setDraftIdToEdit(null); // Clear any existing draft ID
+                                // Open CreateShipmentX modal with converted data
+                                setTimeout(() => {
+                                    setCreateShipmentOpen(true);
+                                    console.log('🔄 Admin: CreateShipmentX modal should now be open with converted data');
+                                }, 300);
+                            }}
                         />
                     </ShipmentFormProvider>
                 </DialogContent>

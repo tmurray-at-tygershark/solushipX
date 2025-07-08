@@ -3998,6 +3998,26 @@ const Dashboard = () => {
                             // Pass refresh callbacks from ShipmentsX
                             onShipmentUpdated={createShipmentPrePopulatedData?.callbacks?.onShipmentUpdated}
                             onDraftSaved={createShipmentPrePopulatedData?.callbacks?.onDraftSaved}
+                            // Handle conversion to QuickShip
+                            onConvertToQuickShip={(convertedData) => {
+                                console.log('🔄 Dashboard: Converting CreateShipmentX to QuickShip with data:', convertedData);
+                                console.log('🔄 Dashboard: Current modal states before conversion:', {
+                                    isCreateShipmentModalOpen,
+                                    isQuickShipModalOpen,
+                                    createShipmentPrePopulatedData
+                                });
+                                // Close CreateShipmentX modal
+                                setIsCreateShipmentModalOpen(false);
+                                console.log('🔄 Dashboard: CreateShipmentX modal closed');
+                                // Open QuickShip modal with converted data
+                                setCreateShipmentPrePopulatedData(convertedData);
+                                console.log('🔄 Dashboard: Pre-populated data set for QuickShip');
+                                setTimeout(() => {
+                                    console.log('🔄 Dashboard: Opening QuickShip modal...');
+                                    setIsQuickShipModalOpen(true);
+                                    console.log('🔄 Dashboard: QuickShip modal should now be open');
+                                }, 300);
+                            }}
                         />
                     </LazyComponentWrapper>
                 </Box>
@@ -4407,6 +4427,28 @@ const Dashboard = () => {
                                 // Pass refresh callbacks from ShipmentsX
                                 onShipmentUpdated={createShipmentPrePopulatedData?.callbacks?.onShipmentUpdated}
                                 onDraftSaved={createShipmentPrePopulatedData?.callbacks?.onDraftSaved}
+                                // Pass converted data from CreateShipmentX
+                                prePopulatedData={(() => {
+                                    const data = createShipmentPrePopulatedData && !createShipmentPrePopulatedData.quickshipDraftId ? createShipmentPrePopulatedData : null;
+                                    console.log('🔄 Dashboard: Passing prePopulatedData to QuickShip:', {
+                                        hasData: !!data,
+                                        data: data,
+                                        createShipmentPrePopulatedData,
+                                        quickshipDraftId: createShipmentPrePopulatedData?.quickshipDraftId
+                                    });
+                                    return data;
+                                })()}
+                                // Handle conversion to CreateShipmentX
+                                onConvertToAdvanced={(convertedData) => {
+                                    console.log('🔄 Converting QuickShip to CreateShipmentX with data:', convertedData);
+                                    // Close QuickShip modal
+                                    setIsQuickShipModalOpen(false);
+                                    // Open CreateShipmentX modal with converted data
+                                    setCreateShipmentPrePopulatedData(convertedData);
+                                    setTimeout(() => {
+                                        setIsCreateShipmentModalOpen(true);
+                                    }, 300);
+                                }}
                             />
                         </ShipmentFormProvider>
                     </LazyComponentWrapper>

@@ -17,6 +17,7 @@ import RateErrorDisplay from './RateErrorDisplay';
 import EnhancedRateCard from './EnhancedRateCard';
 import CarrierStatsPopover from './CarrierStatsPopover';
 import { fetchMultiCarrierRates, getEligibleCarriers, getAllCarriers } from '../../utils/carrierEligibility';
+import { smartWarmupCarriers, preemptiveWarmup } from '../../utils/warmupCarriers';
 import { validateUniversalRate } from '../../utils/universalDataModel';
 import { toEShipPlusRequest } from '../../translators/eshipplus/translator';
 import { toCanparRequest } from '../../translators/canpar/translator';
@@ -494,6 +495,19 @@ const Rates = ({ formData, onPrevious, onNext, activeDraftId }) => {
 
             console.log(`Using ${companyEligibleCarriers.length} company-configured carriers:`,
                 companyEligibleCarriers.map(c => c.name));
+
+            // Preemptive warmup for better cold start handling
+            try {
+                console.log('🔥 Starting smart carrier warmup...');
+                const warmupResult = await smartWarmupCarriers(currentFormDataForRateRequest);
+                if (warmupResult.success) {
+                    console.log('🔥 Carrier warmup completed:', warmupResult.results);
+                } else {
+                    console.log('⚠️ Carrier warmup had issues but continuing...');
+                }
+            } catch (warmupError) {
+                console.warn('⚠️ Carrier warmup failed, continuing with rate fetch:', warmupError.message);
+            }
 
             // Use the company-specific carrier list in multi-carrier fetching with enhanced timeout handling
             const multiCarrierResult = await fetchMultiCarrierRates(currentFormDataForRateRequest, {
