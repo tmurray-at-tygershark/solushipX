@@ -103,7 +103,7 @@ const SystemConfiguration = () => {
     });
 
     // Shipment Statuses State
-    const [activeTab, setActiveTab] = useState('master');
+    const [activeTab, setActiveTab] = useState('shipment');
     const [masterStatuses, setMasterStatuses] = useState([]);
     const [shipmentStatuses, setShipmentStatuses] = useState([]);
     const [statusesLoading, setStatusesLoading] = useState(false);
@@ -501,7 +501,7 @@ const SystemConfiguration = () => {
 
             if (editingMasterStatus) {
                 const updateFunction = httpsCallable(functions, 'updateMasterStatus');
-                await updateFunction({ id: editingMasterStatus.id, ...statusData });
+                await updateFunction({ masterStatusId: editingMasterStatus.id, updates: statusData });
                 enqueueSnackbar('Master status updated successfully', { variant: 'success' });
             } else {
                 const createFunction = httpsCallable(functions, 'createMasterStatus');
@@ -565,7 +565,7 @@ const SystemConfiguration = () => {
 
             if (editingShipmentStatus) {
                 const updateFunction = httpsCallable(functions, 'updateShipmentStatus');
-                await updateFunction({ id: editingShipmentStatus.id, ...statusData });
+                await updateFunction({ shipmentStatusId: editingShipmentStatus.id, updates: statusData });
                 enqueueSnackbar('Shipment status updated successfully', { variant: 'success' });
             } else {
                 const createFunction = httpsCallable(functions, 'createShipmentStatus');
@@ -595,12 +595,12 @@ const SystemConfiguration = () => {
 
             if (type === 'master') {
                 const deleteFunction = httpsCallable(functions, 'deleteMasterStatus');
-                await deleteFunction({ id: item.id });
+                await deleteFunction({ masterStatusId: item.id });
                 enqueueSnackbar('Master status deleted successfully', { variant: 'success' });
                 await loadMasterStatuses();
             } else {
                 const deleteFunction = httpsCallable(functions, 'deleteShipmentStatus');
-                await deleteFunction({ id: item.id });
+                await deleteFunction({ shipmentStatusId: item.id });
                 enqueueSnackbar('Shipment status deleted successfully', { variant: 'success' });
                 await loadShipmentStatuses();
             }
@@ -928,127 +928,18 @@ const SystemConfiguration = () => {
                                     }}
                                 >
                                     <Tab
-                                        label={`Master Statuses (${masterStatuses.length})`}
-                                        value="master"
-                                        icon={<CategoryIcon sx={{ fontSize: 16 }} />}
-                                        iconPosition="start"
-                                    />
-                                    <Tab
                                         label={`Shipment Statuses (${shipmentStatuses.length})`}
                                         value="shipment"
                                         icon={<ListIcon sx={{ fontSize: 16 }} />}
                                         iconPosition="start"
                                     />
+                                    <Tab
+                                        label={`Master Statuses (${masterStatuses.length})`}
+                                        value="master"
+                                        icon={<CategoryIcon sx={{ fontSize: 16 }} />}
+                                        iconPosition="start"
+                                    />
                                 </Tabs>
-
-                                {/* Master Statuses Tab */}
-                                {activeTab === 'master' && (
-                                    <Box>
-                                        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                Master statuses define high-level shipment states with colors and sorting
-                                            </Typography>
-                                            <Button
-                                                variant="contained"
-                                                startIcon={<AddIcon />}
-                                                onClick={handleAddMasterStatus}
-                                                size="small"
-                                                sx={{ fontSize: '12px' }}
-                                            >
-                                                Add Master Status
-                                            </Button>
-                                        </Box>
-
-                                        <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
-                                            <Table size="small">
-                                                <TableHead>
-                                                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Color</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Label</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Display Label</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Order</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
-                                                    </TableRow>
-                                                </TableHead>
-                                                <TableBody>
-                                                    {statusesLoading ? (
-                                                        <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
-                                                                <CircularProgress size={24} />
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ) : masterStatuses.length === 0 ? (
-                                                        <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
-                                                                No master statuses configured. Click "Add Master Status" to get started.
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ) : (
-                                                        masterStatuses.map((status) => (
-                                                            <TableRow key={status.id} sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Box
-                                                                        sx={{
-                                                                            width: 20,
-                                                                            height: 20,
-                                                                            borderRadius: '50%',
-                                                                            backgroundColor: status.color,
-                                                                            border: '1px solid #e5e7eb'
-                                                                        }}
-                                                                    />
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                    {status.label}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                    {status.displayLabel}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                    {status.description || '-'}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    {status.sortOrder}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Chip
-                                                                        label={status.enabled ? 'Enabled' : 'Disabled'}
-                                                                        size="small"
-                                                                        color={status.enabled ? 'success' : 'default'}
-                                                                        sx={{ fontSize: '10px' }}
-                                                                    />
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                                                        <Tooltip title="Edit Master Status">
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={() => handleEditMasterStatus(status)}
-                                                                                sx={{ color: '#6b7280' }}
-                                                                            >
-                                                                                <EditIcon sx={{ fontSize: 16 }} />
-                                                                            </IconButton>
-                                                                        </Tooltip>
-                                                                        <Tooltip title="Delete Master Status">
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={() => handleDeleteClick('master', status)}
-                                                                                sx={{ color: '#ef4444' }}
-                                                                            >
-                                                                                <DeleteIcon sx={{ fontSize: 16 }} />
-                                                                            </IconButton>
-                                                                        </Tooltip>
-                                                                    </Box>
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))
-                                                    )}
-                                                </TableBody>
-                                            </Table>
-                                        </TableContainer>
-                                    </Box>
-                                )}
 
                                 {/* Shipment Statuses Tab */}
                                 {activeTab === 'shipment' && (
@@ -1162,6 +1053,115 @@ const SystemConfiguration = () => {
                                                                 </TableRow>
                                                             );
                                                         })
+                                                    )}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </Box>
+                                )}
+
+                                {/* Master Statuses Tab */}
+                                {activeTab === 'master' && (
+                                    <Box>
+                                        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Master statuses define high-level shipment states with colors and sorting
+                                            </Typography>
+                                            <Button
+                                                variant="contained"
+                                                startIcon={<AddIcon />}
+                                                onClick={handleAddMasterStatus}
+                                                size="small"
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                Add Master Status
+                                            </Button>
+                                        </Box>
+
+                                        <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Color</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Label</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Display Label</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Order</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {statusesLoading ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
+                                                                <CircularProgress size={24} />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : masterStatuses.length === 0 ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                                No master statuses configured. Click "Add Master Status" to get started.
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : (
+                                                        masterStatuses.map((status) => (
+                                                            <TableRow key={status.id} sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
+                                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                                    <Box
+                                                                        sx={{
+                                                                            width: 20,
+                                                                            height: 20,
+                                                                            borderRadius: '50%',
+                                                                            backgroundColor: status.color,
+                                                                            border: '1px solid #e5e7eb'
+                                                                        }}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                    {status.label}
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {status.displayLabel}
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                    {status.description || '-'}
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                                    {status.sortOrder}
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                                    <Chip
+                                                                        label={status.enabled ? 'Enabled' : 'Disabled'}
+                                                                        size="small"
+                                                                        color={status.enabled ? 'success' : 'default'}
+                                                                        sx={{ fontSize: '10px' }}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                                                        <Tooltip title="Edit Master Status">
+                                                                            <IconButton
+                                                                                size="small"
+                                                                                onClick={() => handleEditMasterStatus(status)}
+                                                                                sx={{ color: '#6b7280' }}
+                                                                            >
+                                                                                <EditIcon sx={{ fontSize: 16 }} />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                        <Tooltip title="Delete Master Status">
+                                                                            <IconButton
+                                                                                size="small"
+                                                                                onClick={() => handleDeleteClick('master', status)}
+                                                                                sx={{ color: '#ef4444' }}
+                                                                            >
+                                                                                <DeleteIcon sx={{ fontSize: 16 }} />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    </Box>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))
                                                     )}
                                                 </TableBody>
                                             </Table>
