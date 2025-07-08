@@ -27,52 +27,8 @@ import {
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
-// import { collection, getDocs } from 'firebase/firestore';
-// import { db } from '../../../firebase'; // Adjust as needed
-
-// Service levels with descriptions - Combined courier and freight from CreateShipmentX.jsx and ShipmentInfo.jsx
-const serviceTypes = [
-    { value: 'ANY', label: 'Any Service', description: 'Applies to all service levels for this carrier' },
-
-    // Courier Services
-    { value: 'economy', label: 'Economy', description: 'Cost-effective courier delivery' },
-    { value: 'express', label: 'Express', description: 'Fast courier delivery' },
-    { value: 'priority', label: 'Priority', description: 'Premium courier service' },
-
-    // LTL Freight Services
-    { value: 'ltl_standard_sk', label: 'LTL Standard - SK', description: 'Less than truckload standard service - Skid' },
-    { value: 'ltl_economy_lb', label: 'LTL Economy - LB', description: 'Less than truckload economy service - per pound' },
-    { value: 'ltl_economy_sk', label: 'LTL Economy - SK', description: 'Less than truckload economy service - Skid' },
-    { value: 'ltl_expedited_lb', label: 'LTL Expedited - LB', description: 'Expedited LTL service - per pound' },
-    { value: 'ltl_expedited_sk', label: 'LTL Expedited - SK', description: 'Expedited LTL service - Skid' },
-    { value: 'ltl_economy_skid', label: 'LTL Economy Skid', description: 'Economy skid-based LTL service' },
-    { value: 'ltl_skid_sk', label: 'LTL Skid - SK', description: 'Skid-based LTL service - Skid' },
-    { value: 'ltl_customer_specific', label: 'LTL Customer Specific', description: 'Custom LTL arrangements' },
-    { value: 'ltl_standard_class', label: 'LTL Standard - Class', description: 'Class-based LTL standard service' },
-
-    // Same Day Services
-    { value: 'same_day_regular', label: 'Same Day Regular', description: 'Same day delivery (booked before 11:00 AM)' },
-    { value: 'same_day_rush', label: 'Same Day Rush', description: '2-4 hours delivery (booked after 11:00 AM or downtown)' },
-    { value: 'same_day_direct', label: 'Same Day Direct', description: 'Door-to-door same day service' },
-    { value: 'same_day_after_hours', label: 'Same Day After Hours', description: 'After hours delivery (6:00 PM to 6:00 AM)' },
-    { value: 'same_day_direct_weekends', label: 'Same Day Direct [Weekends]', description: 'Weekend same day service' },
-
-    // Next Day Services
-    { value: 'next_day_regular', label: 'Next Day Regular', description: 'Next business day delivery (booked after 11:00 AM)' },
-    { value: 'next_day_rush', label: 'Next Day Rush', description: 'Priority next day delivery (downtown area)' },
-
-    // Dedicated Services
-    { value: 'dedicated_truck_hourly', label: 'Dedicated Truck - Hourly', description: 'Hourly dedicated truck service' },
-
-    // FTL Services
-    { value: 'ftl_53_dry_van', label: 'FTL - 53\' Dry Van', description: 'Full truckload 53-foot dry van' },
-    { value: 'ftl_24_straight_truck', label: 'FTL - 24\' Straight Truck', description: 'Full truckload 24-foot straight truck' },
-    { value: 'ftl_sprinter_van', label: 'FTL - Sprinter Van', description: 'Full truckload sprinter van' },
-    { value: 'ftl_expedited', label: 'FTL Expedited', description: 'Expedited full truckload service' },
-    { value: 'ftl_standard', label: 'FTL Standard', description: 'Standard full truckload service' },
-    { value: 'ftl_economy', label: 'FTL Economy', description: 'Economy full truckload service' },
-    { value: 'ftl_flatbed', label: 'FTL Flatbed', description: 'Full truckload flatbed service' },
-];
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { db } from '../../../firebase';
 
 const markupTypes = [
     {
@@ -121,6 +77,58 @@ const AddEditCarrierMarkupDialog = ({
 
     const [loading, setLoading] = useState(false);
     const [validationErrors, setValidationErrors] = useState({});
+    const [serviceTypes, setServiceTypes] = useState([]);
+    const [loadingServiceTypes, setLoadingServiceTypes] = useState(false);
+
+    // Load service types from Firebase
+    const loadServiceTypes = async () => {
+        try {
+            setLoadingServiceTypes(true);
+
+            // Load both courier and freight service levels
+            const serviceLevelsRef = collection(db, 'serviceLevels');
+            const q = query(
+                serviceLevelsRef,
+                where('enabled', '==', true),
+                orderBy('type'),
+                orderBy('sortOrder'),
+                orderBy('label')
+            );
+            const querySnapshot = await getDocs(q);
+
+            const services = [
+                { value: 'ANY', label: 'Any Service', description: 'Applies to all service levels for this carrier' }
+            ];
+
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                services.push({
+                    value: data.code,
+                    label: data.label,
+                    description: data.description || `${data.type} service level`,
+                    type: data.type
+                });
+            });
+
+            console.log('🔧 Loaded service types from database:', services);
+            setServiceTypes(services);
+        } catch (error) {
+            console.error('🔧 Error loading service types:', error);
+            // Fallback to ANY option if loading fails
+            setServiceTypes([
+                { value: 'ANY', label: 'Any Service', description: 'Applies to all service levels for this carrier' }
+            ]);
+        } finally {
+            setLoadingServiceTypes(false);
+        }
+    };
+
+    // Load service types when component opens
+    useEffect(() => {
+        if (open) {
+            loadServiceTypes();
+        }
+    }, [open]);
 
     useEffect(() => {
         if (open) {
@@ -323,23 +331,53 @@ const AddEditCarrierMarkupDialog = ({
                                         value={formData.service}
                                         label="Service Level"
                                         onChange={handleChange}
+                                        disabled={loadingServiceTypes}
                                         sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        endAdornment={
+                                            loadingServiceTypes && (
+                                                <InputAdornment position="end">
+                                                    <CircularProgress size={20} sx={{ mr: 2 }} />
+                                                </InputAdornment>
+                                            )
+                                        }
                                     >
-                                        {serviceTypes.map(service => (
-                                            <MenuItem key={service.value} value={service.value} sx={{ fontSize: '12px' }}>
-                                                <Box>
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                        {service.label}
-                                                    </Typography>
-                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                        {service.description}
-                                                    </Typography>
+                                        {loadingServiceTypes ? (
+                                            <MenuItem disabled sx={{ fontSize: '12px' }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <CircularProgress size={16} />
+                                                    <Typography sx={{ fontSize: '12px' }}>Loading service levels...</Typography>
                                                 </Box>
                                             </MenuItem>
-                                        ))}
+                                        ) : (
+                                            serviceTypes.map(service => (
+                                                <MenuItem key={service.value} value={service.value} sx={{ fontSize: '12px' }}>
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                            {service.label}
+                                                            {service.type && service.value !== 'ANY' && (
+                                                                <Chip
+                                                                    label={service.type}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        ml: 1,
+                                                                        height: '16px',
+                                                                        fontSize: '9px',
+                                                                        bgcolor: service.type === 'courier' ? '#e3f2fd' : '#f3e5f5',
+                                                                        color: service.type === 'courier' ? '#1976d2' : '#7b1fa2'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                            {service.description}
+                                                        </Typography>
+                                                    </Box>
+                                                </MenuItem>
+                                            ))
+                                        )}
                                     </Select>
                                     <FormHelperText sx={{ fontSize: '11px' }}>
-                                        Specific service or "Any" for all services
+                                        {loadingServiceTypes ? 'Loading service levels from database...' : 'Specific service or "Any" for all services'}
                                     </FormHelperText>
                                 </FormControl>
                             </Grid>

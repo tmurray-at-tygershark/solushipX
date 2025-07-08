@@ -5112,9 +5112,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         {isSavingDraft ? 'Saving...' : 'Ship Later'}
-                                                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.7 }}>
-                                                            (Shift+Enter)
-                                                        </span>
                                                     </Button>
                                                     <Button
                                                         variant="contained"
@@ -5135,9 +5132,6 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                                         }}
                                                     >
                                                         {isBooking ? 'Booking...' : 'Book Shipment'}
-                                                        <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.7 }}>
-                                                            (Ctrl+Enter)
-                                                        </span>
                                                     </Button>
                                                 </Box>
                                             </Box>

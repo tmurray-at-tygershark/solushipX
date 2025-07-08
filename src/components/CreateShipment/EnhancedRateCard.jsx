@@ -176,26 +176,111 @@ const EnhancedRateCard = ({
     const renderMarkupTooltip = () => {
         if (!isAdmin || !costChargeInfo?.hasMarkup) return null;
 
+        // Analyze which specific charges were affected by markups
+        const getAffectedCharges = () => {
+            const affectedCharges = [];
+
+            // Check billingDetails for charges with markup applied
+            const billingDetails = rate.billingDetails || rate.pricing?.billingDetails || [];
+            billingDetails.forEach(detail => {
+                if (detail.hasMarkup && detail.markupAmount > 0) {
+                    affectedCharges.push({
+                        name: detail.name,
+                        originalAmount: Number(detail.actualAmount) || 0,
+                        markedUpAmount: Number(detail.amount) || 0,
+                        markupAmount: Number(detail.markupAmount) || 0,
+                        markupPercentage: Number(detail.markupPercentage) || 0
+                    });
+                }
+            });
+
+            // If no specific charges found, check if markup was applied to total
+            if (affectedCharges.length === 0 && costChargeInfo.hasMarkup) {
+                affectedCharges.push({
+                    name: 'Total Rate',
+                    originalAmount: Number(costChargeInfo.cost) || 0,
+                    markedUpAmount: Number(rate.pricing?.total || rate.totalCharges) || 0,
+                    markupAmount: Number(costChargeInfo.markupAmount) || 0,
+                    markupPercentage: Number(costChargeInfo.markupPercentage) || 0
+                });
+            }
+
+            return affectedCharges;
+        };
+
+        const affectedCharges = getAffectedCharges();
+
         return (
             <Box sx={{ p: 1 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 1 }}>
                     Applied Markups:
                 </Typography>
-                {costChargeInfo.appliedMarkups.map((markup, index) => (
-                    <Box key={index} sx={{ mb: 0.5 }}>
-                        <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
-                            • {markup.type || 'Unknown'}: {markup.percentage ? `${markup.percentage}%` : `$${(markup.amount || 0).toFixed(2)}`}
-                        </Typography>
-                        {markup.rule && (
-                            <Typography variant="caption" sx={{ fontSize: '9px', color: 'text.secondary', pl: 1, display: 'block' }}>
-                                Rule: {markup.rule}
+
+                {/* Markup Rules Applied */}
+                {costChargeInfo.appliedMarkups.map((markup, index) => {
+                    // Enhanced markup data extraction with proper type handling
+                    const markupType = markup.type || markup.markupType || 'Markup';
+                    const markupValue = markup.value || markup.amount || markup.markupAmount || 0;
+                    const markupRule = markup.rule || markup.description || markup.conditions;
+
+                    // Format value based on markup type
+                    let formattedValue;
+                    if (markupType === 'PERCENTAGE') {
+                        formattedValue = `${markupValue}%`;
+                    } else if (markupType === 'FIXED_AMOUNT') {
+                        formattedValue = `$${markupValue.toFixed(2)}`;
+                    } else if (markupType === 'PER_POUND') {
+                        formattedValue = `$${markupValue.toFixed(2)}/lb`;
+                    } else if (markupType === 'PER_PACKAGE') {
+                        formattedValue = `$${markupValue.toFixed(2)}/pkg`;
+                    } else {
+                        formattedValue = markupValue ? `$${markupValue.toFixed(2)}` : 'N/A';
+                    }
+
+                    // Convert type to display label
+                    const displayType = markupType === 'PERCENTAGE' ? 'Percentage Markup' :
+                        markupType === 'FIXED_AMOUNT' ? 'Fixed Amount' :
+                            markupType === 'PER_POUND' ? 'Per Pound' :
+                                markupType === 'PER_PACKAGE' ? 'Per Package' :
+                                    'Carrier Markup';
+
+                    return (
+                        <Box key={index} sx={{ mb: 0.5 }}>
+                            <Typography variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                • {displayType}: {formattedValue}
                             </Typography>
-                        )}
-                    </Box>
-                ))}
+                            {markupRule && (
+                                <Typography variant="caption" sx={{ fontSize: '9px', color: 'text.secondary', pl: 1, display: 'block' }}>
+                                    Rule: {markupRule}
+                                </Typography>
+                            )}
+                        </Box>
+                    );
+                })}
+
+                {/* Show which specific charges were affected */}
+                {affectedCharges.length > 0 && (
+                    <>
+                        <Divider sx={{ my: 0.5 }} />
+                        <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                            Applied To:
+                        </Typography>
+                        {affectedCharges.map((charge, index) => (
+                            <Box key={index} sx={{ mb: 0.5, pl: 1 }}>
+                                <Typography variant="caption" sx={{ fontSize: '9px', display: 'block' }}>
+                                    • {charge.name}: ${charge.originalAmount.toFixed(2)} → ${charge.markedUpAmount.toFixed(2)}
+                                </Typography>
+                                <Typography variant="caption" sx={{ fontSize: '8px', color: 'text.secondary', pl: 1, display: 'block' }}>
+                                    +${(charge.markupAmount || 0).toFixed(2)} ({(Number(charge.markupPercentage) || 0).toFixed(1)}% markup)
+                                </Typography>
+                            </Box>
+                        ))}
+                    </>
+                )}
+
                 <Divider sx={{ my: 0.5 }} />
                 <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 600 }}>
-                    Total Markup: +${costChargeInfo.markupAmount.toFixed(2)} ({costChargeInfo.markupPercentage}%)
+                    Total Markup: +{formatPrice(costChargeInfo.markupAmount || 0)}
                 </Typography>
             </Box>
         );
@@ -241,29 +326,7 @@ const EnhancedRateCard = ({
                 </Box>
             )}
 
-            {/* Admin Markup Info Icon */}
-            {isAdmin && costChargeInfo?.hasMarkup && (
-                <Tooltip title={renderMarkupTooltip()} arrow placement="top">
-                    <IconButton
-                        size="small"
-                        sx={{
-                            position: 'absolute',
-                            top: 8,
-                            left: 8,
-                            bgcolor: 'rgba(99, 102, 241, 0.1)',
-                            color: '#6366f1',
-                            width: 24,
-                            height: 24,
-                            '&:hover': {
-                                bgcolor: 'rgba(99, 102, 241, 0.2)',
-                            },
-                            zIndex: 1
-                        }}
-                    >
-                        <InfoIcon sx={{ fontSize: '14px' }} />
-                    </IconButton>
-                </Tooltip>
-            )}
+
 
             <CardContent sx={{ p: 3 }}>
                 {/* Header Section */}
@@ -443,18 +506,28 @@ const EnhancedRateCard = ({
                                     <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600 }}>
                                         Cost Breakdown
                                     </Typography>
-                                    {isAdmin && costChargeInfo?.hasMarkup && (
-                                        <Tooltip title={renderMarkupTooltip()} arrow placement="top">
+                                    {isAdmin && (
+                                        <Tooltip
+                                            title={costChargeInfo?.hasMarkup ? renderMarkupTooltip() : (
+                                                <Box sx={{ p: 1 }}>
+                                                    <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 600 }}>
+                                                        No markups applied to these quotes
+                                                    </Typography>
+                                                </Box>
+                                            )}
+                                            arrow
+                                            placement="top"
+                                        >
                                             <IconButton
                                                 size="small"
                                                 sx={{
                                                     ml: 1,
                                                     width: 16,
                                                     height: 16,
-                                                    bgcolor: 'rgba(99, 102, 241, 0.1)',
-                                                    color: '#6366f1',
+                                                    bgcolor: costChargeInfo?.hasMarkup ? 'rgba(99, 102, 241, 0.1)' : 'rgba(156, 163, 175, 0.1)',
+                                                    color: costChargeInfo?.hasMarkup ? '#6366f1' : '#9ca3af',
                                                     '&:hover': {
-                                                        bgcolor: 'rgba(99, 102, 241, 0.2)',
+                                                        bgcolor: costChargeInfo?.hasMarkup ? 'rgba(99, 102, 241, 0.2)' : 'rgba(156, 163, 175, 0.2)',
                                                     }
                                                 }}
                                             >
