@@ -24,7 +24,6 @@ import {
     QrCode as QrCodeIcon,
     KeyboardArrowDown as ArrowDownIcon,
     KeyboardArrowUp as ArrowUpIcon,
-    Edit as EditIcon,
     Add as AddIcon,
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
@@ -557,63 +556,7 @@ const ShipmentTableRow = ({
                             </TableCell>
                         )}
 
-                        {/* Created Date - Regular View Only */}
-                        {visibleColumns.created !== false && (
-                            <TableCell sx={{
-                                verticalAlign: 'top',
-                                textAlign: 'left',
-                                ...getColumnWidth('created'),
-                                padding: '8px 12px'
-                            }}>
-                                {(() => {
-                                    let dateTime = null;
-                                    let createdDate = null;
 
-                                    // Priority order for created date - different for QuickShip vs regular shipments
-                                    if (shipment.creationMethod === 'quickship') {
-                                        // For QuickShip: bookingTimestamp (primary) > bookedAt > createdAt (fallback)
-                                        if (shipment.bookingTimestamp) {
-                                            createdDate = shipment.bookingTimestamp;
-                                        } else if (shipment.bookedAt) {
-                                            createdDate = shipment.bookedAt;
-                                        } else if (shipment.createdAt) {
-                                            createdDate = shipment.createdAt;
-                                        }
-                                    } else {
-                                        // For regular shipments: createdAt (primary) > bookingTimestamp (fallback)
-                                        if (shipment.createdAt) {
-                                            createdDate = shipment.createdAt;
-                                        } else if (shipment.bookingTimestamp) {
-                                            createdDate = shipment.bookingTimestamp;
-                                        }
-                                    }
-
-                                    if (createdDate) {
-                                        dateTime = formatDateTime(createdDate);
-                                    }
-
-                                    // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
-                                    if (!dateTime || !dateTime.date || !dateTime.time) {
-                                        return (
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
-                                                N/A
-                                            </Typography>
-                                        );
-                                    }
-
-                                    return (
-                                        <Box>
-                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                {dateTime.date}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#64748b' }}>
-                                                {dateTime.time}
-                                            </Typography>
-                                        </Box>
-                                    );
-                                })()}
-                            </TableCell>
-                        )}
 
                         {/* Ship Date */}
                         {visibleColumns.date !== false && (
@@ -1498,32 +1441,28 @@ const ShipmentTableRow = ({
                         ...getColumnWidth('status'),
                         padding: '8px 12px'
                     }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                            <StatusChip status={shipment.status} size="small" />
-                            {/* Manual Override Indicator */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {/* Manual Override Indicator - Small Bold M */}
                             {shipment.statusOverride?.isManual && (
                                 <Tooltip title="Status manually overridden">
-                                    <Chip
-                                        icon={<EditIcon sx={{ fontSize: '10px !important' }} />}
-                                        label="Manual"
-                                        size="small"
-                                        variant="outlined"
-                                        sx={{
-                                            height: '16px',
-                                            fontSize: '9px',
-                                            color: 'orange',
-                                            borderColor: 'orange',
-                                            '& .MuiChip-icon': {
-                                                fontSize: '10px',
-                                                color: 'orange'
-                                            },
-                                            '& .MuiChip-label': {
-                                                px: 0.5
-                                            }
-                                        }}
-                                    />
+                                    <Box sx={{
+                                        width: '16px',
+                                        height: '16px',
+                                        backgroundColor: '#e5e7eb',
+                                        color: '#374151',
+                                        borderRadius: '3px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        flexShrink: 0
+                                    }}>
+                                        M
+                                    </Box>
                                 </Tooltip>
                             )}
+                            <StatusChip status={shipment.status} size="small" />
                         </Box>
                     </TableCell>
                 )}
@@ -1605,7 +1544,7 @@ const ShipmentTableRow = ({
                                                     shipment.shipFrom?.street || shipment.shipfrom?.street,
                                                     shipment.shipFrom?.city || shipment.shipfrom?.city,
                                                     shipment.shipFrom?.state || shipment.shipfrom?.state,
-                                                    shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode
+                                                    (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)?.toUpperCase?.() || (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)
                                                 ].filter(Boolean).join(', ')}
                                             </Typography>
                                         </Box>
@@ -1623,7 +1562,7 @@ const ShipmentTableRow = ({
                                                     shipment.shipTo?.street || shipment.shipto?.street,
                                                     shipment.shipTo?.city || shipment.shipto?.city,
                                                     shipment.shipTo?.state || shipment.shipto?.state,
-                                                    shipment.shipTo?.postalCode || shipment.shipto?.postalCode
+                                                    (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)?.toUpperCase?.() || (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)
                                                 ].filter(Boolean).join(', ')}
                                             </Typography>
                                         </Box>

@@ -47,7 +47,8 @@ import {
     Inventory as InventoryIcon,
     CameraAlt as CameraAltIcon,
     Image as ImageIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Warning as WarningIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { httpsCallable } from 'firebase/functions';
@@ -55,46 +56,45 @@ import { functions } from '../../../firebase';
 
 // Helper function to safely format timestamps
 const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '-';
-
     try {
-        // Handle different timestamp formats
-        if (timestamp.toDate && typeof timestamp.toDate === 'function') {
-            // Standard Firestore Timestamp
-            const date = timestamp.toDate();
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } else if (timestamp.seconds) {
-            // Timestamp object with seconds/nanoseconds
-            const date = new Date(timestamp.seconds * 1000);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (!timestamp) return 'N/A';
+
+        let date;
+        if (timestamp && typeof timestamp.toDate === 'function') {
+            // Firestore Timestamp
+            date = timestamp.toDate();
+        } else if (timestamp && timestamp.seconds) {
+            // Timestamp object with seconds
+            date = new Date(timestamp.seconds * 1000);
+        } else if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+            // String or number timestamp
+            date = new Date(timestamp);
         } else if (timestamp instanceof Date) {
-            // Regular Date object
-            return timestamp.toLocaleDateString() + ' ' + timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } else if (typeof timestamp === 'string') {
-            // String date
-            const date = new Date(timestamp);
-            if (!isNaN(date.getTime())) {
-                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-            return '-';
-        } else if (typeof timestamp === 'number') {
-            // Unix timestamp
-            const date = new Date(timestamp);
-            if (!isNaN(date.getTime())) {
-                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-            return '-';
+            // Already a Date object
+            date = timestamp;
         } else {
-            console.warn('Unknown timestamp format:', timestamp);
-            return '-';
+            return 'N/A';
         }
+
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            return 'N/A';
+        }
+
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     } catch (error) {
-        console.warn('Error formatting timestamp:', error, timestamp);
-        return '-';
+        console.error('Error formatting timestamp:', error);
+        return 'N/A';
     }
 };
 
-// Document type definitions with icons and labels
+// Document type definitions with metadata
 const DOCUMENT_TYPES = {
     'bill_of_lading': {
         label: 'Bill of Lading',
@@ -184,50 +184,83 @@ const DocumentsSection = ({
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedDocument, setSelectedDocument] = useState(null);
 
+    // State for delete confirmation dialog
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [documentToDelete, setDocumentToDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
     // Determine document type from filename and category
     const determineDocumentType = useCallback((doc, category) => {
-        const filename = (doc.filename || '').toLowerCase();
-        const docType = (doc.documentType || '').toLowerCase();
+        // Explicit document type from metadata
+        if (doc.documentType && DOCUMENT_TYPES[doc.documentType]) {
+            return doc.documentType;
+        }
 
-        // Check for specific patterns
-        if (category === 'bol' || filename.includes('bol') || filename.includes('bill-of-lading') || docType.includes('bol')) {
-            return 'bill_of_lading';
+        // Category mapping
+        const categoryMapping = {
+            'labels': 'labels',
+            'bol': 'bill_of_lading',
+            'carrierConfirmations': 'carrier_confirmation',
+            'documents': 'other',
+            'other': 'other'
+        };
+
+        if (categoryMapping[category]) {
+            return categoryMapping[category];
         }
-        if (category === 'carrierConfirmations' ||
-            doc.docType === 7 ||
-            docType === 'carrier_confirmation' ||
-            filename.includes('carrier_confirmation') ||
-            filename.includes('carrier-confirmation') ||
-            (filename.includes('carrier') && filename.includes('confirmation')) ||
-            filename.includes('pickup_confirmation') ||
-            filename.includes('pickup-confirmation')) {
-            return 'carrier_confirmation';
-        }
-        if (category === 'labels' || filename.includes('label') || docType.includes('label')) {
-            return 'labels';
-        }
-        if (filename.includes('commercial') && filename.includes('invoice')) {
-            return 'commercial_invoice';
-        }
-        if (filename.includes('proof') && filename.includes('pickup')) {
-            return 'proof_of_pickup';
-        }
-        if (filename.includes('proof') && filename.includes('delivery')) {
-            return 'proof_of_delivery';
-        }
-        if (filename.includes('packing') && filename.includes('list')) {
-            return 'packing_list';
-        }
-        if (filename.includes('photo') || filename.includes('image') ||
-            filename.endsWith('.jpg') || filename.endsWith('.jpeg') ||
-            filename.endsWith('.png') || filename.endsWith('.gif')) {
-            return 'photos';
-        }
+
+        // Filename analysis
+        const filename = (doc.filename || doc.name || '').toLowerCase();
+
+        if (filename.includes('label')) return 'labels';
+        if (filename.includes('bol') || filename.includes('bill')) return 'bill_of_lading';
+        if (filename.includes('confirmation') || filename.includes('carrier')) return 'carrier_confirmation';
+        if (filename.includes('invoice')) return 'commercial_invoice';
+        if (filename.includes('pickup')) return 'proof_of_pickup';
+        if (filename.includes('delivery') || filename.includes('pod')) return 'proof_of_delivery';
+        if (filename.includes('packing')) return 'packing_list';
+        if (filename.includes('photo') || filename.includes('image')) return 'photos';
 
         return 'other';
     }, []);
 
-    // Handle file selection
+    // Helper function to determine if a document is system-generated
+    const isSystemGenerated = useCallback((doc) => {
+        // Check if uploaded by system or has system indicators
+        const uploadedBy = doc.uploadedByEmail || doc.metadata?.uploadedByEmail || '';
+        const isUserUploaded = doc.isUserUploaded || doc.metadata?.isUserUploaded;
+
+        // System generated if:
+        // 1. Uploaded by 'System' or empty uploadedBy
+        // 2. Not marked as user uploaded
+        // 3. Has system-like patterns in filename or metadata
+        if (uploadedBy === 'System' || uploadedBy === '' || uploadedBy === 'unknown@example.com') {
+            return true;
+        }
+
+        if (isUserUploaded === false) {
+            return true;
+        }
+
+        // Check for system-generated document patterns
+        const filename = (doc.filename || doc.name || '').toLowerCase();
+        const systemPatterns = ['bol_', 'label_', 'confirmation_', 'auto_', 'system_'];
+
+        return systemPatterns.some(pattern => filename.includes(pattern));
+    }, []);
+
+    // Check if user can delete a specific document
+    const canDeleteDocument = useCallback((doc) => {
+        // Super admins and admins can delete anything
+        if (userRole === 'superadmin' || userRole === 'admin') {
+            return true;
+        }
+
+        // Regular users can only delete user-uploaded documents
+        return !isSystemGenerated(doc);
+    }, [userRole, isSystemGenerated]);
+
+    // Handle file selection for upload
     const handleFileSelect = useCallback((event) => {
         const files = Array.from(event.target.files);
         setSelectedFiles(files);
@@ -263,39 +296,34 @@ const DocumentsSection = ({
         const uploadFunction = httpsCallable(functions, 'uploadShipmentDocument');
 
         try {
+            // Process files sequentially to avoid overwhelming the system
             for (let i = 0; i < selectedFiles.length; i++) {
                 const file = selectedFiles[i];
 
-                // Update progress
-                setUploadProgress(prev => ({
-                    ...prev,
-                    [i]: { progress: 0, status: 'uploading' }
-                }));
-
-                // Convert file to base64
-                const base64Data = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        const base64 = reader.result.split(',')[1];
-                        resolve(base64);
-                    };
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-
-                // Simulate progress updates
+                // Start progress simulation
                 const progressInterval = setInterval(() => {
                     setUploadProgress(prev => {
-                        const currentProgress = prev[i]?.progress || 0;
-                        if (currentProgress < 90) {
+                        const current = prev[i]?.progress || 0;
+                        if (current < 90) {
                             return {
                                 ...prev,
-                                [i]: { ...prev[i], progress: currentProgress + 10 }
+                                [i]: { progress: current + 10, status: 'uploading' }
                             };
                         }
                         return prev;
                     });
                 }, 200);
+
+                // Convert file to base64
+                const base64Data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const result = reader.result.split(',')[1]; // Remove data:mime;base64, prefix
+                        resolve(result);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
 
                 try {
                     // Upload file
@@ -352,6 +380,42 @@ const DocumentsSection = ({
         }
     }, [selectedFiles, documentType, shipment.id, user, showNotification, onDocumentUploaded]);
 
+    // Handle delete document
+    const handleDeleteDocument = useCallback(async () => {
+        if (!documentToDelete) return;
+
+        setDeleting(true);
+        const deleteFunction = httpsCallable(functions, 'deleteShipmentDocument');
+
+        try {
+            console.log('🗑️ Deleting document:', {
+                documentId: documentToDelete.id,
+                shipmentId: shipment.id,
+                filename: documentToDelete.filename,
+                isSystemGenerated: isSystemGenerated(documentToDelete)
+            });
+
+            const result = await deleteFunction({
+                documentId: documentToDelete.id,
+                shipmentId: shipment.id
+            });
+
+            if (result.data.success) {
+                showNotification('Document deleted successfully!', 'success');
+                onDocumentUploaded(); // Refresh documents list
+            } else {
+                throw new Error(result.data.error || 'Failed to delete document');
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            showNotification('Failed to delete document: ' + error.message, 'error');
+        } finally {
+            setDeleting(false);
+            setDeleteDialogOpen(false);
+            setDocumentToDelete(null);
+        }
+    }, [documentToDelete, shipment.id, showNotification, onDocumentUploaded, isSystemGenerated]);
+
     // Organize documents by type with deduplication
     const organizedDocuments = useMemo(() => {
         const organized = {};
@@ -392,6 +456,7 @@ const DocumentsSection = ({
                     if (filenameKey) {
                         processedDocIds.add(filenameKey);
                     }
+
                     const docType = determineDocumentType(doc, category);
                     if (organized[docType]) {
                         organized[docType].push({
@@ -441,8 +506,8 @@ const DocumentsSection = ({
                 }
                 break;
             case 'delete':
-                // TODO: Implement delete functionality
-                showNotification('Delete functionality coming soon', 'info');
+                setDocumentToDelete(document);
+                setDeleteDialogOpen(true);
                 break;
             default:
                 break;
@@ -577,19 +642,17 @@ const DocumentsSection = ({
                                                     </IconButton>
                                                 </Tooltip>
                                             )}
-                                            {isAdmin && (
-                                                <Tooltip title="More Actions">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(e) => {
-                                                            setAnchorEl(e.currentTarget);
-                                                            setSelectedDocument(doc);
-                                                        }}
-                                                    >
-                                                        <MoreVertIcon sx={{ fontSize: 16 }} />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            )}
+                                            <Tooltip title="More Actions">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        setAnchorEl(e.currentTarget);
+                                                        setSelectedDocument(doc);
+                                                    }}
+                                                >
+                                                    <MoreVertIcon sx={{ fontSize: 16 }} />
+                                                </IconButton>
+                                            </Tooltip>
                                         </Box>
                                     </TableCell>
                                 </TableRow>
@@ -941,32 +1004,155 @@ const DocumentsSection = ({
                 anchorEl={anchorEl}
                 open={Boolean(anchorEl)}
                 onClose={() => setAnchorEl(null)}
+                PaperProps={{
+                    sx: {
+                        '& .MuiMenuItem-root': {
+                            fontSize: '12px'
+                        },
+                        '& .MuiListItemText-primary': {
+                            fontSize: '12px'
+                        }
+                    }
+                }}
             >
-                <MenuItem onClick={() => handleDocumentAction('view', selectedDocument)}>
+                <MenuItem
+                    onClick={() => handleDocumentAction('view', selectedDocument)}
+                    sx={{ fontSize: '12px' }}
+                >
                     <ListItemIcon>
-                        <VisibilityIcon fontSize="small" />
+                        <VisibilityIcon sx={{ fontSize: '16px' }} />
                     </ListItemIcon>
-                    <ListItemText primary="View" />
+                    <ListItemText
+                        primary="View"
+                        primaryTypographyProps={{ fontSize: '12px' }}
+                    />
                 </MenuItem>
                 {selectedDocument?.downloadUrl && (
-                    <MenuItem onClick={() => handleDocumentAction('download', selectedDocument)}>
+                    <MenuItem
+                        onClick={() => handleDocumentAction('download', selectedDocument)}
+                        sx={{ fontSize: '12px' }}
+                    >
                         <ListItemIcon>
-                            <DownloadIcon fontSize="small" />
+                            <DownloadIcon sx={{ fontSize: '16px' }} />
                         </ListItemIcon>
-                        <ListItemText primary="Download" />
+                        <ListItemText
+                            primary="Download"
+                            primaryTypographyProps={{ fontSize: '12px' }}
+                        />
                     </MenuItem>
                 )}
                 <Divider />
                 <MenuItem
                     onClick={() => handleDocumentAction('delete', selectedDocument)}
-                    sx={{ color: 'error.main' }}
+                    disabled={!canDeleteDocument(selectedDocument)}
+                    sx={{
+                        color: 'error.main',
+                        fontSize: '12px',
+                        '&.Mui-disabled': {
+                            opacity: 0.5
+                        }
+                    }}
                 >
                     <ListItemIcon>
-                        <DeleteIcon fontSize="small" color="error" />
+                        <DeleteIcon sx={{ fontSize: '16px' }} color="error" />
                     </ListItemIcon>
-                    <ListItemText primary="Delete" />
+                    <ListItemText
+                        primary={
+                            canDeleteDocument(selectedDocument)
+                                ? "Delete"
+                                : isSystemGenerated(selectedDocument)
+                                    ? "Delete (Admin Only)"
+                                    : "Delete"
+                        }
+                        primaryTypographyProps={{ fontSize: '12px' }}
+                    />
                 </MenuItem>
             </Menu>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteDialogOpen}
+                onClose={() => !deleting && setDeleteDialogOpen(false)}
+                aria-labelledby="delete-dialog-title"
+                aria-describedby="delete-dialog-description"
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle
+                    id="delete-dialog-title"
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        color: '#374151'
+                    }}
+                >
+                    <WarningIcon sx={{ color: '#f59e0b', fontSize: 24 }} />
+                    Confirm Document Deletion
+                </DialogTitle>
+                <DialogContent sx={{ pt: 2 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Typography sx={{ fontSize: '14px', color: '#374151' }}>
+                            Are you sure you want to delete this document? This action cannot be undone.
+                        </Typography>
+
+                        {documentToDelete && (
+                            <Box sx={{
+                                p: 2,
+                                backgroundColor: '#f9fafb',
+                                borderRadius: 1,
+                                border: '1px solid #e5e7eb'
+                            }}>
+                                <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1, color: '#374151' }}>
+                                    Document Details:
+                                </Typography>
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                    <strong>Name:</strong> {documentToDelete.filename || documentToDelete.name || 'Untitled'}
+                                </Typography>
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                    <strong>Type:</strong> {DOCUMENT_TYPES[determineDocumentType(documentToDelete, documentToDelete.originalCategory)]?.label || 'Unknown'}
+                                </Typography>
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                    <strong>Size:</strong> {documentToDelete.fileSize ? `${Math.round(documentToDelete.fileSize / 1024)} KB` : 'Unknown'}
+                                </Typography>
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                    <strong>Source:</strong> {isSystemGenerated(documentToDelete) ? 'System Generated' : 'User Uploaded'}
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {documentToDelete && isSystemGenerated(documentToDelete) && (
+                            <Alert severity="warning" sx={{ fontSize: '12px' }}>
+                                This is a system-generated document. Deleting it may affect shipment tracking and compliance.
+                            </Alert>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 3, gap: 1 }}>
+                    <Button
+                        onClick={() => setDeleteDialogOpen(false)}
+                        disabled={deleting}
+                        variant="outlined"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteDocument}
+                        disabled={deleting}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon sx={{ fontSize: 16 }} />}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {deleting ? 'Deleting...' : 'Delete Document'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Grid>
     );
 };

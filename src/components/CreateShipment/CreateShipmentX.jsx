@@ -1884,7 +1884,7 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
         } catch (error) {
             console.error('🔧 Error loading service levels:', error);
             // Fallback to default 'any' option if loading fails
-            setAvailableServiceLevels([{ code: 'any', label: 'Any' }]);
+            setAvailableServiceLevels([{ code: 'any', label: 'Any', type: 'any', description: 'Default service level' }]);
         } finally {
             setLoadingServiceLevels(false);
         }
@@ -3251,17 +3251,11 @@ const CreateShipmentX = ({ onClose, onReturnToShipments, onViewShipment, draftId
                                             <Grid item xs={12} md={4}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ]}
+                                                    options={availableServiceLevels}
                                                     getOptionLabel={(option) => option.label || option.code}
-                                                    value={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
+                                                    value={availableServiceLevels.find(level => level.code === shipmentInfo.serviceLevel) || availableServiceLevels[0] || null}
                                                     onChange={(event, newValue) => {
-                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
+                                                        setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : (availableServiceLevels[0]?.code || 'any') }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.code === value.code}
                                                     loading={loadingServiceLevels}

@@ -84,6 +84,7 @@ import {
     getShipmentStatusGroup,
     checkDocumentAvailability
 } from './utils/shipmentHelpers';
+import { semanticSearch } from '../../utils/semanticSearch';
 // Dynamic carrier loading - removed hardcoded import
 
 // Import hooks
@@ -116,6 +117,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [carrierData, setCarrierData] = useState({});
     const [companiesData, setCompaniesData] = useState({}); // Enhanced to load multiple companies for admin view
     const [availableCarriers, setAvailableCarriers] = useState([]); // Dynamic carrier options from database
+
+    // NEW: Live search results and autocomplete
+    const [liveResults, setLiveResults] = useState([]);
+    const [showLiveResults, setShowLiveResults] = useState(false);
+    const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+
+    // 🧠 SEMANTIC SEARCH STATE
+    const [semanticSearchResults, setSemanticSearchResults] = useState(null);
+    const [isSemanticMode, setIsSemanticMode] = useState(false);
+    const [searchConfidence, setSearchConfidence] = useState(0);
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -196,7 +207,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     useEffect(() => {
         // Handle deep link parameters from modal navigation
         if (deepLinkParams) {
-            console.log('Applying deep link parameters:', deepLinkParams);
+            console.log('🔗 ShipmentsX: Received deep link parameters:', deepLinkParams);
+            console.log('🔗 ShipmentsX: Current navigation stack length:', navigationStack.length);
+            console.log('🔗 ShipmentsX: hideSearch prop:', hideSearch);
 
             // 🔍 CRITICAL: Force navigation back to table view when searching
             if (deepLinkParams.forceTableView && navigationStack.length > 1) {
@@ -213,25 +226,45 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             // Handle deep link search parameters - use unified search for better results
             const deepLinkSearchTerms = [];
 
-            if (deepLinkParams.customerId) {
-                deepLinkSearchTerms.push(deepLinkParams.customerId);
-            }
-            if (deepLinkParams.shipmentId) {
-                deepLinkSearchTerms.push(deepLinkParams.shipmentId);
-            }
-            if (deepLinkParams.referenceNumber) {
-                deepLinkSearchTerms.push(deepLinkParams.referenceNumber);
-            }
-            if (deepLinkParams.trackingNumber) {
-                deepLinkSearchTerms.push(deepLinkParams.trackingNumber);
-            }
-
-            // If we have search terms, use unified search for better results
-            if (deepLinkSearchTerms.length > 0) {
-                const searchTerm = deepLinkSearchTerms[0]; // Use the first term for unified search
-                console.log('🔗 Deep link search term:', searchTerm);
-                setUnifiedSearch(searchTerm);
+            // PRIORITY: Check if unifiedSearch is directly provided (from GlobalShipmentList)
+            if (deepLinkParams.unifiedSearch) {
+                console.log('🔗 Direct unified search from deep link:', deepLinkParams.unifiedSearch);
+                setUnifiedSearch(deepLinkParams.unifiedSearch);
                 setFiltersOpen(true);
+
+                // CRITICAL FIX: Trigger search after setting unified search
+                setTimeout(() => {
+                    console.log('🔍 Triggering search for deep link unified search:', deepLinkParams.unifiedSearch);
+                    loadShipments();
+                }, 100);
+            } else {
+                // Legacy approach - build from individual fields
+                if (deepLinkParams.customerId) {
+                    deepLinkSearchTerms.push(deepLinkParams.customerId);
+                }
+                if (deepLinkParams.shipmentId) {
+                    deepLinkSearchTerms.push(deepLinkParams.shipmentId);
+                }
+                if (deepLinkParams.referenceNumber) {
+                    deepLinkSearchTerms.push(deepLinkParams.referenceNumber);
+                }
+                if (deepLinkParams.trackingNumber) {
+                    deepLinkSearchTerms.push(deepLinkParams.trackingNumber);
+                }
+
+                // If we have search terms, use unified search for better results
+                if (deepLinkSearchTerms.length > 0) {
+                    const searchTerm = deepLinkSearchTerms[0]; // Use the first term for unified search
+                    console.log('🔗 Deep link search term:', searchTerm);
+                    setUnifiedSearch(searchTerm);
+                    setFiltersOpen(true);
+
+                    // CRITICAL FIX: Trigger search after setting unified search from legacy params
+                    setTimeout(() => {
+                        console.log('🔍 Triggering search for legacy deep link search term:', searchTerm);
+                        loadShipments();
+                    }, 100);
+                }
             }
             if (deepLinkParams.status && deepLinkParams.status !== 'all') {
                 setFilters(prev => ({ ...prev, status: deepLinkParams.status }));
@@ -252,6 +285,50 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             setHasAutoOpenedShipment(false);
         };
     }, [deepLinkParams, navigationStack.length]);
+
+    // 🧠 SEMANTIC SEARCH FUNCTION - AI-Powered Natural Language Understanding
+    const performSemanticSearch = useCallback(async (query, allShipmentsData) => {
+        try {
+            console.log('🧠 Performing semantic search for:', query);
+            setIsSemanticMode(true);
+
+            // Use the semantic search engine
+            const searchResults = await semanticSearch.search(query, allShipmentsData, {
+                userRole,
+                companyId: companyIdForAddress,
+                context: 'shipments'
+            });
+
+            console.log('🎯 Semantic search results:', {
+                intent: searchResults.intent,
+                entities: searchResults.entities,
+                resultCount: searchResults.results.length,
+                confidence: searchResults.metadata.confidence,
+                filters: searchResults.filters
+            });
+
+            // Update search results
+            setSemanticSearchResults(searchResults);
+            setSearchConfidence(searchResults.metadata.confidence);
+
+            // Show confidence indicator to user
+            if (searchResults.metadata.confidence > 0.8) {
+                showSnackbar(`🎯 High confidence search (${Math.round(searchResults.metadata.confidence * 100)}%) - Found ${searchResults.results.length} results`, 'success');
+            } else if (searchResults.metadata.confidence > 0.5) {
+                showSnackbar(`🔍 Moderate confidence search (${Math.round(searchResults.metadata.confidence * 100)}%) - Found ${searchResults.results.length} results`, 'info');
+            } else {
+                showSnackbar(`⚠️ Low confidence search (${Math.round(searchResults.metadata.confidence * 100)}%) - Try being more specific`, 'warning');
+            }
+
+            return searchResults.results;
+
+        } catch (error) {
+            console.error('❌ Semantic search error:', error);
+            setIsSemanticMode(false);
+            showSnackbar('Semantic search failed, falling back to basic search', 'error');
+            return allShipmentsData; // Fallback to showing all data
+        }
+    }, [userRole, companyIdForAddress]);
 
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
@@ -400,15 +477,300 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     }, []);
 
     // ENTERPRISE SEARCH ENGINE - Comprehensive wildcard search (stable function)
+    // Helper function to match status terms
+    const matchesStatus = (shipmentStatus, searchTerm) => {
+        if (!shipmentStatus) return false;
+
+        const status = shipmentStatus.toLowerCase();
+        const term = searchTerm.toLowerCase();
+
+        // Direct status matches
+        if (status.includes(term)) return true;
+
+        // Status aliases from semantic search
+        const statusAliases = {
+            'delivered': ['delivered', 'completed', 'done', 'finished', 'received'],
+            'in_transit': ['in transit', 'intransit', 'on the way', 'en route', 'moving', 'traveling', 'shipping'],
+            'pending': ['pending', 'waiting', 'scheduled', 'booked', 'ready', 'prepared'],
+            'delayed': ['delayed', 'late', 'behind', 'overdue', 'slow'],
+            'cancelled': ['cancelled', 'canceled', 'void', 'voided', 'stopped', 'terminated'],
+            'out_for_delivery': ['out for delivery', 'delivering', 'final mile', 'last leg'],
+            'picked_up': ['picked up', 'collected', 'retrieved', 'gathered']
+        };
+
+        for (const [statusKey, aliases] of Object.entries(statusAliases)) {
+            // Check if shipment status matches this category
+            if (status === statusKey || status.includes(statusKey)) {
+                // Check if search term includes any alias for this status
+                return aliases.some(alias => term.includes(alias));
+            }
+            // Also check reverse - if search term is an alias, match the shipment status
+            if (aliases.some(alias => term.includes(alias))) {
+                return status === statusKey || status.includes(statusKey);
+            }
+        }
+
+        return false;
+    };
+
+    // Helper function to match date queries
+    const matchesDateQuery = (shipment, searchTerm) => {
+        if (!searchTerm.includes('today') && !searchTerm.includes('yesterday') &&
+            !searchTerm.includes('week') && !searchTerm.includes('month')) {
+            return false;
+        }
+
+        const shipmentDate = getShipmentDate(shipment);
+        if (!shipmentDate) return false;
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (searchTerm.includes('today')) {
+            const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+            return shipmentDate >= today && shipmentDate < tomorrow;
+        }
+
+        if (searchTerm.includes('yesterday')) {
+            const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+            return shipmentDate >= yesterday && shipmentDate < today;
+        }
+
+        if (searchTerm.includes('last week') || searchTerm.includes('past week')) {
+            const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return shipmentDate >= weekAgo && shipmentDate <= today;
+        }
+
+        if (searchTerm.includes('last month') || searchTerm.includes('past month')) {
+            const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+            return shipmentDate >= monthAgo && shipmentDate <= today;
+        }
+
+        return false;
+    };
+
+    // Helper function to get shipment date
+    const getShipmentDate = (shipment) => {
+        const dateFields = [
+            shipment.createdAt,
+            shipment.bookedAt,
+            shipment.shipmentDate,
+            shipment.scheduledDate,
+            shipment.shipmentInfo?.deliveredAt,
+            shipment.deliveredAt
+        ];
+
+        for (const field of dateFields) {
+            if (field) {
+                try {
+                    let date;
+                    if (field.toDate) date = field.toDate();
+                    else if (field.seconds) date = new Date(field.seconds * 1000);
+                    else date = new Date(field);
+
+                    if (!isNaN(date.getTime())) return date;
+                } catch (e) {
+                    continue;
+                }
+            }
+        }
+        return null;
+    };
+
     const performUnifiedSearch = useCallback((shipments, searchTerm, customersMap, carrierDataMap) => {
+        console.log('🔍 performUnifiedSearch called with:', {
+            searchTerm,
+            shipmentsCount: shipments.length,
+            customersMapCount: Object.keys(customersMap || {}).length,
+            carrierDataMapCount: Object.keys(carrierDataMap || {}).length
+        });
+
         if (!searchTerm || !searchTerm.trim()) {
+            console.log('🔍 Empty search term, returning all shipments');
             return shipments;
         }
 
         const normalizedSearchTerm = searchTerm.toLowerCase().trim();
         console.log('🔍 Enterprise search for:', normalizedSearchTerm);
 
-        return shipments.filter(shipment => {
+        // NEW: SMART DATE PARSING - Natural language date understanding
+        const parseDateQuery = (term) => {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            // Handle relative dates
+            if (term.includes('today')) {
+                return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) };
+            }
+            if (term.includes('yesterday')) {
+                const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+                return { start: yesterday, end: today };
+            }
+            if (term.includes('last week') || term.includes('past week')) {
+                const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                return { start: weekAgo, end: today };
+            }
+            if (term.includes('last month') || term.includes('past month')) {
+                const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                return { start: monthAgo, end: today };
+            }
+
+            // Handle specific date formats
+            const datePatterns = [
+                /(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/,  // MM/DD/YYYY or MM-DD-YYYY
+                /(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/,  // YYYY/MM/DD or YYYY-MM-DD
+                /(\d{1,2})[-\/](\d{1,2})/,              // MM/DD (current year)
+            ];
+
+            for (const pattern of datePatterns) {
+                const match = term.match(pattern);
+                if (match) {
+                    try {
+                        let date;
+                        if (match[3]) { // Full year provided
+                            date = new Date(match[3], match[1] - 1, match[2]);
+                        } else { // Current year assumed
+                            date = new Date(now.getFullYear(), match[1] - 1, match[2]);
+                        }
+
+                        if (!isNaN(date.getTime())) {
+                            return {
+                                start: date,
+                                end: new Date(date.getTime() + 24 * 60 * 60 * 1000)
+                            };
+                        }
+                    } catch (e) {
+                        // Invalid date, continue searching
+                    }
+                }
+            }
+
+            // Handle month names
+            const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+                'july', 'august', 'september', 'october', 'november', 'december'];
+            const monthAbbrev = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+            for (let i = 0; i < monthNames.length; i++) {
+                if (term.includes(monthNames[i]) || term.includes(monthAbbrev[i])) {
+                    const year = term.match(/\d{4}/) ? parseInt(term.match(/\d{4}/)[0]) : now.getFullYear();
+                    const monthStart = new Date(year, i, 1);
+                    const monthEnd = new Date(year, i + 1, 0, 23, 59, 59);
+                    return { start: monthStart, end: monthEnd };
+                }
+            }
+
+            return null;
+        };
+
+        // NEW: FUZZY MATCHING - Handle typos and variations
+        const fuzzyMatch = (text, searchTerm, threshold = 0.7) => {
+            if (!text || !searchTerm) return false;
+
+            const textLower = text.toLowerCase();
+            const searchLower = searchTerm.toLowerCase();
+
+            // Exact match (highest priority)
+            if (textLower.includes(searchLower)) return true;
+
+            // Levenshtein distance for fuzzy matching
+            const calculateDistance = (a, b) => {
+                const matrix = Array(a.length + 1).fill().map(() => Array(b.length + 1).fill(0));
+
+                for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+                for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+
+                for (let i = 1; i <= a.length; i++) {
+                    for (let j = 1; j <= b.length; j++) {
+                        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j] + 1,      // deletion
+                            matrix[i][j - 1] + 1,      // insertion
+                            matrix[i - 1][j - 1] + cost // substitution
+                        );
+                    }
+                }
+
+                return matrix[a.length][b.length];
+            };
+
+            // Only use fuzzy matching for longer terms to avoid false positives
+            if (searchLower.length >= 4) {
+                const distance = calculateDistance(textLower, searchLower);
+                const similarity = 1 - (distance / Math.max(textLower.length, searchLower.length));
+                return similarity >= threshold;
+            }
+
+            return false;
+        };
+
+        // NEW: ENHANCED STATUS MATCHING
+        const statusMappings = {
+            'pending': ['pending', 'scheduled', 'booked', 'awaiting_shipment', 'ready_to_ship', 'label_created'],
+            'transit': ['in_transit', 'in transit', 'intransit', 'picked_up', 'on_route', 'on_the_way'],
+            'delivered': ['delivered', 'completed', 'signed'],
+            'delayed': ['delayed', 'on_hold', 'exception', 'returned', 'damaged', 'late'],
+            'cancelled': ['cancelled', 'canceled', 'void', 'voided'],
+            'out for delivery': ['out_for_delivery', 'out for delivery', 'delivery'],
+            'ready': ['ready_to_ship', 'ready to ship', 'ready for pickup']
+        };
+
+        const matchesStatus = (shipmentStatus, searchTerm) => {
+            if (!shipmentStatus) return false;
+
+            const status = shipmentStatus.toLowerCase().trim();
+            const search = searchTerm.toLowerCase().trim();
+
+            // Direct match
+            if (status === search || status.includes(search)) return true;
+
+            // Check status mappings
+            for (const [key, variations] of Object.entries(statusMappings)) {
+                if (key.includes(search) || search.includes(key)) {
+                    return variations.includes(status);
+                }
+                if (variations.some(v => v.includes(search) || search.includes(v))) {
+                    return variations.includes(status);
+                }
+            }
+
+            return false;
+        };
+
+        // Check for date query first
+        const dateRange = parseDateQuery(normalizedSearchTerm);
+        if (dateRange) {
+            console.log('📅 Date query detected:', dateRange);
+            return shipments.filter(shipment => {
+                const getShipmentDate = (s) => {
+                    const dateFields = [
+                        s.createdAt, s.bookedAt, s.shipmentDate, s.scheduledDate,
+                        s.shipmentInfo?.shipmentDate, s.updatedAt
+                    ];
+
+                    for (const field of dateFields) {
+                        if (field) {
+                            try {
+                                let date;
+                                if (field.toDate) date = field.toDate();
+                                else if (field.seconds) date = new Date(field.seconds * 1000);
+                                else date = new Date(field);
+
+                                if (!isNaN(date.getTime())) return date;
+                            } catch (e) {
+                                continue;
+                            }
+                        }
+                    }
+                    return null;
+                };
+
+                const shipmentDate = getShipmentDate(shipment);
+                return shipmentDate && shipmentDate >= dateRange.start && shipmentDate < dateRange.end;
+            });
+        }
+
+        const filteredResults = shipments.filter(shipment => {
             // Create searchable content array with all possible fields
             const searchableContent = [];
 
@@ -465,7 +827,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             searchableContent.push(
                 shipment.shipFrom?.company,
                 shipment.shipTo?.company,
-                shipment.companyName
+                shipment.companyName,
+                shipment.shipFrom?.companyName,
+                shipment.shipTo?.companyName
             );
 
             // 7. CUSTOMER NAMES (from customers map)
@@ -505,20 +869,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 shipFromFields.contactName,
                 shipFromFields.contactEmail,
                 shipFromFields.contactPhone,
+                shipFromFields.firstName,
+                shipFromFields.lastName,
                 shipToFields.contactName,
                 shipToFields.contactEmail,
-                shipToFields.contactPhone
+                shipToFields.contactPhone,
+                shipToFields.firstName,
+                shipToFields.lastName
             );
 
-            // 11. STATUS AND TYPE
-            searchableContent.push(
-                shipment.status,
-                shipment.shipmentType,
-                shipment.shipmentInfo?.shipmentType,
-                shipment.shipmentInfo?.serviceType
-            );
-
-            // 12. SPECIAL INSTRUCTIONS AND NOTES
+            // 11. SPECIAL INSTRUCTIONS AND NOTES
             searchableContent.push(
                 shipment.shipmentInfo?.specialInstructions,
                 shipment.notes,
@@ -529,6 +889,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             const cleanedContent = searchableContent
                 .filter(item => item !== null && item !== undefined && item !== '')
                 .map(item => String(item).toLowerCase());
+
+            // NEW: ENHANCED STATUS SEARCH
+            if (matchesStatus(shipment.status, normalizedSearchTerm)) {
+                return true;
+            }
+
+            // NEW: ENHANCED DATE SEARCH
+            if (matchesDateQuery(shipment, normalizedSearchTerm)) {
+                return true;
+            }
 
             // ULTRA-SMART SEARCH LOGIC - Company-focused with strict short term matching
             const searchLength = normalizedSearchTerm.length;
@@ -582,9 +952,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 return false; // No other matches for short terms
             }
 
-            // For medium terms (4-6 chars), expand to include customer IDs and reference numbers
+            // For medium terms (4-6 chars), expand to include customer IDs, reference numbers, and ADDRESS FIELDS
             if (searchLength <= 6) {
-                // Check all high-priority fields
+                // Check all high-priority fields INCLUDING ADDRESSES
                 const priorityFields = [
                     ...companyFields,
                     ...shipmentIdFields,
@@ -594,13 +964,41 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     shipment.referenceNumber,
                     shipment.shipperReferenceNumber,
                     shipment.shipmentInfo?.shipperReferenceNumber,
-                    shipment.trackingNumber
+                    shipment.trackingNumber,
+                    // 📍 CRITICAL FIX: Add address fields for city searches like "Barrie"
+                    shipFromFields.city,
+                    shipFromFields.state,
+                    shipFromFields.province,
+                    shipToFields.city,
+                    shipToFields.state,
+                    shipToFields.province,
+                    // Also include company names from addresses
+                    shipFromFields.company,
+                    shipFromFields.companyName,
+                    shipToFields.company,
+                    shipToFields.companyName
                 ].filter(item => item !== null && item !== undefined && item !== '')
                     .map(item => String(item).toLowerCase());
 
+                // DEBUG: Log address fields for debugging city searches
+                if (normalizedSearchTerm === 'barrie') {
+                    console.log('🔍 BARRIE SEARCH DEBUG - Address fields found:', {
+                        shipFromCity: shipFromFields.city,
+                        shipToCity: shipToFields.city,
+                        shipmentId: shipment.shipmentID || shipment.id,
+                        priorityFieldsCount: priorityFields.length,
+                        allPriorityFields: priorityFields
+                    });
+                }
+
                 // Exact match first
                 const exactMatch = priorityFields.some(field => field === normalizedSearchTerm);
-                if (exactMatch) return true;
+                if (exactMatch) {
+                    if (normalizedSearchTerm === 'barrie') {
+                        console.log('✅ BARRIE EXACT MATCH FOUND in shipment:', shipment.shipmentID || shipment.id);
+                    }
+                    return true;
+                }
 
                 // Prefix match for IDs
                 const prefixMatch = priorityFields.some(field => {
@@ -616,7 +1014,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     field.length >= 6 && field.includes(normalizedSearchTerm)
                 );
 
-                return containsMatch;
+                if (containsMatch) return true;
+
+                // NEW: Fuzzy matching for medium-length terms
+                const fuzzyMatchFound = priorityFields.some(field =>
+                    fuzzyMatch(field, normalizedSearchTerm, 0.8)
+                );
+
+                return fuzzyMatchFound;
             }
 
             // For longer terms (7+ chars), use full search across all fields
@@ -633,9 +1038,276 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (wordBoundaryMatch) return true;
 
             // Contains matching for longer terms
-            return allFields.some(content => content.includes(normalizedSearchTerm));
+            const containsMatch = allFields.some(content => content.includes(normalizedSearchTerm));
+            if (containsMatch) return true;
+
+            // NEW: Fuzzy matching for longer terms (more lenient threshold)
+            return allFields.some(content => fuzzyMatch(content, normalizedSearchTerm, 0.7));
         });
+
+        console.log(`🔍 performUnifiedSearch returning ${filteredResults.length} results out of ${shipments.length} input shipments`);
+
+        // DEBUG: Special logging for Barrie search
+        if (normalizedSearchTerm === 'barrie') {
+            console.log('🔍 BARRIE SEARCH RESULTS:', {
+                totalInput: shipments.length,
+                totalResults: filteredResults.length,
+                resultIds: filteredResults.map(s => s.shipmentID || s.id).slice(0, 10), // First 10 results
+                sampleShipmentAddresses: shipments.slice(0, 5).map(s => ({
+                    id: s.shipmentID || s.id,
+                    fromCity: s.shipFrom?.city,
+                    toCity: s.shipTo?.city
+                }))
+            });
+        }
+
+        return filteredResults;
     }, []); // No dependencies to prevent recreation
+
+    // NEW: GENERATE LIVE SHIPMENT RESULTS for autocomplete
+    const generateLiveShipmentResults = useCallback((searchTerm, shipments, customersMap) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            return [];
+        }
+
+        const normalizedTerm = searchTerm.toLowerCase();
+        const results = [];
+
+        // Helper function to check if shipment matches search
+        const shipmentMatches = (shipment) => {
+            const searchableFields = [
+                // 🆔 Core Identifiers
+                shipment.shipmentID,
+                shipment.id,
+                shipment.referenceNumber,
+                shipment.shipperReferenceNumber,
+                shipment.shipmentInfo?.shipperReferenceNumber,
+                shipment.shipmentInfo?.referenceNumber,
+                shipment.trackingNumber,
+                shipment.carrierTrackingNumber,
+                shipment.shipmentInfo?.carrierTrackingNumber,
+                shipment.carrierBookingConfirmation?.proNumber,
+                shipment.proNumber,
+                shipment.bolNumber,
+                shipment.shipmentInfo?.bolNumber,
+                shipment.companyID,
+                shipment.shipTo?.customerID,
+
+                // 🏢 Company & Customer Information
+                shipment.companyName,
+                shipment.customerName,
+                shipment.shipFrom?.companyName,
+                shipment.shipFrom?.company,
+                shipment.shipTo?.companyName,
+                shipment.shipTo?.company,
+                shipment.shipTo?.firstName,
+                shipment.shipTo?.lastName,
+                shipment.shipFrom?.firstName,
+                shipment.shipFrom?.lastName,
+                shipment.shipTo?.contactPerson,
+                shipment.shipFrom?.contactPerson,
+
+                // 📍 COMPREHENSIVE ADDRESS SEARCH
+                // Ship From Address
+                shipment.shipFrom?.street,
+                shipment.shipFrom?.addressLine1,
+                shipment.shipFrom?.addressLine2,
+                shipment.shipFrom?.city,
+                shipment.shipFrom?.state,
+                shipment.shipFrom?.province,
+                shipment.shipFrom?.postalCode,
+                shipment.shipFrom?.zipCode,
+                shipment.shipFrom?.country,
+                shipment.shipFrom?.phone,
+                shipment.shipFrom?.email,
+
+                // Ship To Address
+                shipment.shipTo?.street,
+                shipment.shipTo?.addressLine1,
+                shipment.shipTo?.addressLine2,
+                shipment.shipTo?.city,
+                shipment.shipTo?.state,
+                shipment.shipTo?.province,
+                shipment.shipTo?.postalCode,
+                shipment.shipTo?.zipCode,
+                shipment.shipTo?.country,
+                shipment.shipTo?.phone,
+                shipment.shipTo?.email,
+
+                // 📅 ETA & DELIVERY DATES
+                shipment.eta1,
+                shipment.eta2,
+                shipment.estimatedDelivery,
+                shipment.scheduledDelivery,
+                shipment.deliveryDate,
+                shipment.carrierBookingConfirmation?.estimatedDeliveryDate,
+                shipment.selectedRate?.transit?.estimatedDelivery,
+                shipment.selectedRate?.estimatedDeliveryDate,
+                shipment.pickupDate,
+                shipment.scheduledPickup,
+
+                // 🚛 COMPREHENSIVE CARRIER INFO
+                shipment.carrier,
+                shipment.selectedCarrier,
+                shipment.carrierName,
+                shipment.selectedRate?.carrier,
+                shipment.selectedRate?.carrierName,
+                shipment.selectedRate?.service?.name,
+                shipment.selectedRate?.serviceName,
+                shipment.selectedRate?.serviceType,
+                shipment.carrierService,
+                shipment.serviceLevel,
+
+                // 📦 Package & Commodity Details
+                shipment.packages?.map(pkg => pkg.description).join(' '),
+                shipment.packages?.map(pkg => pkg.commodity).join(' '),
+                shipment.commodityDescription,
+                shipment.goodsDescription,
+                shipment.packages?.map(pkg => `${pkg.weight} ${pkg.weightUnit || 'lbs'}`).join(' '),
+
+                // 📝 Notes & Special Instructions
+                shipment.specialInstructions,
+                shipment.deliveryInstructions,
+                shipment.notes,
+                shipment.customerNotes,
+                shipment.internalNotes,
+                shipment.pickupInstructions,
+
+                // 💰 Billing Information
+                shipment.billTo?.companyName,
+                shipment.billTo?.company,
+                shipment.paymentTerms,
+                shipment.billType,
+                shipment.billTo?.contactPerson,
+
+                // 🔢 Additional Reference Numbers
+                shipment.customerReferenceNumber,
+                shipment.purchaseOrderNumber,
+                shipment.invoiceNumber,
+                shipment.jobNumber,
+                shipment.projectNumber,
+
+                // 📊 Weight & Dimensions
+                shipment.totalWeight,
+                shipment.totalPieces,
+
+                // 📞 Contact Information
+                shipment.billTo?.phone,
+                shipment.billTo?.email,
+
+                // 📈 Status Information
+                shipment.status,
+                shipment.shipmentStatus,
+                shipment.currentStatus
+            ];
+
+            return searchableFields.some(field =>
+                field && String(field).toLowerCase().includes(normalizedTerm)
+            );
+        };
+
+        // Extract live shipment results (limit to first 200 for performance)
+        shipments.slice(0, 200).forEach(shipment => {
+            if (shipmentMatches(shipment)) {
+                // Get shipment date
+                const getShipmentDate = (s) => {
+                    const dateFields = [s.createdAt, s.bookedAt, s.shipmentDate, s.scheduledDate];
+                    for (const field of dateFields) {
+                        if (field) {
+                            try {
+                                let date;
+                                if (field.toDate) date = field.toDate();
+                                else if (field.seconds) date = new Date(field.seconds * 1000);
+                                else date = new Date(field);
+                                if (!isNaN(date.getTime())) return date.toLocaleDateString();
+                            } catch (e) { continue; }
+                        }
+                    }
+                    return 'N/A';
+                };
+
+                // Build route info
+                const routeInfo = `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`;
+
+                // Get status with proper formatting
+                const getStatusDisplay = (status) => {
+                    if (!status) return 'Unknown';
+                    return status.replace('_', ' ').split(' ').map(word =>
+                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                    ).join(' ');
+                };
+
+                const result = {
+                    type: 'live_shipment',
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    documentId: shipment.id, // For navigation
+                    shipment: shipment, // Full shipment data
+                    route: routeInfo,
+                    status: getStatusDisplay(shipment.status),
+                    date: (() => {
+                        const date = getShipmentDate(shipment);
+                        if (date && typeof date.toLocaleDateString === 'function') {
+                            return date.toLocaleDateString();
+                        }
+                        return 'N/A';
+                    })(),
+                    referenceNumber: shipment.referenceNumber || shipment.shipperReferenceNumber || 'N/A',
+                    trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber || 'N/A',
+                    carrier: shipment.carrier || 'N/A',
+                    companyName: shipment.shipFrom?.companyName || shipment.shipTo?.companyName || 'N/A',
+                    score: String(shipment.shipmentID || shipment.id).toLowerCase().startsWith(normalizedTerm) ? 10 : 5
+                };
+                results.push(result);
+            }
+        });
+
+        // Add quick action suggestions if no live results
+        if (results.length === 0) {
+            const quickSuggestions = [];
+
+            // Status suggestions
+            const statusSuggestions = [
+                'pending', 'in_transit', 'delivered', 'delayed', 'cancelled', 'out_for_delivery'
+            ];
+
+            statusSuggestions.forEach(status => {
+                if (status.includes(normalizedTerm)) {
+                    quickSuggestions.push({
+                        type: 'status_filter',
+                        value: status,
+                        label: `Show all ${status.replace('_', ' ')} shipments`,
+                        score: 5
+                    });
+                }
+            });
+
+            // Date suggestions
+            const dateSuggestions = [
+                { key: 'today', label: 'Show today\'s shipments' },
+                { key: 'yesterday', label: 'Show yesterday\'s shipments' },
+                { key: 'last week', label: 'Show last week\'s shipments' },
+                { key: 'this month', label: 'Show this month\'s shipments' }
+            ];
+
+            dateSuggestions.forEach(({ key, label }) => {
+                if (key.includes(normalizedTerm)) {
+                    quickSuggestions.push({
+                        type: 'date_filter',
+                        value: key,
+                        label: label,
+                        score: 3
+                    });
+                }
+            });
+
+            return quickSuggestions.slice(0, 5);
+        }
+
+        // Sort results by relevance and limit to 6 live shipments
+        return results
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 6);
+    }, []);
 
     // ENHANCED CARRIER FILTER FUNCTION (stable)
     const applyCarrierFilter = useCallback((shipments, carrierFilter, carrierDataMap) => {
@@ -911,12 +1583,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return;
         }
 
-        // SHIPMENTS DATA CHECK: Only proceed if shipments are loaded
-        if (!shipments || shipments.length === 0) {
-            console.log('🚫 No shipments loaded yet - deferring auto-navigation');
-            return;
-        }
-
         // RATE LIMITING: Prevent rapid successive auto-navigation attempts
         const now = Date.now();
         const lastAutoNav = window.lastAutoNavigation || 0;
@@ -925,61 +1591,99 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return;
         }
 
-        // Handle direct-to-detail navigation from QuickShip "View Shipment"
+        // Handle BYPASS TABLE navigation - go directly to detail without waiting for table data
+        if (deepLinkParams.bypassTable && deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId) {
+            console.log('🚀 BYPASS TABLE: Direct navigation to shipment detail:', deepLinkParams.selectedShipmentId);
+
+            // KILL THE DEEP LINK IMMEDIATELY since we're bypassing the table
+            if (onClearDeepLinkParams) {
+                onClearDeepLinkParams();
+                console.log('💀 KILLED deep link params for bypass navigation');
+            }
+
+            // Set rate limiting
+            window.lastAutoNavigation = now;
+
+            // Navigate directly to detail using the document ID
+            handleViewShipmentDetail(deepLinkParams.selectedShipmentId);
+            setHasAutoOpenedShipment(true); // Prevent running again
+            console.log('✅ Bypass table navigation completed');
+            return;
+        }
+
+        // SHIPMENTS DATA CHECK: Only proceed if shipments are loaded (for non-bypass navigation)
+        if (!shipments || shipments.length === 0) {
+            console.log('🚫 No shipments loaded yet - deferring auto-navigation');
+            return;
+        }
+
+        // Handle regular direct-to-detail navigation (legacy)
         if (deepLinkParams.directToDetail && deepLinkParams.selectedShipmentId) {
             console.log('🎯 Direct-to-detail navigation triggered for shipment:', deepLinkParams.selectedShipmentId);
 
-            // KILL THE DEEP LINK IMMEDIATELY - THE SECOND IT'S USED!
-            if (onClearDeepLinkParams) {
-                onClearDeepLinkParams();
-                console.log('💀 KILLED deep link params IMMEDIATELY upon use');
-            }
-
-            const shipment = shipments.find(s =>
+            // Search in ALL shipments, not just filtered ones, to avoid tab/filter issues
+            const shipment = allShipments.find(s =>
                 s.shipmentID === deepLinkParams.selectedShipmentId ||
                 s.id === deepLinkParams.selectedShipmentId
             );
 
+            // DEBUG: Log shipment search details
+            console.log('🔍 Searching for shipment in allShipments:', {
+                targetId: deepLinkParams.selectedShipmentId,
+                totalShipments: allShipments.length,
+                shipmentIds: allShipments.map(s => ({ id: s.id, shipmentID: s.shipmentID })).slice(0, 10),
+                found: !!shipment
+            });
+
             if (shipment) {
+                // KILL THE DEEP LINK ONLY AFTER FINDING THE SHIPMENT!
+                if (onClearDeepLinkParams) {
+                    onClearDeepLinkParams();
+                    console.log('💀 KILLED deep link params AFTER finding shipment');
+                }
+
                 // Set rate limiting
                 window.lastAutoNavigation = now;
 
                 // Use the document ID to open the detail view directly
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
-                console.log('✅ Auto-opened shipment detail after killing deep link');
+                console.log('✅ Auto-opened shipment detail successfully');
             } else {
-                console.warn('Shipment not found for direct-to-detail navigation:', deepLinkParams.selectedShipmentId);
+                console.log('⏳ Shipment not found yet, keeping deep link params for retry:', deepLinkParams.selectedShipmentId);
+                // Don't kill the deep link params - let it retry when shipments load
             }
         }
         // Handle legacy auto-open shipment detail if specified in deep link params (for backwards compatibility)
         else if (deepLinkParams.shipmentId) {
             console.log('🎯 Legacy auto-navigation triggered for shipment:', deepLinkParams.shipmentId);
 
-            // KILL THE DEEP LINK IMMEDIATELY - THE SECOND IT'S USED!
-            if (onClearDeepLinkParams) {
-                onClearDeepLinkParams();
-                console.log('💀 KILLED legacy deep link params IMMEDIATELY upon use');
-            }
-
-            const shipment = shipments.find(s =>
+            // Search in ALL shipments, not just filtered ones, to avoid tab/filter issues
+            const shipment = allShipments.find(s =>
                 s.shipmentID === deepLinkParams.shipmentId ||
                 s.id === deepLinkParams.shipmentId
             );
 
             if (shipment) {
+                // KILL THE DEEP LINK ONLY AFTER FINDING THE SHIPMENT!
+                if (onClearDeepLinkParams) {
+                    onClearDeepLinkParams();
+                    console.log('💀 KILLED legacy deep link params AFTER finding shipment');
+                }
+
                 // Set rate limiting
                 window.lastAutoNavigation = now;
 
                 // Use the document ID to open the detail view
                 handleViewShipmentDetail(shipment.id);
                 setHasAutoOpenedShipment(true); // Prevent running again
-                console.log('✅ Auto-opened shipment detail (legacy) after killing deep link');
+                console.log('✅ Auto-opened shipment detail (legacy) successfully');
             } else {
-                console.warn('Shipment not found for auto-detail open:', deepLinkParams.shipmentId);
+                console.log('⏳ Legacy shipment not found yet, keeping deep link params for retry:', deepLinkParams.shipmentId);
+                // Don't kill the deep link params - let it retry when shipments load
             }
         }
-    }, [deepLinkParams, shipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack, isReturningFromDetail, onClearDeepLinkParams]); // Include all dependencies for proper effect management
+    }, [deepLinkParams, allShipments, handleViewShipmentDetail, hasAutoOpenedShipment, navigationStack, isReturningFromDetail, onClearDeepLinkParams]); // Include all dependencies for proper effect management
 
     // Resolve customer name from customer ID after customers are loaded
     useEffect(() => {
@@ -1289,10 +1993,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     return;
                 }
             } else {
-                // Single company admin view - load just that company
-                const targetCompanyId = typeof adminViewMode === 'string' ? adminViewMode : companyIdForAddress;
-                if (targetCompanyId) {
+                // Single company admin view - use companyIdForAddress which is set by the company context
+                const targetCompanyId = companyIdForAddress;
+                if (targetCompanyId && targetCompanyId !== 'all') {
+                    console.log('📊 Loading single company data for:', targetCompanyId);
                     q = query(companiesRef, where('companyID', '==', targetCompanyId));
+                } else {
+                    console.warn('No valid company ID available for single company admin view');
+                    return;
                 }
             }
 
@@ -1311,6 +2019,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 });
                 setCompaniesData(companiesMap);
                 console.log(`📊 Loaded ${Object.keys(companiesMap).length} companies data for admin display`);
+                console.log('📊 Company data loaded:', companiesMap);
             }
         } catch (error) {
             console.error('Error fetching companies data:', error);
@@ -1509,8 +2218,25 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             // 1. APPLY UNIFIED SEARCH (Primary search - wildcard across all fields)
             if (unifiedSearch && unifiedSearch.trim()) {
                 console.log('🚀 ENTERPRISE UNIFIED SEARCH:', unifiedSearch);
-                filteredData = performUnifiedSearch(filteredData, unifiedSearch, customers, carrierData);
-                console.log(`🔍 After unified search: ${filteredData.length} shipments remaining`);
+                console.log('🔍 Input data before search:', filteredData.length, 'shipments');
+
+                // 🧠 USE SEMANTIC SEARCH RESULTS IF AVAILABLE
+                if (isSemanticMode && semanticSearchResults && semanticSearchResults.results) {
+                    console.log('🧠 Using semantic search results for filtering', semanticSearchResults.results.length, 'results');
+                    // The semantic search results ARE the filtered shipments, not just IDs
+                    filteredData = semanticSearchResults.results;
+                    console.log(`🧠 After semantic search: ${filteredData.length} shipments remaining`);
+                } else {
+                    // Fallback to regular unified search
+                    console.log('🔍 Calling performUnifiedSearch with:', {
+                        shipmentsCount: filteredData.length,
+                        searchTerm: unifiedSearch,
+                        customersCount: Object.keys(customers).length,
+                        carrierDataCount: Object.keys(carrierData).length
+                    });
+                    filteredData = performUnifiedSearch(filteredData, unifiedSearch, customers, carrierData);
+                    console.log(`🔍 After unified search: ${filteredData.length} shipments remaining`);
+                }
             }
 
             // 2. APPLY LEGACY SEARCH FIELDS (for backward compatibility and specific filters)
@@ -2106,109 +2832,642 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         borderBottom: '1px solid #e2e8f0',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: 2
+                                        gap: 2,
+                                        position: 'relative' // NEW: Enable absolute positioning for suggestions
                                     }}>
-                                        <TextField
-                                            fullWidth
-                                            placeholder="Search Shipments"
-                                            value={unifiedSearch}
-                                            onChange={(e) => {
-                                                setUnifiedSearch(e.target.value);
-                                                // Clear legacy search fields when using unified search
-                                                if (e.target.value) {
-                                                    setSearchFields({
-                                                        shipmentId: '',
-                                                        referenceNumber: '',
-                                                        trackingNumber: '',
-                                                        customerName: '',
-                                                        origin: '',
-                                                        destination: ''
-                                                    });
-                                                    setSelectedCustomer('');
-                                                }
-                                                debouncedReload();
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    console.log('🔍 ENTER pressed - triggering search');
-                                                    reloadShipments();
-                                                }
-                                            }}
-                                            size="small"
-                                            variant="outlined"
-                                            sx={{
-                                                '& .MuiInputBase-root': {
-                                                    fontSize: '14px',
-                                                    borderRadius: '8px',
-                                                    backgroundColor: '#f8fafc',
-                                                    '&:hover': {
-                                                        backgroundColor: '#f1f5f9'
-                                                    },
-                                                    '&.Mui-focused': {
-                                                        backgroundColor: '#ffffff',
-                                                        '& .MuiOutlinedInput-notchedOutline': {
-                                                            borderColor: '#3b82f6',
-                                                            borderWidth: '2px'
-                                                        }
-                                                    }
-                                                },
-                                                '& .MuiInputBase-input': {
-                                                    fontSize: '14px',
-                                                    py: '10px'
-                                                },
-                                                '& .MuiOutlinedInput-notchedOutline': {
-                                                    borderColor: '#d1d5db'
-                                                }
-                                            }}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: unifiedSearch && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => {
-                                                                setUnifiedSearch('');
-                                                                reloadShipments();
-                                                            }}
-                                                            sx={{
-                                                                color: '#6b7280',
-                                                                '&:hover': {
-                                                                    color: '#374151',
-                                                                    backgroundColor: '#f3f4f6'
+                                        <Box sx={{ position: 'relative', flex: 1 }}>
+                                            <TextField
+                                                fullWidth
+                                                placeholder="Search"
+                                                value={unifiedSearch}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setUnifiedSearch(value);
+
+                                                    // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
+                                                    const isNaturalLanguage = (query) => {
+                                                        const naturalPatterns = [
+                                                            /show me.*shipment/i,
+                                                            /find.*from/i,
+                                                            /all.*delivered/i,
+                                                            /delayed.*shipment/i,
+                                                            /shipment.*to/i,
+                                                            /tracking.*number/i,
+                                                            /(today|yesterday|last week|this month)/i,
+                                                            /carrier.*fedex|ups|dhl|canpar/i,
+                                                            /(heavy|large|small).*package/i,
+                                                            /status.*(pending|delivered|delayed)/i,
+                                                            /reference.*number/i,
+                                                            /(ontario|quebec|california|texas)/i,
+                                                            /(toronto|montreal|vancouver|new york)/i,
+                                                            /\b(lbs|kg|pounds|kilograms)\b/i,
+                                                            /\b(urgent|priority|express|ground)\b/i
+                                                        ];
+                                                        return naturalPatterns.some(pattern => pattern.test(query));
+                                                    };
+
+                                                    // ALWAYS generate live shipment results (existing powerful search)
+                                                    if (value.length >= 2) {
+                                                        const results = generateLiveShipmentResults(value, shipments, customers);
+                                                        setLiveResults(results);
+                                                        setShowLiveResults(results.length > 0);
+
+                                                        // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language
+                                                        if (value.length >= 5 && isNaturalLanguage(value)) {
+                                                            console.log('🧠 Natural language detected, triggering semantic search');
+                                                            // Trigger semantic search which will be used in the main filtering
+                                                            performSemanticSearch(value, allShipments).then(semanticResults => {
+                                                                if (semanticResults && semanticResults.results && semanticResults.results.length > 0) {
+                                                                    // Create live results from semantic search results
+                                                                    const semanticLiveResults = semanticResults.results.slice(0, 6).map(shipment => ({
+                                                                        type: 'live_shipment',
+                                                                        shipmentId: shipment.shipmentID || shipment.id,
+                                                                        documentId: shipment.id,
+                                                                        shipment: shipment,
+                                                                        route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                                                                        status: shipment.status ? shipment.status.replace('_', ' ').split(' ').map(word =>
+                                                                            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                                                                        ).join(' ') : 'Unknown',
+                                                                        date: (() => {
+                                                                            const dateFields = [
+                                                                                shipment.createdAt,
+                                                                                shipment.bookedAt,
+                                                                                shipment.shipmentDate,
+                                                                                shipment.scheduledDate,
+                                                                                shipment.shipmentInfo?.deliveredAt,
+                                                                                shipment.deliveredAt
+                                                                            ];
+                                                                            for (const field of dateFields) {
+                                                                                if (field) {
+                                                                                    try {
+                                                                                        let date;
+                                                                                        if (field.toDate) date = field.toDate();
+                                                                                        else if (field.seconds) date = new Date(field.seconds * 1000);
+                                                                                        else date = new Date(field);
+                                                                                        if (!isNaN(date.getTime()) && typeof date.toLocaleDateString === 'function') {
+                                                                                            return date.toLocaleDateString();
+                                                                                        }
+                                                                                    } catch (e) {
+                                                                                        continue;
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            return 'N/A';
+                                                                        })(),
+                                                                        referenceNumber: shipment.referenceNumber || shipment.shipperReferenceNumber || 'N/A',
+                                                                        trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber || 'N/A',
+                                                                        carrier: shipment.carrier || 'N/A',
+                                                                        companyName: shipment.shipFrom?.companyName || shipment.shipTo?.companyName || 'N/A',
+                                                                        score: 10 // High priority for semantic results
+                                                                    }));
+
+                                                                    // Use semantic results directly
+                                                                    setLiveResults(semanticLiveResults);
+                                                                    setShowLiveResults(semanticLiveResults.length > 0);
+                                                                    console.log('✨ Enhanced live results with semantic shipments:', semanticLiveResults.length);
+
+                                                                    // CRITICAL: Trigger main table reload to apply semantic filtering
+                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                } else {
+                                                                    // No semantic results, show basic results
+                                                                    setLiveResults(results);
+                                                                    setShowLiveResults(results.length > 0);
                                                                 }
-                                                            }}
-                                                        >
-                                                            <ClearIcon sx={{ fontSize: '18px' }} />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                        />
-                                        {unifiedSearch && (
-                                            <Chip
-                                                label={`Searching: ${unifiedSearch}`}
-                                                onDelete={() => {
-                                                    setUnifiedSearch('');
-                                                    reloadShipments();
+                                                            });
+                                                        } else {
+                                                            // Reset semantic mode for non-natural queries
+                                                            setIsSemanticMode(false);
+                                                            setSemanticSearchResults(null);
+                                                        }
+                                                    } else {
+                                                        // Clear all search results
+                                                        setLiveResults([]);
+                                                        setShowLiveResults(false);
+                                                        setIsSemanticMode(false);
+                                                        setSemanticSearchResults(null);
+                                                    }
+                                                    setSelectedResultIndex(-1);
+
+                                                    // Clear legacy search fields when using unified search
+                                                    if (value) {
+                                                        setSearchFields({
+                                                            shipmentId: '',
+                                                            referenceNumber: '',
+                                                            trackingNumber: '',
+                                                            customerName: '',
+                                                            origin: '',
+                                                            destination: ''
+                                                        });
+                                                        setSelectedCustomer('');
+                                                    }
+
+                                                    // AUTO-SEARCH: Trigger search automatically for live results
+                                                    if (value.length >= 2) {
+                                                        debouncedReload();
+                                                    }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'ArrowDown') {
+                                                        e.preventDefault();
+                                                        setSelectedResultIndex(prev =>
+                                                            prev < liveResults.length - 1 ? prev + 1 : prev
+                                                        );
+                                                    } else if (e.key === 'ArrowUp') {
+                                                        e.preventDefault();
+                                                        setSelectedResultIndex(prev => prev > 0 ? prev - 1 : -1);
+                                                    } else if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        if (selectedResultIndex >= 0 && liveResults[selectedResultIndex]) {
+                                                            const selectedResult = liveResults[selectedResultIndex];
+
+                                                            if (selectedResult.type === 'live_shipment') {
+                                                                // Navigate directly to shipment detail
+                                                                console.log('🎯 Navigating to shipment:', selectedResult.shipmentId);
+                                                                handleViewShipmentDetail(selectedResult.documentId);
+                                                            } else if (selectedResult.type === 'status_filter') {
+                                                                // Apply status filter
+                                                                setUnifiedSearch(selectedResult.value);
+                                                            } else if (selectedResult.type === 'date_filter') {
+                                                                // Apply date filter
+                                                                setUnifiedSearch(selectedResult.value);
+                                                            }
+
+                                                            setShowLiveResults(false);
+                                                            setSelectedResultIndex(-1);
+                                                        } else {
+                                                            console.log('🔍 ENTER pressed - triggering search');
+                                                            reloadShipments();
+                                                        }
+
+                                                        // Always hide all dropdowns when Enter is pressed
+                                                        setShowLiveResults(false);
+                                                        setSelectedResultIndex(-1);
+                                                    } else if (e.key === 'Escape') {
+                                                        setShowLiveResults(false);
+                                                        setSelectedResultIndex(-1);
+                                                        console.log('👍 Escape pressed - clearing all dropdowns');
+                                                    }
+                                                }}
+                                                onBlur={() => {
+                                                    // Hide results after a delay to allow clicking on them
+                                                    setTimeout(() => setShowLiveResults(false), 200);
+                                                }}
+                                                onFocus={() => {
+                                                    if (unifiedSearch.length >= 2 && liveResults.length > 0) {
+                                                        setShowLiveResults(true);
+                                                    }
                                                 }}
                                                 size="small"
+                                                variant="outlined"
                                                 sx={{
-                                                    bgcolor: '#eff6ff',
-                                                    color: '#1d4ed8',
-                                                    fontWeight: 500,
-                                                    '& .MuiChip-deleteIcon': {
-                                                        color: '#1d4ed8'
+                                                    '& .MuiInputBase-root': {
+                                                        fontSize: '14px',
+                                                        borderRadius: '8px',
+                                                        backgroundColor: '#f8fafc',
+                                                        '&:hover': {
+                                                            backgroundColor: '#f1f5f9'
+                                                        },
+                                                        '&.Mui-focused': {
+                                                            backgroundColor: '#ffffff',
+                                                            '& .MuiOutlinedInput-notchedOutline': {
+                                                                borderColor: '#3b82f6',
+                                                                borderWidth: '2px'
+                                                            }
+                                                        }
+                                                    },
+                                                    '& .MuiInputBase-input': {
+                                                        fontSize: '14px',
+                                                        py: '10px'
+                                                    },
+                                                    '& .MuiOutlinedInput-notchedOutline': {
+                                                        borderColor: '#d1d5db'
                                                     }
+                                                }}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                                        </InputAdornment>
+                                                    ),
+                                                    endAdornment: unifiedSearch && (
+                                                        <InputAdornment position="end">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => {
+                                                                    setUnifiedSearch('');
+                                                                    reloadShipments();
+                                                                }}
+                                                                sx={{
+                                                                    color: '#6b7280',
+                                                                    '&:hover': {
+                                                                        color: '#374151',
+                                                                        backgroundColor: '#f3f4f6'
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <ClearIcon sx={{ fontSize: '18px' }} />
+                                                            </IconButton>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
+                                            />
+                                        </Box>
+
+
+
+                                        {/* NEW: Shipment Table Overlay */}
+                                        {showLiveResults && liveResults.length > 0 && (
+                                            <Box
+                                                sx={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: '-24px', // Extend beyond search area to cover full table
+                                                    right: '-24px',
+                                                    bottom: '-100vh', // Extend down to cover table
+                                                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                                                    zIndex: 1299,
+                                                    backdropFilter: 'blur(2px)'
+                                                }}
+                                                onClick={() => {
+                                                    setShowLiveResults(false);
+                                                    setSelectedResultIndex(-1);
                                                 }}
                                             />
                                         )}
+
+                                        {/* NEW: Compact Grid Layout Live Results Dropdown */}
+                                        {showLiveResults && liveResults.length > 0 && (
+                                            <Box sx={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: 0,
+                                                right: 0,
+                                                zIndex: 1300,
+                                                bgcolor: 'white',
+                                                border: '1px solid #e0e0e0',
+                                                borderTop: 'none',
+                                                borderRadius: '0 0 8px 8px',
+                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+                                                maxHeight: '280px',
+                                                overflow: 'auto'
+                                            }}>
+                                                {/* Compact Header */}
+                                                <Box sx={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    px: 2,
+                                                    py: 1,
+                                                    borderBottom: '1px solid #f0f0f0',
+                                                    bgcolor: '#fafafa'
+                                                }}>
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        color: '#6b7280'
+                                                    }}>
+                                                        {liveResults.length} result{liveResults.length !== 1 ? 's' : ''}
+                                                    </Typography>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                            setShowLiveResults(false);
+                                                            setSelectedResultIndex(-1);
+                                                        }}
+                                                        sx={{
+                                                            p: 0.25,
+                                                            color: '#9ca3af',
+                                                            '&:hover': {
+                                                                color: '#374151',
+                                                                bgcolor: '#f3f4f6'
+                                                            }
+                                                        }}
+                                                    >
+                                                        <CloseIcon sx={{ fontSize: '14px' }} />
+                                                    </IconButton>
+                                                </Box>
+
+                                                {/* Compact Results Grid */}
+                                                <Box sx={{ p: 1 }}>
+                                                    {liveResults.map((result, index) => (
+                                                        <Box
+                                                            key={result.type === 'live_shipment' ? result.documentId : `${result.type}-${result.value}`}
+                                                            sx={{
+                                                                display: 'grid',
+                                                                gridTemplateColumns: '1fr',
+                                                                gap: '8px',
+                                                                alignItems: 'flex-start',
+                                                                padding: '6px 8px',
+                                                                marginBottom: index < liveResults.length - 1 ? '2px' : '0',
+                                                                borderRadius: '4px',
+                                                                cursor: 'pointer',
+                                                                backgroundColor: index === selectedResultIndex ? '#f0f4ff' : 'transparent',
+                                                                border: index === selectedResultIndex ? '1px solid #d1d5db' : '1px solid transparent',
+                                                                '&:hover': {
+                                                                    backgroundColor: '#f8faff',
+                                                                    border: '1px solid #e5e7eb'
+                                                                },
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                            onClick={() => {
+                                                                if (result.type === 'live_shipment') {
+                                                                    console.log('🎯 Navigating to shipment:', result.shipmentId);
+                                                                    handleViewShipmentDetail(result.documentId);
+                                                                } else if (result.type === 'status_filter' || result.type === 'date_filter') {
+                                                                    setUnifiedSearch(result.value);
+                                                                    reloadShipments();
+                                                                }
+                                                                setShowLiveResults(false);
+                                                                setSelectedResultIndex(-1);
+                                                            }}
+                                                        >
+                                                            {result.type === 'live_shipment' ? (
+                                                                <>
+                                                                    {/* Enhanced shipment info with FROM/TO addresses */}
+                                                                    <Box sx={{
+                                                                        gridColumn: 'span 4',
+                                                                        display: 'flex',
+                                                                        flexDirection: 'column',
+                                                                        gap: '0px',
+                                                                        minWidth: 0
+                                                                    }}>
+                                                                        {/* Header Row: Icon, Shipment ID, Status, Date */}
+                                                                        <Box sx={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '8px',
+                                                                            justifyContent: 'space-between'
+                                                                        }}>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                                                                {/* Icon */}
+                                                                                <Box sx={{
+                                                                                    width: '20px',
+                                                                                    height: '20px',
+                                                                                    backgroundColor: '#f3f4f6',
+                                                                                    borderRadius: '3px',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    fontSize: '10px',
+                                                                                    flexShrink: 0
+                                                                                }}>
+                                                                                    📦
+                                                                                </Box>
+
+                                                                                {/* Shipment ID */}
+                                                                                <Typography variant="body2" sx={{
+                                                                                    fontWeight: 600,
+                                                                                    fontSize: '12px',
+                                                                                    lineHeight: 1.2,
+                                                                                    whiteSpace: 'nowrap',
+                                                                                    overflow: 'hidden',
+                                                                                    textOverflow: 'ellipsis',
+                                                                                    flex: 1,
+                                                                                    minWidth: 0
+                                                                                }}>
+                                                                                    {result.shipmentId}
+                                                                                </Typography>
+                                                                            </Box>
+
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                {/* Date - only show if not N/A */}
+                                                                                {result.date && result.date !== 'N/A' && (
+                                                                                    <Typography variant="body2" sx={{
+                                                                                        fontSize: '10px',
+                                                                                        color: '#9ca3af',
+                                                                                        fontWeight: 500,
+                                                                                        whiteSpace: 'nowrap'
+                                                                                    }}>
+                                                                                        {result.date}
+                                                                                    </Typography>
+                                                                                )}
+
+                                                                                {/* Carrier Name */}
+                                                                                {result.shipment?.carrier && result.shipment.carrier !== 'N/A' && (
+                                                                                    <Typography variant="body2" sx={{
+                                                                                        fontSize: '9px',
+                                                                                        fontWeight: 600,
+                                                                                        color: '#374151',
+                                                                                        lineHeight: 1.2,
+                                                                                        whiteSpace: 'nowrap',
+                                                                                        overflow: 'hidden',
+                                                                                        textOverflow: 'ellipsis',
+                                                                                        maxWidth: '100px'
+                                                                                    }}>
+                                                                                        {(() => {
+                                                                                            const carrier = result.shipment.carrier;
+                                                                                            if (typeof carrier === 'object' && carrier.name) {
+                                                                                                return carrier.name;
+                                                                                            }
+                                                                                            return carrier;
+                                                                                        })()}
+                                                                                    </Typography>
+                                                                                )}
+
+                                                                                {/* Tracking Number */}
+                                                                                {(() => {
+                                                                                    const trackingNumber = result.shipment?.trackingNumber ||
+                                                                                        result.shipment?.carrierTrackingNumber ||
+                                                                                        result.shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                                        result.shipment?.proNumber;
+
+                                                                                    if (trackingNumber && trackingNumber !== 'N/A') {
+                                                                                        return (
+                                                                                            <Typography variant="body2" sx={{
+                                                                                                fontSize: '8px',
+                                                                                                color: '#6b7280',
+                                                                                                lineHeight: 1.2,
+                                                                                                whiteSpace: 'nowrap',
+                                                                                                overflow: 'hidden',
+                                                                                                textOverflow: 'ellipsis',
+                                                                                                maxWidth: '100px',
+                                                                                                fontFamily: 'monospace'
+                                                                                            }}>
+                                                                                                {trackingNumber}
+                                                                                            </Typography>
+                                                                                        );
+                                                                                    }
+                                                                                    return null;
+                                                                                })()}
+
+                                                                                {/* Status - moved to last position */}
+                                                                                <Box sx={{
+                                                                                    backgroundColor: result.status === 'Delivered' ? '#dcfce7' :
+                                                                                        result.status === 'In Transit' ? '#dbeafe' :
+                                                                                            result.status === 'Pending' ? '#fef3c7' : '#f3f4f6',
+                                                                                    color: result.status === 'Delivered' ? '#166534' :
+                                                                                        result.status === 'In Transit' ? '#1d4ed8' :
+                                                                                            result.status === 'Pending' ? '#d97706' : '#6b7280',
+                                                                                    padding: '2px 6px',
+                                                                                    borderRadius: '10px',
+                                                                                    fontSize: '9px',
+                                                                                    fontWeight: 500,
+                                                                                    textTransform: 'uppercase',
+                                                                                    letterSpacing: '0.5px',
+                                                                                    whiteSpace: 'nowrap'
+                                                                                }}>
+                                                                                    {result.status}
+                                                                                </Box>
+                                                                            </Box>
+                                                                        </Box>
+
+                                                                        {/* FROM/TO Address Row - Single Line */}
+                                                                        <Box sx={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '8px',
+                                                                            pl: '28px', // Align with shipment ID
+                                                                            minWidth: 0
+                                                                        }}>
+                                                                            {/* FROM Company and Address */}
+                                                                            <Typography variant="body2" sx={{
+                                                                                fontSize: '10px',
+                                                                                color: '#374151',
+                                                                                lineHeight: 1.2,
+                                                                                whiteSpace: 'nowrap',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                                flex: '0 1 auto',
+                                                                                minWidth: 0
+                                                                            }}>
+                                                                                <Box component="span" sx={{ fontWeight: 600 }}>
+                                                                                    {result.shipment?.shipFrom?.companyName || result.shipment?.shipFrom?.company || 'Unknown Shipper'}
+                                                                                </Box>
+                                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
+                                                                                    {(() => {
+                                                                                        const from = result.shipment?.shipFrom;
+                                                                                        if (!from) return '';
+                                                                                        const parts = [
+                                                                                            from.street || from.addressLine1,
+                                                                                            from.city,
+                                                                                            from.state || from.province,
+                                                                                            (from.postalCode || from.zipCode)?.toUpperCase?.() || (from.postalCode || from.zipCode)
+                                                                                        ].filter(Boolean);
+                                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
+                                                                                    })()}
+                                                                                </Box>
+                                                                            </Typography>
+
+                                                                            {/* Arrow */}
+                                                                            <Box sx={{
+                                                                                color: '#9ca3af',
+                                                                                fontSize: '12px',
+                                                                                fontWeight: 600,
+                                                                                flexShrink: 0,
+                                                                                mx: 0.5
+                                                                            }}>
+                                                                                →
+                                                                            </Box>
+
+                                                                            {/* TO Company and Address */}
+                                                                            <Typography variant="body2" sx={{
+                                                                                fontSize: '10px',
+                                                                                color: '#374151',
+                                                                                lineHeight: 1.2,
+                                                                                whiteSpace: 'nowrap',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                                flex: '0 1 auto',
+                                                                                minWidth: 0
+                                                                            }}>
+                                                                                <Box component="span" sx={{ fontWeight: 600 }}>
+                                                                                    {result.shipment?.shipTo?.companyName || result.shipment?.shipTo?.company || 'Unknown Consignee'}
+                                                                                </Box>
+                                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
+                                                                                    {(() => {
+                                                                                        const to = result.shipment?.shipTo;
+                                                                                        if (!to) return '';
+                                                                                        const parts = [
+                                                                                            to.street || to.addressLine1,
+                                                                                            to.city,
+                                                                                            to.state || to.province,
+                                                                                            (to.postalCode || to.zipCode)?.toUpperCase?.() || (to.postalCode || to.zipCode)
+                                                                                        ].filter(Boolean);
+                                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
+                                                                                    })()}
+                                                                                </Box>
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    </Box>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    {/* Quick Action Row */}
+                                                                    <Box sx={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '8px',
+                                                                        width: '100%'
+                                                                    }}>
+                                                                        {/* Quick Action Icon */}
+                                                                        <Box sx={{
+                                                                            width: '20px',
+                                                                            height: '20px',
+                                                                            backgroundColor: result.type === 'status_filter' ? '#e3f2fd' : '#fff3e0',
+                                                                            borderRadius: '3px',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            fontSize: '10px',
+                                                                            flexShrink: 0
+                                                                        }}>
+                                                                            {result.type === 'status_filter' ? '📊' : '📅'}
+                                                                        </Box>
+
+                                                                        {/* Quick Action Label */}
+                                                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                                            <Typography variant="body2" sx={{
+                                                                                fontSize: '11px',
+                                                                                color: '#374151',
+                                                                                fontWeight: 500,
+                                                                                lineHeight: 1.2
+                                                                            }}>
+                                                                                {result.label}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    </Box>
+                                                                </>
+                                                            )}
+                                                        </Box>
+                                                    ))}
+                                                </Box>
+
+                                                {/* Compact Footer */}
+                                                <Box sx={{
+                                                    px: 2,
+                                                    py: 1,
+                                                    bgcolor: isSemanticMode ? '#faf7ff' : '#f9fafb',
+                                                    borderTop: '1px solid #f0f0f0',
+                                                    borderBottomLeftRadius: '8px',
+                                                    borderBottomRightRadius: '8px'
+                                                }}>
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Typography sx={{
+                                                            fontSize: '10px',
+                                                            color: '#9ca3af',
+                                                            fontStyle: 'italic'
+                                                        }}>
+                                                            ↑↓ Navigate • Enter Select • Esc Close
+                                                        </Typography>
+                                                        {isSemanticMode && searchConfidence > 0 && (
+                                                            <Typography sx={{
+                                                                fontSize: '9px',
+                                                                color: '#8b5cf6',
+                                                                fontWeight: 600,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 0.5
+                                                            }}>
+                                                                🧠 {Math.round(searchConfidence * 100)}%
+                                                            </Typography>
+                                                        )}
+                                                    </Box>
+                                                </Box>
+                                            </Box>
+                                        )}
                                     </Box>
-                                )}
+                                )
+                                }
 
                                 {/* Search and Filter Section */}
                                 <Collapse in={filtersOpen}>
@@ -2625,34 +3884,36 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         )}
                                     </Box>
                                 </Collapse>
-                            </Paper>
+                            </Paper >
 
                             {/* Shipments Table */}
-                            {loading ? (
-                                <ShipmentsTableSkeleton rows={rowsPerPage === -1 ? 10 : Math.min(rowsPerPage, 10)} />
-                            ) : (
-                                <ShipmentsTable
-                                    shipments={shipments}
-                                    loading={false}
-                                    selected={selected}
-                                    onSelectAll={handleSelectAll}
-                                    onSelect={handleSelect}
-                                    onViewShipmentDetail={handleViewShipmentDetail}
-                                    onActionMenuOpen={handleActionMenuOpen}
-                                    onEditDraftShipment={handleEditDraftShipment}
-                                    onEditShipment={handleEditShipment}
-                                    customers={customers}
-                                    companyData={companiesData}
-                                    carrierData={carrierData}
-                                    searchFields={searchFields}
-                                    highlightSearchTerm={highlightSearchTerm}
-                                    showSnackbar={showSnackbar}
-                                    onOpenTrackingDrawer={handleOpenTrackingDrawer}
-                                    adminViewMode={adminViewMode}
-                                />
-                            )}
-                        </Box>
-                    </Box>
+                            {
+                                loading ? (
+                                    <ShipmentsTableSkeleton rows={rowsPerPage === -1 ? 10 : Math.min(rowsPerPage, 10)} />
+                                ) : (
+                                    <ShipmentsTable
+                                        shipments={shipments}
+                                        loading={false}
+                                        selected={selected}
+                                        onSelectAll={handleSelectAll}
+                                        onSelect={handleSelect}
+                                        onViewShipmentDetail={handleViewShipmentDetail}
+                                        onActionMenuOpen={handleActionMenuOpen}
+                                        onEditDraftShipment={handleEditDraftShipment}
+                                        onEditShipment={handleEditShipment}
+                                        customers={customers}
+                                        companyData={companiesData}
+                                        carrierData={carrierData}
+                                        searchFields={searchFields}
+                                        highlightSearchTerm={highlightSearchTerm}
+                                        showSnackbar={showSnackbar}
+                                        onOpenTrackingDrawer={handleOpenTrackingDrawer}
+                                        adminViewMode={adminViewMode}
+                                    />
+                                )
+                            }
+                        </Box >
+                    </Box >
                 );
             case 'shipment-detail':
                 console.log('📋 Rendering shipment detail view with shipmentId:', view.props?.shipmentId);

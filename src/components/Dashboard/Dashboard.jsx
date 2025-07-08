@@ -157,7 +157,7 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
     const [mapError, setMapError] = useState(null);
     const [mapsApiKey, setMapsApiKey] = useState(null);
 
-    // Get recent shipments with valid routes (excluding all cancelled variants)
+    // Get recent shipments with valid routes (excluding all cancelled variants and archived)
     const routeShipments = useMemo(() => {
         const validShipments = shipments
             .filter(shipment => {
@@ -171,7 +171,8 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
                         status !== 'canceled' &&
                         status !== 'void' &&
                         status !== 'voided' &&
-                        status !== 'draft';
+                        status !== 'draft' &&
+                        status !== 'archived';
                 } catch (error) {
                     console.warn('Error filtering shipment:', error, shipment);
                     return false;
@@ -1151,10 +1152,10 @@ const DashboardStatsOverlay = ({
             return new Date(timestamp);
         };
 
-        // Filter out cancelled shipments completely from all calculations
+        // Filter out cancelled and archived shipments completely from all calculations
         const validShipments = shipments.filter(s => {
             const status = s.status?.toLowerCase();
-            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
         });
 
         // Current metrics (using validShipments without cancelled)
@@ -1673,10 +1674,10 @@ const RecentActivityFeed = ({ shipments }) => {
         // Get recent shipments and status changes
         const activities = [];
 
-        // Filter out cancelled shipments from activity feed
+        // Filter out cancelled and archived shipments from activity feed
         const validShipments = shipments.filter(s => {
             const status = s.status?.toLowerCase();
-            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
         });
 
         validShipments.forEach(shipment => {
@@ -1912,7 +1913,7 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
         fetchApiKey();
     }, []);
 
-    // Get active shipments for route display (excluding all cancelled variants)
+    // Get active shipments for route display (excluding all cancelled variants and archived)
     const activeShipments = useMemo(() => {
         return shipments
             .filter(shipment => {
@@ -1925,7 +1926,8 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
                     status !== 'canceled' &&
                     status !== 'void' &&
                     status !== 'voided' &&
-                    status !== 'draft';
+                    status !== 'draft' &&
+                    status !== 'archived';
             })
             .slice(0, 10); // Limit to 10 routes for performance
     }, [shipments]);
@@ -2763,9 +2765,9 @@ const Dashboard = () => {
             }).filter(shipment => {
                 const status = shipment.status?.toLowerCase();
 
-                // EXCLUDE ALL CANCELLED/CANCELED SHIPMENTS COMPLETELY
-                if (status === 'cancelled' || status === 'canceled' || status === 'cancelled' || status === 'cancelled' || status === 'void' || status === 'voided') {
-                    console.log(`❌ Excluding cancelled shipment ${shipment.shipmentID} with status ${shipment.status}`);
+                // EXCLUDE ALL CANCELLED/CANCELED AND ARCHIVED SHIPMENTS COMPLETELY
+                if (status === 'cancelled' || status === 'canceled' || status === 'cancelled' || status === 'cancelled' || status === 'void' || status === 'voided' || status === 'archived') {
+                    console.log(`❌ Excluding ${status} shipment ${shipment.shipmentID} with status ${shipment.status}`);
                     return false;
                 }
 
@@ -2776,8 +2778,8 @@ const Dashboard = () => {
 
                 // More lenient filtering for QuickShip shipments
                 if (shipment.creationMethod === 'quickship') {
-                    // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft or cancelled)
-                    const keepShipment = shipment.status && status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+                    // Keep QuickShip shipments if they're booked, pending, or have any valid status (not draft, cancelled, or archived)
+                    const keepShipment = shipment.status && status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
                     if (keepShipment) {
                         console.log(`✅ Keeping QuickShip shipment ${shipment.shipmentID} with status ${shipment.status}`);
                     } else {
@@ -2786,8 +2788,8 @@ const Dashboard = () => {
                     return keepShipment;
                 }
 
-                // Normal filtering for regular shipments - exclude drafts and cancelled
-                return status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+                // Normal filtering for regular shipments - exclude drafts, cancelled, and archived
+                return status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
             });
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
@@ -2980,12 +2982,12 @@ const Dashboard = () => {
         };
     }, []);
 
-    // Calculate status counts for the Globe (excluding all cancelled variants)
+    // Calculate status counts for the Globe (excluding all cancelled variants and archived)
     const statusCounts = useMemo(() => {
-        // Filter out cancelled shipments completely from status counts
+        // Filter out cancelled and archived shipments completely from status counts
         const validShipments = shipments.filter(s => {
             const status = s.status?.toLowerCase();
-            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+            return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
         });
 
         return validShipments.reduce((counts, shipment) => {

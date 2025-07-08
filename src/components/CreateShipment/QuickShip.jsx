@@ -1202,7 +1202,7 @@ const QuickShip = ({
     // Rate management functions
     const addRateLineItem = () => {
         const newId = Math.max(...manualRates.map(r => r.id), 0) + 1;
-        setManualRates(prev => [...prev, {
+        const newRate = {
             id: newId,
             carrier: selectedCarrier,
             code: 'FRT', // Default to FRT - Freight
@@ -1211,7 +1211,13 @@ const QuickShip = ({
             costCurrency: 'CAD',
             charge: '',
             chargeCurrency: 'CAD'
-        }]);
+        };
+
+        setManualRates(prev => {
+            const updatedRates = [...prev, newRate];
+            console.log('🔧 Adding new rate line item:', newRate);
+            return deduplicateRates(updatedRates);
+        });
     };
 
     const removeRateLineItem = (id) => {
@@ -1243,6 +1249,28 @@ const QuickShip = ({
             return rate;
         }));
     };
+
+    // Enhanced deduplication helper for rate line items
+    const createRateKey = (rate) => {
+        return `${rate.code}-${rate.chargeName}`.toLowerCase().trim();
+    };
+
+    const deduplicateRates = (rates) => {
+        const seen = new Set();
+        return rates.filter(rate => {
+            const key = createRateKey(rate);
+            if (seen.has(key)) {
+                console.log('🚫 Preventing duplicate rate:', key);
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+    };
+
+    // Service toggle debouncing to prevent race conditions
+    const [serviceToggleTimeout, setServiceToggleTimeout] = useState(null);
+    const [isProcessingServiceToggle, setIsProcessingServiceToggle] = useState(false);
 
     // Load Service Levels function
     const loadServiceLevels = async () => {
@@ -1313,58 +1341,95 @@ const QuickShip = ({
     };
 
     const handleServiceToggle = (service) => {
+        // Prevent multiple rapid toggles causing race conditions
+        if (isProcessingServiceToggle) {
+            console.log('🚫 Service toggle already in progress, ignoring');
+            return;
+        }
+
         console.log('🔧 handleServiceToggle called with service:', service);
         console.log('🔧 Current additionalServices:', additionalServices);
         console.log('🔧 Current manualRates:', manualRates);
 
-        setAdditionalServices(prev => {
-            console.log('🔧 Previous additionalServices:', prev);
-            const exists = prev.find(s => s.id === service.id);
-            console.log('🔧 Service exists?', exists);
+        setIsProcessingServiceToggle(true);
 
-            if (exists) {
-                // Remove service and corresponding rate line item
-                const updatedServices = prev.filter(s => s.id !== service.id);
-                console.log('🔧 Removing service, updated services:', updatedServices);
+        // Clear any existing timeout
+        if (serviceToggleTimeout) {
+            clearTimeout(serviceToggleTimeout);
+        }
 
-                // Remove the corresponding rate line item
-                setManualRates(prevRates => {
-                    const filteredRates = prevRates.filter(rate =>
-                        !(rate.code === 'SUR' && rate.chargeName === service.label)
-                    );
-                    console.log('🔧 Removing rate line item, filtered rates:', filteredRates);
-                    return filteredRates;
-                });
+        // Debounce the service toggle to prevent rapid fire clicks
+        const timeout = setTimeout(() => {
+            setAdditionalServices(prev => {
+                console.log('🔧 Previous additionalServices:', prev);
+                const exists = prev.find(s => s.id === service.id);
+                console.log('🔧 Service exists?', exists);
 
-                return updatedServices;
-            } else {
-                // Add service and create corresponding rate line item
-                const updatedServices = [...prev, service];
-                console.log('🔧 Adding service, updated services:', updatedServices);
+                if (exists) {
+                    // Remove service and corresponding rate line item
+                    const updatedServices = prev.filter(s => s.id !== service.id);
+                    console.log('🔧 Removing service, updated services:', updatedServices);
 
-                // Add a new rate line item for this service
-                const newRateId = Math.max(...manualRates.map(r => r.id), 0) + 1;
-                const newRate = {
-                    id: newRateId,
-                    carrier: '',
-                    code: 'SUR',
-                    chargeName: service.label,
-                    cost: '',
-                    costCurrency: 'CAD',
-                    charge: '',
-                    chargeCurrency: 'CAD'
-                };
-                console.log('🔧 Adding new rate:', newRate);
+                    // Remove the corresponding rate line item with enhanced matching
+                    setManualRates(prevRates => {
+                        const filteredRates = prevRates.filter(rate => {
+                            const isServiceRate = rate.code === 'SUR' && rate.chargeName === service.label;
+                            if (isServiceRate) {
+                                console.log('🔧 Removing service rate:', rate);
+                            }
+                            return !isServiceRate;
+                        });
+                        console.log('🔧 Filtered rates after service removal:', filteredRates);
+                        return deduplicateRates(filteredRates);
+                    });
 
-                setManualRates(prevRates => {
-                    const updatedRates = [...prevRates, newRate];
-                    console.log('🔧 Updated manual rates:', updatedRates);
-                    return updatedRates;
-                });
+                    return updatedServices;
+                } else {
+                    // Add service and create corresponding rate line item
+                    const updatedServices = [...prev, service];
+                    console.log('🔧 Adding service, updated services:', updatedServices);
 
-                return updatedServices;
-            }
-        });
+                    // Check if rate already exists to prevent duplicates
+                    setManualRates(prevRates => {
+                        const existingServiceRate = prevRates.find(rate =>
+                            rate.code === 'SUR' && rate.chargeName === service.label
+                        );
+
+                        if (existingServiceRate) {
+                            console.log('🔧 Service rate already exists, not adding duplicate:', existingServiceRate);
+                            return prevRates;
+                        }
+
+                        // Add a new rate line item for this service
+                        const newRateId = Math.max(...prevRates.map(r => r.id), 0) + 1;
+                        const newRate = {
+                            id: newRateId,
+                            carrier: '',
+                            code: 'SUR',
+                            chargeName: service.label,
+                            cost: '',
+                            costCurrency: 'CAD',
+                            charge: '',
+                            chargeCurrency: 'CAD'
+                        };
+                        console.log('🔧 Adding new service rate:', newRate);
+
+                        const updatedRates = [...prevRates, newRate];
+                        console.log('🔧 Updated manual rates:', updatedRates);
+                        return deduplicateRates(updatedRates);
+                    });
+
+                    return updatedServices;
+                }
+            });
+
+            // Reset processing flag after a short delay
+            setTimeout(() => {
+                setIsProcessingServiceToggle(false);
+            }, 100);
+        }, 150); // 150ms debounce
+
+        setServiceToggleTimeout(timeout);
     };
 
     const isServiceSelected = (serviceId) => {
@@ -2230,39 +2295,50 @@ const QuickShip = ({
                                 setPackages(validatedPackages);
                             }
 
-                            // Load manual rates
+                            // Load manual rates with deduplication
                             if (draftData.manualRates && draftData.manualRates.length > 0) {
-                                setManualRates(draftData.manualRates);
+                                console.log('🔧 Loading manual rates from draft:', draftData.manualRates.length);
+                                setManualRates(deduplicateRates(draftData.manualRates));
                             }
 
                             // Load additional services and create corresponding rate line items
                             if (draftData.additionalServices && Array.isArray(draftData.additionalServices)) {
                                 setAdditionalServices(draftData.additionalServices);
 
-                                // Create rate line items for additional services if they don't exist
-                                const existingServiceRates = draftData.manualRates?.filter(rate =>
-                                    rate.code === 'SUR' && draftData.additionalServices.some(service => service.label === rate.chargeName)
-                                ) || [];
+                                // Enhanced duplicate prevention for service rates
+                                setTimeout(() => {
+                                    setManualRates(prevRates => {
+                                        // Create rate line items for additional services if they don't exist
+                                        const existingServiceRates = prevRates.filter(rate =>
+                                            rate.code === 'SUR' && draftData.additionalServices.some(service => service.label === rate.chargeName)
+                                        );
 
-                                const missingServiceRates = draftData.additionalServices.filter(service =>
-                                    !existingServiceRates.some(rate => rate.chargeName === service.label)
-                                );
+                                        const missingServiceRates = draftData.additionalServices.filter(service =>
+                                            !prevRates.some(rate => rate.code === 'SUR' && rate.chargeName === service.label)
+                                        );
 
-                                if (missingServiceRates.length > 0) {
-                                    const currentMaxId = Math.max(...(draftData.manualRates?.map(r => r.id) || [0]), 0);
-                                    const newServiceRates = missingServiceRates.map((service, index) => ({
-                                        id: currentMaxId + index + 1,
-                                        carrier: '',
-                                        code: 'SUR',
-                                        chargeName: service.label,
-                                        cost: '',
-                                        costCurrency: 'CAD',
-                                        charge: '',
-                                        chargeCurrency: 'CAD'
-                                    }));
+                                        if (missingServiceRates.length > 0) {
+                                            console.log('🔧 Adding missing service rates for draft:', missingServiceRates.map(s => s.label));
 
-                                    setManualRates(prevRates => [...prevRates, ...newServiceRates]);
-                                }
+                                            const currentMaxId = Math.max(...(prevRates.map(r => r.id) || [0]), 0);
+                                            const newServiceRates = missingServiceRates.map((service, index) => ({
+                                                id: currentMaxId + index + 1,
+                                                carrier: '',
+                                                code: 'SUR',
+                                                chargeName: service.label,
+                                                cost: '',
+                                                costCurrency: 'CAD',
+                                                charge: '',
+                                                chargeCurrency: 'CAD'
+                                            }));
+
+                                            const combinedRates = [...prevRates, ...newServiceRates];
+                                            return deduplicateRates(combinedRates);
+                                        }
+
+                                        return deduplicateRates(prevRates);
+                                    });
+                                }, 100); // Small delay to ensure other state is loaded first
                             }
 
                             // Load unit system
@@ -2348,9 +2424,10 @@ const QuickShip = ({
                     setPackages(validatedPackages);
                 }
 
-                // Load manual rates
+                // Load manual rates with deduplication
                 if (editShipment.manualRates && editShipment.manualRates.length > 0) {
-                    setManualRates(editShipment.manualRates);
+                    console.log('🔧 Loading manual rates from edit shipment:', editShipment.manualRates.length);
+                    setManualRates(deduplicateRates(editShipment.manualRates));
                 } else if (editShipment.rates && editShipment.rates.length > 0) {
                     // Convert from stored rates format if needed
                     const convertedRates = editShipment.rates.map((rate, index) => ({
@@ -2363,7 +2440,8 @@ const QuickShip = ({
                         charge: rate.charge || rate.amount || '',
                         chargeCurrency: rate.chargeCurrency || rate.currency || 'CAD'
                     }));
-                    setManualRates(convertedRates);
+                    console.log('🔧 Converting rates from edit shipment:', convertedRates.length);
+                    setManualRates(deduplicateRates(convertedRates));
                 }
 
                 // Load carrier
@@ -2377,30 +2455,40 @@ const QuickShip = ({
                 if (editShipment.additionalServices && Array.isArray(editShipment.additionalServices)) {
                     setAdditionalServices(editShipment.additionalServices);
 
-                    // Create rate line items for additional services if they don't exist
-                    const existingServiceRates = editShipment.manualRates?.filter(rate =>
-                        rate.code === 'SUR' && editShipment.additionalServices.some(service => service.label === rate.chargeName)
-                    ) || [];
+                    // Enhanced duplicate prevention for service rates in edit mode
+                    setTimeout(() => {
+                        setManualRates(prevRates => {
+                            // Create rate line items for additional services if they don't exist
+                            const existingServiceRates = prevRates.filter(rate =>
+                                rate.code === 'SUR' && editShipment.additionalServices.some(service => service.label === rate.chargeName)
+                            );
 
-                    const missingServiceRates = editShipment.additionalServices.filter(service =>
-                        !existingServiceRates.some(rate => rate.chargeName === service.label)
-                    );
+                            const missingServiceRates = editShipment.additionalServices.filter(service =>
+                                !prevRates.some(rate => rate.code === 'SUR' && rate.chargeName === service.label)
+                            );
 
-                    if (missingServiceRates.length > 0) {
-                        const currentMaxId = Math.max(...(editShipment.manualRates?.map(r => r.id) || [0]), 0);
-                        const newServiceRates = missingServiceRates.map((service, index) => ({
-                            id: currentMaxId + index + 1,
-                            carrier: '',
-                            code: 'SUR',
-                            chargeName: service.label,
-                            cost: '',
-                            costCurrency: 'CAD',
-                            charge: '',
-                            chargeCurrency: 'CAD'
-                        }));
+                            if (missingServiceRates.length > 0) {
+                                console.log('🔧 Adding missing service rates for edit shipment:', missingServiceRates.map(s => s.label));
 
-                        setManualRates(prevRates => [...prevRates, ...newServiceRates]);
-                    }
+                                const currentMaxId = Math.max(...(prevRates.map(r => r.id) || [0]), 0);
+                                const newServiceRates = missingServiceRates.map((service, index) => ({
+                                    id: currentMaxId + index + 1,
+                                    carrier: '',
+                                    code: 'SUR',
+                                    chargeName: service.label,
+                                    cost: '',
+                                    costCurrency: 'CAD',
+                                    charge: '',
+                                    chargeCurrency: 'CAD'
+                                }));
+
+                                const combinedRates = [...prevRates, ...newServiceRates];
+                                return deduplicateRates(combinedRates);
+                            }
+
+                            return deduplicateRates(prevRates);
+                        });
+                    }, 100); // Small delay to ensure other state is loaded first
                 }
 
                 // Load unit system

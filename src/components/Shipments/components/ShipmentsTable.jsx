@@ -54,27 +54,27 @@ const ShipmentsTable = ({
         expand: { width: 40 },
         actions: { width: 60 }
     } : {
-        // Regular view: original structure plus expand column
+        // Regular view: removed CREATED column, adjusted carrier/status widths for better readability
         checkbox: { width: 48 },
-        id: { width: 110 },
-        created: { width: 100 },
+        id: { width: 120 },
         date: { width: 100 },
         eta: { width: 100 },
-        reference: { width: 120 },
-        customer: { width: 140 },
-        route: { width: 150 },
-        carrier: { width: 220 },
-        status: { width: 110 },
+        reference: { width: 130 },
+        customer: { width: 150 },
+        route: { width: 160 },
+        carrier: { width: 170 },
+        status: { width: 130 },
         expand: { width: 40 },
         actions: { width: 60 }
     };
 
-    // Calculate total width (added expand column)
-    const totalWidth = isAdminView ? 1298 : 1388;
+    // Calculate total width - same total, redistributed between carrier and status
+    const totalWidth = isAdminView ? 1298 : 1218;
 
     return (
         <Box sx={{
             width: '100%',
+            overflowX: 'auto',
             px: 2
         }}>
             <Table sx={{
@@ -243,20 +243,12 @@ const ShipmentsTable = ({
                             /* Regular View Headers */
                             <>
                                 <TableCell sx={{
-                                    width: 110,
-                                    minWidth: 110,
-                                    maxWidth: 110,
+                                    width: 120,
+                                    minWidth: 120,
+                                    maxWidth: 120,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
                                     SHIPMENT ID
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    CREATED
                                 </TableCell>
                                 <TableCell sx={{
                                     width: 100,
@@ -275,20 +267,12 @@ const ShipmentsTable = ({
                                     ETA
                                 </TableCell>
                                 <TableCell sx={{
-                                    width: 120,
-                                    minWidth: 120,
-                                    maxWidth: 120,
+                                    width: 130,
+                                    minWidth: 130,
+                                    maxWidth: 130,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
                                     REFERENCE
-                                </TableCell>
-                                <TableCell sx={{
-                                    width: 140,
-                                    minWidth: 140,
-                                    maxWidth: 140,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    CUSTOMER
                                 </TableCell>
                                 <TableCell sx={{
                                     width: 150,
@@ -296,20 +280,28 @@ const ShipmentsTable = ({
                                     maxWidth: 150,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
+                                    CUSTOMER
+                                </TableCell>
+                                <TableCell sx={{
+                                    width: 160,
+                                    minWidth: 160,
+                                    maxWidth: 160,
+                                    backgroundColor: '#f8fafc !important'
+                                }}>
                                     ROUTE
                                 </TableCell>
                                 <TableCell sx={{
-                                    width: 220,
-                                    minWidth: 220,
-                                    maxWidth: 220,
+                                    width: 170,
+                                    minWidth: 170,
+                                    maxWidth: 170,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
                                     CARRIER
                                 </TableCell>
                                 <TableCell sx={{
-                                    width: 110,
-                                    minWidth: 110,
-                                    maxWidth: 110,
+                                    width: 130,
+                                    minWidth: 130,
+                                    maxWidth: 130,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
                                     STATUS
@@ -343,13 +335,13 @@ const ShipmentsTable = ({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4 }}>
+                            <TableCell colSpan={isAdminView ? 12 : 10} align="center" sx={{ py: 4 }}>
                                 <CircularProgress />
                             </TableCell>
                         </TableRow>
                     ) : safeShipments.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={isAdminView ? 12 : 11} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                            <TableCell colSpan={isAdminView ? 12 : 10} align="center" sx={{ py: 4, color: '#6b7280' }}>
                                 No shipments found
                             </TableCell>
                         </TableRow>

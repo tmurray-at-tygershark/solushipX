@@ -309,7 +309,7 @@ Need help? Contact us at support@integratedcarriers.com
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Delivery Confirmation</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Delivered:</strong></td><td style="padding: 8px 0;">${new Date(data.deliveredAt).toLocaleString()}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Delivered:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.deliveredAt)}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}</td></tr>
                             ${data.signature ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Signed by:</strong></td><td style="padding: 8px 0;">${data.signature}</td></tr>` : ''}
                         </table>
@@ -343,7 +343,7 @@ Shipment Delivered!
 
 Delivery Details:
 - Shipment #: ${data.shipmentNumber}
-- Delivered: ${new Date(data.deliveredAt).toLocaleString()}
+- Delivered: ${formatDateTimeEST(data.deliveredAt)}
 - Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
 ${data.signature ? `- Signed by: ${data.signature}` : ''}
 
@@ -560,7 +560,7 @@ Questions? Contact support@integratedcarriers.com
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Customer:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.customerName}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Added By:</strong></td><td style="padding: 8px 0;">${data.createdByName}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.createdAt)}</td></tr>
                             ${data.type ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Note Type:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.type}</td></tr>` : ''}
                             ${data.priority ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Priority:</strong></td><td style="padding: 8px 0; text-transform: capitalize; color: ${data.priority === 'critical' || data.priority === 'urgent' ? '#dc2626' : data.priority === 'high' ? '#ea580c' : data.priority === 'medium' ? '#0891b2' : '#16a34a'}; font-weight: bold;">${data.priority}</td></tr>` : ''}
                             ${data.status ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.status}</td></tr>` : ''}
@@ -636,7 +636,7 @@ SUMMARY
 - Customer: ${data.customerName}
 - Customer ID: ${data.customerID}  
 - Added By: ${data.createdByName}
-- Date: ${new Date(data.createdAt).toLocaleDateString()} ${new Date(data.createdAt).toLocaleTimeString()}
+- Date: ${formatDateTimeEST(data.createdAt)}
 ${data.type ? `- Note Type: ${data.type}` : ''}
 ${data.priority ? `- Priority: ${data.priority.toUpperCase()}` : ''}
 ${data.status ? `- Status: ${data.status}` : ''}

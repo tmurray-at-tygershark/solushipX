@@ -56,7 +56,7 @@ export const formatRoute = (shipFrom, shipTo, searchTermOrigin = '', searchTermD
         return {
             text: parts.length > 0 ? parts.join(', ') : 'N/A',
             flag: getCountryFlag(address),
-            postalCode: postalCode
+            postalCode: postalCode ? postalCode.toUpperCase() : ''
         };
     };
 
