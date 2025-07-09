@@ -867,7 +867,8 @@ function formatDate(dateString) {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'America/Toronto' // Force Eastern Time
     });
     
     try {
@@ -875,7 +876,8 @@ function formatDate(dateString) {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
-            day: 'numeric'
+            day: 'numeric',
+            timeZone: 'America/Toronto' // Force Eastern Time
         });
     } catch (error) {
         return dateString;
@@ -957,7 +959,7 @@ function generateQuickShipCustomerHTML(shipmentData, totalPieces, totalWeight) {
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentID}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Company ID:</strong></td><td style="padding: 8px 0;">${shipmentData.companyID || 'N/A'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString('en-US', { timeZone: 'America/Toronto' })}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold; text-transform: capitalize;">Pending</td></tr>
                     </table>
                 </div>
@@ -1090,7 +1092,7 @@ Your shipment ${shipmentData.shipmentID} has been successfully booked.
 SHIPMENT SUMMARY
 - Shipment #: ${shipmentData.shipmentID}
 - Company ID: ${shipmentData.companyID || 'N/A'}
-- Created: ${new Date().toLocaleDateString()}
+- Created: ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Toronto' })}
 - Status: Pending
 
 SHIPMENT INFORMATION
@@ -1163,7 +1165,7 @@ function generateQuickShipCarrierHTML(shipmentData, carrierDetails, totalPieces,
                     <table style="width: 100%; border-collapse: collapse;">
                         <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Order #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${shipmentData.shipmentID}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Assigned Carrier:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${carrierDetails.name || shipmentData.carrier || 'Unknown'}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date().toLocaleDateString('en-US', { timeZone: 'America/Toronto' })}</td></tr>
                         <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; color: #1c277d; font-weight: bold;">Awaiting Pickup</td></tr>
                     </table>
                 </div>
@@ -1298,7 +1300,7 @@ New pickup request for order ${shipmentData.shipmentID}
 ORDER DETAILS
 - Order #: ${shipmentData.shipmentID}
 - Assigned Carrier: ${carrierDetails.name || shipmentData.carrier || 'Unknown'}
-- Created: ${new Date().toLocaleDateString()}
+- Created: ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Toronto' })}
 - Status: Awaiting Pickup
 
 SHIPMENT INFORMATION

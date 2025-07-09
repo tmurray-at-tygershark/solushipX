@@ -129,7 +129,7 @@ const EMAIL_TEMPLATES = {
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID || 'N/A'}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${new Date(data.createdAt).toLocaleDateString()}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.createdAt)}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.status || 'pending'}</td></tr>
                         </table>
                     </div>
@@ -255,7 +255,7 @@ Shipment Successfully Created!
 SHIPMENT SUMMARY
 - Shipment #: ${data.shipmentNumber}
 - Customer ID: ${data.customerID || 'N/A'}
-- Created: ${new Date(data.createdAt).toLocaleDateString()}
+- Created: ${formatDateTimeEST(data.createdAt)}
 - Status: ${data.status || 'pending'}
 
 SHIPMENT INFORMATION
@@ -263,7 +263,7 @@ SHIPMENT INFORMATION
 - Reference #: ${(data.shipmentInfo && data.shipmentInfo.referenceNumber) || data.shipmentNumber}
 - Bill Type: ${getBillTypeLabel((data.shipmentInfo && data.shipmentInfo.billType) || 'prepaid')}
 - Pickup Window: ${(data.shipmentInfo && data.shipmentInfo.pickupWindow) ? `${data.shipmentInfo.pickupWindow.earliest} - ${data.shipmentInfo.pickupWindow.latest}` : '09:00 - 17:00'}
-${data.estimatedDeliveryDate ? `- Est. Delivery: ${new Date(data.estimatedDeliveryDate).toLocaleDateString()}` : ''}
+${data.estimatedDeliveryDate ? `- Est. Delivery: ${formatDateTimeEST(data.estimatedDeliveryDate)}` : ''}
 
 CARRIER & SERVICE
 - Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
@@ -370,8 +370,8 @@ Thank you for choosing SolushipX!
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Delay Information</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Original ETA:</strong></td><td style="padding: 8px 0;">${new Date(data.originalETA).toLocaleDateString()}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>New ETA:</strong></td><td style="padding: 8px 0;">${new Date(data.newETA).toLocaleDateString()}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>Original ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.originalETA)}</td></tr>
+                            <tr><td style="padding: 8px 0; color: #666;"><strong>New ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.newETA)}</td></tr>
                             ${data.reason ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Reason:</strong></td><td style="padding: 8px 0;">${data.reason}</td></tr>` : ''}
                         </table>
                     </div>
@@ -404,8 +404,8 @@ Shipment Delay Notice
 
 Delay Information:
 - Shipment #: ${data.shipmentNumber}
-- Original ETA: ${new Date(data.originalETA).toLocaleDateString()}
-- New ETA: ${new Date(data.newETA).toLocaleDateString()}
+- Original ETA: ${formatDateTimeEST(data.originalETA)}
+- New ETA: ${formatDateTimeEST(data.newETA)}
 ${data.reason ? `- Reason: ${data.reason}` : ''}
 
 We're actively monitoring your shipment and will notify you of any further updates.
@@ -445,7 +445,7 @@ Questions? Contact support@integratedcarriers.com
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${getServiceName(data) || (data.carrier && data.carrier.service && typeof data.carrier.service === 'string' ? data.carrier.service : 'Standard Service')}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Tracking #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.trackingNumber || 'N/A'}</td></tr>
-                            ${data.estimatedDeliveryDate ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Est. Delivery:</strong></td><td style="padding: 8px 0;">${new Date(data.estimatedDeliveryDate).toLocaleDateString()}</td></tr>` : ''}
+                            ${data.estimatedDeliveryDate ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Est. Delivery:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.estimatedDeliveryDate)}</td></tr>` : ''}
                             ${data.transitDays > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Transit Time:</strong></td><td style="padding: 8px 0;">${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}</td></tr>` : ''}
                         </table>
                     </div>
@@ -521,7 +521,7 @@ TRACKING INFORMATION
 - Carrier: ${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}
 - Service: ${getServiceName(data) || (data.carrier && data.carrier.service && typeof data.carrier.service === 'string' ? data.carrier.service : 'Standard Service')}
 - Tracking #: ${data.trackingNumber || 'N/A'}
-${data.estimatedDeliveryDate ? `- Est. Delivery: ${new Date(data.estimatedDeliveryDate).toLocaleDateString()}` : ''}
+${data.estimatedDeliveryDate ? `- Est. Delivery: ${formatDateTimeEST(data.estimatedDeliveryDate)}` : ''}
 ${data.transitDays > 0 ? `- Transit Time: ${data.transitDays} ${data.transitDays === 1 ? 'day' : 'days'}` : ''}
 
 ROUTE INFORMATION
