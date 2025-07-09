@@ -472,7 +472,8 @@ const RateDetails = ({
                         weekday: 'short',
                         year: 'numeric',
                         month: 'short',
-                        day: 'numeric'
+                        day: 'numeric',
+                        timeZone: 'America/Toronto' // Force Eastern Time
                     });
                 } catch (error) {
                     info.estimatedDelivery = 'Invalid Date';

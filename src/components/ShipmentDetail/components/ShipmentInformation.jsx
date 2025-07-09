@@ -816,7 +816,8 @@ const ShipmentInformation = ({
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
-                hour12: true
+                hour12: true,
+                timeZone: 'America/Toronto' // Force Eastern Time
             });
         } catch (error) {
             console.error('Error formatting timestamp:', error, timestamp);
@@ -1196,7 +1197,8 @@ const ShipmentInformation = ({
             return date.toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',
-                day: 'numeric'
+                day: 'numeric',
+                timeZone: 'America/Toronto' // Force Eastern Time
             });
         } catch (error) {
             console.error('Error formatting shipment date:', error, dateString);
@@ -1336,7 +1338,8 @@ const ShipmentInformation = ({
                                                             weekday: 'short',
                                                             month: 'short',
                                                             day: 'numeric',
-                                                            year: 'numeric'
+                                                            year: 'numeric',
+                                                            timeZone: 'America/Toronto' // Force Eastern Time
                                                         });
                                                     } catch (error) {
                                                         return 'Invalid Date';
@@ -1389,7 +1392,8 @@ const ShipmentInformation = ({
                                                             weekday: 'short',
                                                             month: 'short',
                                                             day: 'numeric',
-                                                            year: 'numeric'
+                                                            year: 'numeric',
+                                                            timeZone: 'America/Toronto' // Force Eastern Time
                                                         });
                                                     } catch (error) {
                                                         return 'Invalid Date';
@@ -1411,7 +1415,8 @@ const ShipmentInformation = ({
                                                             weekday: 'short',
                                                             month: 'short',
                                                             day: 'numeric',
-                                                            year: 'numeric'
+                                                            year: 'numeric',
+                                                            timeZone: 'America/Toronto' // Force Eastern Time
                                                         });
                                                     } catch (error) {
                                                         return 'Invalid Date';
