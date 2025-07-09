@@ -21,14 +21,14 @@ import {
     Grid
 } from '@mui/material';
 import {
-    WarningAmberIcon,
-    ExpandMoreIcon,
-    SecurityIcon,
-    BackupIcon,
-    DataArrayIcon,
-    CompareArrowsIcon,
-    CheckCircleIcon,
-    ErrorIcon
+    WarningAmber as WarningAmberIcon,
+    ExpandMore as ExpandMoreIcon,
+    Security as SecurityIcon,
+    Backup as BackupIcon,
+    DataArray as DataArrayIcon,
+    CompareArrows as CompareArrowsIcon,
+    CheckCircle as CheckCircleIcon,
+    Error as ErrorIcon
 } from '@mui/icons-material';
 
 const ConversionConfirmationDialog = ({

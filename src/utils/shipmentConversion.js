@@ -1,5 +1,5 @@
 import { doc, updateDoc, getDoc, runTransaction } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db } from '../firebase';
 
 /**
  * Comprehensive Shipment Conversion System

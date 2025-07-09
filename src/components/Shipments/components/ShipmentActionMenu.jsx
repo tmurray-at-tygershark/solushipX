@@ -94,9 +94,20 @@ const ShipmentActionMenu = ({
             anchorEl={anchorEl}
             open={open}
             onClose={onClose}
+            anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right'
+            }}
+            transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right'
+            }}
             PaperProps={{
                 sx: {
-                    '& .MuiMenuItem-root': { fontSize: '12px' }
+                    '& .MuiMenuItem-root': { fontSize: '12px' },
+                    minWidth: 160,
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+                    border: '1px solid #e5e7eb'
                 }
             }}
         >
