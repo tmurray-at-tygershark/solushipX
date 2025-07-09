@@ -77,6 +77,19 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { ShipmentFormProvider } from '../../contexts/ShipmentFormContext';
 import { motion as framerMotion } from 'framer-motion';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import BarcodeIcon from '@mui/icons-material/QrCode2';
+import LogoutIcon from '@mui/icons-material/Logout';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import BusinessIcon from '@mui/icons-material/Business';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import SettingsIcon from '@mui/icons-material/Settings';
+import CalculateIcon from '@mui/icons-material/Calculate';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import SearchIcon from '@mui/icons-material/Search';
+import CloseIcon from '@mui/icons-material/Close';
 
 // Import responsive CSS
 import './Dashboard.css';
@@ -2531,6 +2544,12 @@ const Dashboard = () => {
     const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
     const [trackingNumber, setTrackingNumber] = useState('');
     const [isShipmentsModalOpen, setIsShipmentsModalOpen] = useState(false);
+
+    // Enterprise Search State (from ShipmentsX.jsx)
+    const [unifiedSearch, setUnifiedSearch] = useState('');
+    const [liveResults, setLiveResults] = useState([]);
+    const [showLiveResults, setShowLiveResults] = useState(false);
+    const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
     // const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false); // Replaced with Billing link
     const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
@@ -2794,6 +2813,11 @@ const Dashboard = () => {
 
             console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
             setShipments(shipmentsData);
+
+            // Set the same data for enterprise search (dashboard search doesn't need drafts)
+            // In a full implementation, we could fetch drafts separately for search if needed
+            console.log('🔍 Dashboard: Setting shipments for enterprise search:', shipmentsData.length);
+
             setLoading(false);
         };
 
@@ -3235,6 +3259,255 @@ const Dashboard = () => {
         setShipmentsDeepLinkParams(null);
     }, []);
 
+    // ========== ENTERPRISE SEARCH FUNCTIONS (from ShipmentsX.jsx) ==========
+
+    // ENTERPRISE SEARCH ENGINE - Comprehensive wildcard search (stable function)
+    const performUnifiedSearch = useCallback((shipments, searchTerm, customersMap) => {
+        console.log('🔍 performUnifiedSearch called with:', {
+            searchTerm,
+            shipmentsCount: shipments.length,
+            customersMapCount: Object.keys(customersMap || {}).length
+        });
+
+        if (!searchTerm || !searchTerm.trim()) {
+            console.log('🔍 Empty search term, returning all shipments');
+            return shipments;
+        }
+
+        const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+        console.log('🔍 Enterprise search for:', normalizedSearchTerm);
+
+        // Helper function for fuzzy matching
+        const calculateDistance = (str1, str2) => {
+            const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+            for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+            for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+            for (let j = 1; j <= str2.length; j++) {
+                for (let i = 1; i <= str1.length; i++) {
+                    const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+                    matrix[j][i] = Math.min(
+                        matrix[j][i - 1] + 1,
+                        matrix[j - 1][i] + 1,
+                        matrix[j - 1][i - 1] + indicator
+                    );
+                }
+            }
+            return matrix[str2.length][str1.length];
+        };
+
+        const fuzzyMatch = (text, search, threshold = 0.8) => {
+            if (!text || !search) return false;
+            const textLower = text.toLowerCase();
+            const searchLower = search.toLowerCase();
+            if (textLower.includes(searchLower)) return true;
+            if (searchLower.length >= 4) {
+                const distance = calculateDistance(textLower, searchLower);
+                const similarity = 1 - (distance / Math.max(textLower.length, searchLower.length));
+                return similarity >= threshold;
+            }
+            return false;
+        };
+
+        const filteredResults = shipments.filter(shipment => {
+            // Create searchable content array with all possible fields
+            const searchableContent = [];
+
+            // 1. SHIPMENT IDENTIFIERS
+            searchableContent.push(
+                shipment.shipmentID,
+                shipment.id,
+                shipment.shipmentId
+            );
+
+            // 2. REFERENCE NUMBERS
+            searchableContent.push(
+                shipment.referenceNumber,
+                shipment.shipperReferenceNumber,
+                shipment.shipmentInfo?.shipperReferenceNumber,
+                shipment.shipmentInfo?.customerReference
+            );
+
+            // 3. TRACKING NUMBERS
+            searchableContent.push(
+                shipment.trackingNumber,
+                shipment.carrierTrackingNumber,
+                shipment.carrierBookingConfirmation?.trackingNumber,
+                shipment.carrierBookingConfirmation?.proNumber,
+                shipment.proNumber,
+                shipment.bolNumber
+            );
+
+            // 4. COMPANY INFORMATION
+            searchableContent.push(
+                shipment.companyName,
+                shipment.customerName,
+                shipment.shipFrom?.companyName,
+                shipment.shipFrom?.company,
+                shipment.shipTo?.companyName,
+                shipment.shipTo?.company
+            );
+
+            // 5. ADDRESSES
+            const shipFromFields = shipment.shipFrom || {};
+            const shipToFields = shipment.shipTo || {};
+
+            searchableContent.push(
+                shipFromFields.street,
+                shipFromFields.city,
+                shipFromFields.state,
+                shipFromFields.postalCode,
+                shipToFields.street,
+                shipToFields.city,
+                shipToFields.state,
+                shipToFields.postalCode
+            );
+
+            // Filter out null/undefined values and convert to lowercase
+            const cleanedContent = searchableContent
+                .filter(item => item !== null && item !== undefined && item !== '')
+                .map(item => String(item).toLowerCase());
+
+            // Search logic with exact, word boundary, and fuzzy matching
+            const allFields = cleanedContent;
+
+            // Exact match gets highest priority
+            if (allFields.some(content => content === normalizedSearchTerm)) return true;
+
+            // Word boundary match gets second priority
+            const wordBoundaryMatch = allFields.some(content => {
+                const wordBoundaryRegex = new RegExp(`\\b${normalizedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                return wordBoundaryRegex.test(content);
+            });
+            if (wordBoundaryMatch) return true;
+
+            // Contains matching for longer terms
+            const containsMatch = allFields.some(content => content.includes(normalizedSearchTerm));
+            if (containsMatch) return true;
+
+            // Fuzzy matching for longer terms
+            return allFields.some(content => fuzzyMatch(content, normalizedSearchTerm, 0.7));
+        });
+
+        console.log(`🔍 performUnifiedSearch returning ${filteredResults.length} results out of ${shipments.length} input shipments`);
+        return filteredResults;
+    }, []);
+
+    // NEW: GENERATE LIVE SHIPMENT RESULTS for autocomplete
+    const generateLiveShipmentResults = useCallback((searchTerm, shipments, customersMap) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            return [];
+        }
+
+        const normalizedTerm = searchTerm.toLowerCase();
+        const results = [];
+
+        // Helper function to get shipment date
+        const getShipmentDate = (shipment) => {
+            const timestamp = shipment.createdAt || shipment.bookedAt || shipment.shipmentDate;
+            if (!timestamp) return null;
+            if (timestamp.toDate) return timestamp.toDate();
+            if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+            return new Date(timestamp);
+        };
+
+        // Helper function to get status display
+        const getStatusDisplay = (status) => {
+            if (!status) return 'Unknown';
+            return status.replace('_', ' ').split(' ').map(word =>
+                word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+            ).join(' ');
+        };
+
+        // Helper function to check if shipment matches search
+        const shipmentMatches = (shipment) => {
+            const searchableFields = [
+                shipment.shipmentID,
+                shipment.id,
+                shipment.referenceNumber,
+                shipment.trackingNumber,
+                shipment.shipFrom?.companyName,
+                shipment.shipTo?.companyName,
+                shipment.shipFrom?.city,
+                shipment.shipTo?.city,
+                shipment.status
+            ];
+
+            return searchableFields.some(field => {
+                if (!field) return false;
+                return String(field).toLowerCase().includes(normalizedTerm);
+            });
+        };
+
+        // Search through shipments and add matching ones to results
+        shipments.slice(0, 100).forEach(shipment => {
+            if (shipmentMatches(shipment)) {
+                const routeInfo = `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`;
+
+                const result = {
+                    type: 'live_shipment',
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    documentId: shipment.id,
+                    shipment: shipment,
+                    route: routeInfo,
+                    status: getStatusDisplay(shipment.status),
+                    date: (() => {
+                        const date = getShipmentDate(shipment);
+                        if (date && typeof date.toLocaleDateString === 'function') {
+                            return date.toLocaleDateString();
+                        }
+                        return 'N/A';
+                    })(),
+                    referenceNumber: shipment.referenceNumber || 'N/A',
+                    trackingNumber: shipment.trackingNumber || 'N/A',
+                    carrier: shipment.carrier || 'N/A',
+                    companyName: shipment.shipFrom?.companyName || shipment.shipTo?.companyName || 'N/A',
+                    score: String(shipment.shipmentID || shipment.id).toLowerCase().startsWith(normalizedTerm) ? 10 : 5
+                };
+                results.push(result);
+            }
+        });
+
+        // Sort by score and limit results
+        results.sort((a, b) => b.score - a.score);
+        return results.slice(0, 6);
+    }, []);
+
+    // Handle enterprise search functionality
+    const handleEnterpriseSearchEnter = useCallback(() => {
+        console.log('🔍 Enterprise search Enter pressed - opening ShipmentsX with search term:', unifiedSearch);
+
+        // Set search parameters for ShipmentsX modal
+        setShipmentsDeepLinkParams({
+            searchTerm: unifiedSearch.trim()
+        });
+
+        // Open ShipmentsX modal
+        setIsShipmentsModalOpen(true);
+
+        // Clear live results
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+    }, [unifiedSearch]);
+
+    // Handle shipment selection from autocomplete
+    const handleViewShipmentDetail = useCallback((shipmentDocumentId) => {
+        console.log('🎯 Navigating to shipment detail:', shipmentDocumentId);
+
+        // Set deep link params to go directly to shipment detail
+        setShipmentsDeepLinkParams({
+            directToDetail: true,
+            selectedShipmentId: shipmentDocumentId
+        });
+
+        // Open ShipmentsX modal
+        setIsShipmentsModalOpen(true);
+
+        // Clear search
+        setUnifiedSearch('');
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+    }, []);
+
     // Handler for navigating from Customers to Shipments with deep linking
     const handleNavigateToShipments = useCallback((deepLinkParams = {}) => {
         console.log('Navigating to Shipments with params:', deepLinkParams);
@@ -3325,10 +3598,203 @@ const Dashboard = () => {
             position: 'relative',
             bgcolor: '#000'
         }}>
+            {/* Enterprise Search Bar - Full Width Below Header */}
+            <Box sx={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1100,
+                bgcolor: 'rgba(0, 0, 0, 0.95)',
+                backdropFilter: 'blur(20px)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                p: 2
+            }}>
+                <Box sx={{
+                    maxWidth: '800px',
+                    margin: '0 auto',
+                    position: 'relative'
+                }}>
+                    <TextField
+                        fullWidth
+                        variant="outlined"
+                        size="medium"
+                        value={unifiedSearch}
+                        onChange={(e) => {
+                            const value = e.target.value.trim();
+                            setUnifiedSearch(value);
+
+                            // Generate live results for autocomplete
+                            if (value.length >= 2) {
+                                setSelectedResultIndex(-1);
+                                const results = generateLiveShipmentResults(value, shipments, customers);
+                                setLiveResults(results);
+                                setShowLiveResults(results.length > 0);
+                            } else {
+                                setLiveResults([]);
+                                setShowLiveResults(false);
+                            }
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                setSelectedResultIndex(prev =>
+                                    prev < liveResults.length - 1 ? prev + 1 : prev
+                                );
+                            } else if (e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                setSelectedResultIndex(prev => prev > 0 ? prev - 1 : -1);
+                            } else if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (selectedResultIndex >= 0 && liveResults[selectedResultIndex]) {
+                                    const selectedResult = liveResults[selectedResultIndex];
+                                    if (selectedResult.type === 'live_shipment') {
+                                        handleViewShipmentDetail(selectedResult.documentId);
+                                    }
+                                } else {
+                                    handleEnterpriseSearchEnter();
+                                }
+                            } else if (e.key === 'Escape') {
+                                setShowLiveResults(false);
+                                setSelectedResultIndex(-1);
+                            }
+                        }}
+                        onBlur={() => {
+                            setTimeout(() => setShowLiveResults(false), 300);
+                        }}
+                        onFocus={() => {
+                            if (unifiedSearch.length >= 2 && liveResults.length > 0) {
+                                setShowLiveResults(true);
+                            }
+                        }}
+                        placeholder="Search shipments, tracking numbers, companies, addresses..."
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon sx={{ color: 'rgba(255, 255, 255, 0.7)' }} />
+                                </InputAdornment>
+                            ),
+                            endAdornment: unifiedSearch && (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                            setUnifiedSearch('');
+                                            setShowLiveResults(false);
+                                            setLiveResults([]);
+                                        }}
+                                        sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                                    >
+                                        <CloseIcon fontSize="small" />
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                            sx: {
+                                '& .MuiInputBase-input': {
+                                    color: 'white',
+                                    fontSize: '16px',
+                                    '&::placeholder': {
+                                        color: 'rgba(255, 255, 255, 0.5)',
+                                        opacity: 1
+                                    }
+                                }
+                            }
+                        }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                borderRadius: '12px',
+                                '& fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                                },
+                                '&:hover fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.4)',
+                                },
+                                '&.Mui-focused fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.6)',
+                                    borderWidth: '2px'
+                                },
+                            }
+                        }}
+                    />
+
+                    {/* Live Search Results Dropdown */}
+                    {showLiveResults && liveResults.length > 0 && (
+                        <Paper
+                            sx={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                right: 0,
+                                mt: 1,
+                                maxHeight: '400px',
+                                overflowY: 'auto',
+                                bgcolor: 'rgba(0, 0, 0, 0.95)',
+                                backdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                borderRadius: '12px',
+                                zIndex: 1200
+                            }}
+                        >
+                            <List sx={{ p: 0 }}>
+                                {liveResults.map((result, index) => (
+                                    <ListItem
+                                        key={`${result.type}-${result.shipmentId || index}`}
+                                        component="div"
+                                        sx={{
+                                            cursor: 'pointer',
+                                            bgcolor: selectedResultIndex === index ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                                            borderBottom: index < liveResults.length - 1 ? '1px solid rgba(255, 255, 255, 0.1)' : 'none',
+                                            '&:hover': {
+                                                bgcolor: 'rgba(255, 255, 255, 0.1)'
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            if (result.type === 'live_shipment') {
+                                                handleViewShipmentDetail(result.documentId);
+                                            }
+                                        }}
+                                    >
+                                        <ListItemText
+                                            primary={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <Typography variant="body2" sx={{ fontWeight: 600, color: 'white' }}>
+                                                        {result.shipmentId}
+                                                    </Typography>
+                                                    <Chip
+                                                        label={result.status}
+                                                        size="small"
+                                                        sx={{
+                                                            bgcolor: 'rgba(255, 255, 255, 0.1)',
+                                                            color: 'white',
+                                                            fontSize: '10px'
+                                                        }}
+                                                    />
+                                                </Box>
+                                            }
+                                            secondary={
+                                                <Box sx={{ mt: 0.5 }}>
+                                                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)', display: 'block' }}>
+                                                        {result.route}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                                                        {result.companyName} • {result.date}
+                                                    </Typography>
+                                                </Box>
+                                            }
+                                        />
+                                    </ListItem>
+                                ))}
+                            </List>
+                        </Paper>
+                    )}
+                </Box>
+            </Box>
+
             {/* Fixed Top Right Profile and Settings */}
             <Box sx={{
                 position: 'fixed',
-                top: 16,
+                top: 80, // Adjusted to be below the search bar
                 right: 16,
                 zIndex: 1200,
                 display: 'flex',
@@ -3612,63 +4078,7 @@ const Dashboard = () => {
 
                 </Box>
 
-                {/* Tracking Search Box */}
-                <Box sx={{
-                    px: { xs: 1.3, sm: 1.7 }, // Reduced by 15% from 1.5, 2
-                    py: 1.7, // Reduced by 15% from 2
-                    position: 'relative',
-                    zIndex: 1
-                }}>
-                    <TextField
-                        fullWidth
-                        variant="outlined"
-                        size="small"
-                        value={trackingNumber}
-                        onChange={(e) => setTrackingNumber(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleTrackShipment()}
-                        placeholder="Track Shipment"
-                        className="tracking-search-box"
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <BarcodeIcon sx={{
-                                        color: 'rgba(0, 0, 0, 0.6)',
-                                        fontSize: '17px' // Reduced by 15% from 20px
-                                    }} />
-                                </InputAdornment>
-                            ),
-                            sx: {
-                                '& .MuiInputBase-input': {
-                                    fontSize: '10.2px', // Reduced by 15% from 12px
-                                    color: '#000',
-                                    '&::placeholder': {
-                                        color: 'rgba(0, 0, 0, 0.5)',
-                                        opacity: 1
-                                    }
-                                }
-                            }
-                        }}
-                        sx={{
-                            '& .MuiOutlinedInput-root': {
-                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                borderRadius: '7px', // Reduced by 15% from 8px
-                                '& fieldset': {
-                                    borderColor: 'rgba(255, 255, 255, 0.3)',
-                                },
-                                '&:hover fieldset': {
-                                    borderColor: 'rgba(255, 255, 255, 0.5)',
-                                },
-                                '&.Mui-focused fieldset': {
-                                    borderColor: 'rgba(255, 255, 255, 0.7)',
-                                },
-                            },
-                            '& .MuiInputBase-input': {
-                                fontSize: '10.2px', // Reduced by 15% from 12px
-                                py: 0.85 // Reduced by 15% from 1
-                            }
-                        }}
-                    />
-                </Box>
+
 
                 {/* Enhanced Menu Items */}
                 <List sx={{
