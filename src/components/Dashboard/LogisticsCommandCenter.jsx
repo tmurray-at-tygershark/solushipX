@@ -634,7 +634,7 @@ const LogisticsCommandCenter = ({
                             fontSize: '0.65rem',
                             mt: -0.25
                         }}>
-                            ID: {finalCompanyData?.companyID?.toLowerCase() || 'n/a'}
+                            ID: {finalCompanyData?.companyID?.toUpperCase() || 'N/A'}
                         </Typography>
                         {/* Company Switcher Icon - Only show for Super Admins and Multi-Company Admins */}
                         {finalCompanyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) && onOpenCompanySwitcher && (

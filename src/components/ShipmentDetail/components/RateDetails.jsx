@@ -98,27 +98,10 @@ const RateDetails = ({
     const [editingValues, setEditingValues] = useState({});
     const [localRateBreakdown, setLocalRateBreakdown] = useState([]);
 
-    // Debug logging to see role and admin status
-    console.log('🔍 RateDetails Debug:', {
-        currentUser: currentUser,
-        userRole: userRole,
-        userRoleFromCurrentUser: currentUser?.role,
-        userObject: JSON.stringify(currentUser, null, 2),
-        isAdmin: isAdmin,
-        canSeeActualRates: canSeeActualRates(currentUser)
-    });
-
     // Enhanced admin check using the userRole from AuthContext
     const enhancedIsAdmin = userRole && (
         ['admin', 'superadmin', 'super_admin'].includes(userRole.toLowerCase())
     );
-
-    console.log('🔍 Enhanced Admin Check:', {
-        originalIsAdmin: isAdmin,
-        enhancedIsAdmin: enhancedIsAdmin,
-        userRole: userRole,
-        roleCheck: ['admin', 'superadmin', 'super_admin'].includes(userRole?.toLowerCase())
-    });
 
     // Check if this is a QuickShip shipment
     const isQuickShip = shipment?.creationMethod === 'quickship';

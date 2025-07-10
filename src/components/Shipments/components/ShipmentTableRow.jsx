@@ -627,11 +627,27 @@ const ShipmentTableRow = ({
                                     const formatEtaDate = (date) => {
                                         if (!date) return null;
                                         try {
-                                            const dateObj = date?.toDate ? date.toDate() : new Date(date);
+                                            let dateObj;
+
+                                            // Handle Firestore Timestamp
+                                            if (date?.toDate) {
+                                                dateObj = date.toDate();
+                                            }
+                                            // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                            else if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                const parts = date.split('-');
+                                                dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                            }
+                                            // Handle other date formats
+                                            else {
+                                                dateObj = new Date(date);
+                                            }
+
                                             return dateObj.toLocaleDateString('en-US', {
                                                 month: '2-digit',
                                                 day: '2-digit',
-                                                year: '2-digit'
+                                                year: '2-digit',
+                                                timeZone: 'America/Toronto' // Force Eastern Time
                                             });
                                         } catch (error) {
                                             return null;
@@ -1054,11 +1070,27 @@ const ShipmentTableRow = ({
                                 const formatEtaDate = (date) => {
                                     if (!date) return null;
                                     try {
-                                        const dateObj = date?.toDate ? date.toDate() : new Date(date);
+                                        let dateObj;
+
+                                        // Handle Firestore Timestamp
+                                        if (date?.toDate) {
+                                            dateObj = date.toDate();
+                                        }
+                                        // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                        else if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                            const parts = date.split('-');
+                                            dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                        }
+                                        // Handle other date formats
+                                        else {
+                                            dateObj = new Date(date);
+                                        }
+
                                         return dateObj.toLocaleDateString('en-US', {
                                             month: '2-digit',
                                             day: '2-digit',
-                                            year: '2-digit'
+                                            year: '2-digit',
+                                            timeZone: 'America/Toronto' // Force Eastern Time
                                         });
                                     } catch (error) {
                                         return null;

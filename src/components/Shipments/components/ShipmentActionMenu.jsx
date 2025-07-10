@@ -81,6 +81,13 @@ const ShipmentActionMenu = ({
         }
     };
 
+    const handleDeleteDraft = () => {
+        onClose();
+        if (onDeleteDraft) {
+            onDeleteDraft(selectedShipment);
+        }
+    };
+
     // Check shipment status for edit availability
     const shipmentStatus = selectedShipment?.status?.toLowerCase() || '';
     const isDraft = shipmentStatus === 'draft';
@@ -149,7 +156,10 @@ const ShipmentActionMenu = ({
                         </ListItemIcon>
                         Edit Draft
                     </MenuItem>
-                    <MenuItem onClick={() => onDeleteDraft(selectedShipment)}>
+                    <MenuItem onClick={() => {
+                        onClose();
+                        onDeleteDraft(selectedShipment);
+                    }}>
                         <ListItemIcon>
                             <DeleteIcon sx={{ fontSize: '14px' }} />
                         </ListItemIcon>

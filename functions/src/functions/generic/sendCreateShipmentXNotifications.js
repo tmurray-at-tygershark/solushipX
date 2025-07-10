@@ -810,15 +810,33 @@ function formatDate(dateString) {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'America/Toronto' // Force Eastern Time
     });
     
     try {
-        return new Date(dateString).toLocaleDateString('en-US', {
+        let date;
+        
+        // Handle Firestore Timestamp
+        if (dateString?.toDate) {
+            date = dateString.toDate();
+        } 
+        // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+        else if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const parts = dateString.split('-');
+            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } 
+        // Handle other date formats
+        else {
+            date = new Date(dateString);
+        }
+        
+        return date.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
-            day: 'numeric'
+            day: 'numeric',
+            timeZone: 'America/Toronto' // Force Eastern Time
         });
     } catch (error) {
         return dateString;

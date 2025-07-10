@@ -75,7 +75,8 @@ import { generateShipmentId } from '../../utils/shipmentIdGenerator';
 import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
 import { shipmentConverter } from '../../utils/shipmentConversion';
-import ConversionConfirmationDialog from '../common/ConversionConfirmationDialog';
+import { convertDraftInDatabase } from '../../utils/draftConversion';
+
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -289,9 +290,13 @@ const CreateShipmentX = (props) => {
             isModal,
             draftId,
             editMode,
-            propsKeys: Object.keys(props)
+            propsKeys: Object.keys(props),
+            prePopulatedDataFromProps: props.prePopulatedData,
+            prePopulatedDataDestructured: prePopulatedData,
+            prePopulatedDataExists: !!prePopulatedData,
+            prePopulatedDataType: typeof prePopulatedData
         });
-    }, [props, onConvertToQuickShip, isModal, draftId, editMode]);
+    }, [props, onConvertToQuickShip, isModal, draftId, editMode, prePopulatedData]);
 
 
 
@@ -3066,11 +3071,20 @@ const CreateShipmentX = (props) => {
 
     // Process prePopulatedData from conversion (QuickShip → CreateShipmentX)
     useEffect(() => {
-        if (prePopulatedData && !isEditingDraft && !activeDraftId) {
+        console.log('🔍 PREPOPULATED DATA USEEFFECT TRIGGERED:', {
+            hasPrePopulatedData: !!prePopulatedData,
+            prePopulatedData: prePopulatedData,
+            activeDraftId: activeDraftId,
+            isConversion: prePopulatedData?.isConversion,
+            condition: !!(prePopulatedData && (!activeDraftId || prePopulatedData?.isConversion))
+        });
+
+        if (prePopulatedData && (!activeDraftId || prePopulatedData?.isConversion)) {
             console.log('🔄 CreateShipmentX processing converted data from QuickShip:', prePopulatedData);
 
             // Apply converted shipment information
             if (prePopulatedData.shipmentInfo) {
+                console.log('🔄 Applying shipment info:', prePopulatedData.shipmentInfo);
                 setShipmentInfo(prev => ({
                     ...prev,
                     ...prePopulatedData.shipmentInfo
@@ -3079,64 +3093,75 @@ const CreateShipmentX = (props) => {
 
             // Apply address data
             if (prePopulatedData.shipFromAddress) {
+                console.log('🔄 Applying ship from address:', prePopulatedData.shipFromAddress);
                 setShipFromAddress(prePopulatedData.shipFromAddress);
             }
 
             if (prePopulatedData.shipToAddress) {
+                console.log('🔄 Applying ship to address:', prePopulatedData.shipToAddress);
                 setShipToAddress(prePopulatedData.shipToAddress);
             }
 
             // Apply package data
             if (prePopulatedData.packages && prePopulatedData.packages.length > 0) {
+                console.log('🔄 Applying packages:', prePopulatedData.packages);
                 setPackages(prePopulatedData.packages);
             }
 
             // Apply converted rate as selectedRate (from manual rates)
             if (prePopulatedData.selectedRate) {
+                console.log('🔄 Applying selected rate:', prePopulatedData.selectedRate);
                 setSelectedRate(prePopulatedData.selectedRate);
             }
 
             // Apply additional services
             if (prePopulatedData.additionalServices) {
+                console.log('🔄 Applying additional services:', prePopulatedData.additionalServices);
                 setAdditionalServices(prePopulatedData.additionalServices);
             }
 
             // Apply broker information
             if (prePopulatedData.selectedBroker) {
+                console.log('🔄 Applying selected broker:', prePopulatedData.selectedBroker);
                 setSelectedBroker(prePopulatedData.selectedBroker);
             }
             if (prePopulatedData.brokerPort) {
+                console.log('🔄 Applying broker port:', prePopulatedData.brokerPort);
                 setBrokerPort(prePopulatedData.brokerPort);
             }
             if (prePopulatedData.brokerReference) {
+                console.log('🔄 Applying broker reference:', prePopulatedData.brokerReference);
                 setBrokerReference(prePopulatedData.brokerReference);
             }
 
             // **CRITICAL**: Maintain the same shipmentID for continuity
             if (prePopulatedData.shipmentID) {
+                console.log('🔄 Applying shipment ID:', prePopulatedData.shipmentID);
                 setShipmentID(prePopulatedData.shipmentID);
             }
 
             // Maintain draft status for seamless conversion
             if (prePopulatedData.isEditingDraft && prePopulatedData.activeDraftId) {
+                console.log('🔄 Applying draft status:', prePopulatedData.isEditingDraft, prePopulatedData.activeDraftId);
                 setIsEditingDraft(prePopulatedData.isEditingDraft);
                 setActiveDraftId(prePopulatedData.activeDraftId);
             }
 
             console.log('✅ CreateShipmentX conversion from QuickShip completed successfully');
+        } else {
+            console.log('❌ PREPOPULATED DATA USEEFFECT CONDITIONS NOT MET:', {
+                hasPrePopulatedData: !!prePopulatedData,
+                activeDraftId: activeDraftId,
+                reason: !prePopulatedData ? 'No prePopulatedData' : activeDraftId ? 'activeDraftId exists' : 'Unknown'
+            });
         }
-    }, [prePopulatedData, isEditingDraft, activeDraftId]);
+    }, [prePopulatedData, activeDraftId]);
 
     // Conversion state
     const [showConversionDialog, setShowConversionDialog] = useState(false);
     const [isConverting, setIsConverting] = useState(false);
 
-    // New comprehensive conversion state
-    const [conversionDialog, setConversionDialog] = useState({
-        open: false,
-        loading: false,
-        result: null
-    });
+
 
     // Conversion function to transform CreateShipmentX data to QuickShip format
     const convertToQuickShip = useCallback(() => {
@@ -3191,57 +3216,69 @@ const CreateShipmentX = (props) => {
                     const carrierName = selectedRate.carrier?.name || selectedRate.sourceCarrierName || '';
 
                     // Main freight charge
+                    // Check if we have markup metadata to determine cost vs charge
+                    const hasMarkup = selectedRate.markupMetadata && selectedRate.markupMetadata.originalTotal;
+
                     if (selectedRate.pricing?.freight || selectedRate.freightCharges) {
+                        const freightAmount = selectedRate.pricing?.freight || selectedRate.freightCharges || 0;
+                        // If markup was applied, calculate the original cost
+                        const freightCost = hasMarkup ?
+                            Math.max(0, freightAmount - (selectedRate.markupMetadata.totalMarkupAmount || 0)) :
+                            freightAmount;
+
                         rates.push({
                             id: rateId++,
                             carrier: carrierName,
                             code: 'FRT',
                             chargeName: 'Freight',
-                            cost: (selectedRate.pricing?.freight || selectedRate.freightCharges || 0).toString(),
+                            cost: freightCost.toString(),
                             costCurrency: selectedRate.pricing?.currency || 'CAD',
-                            charge: (selectedRate.pricing?.freight || selectedRate.freightCharges || 0).toString(),
+                            charge: freightAmount.toString(),
                             chargeCurrency: selectedRate.pricing?.currency || 'CAD'
                         });
                     }
 
-                    // Fuel surcharge
+                    // Fuel surcharge (typically no markup on fuel)
                     if (selectedRate.pricing?.fuel || selectedRate.fuelCharges) {
+                        const fuelAmount = selectedRate.pricing?.fuel || selectedRate.fuelCharges || 0;
                         rates.push({
                             id: rateId++,
                             carrier: carrierName,
                             code: 'FUE',
                             chargeName: 'Fuel Surcharge',
-                            cost: (selectedRate.pricing?.fuel || selectedRate.fuelCharges || 0).toString(),
+                            cost: fuelAmount.toString(),
                             costCurrency: selectedRate.pricing?.currency || 'CAD',
-                            charge: (selectedRate.pricing?.fuel || selectedRate.fuelCharges || 0).toString(),
+                            charge: fuelAmount.toString(),
                             chargeCurrency: selectedRate.pricing?.currency || 'CAD'
                         });
                     }
 
-                    // Service charges
+                    // Service charges (typically no markup on service)
                     if (selectedRate.pricing?.service || selectedRate.serviceCharges) {
+                        const serviceAmount = selectedRate.pricing?.service || selectedRate.serviceCharges || 0;
                         rates.push({
                             id: rateId++,
                             carrier: carrierName,
                             code: 'SUR',
                             chargeName: 'Service Charges',
-                            cost: (selectedRate.pricing?.service || selectedRate.serviceCharges || 0).toString(),
+                            cost: serviceAmount.toString(),
                             costCurrency: selectedRate.pricing?.currency || 'CAD',
-                            charge: (selectedRate.pricing?.service || selectedRate.serviceCharges || 0).toString(),
+                            charge: serviceAmount.toString(),
                             chargeCurrency: selectedRate.pricing?.currency || 'CAD'
                         });
                     }
 
-                    // Accessorial charges
+                    // Accessorial charges (typically no markup on accessorial)
                     if (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges) {
+                        const accessorialAmount = selectedRate.pricing?.accessorial || selectedRate.accessorialCharges || 0;
                         rates.push({
                             id: rateId++,
                             carrier: carrierName,
                             code: 'ACC',
                             chargeName: 'Accessorial',
-                            cost: (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges || 0).toString(),
+                            cost: accessorialAmount.toString(),
                             costCurrency: selectedRate.pricing?.currency || 'CAD',
-                            charge: (selectedRate.pricing?.accessorial || selectedRate.accessorialCharges || 0).toString(),
+                            charge: accessorialAmount.toString(),
                             chargeCurrency: selectedRate.pricing?.currency || 'CAD'
                         });
                     }
@@ -3255,13 +3292,16 @@ const CreateShipmentX = (props) => {
                             if (detail.amount && detail.amount > 0) {
                                 // Map charge categories to rate codes
                                 let code = 'MSC'; // Default miscellaneous
-                                if (detail.category === 'freight' || detail.name.toLowerCase().includes('freight')) {
+                                const detailName = detail.name || '';
+                                const detailCategory = detail.category || '';
+
+                                if (detailCategory === 'freight' || detailName.toLowerCase().includes('freight')) {
                                     code = 'FRT';
-                                } else if (detail.category === 'fuel' || detail.name.toLowerCase().includes('fuel')) {
+                                } else if (detailCategory === 'fuel' || detailName.toLowerCase().includes('fuel')) {
                                     code = 'FUE';
-                                } else if (detail.category === 'service' || detail.name.toLowerCase().includes('service')) {
+                                } else if (detailCategory === 'service' || detailName.toLowerCase().includes('service')) {
                                     code = 'SUR';
-                                } else if (detail.category === 'accessorial' || detail.name.toLowerCase().includes('accessorial')) {
+                                } else if (detailCategory === 'accessorial' || detailName.toLowerCase().includes('accessorial')) {
                                     code = 'ACC';
                                 }
 
@@ -3269,7 +3309,7 @@ const CreateShipmentX = (props) => {
                                     id: rateId++,
                                     carrier: carrierName,
                                     code: code,
-                                    chargeName: detail.name,
+                                    chargeName: detailName || 'Unknown Charge',
                                     cost: detail.actualAmount ? detail.actualAmount.toString() : detail.amount.toString(),
                                     costCurrency: selectedRate.pricing?.currency || 'CAD',
                                     charge: detail.amount.toString(),
@@ -3323,137 +3363,109 @@ const CreateShipmentX = (props) => {
             // Draft information for continuity
             shipmentID: shipmentID,
             isEditingDraft: isEditingDraft,
-            activeDraftId: activeDraftId
+            activeDraftId: activeDraftId,
+
+            // Customer information for super admins
+            selectedCustomerId: selectedCustomerId,
+
+            // Rate source information
+            rateSource: 'converted_from_manual'
         };
 
         console.log('🔄 Converted data for QuickShip:', convertedData);
         return convertedData;
-    }, [shipmentInfo, shipFromAddress, shipToAddress, packages, selectedRate, additionalServices, selectedBroker, brokerPort, brokerReference, shipmentID, isEditingDraft, activeDraftId]);
+    }, [shipmentInfo, shipFromAddress, shipToAddress, packages, selectedRate, additionalServices, selectedBroker, brokerPort, brokerReference, shipmentID, isEditingDraft, activeDraftId, selectedCustomerId]);
 
-    // New comprehensive conversion system
+    // Simple conversion system
     const handleConvertToQuickShip = () => {
-        // For draft shipments, use the new safe conversion system
-        if (isEditingDraft && activeDraftId) {
-            setConversionDialog({
-                open: true,
-                loading: false,
-                result: null
-            });
-        } else {
-            // For non-draft shipments, use the legacy system for now
-            setShowConversionDialog(true);
-        }
+        setShowConversionDialog(true);
     };
 
-    // Handle safe conversion confirmation
-    const handleSafeConversionConfirm = async (wantsBackup) => {
-        if (!isEditingDraft || !activeDraftId) {
-            console.error('🚨 Safe conversion only available for draft shipments');
-            return;
-        }
 
-        console.log('🔄 Starting safe conversion to QuickShip format');
 
-        setConversionDialog(prev => ({
-            ...prev,
-            loading: true,
-            result: null
-        }));
-
-        try {
-            // Get current shipment data from the form
-            const currentShipmentData = {
-                shipmentInfo,
-                shipFromAddress,
-                shipToAddress,
-                packages,
-                selectedRate,
-                additionalServices,
-                selectedBroker,
-                brokerPort,
-                brokerReference,
-                shipmentID,
-                creationMethod: 'advanced' // Current format
-            };
-
-            // Convert to QuickShip format
-            const convertedData = convertToQuickShip();
-
-            // Use the safety conversion system
-            const result = await shipmentConverter.convertShipment(
-                activeDraftId, // Firestore document ID
-                'advanced',    // From format
-                'quickship',   // To format
-                convertedData, // Converted data
-                user.email     // User performing conversion
-            );
-
-            console.log('🔄 Conversion result:', result);
-
-            setConversionDialog(prev => ({
-                ...prev,
-                loading: false,
-                result: result
-            }));
-
-            // If successful, call the parent conversion handler
-            if (result.success && typeof onConvertToQuickShip === 'function') {
-                console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with converted data');
-                onConvertToQuickShip(convertedData);
-                showMessage('Shipment successfully converted to QuickShip format!', 'success');
-            }
-
-        } catch (error) {
-            console.error('🚨 Safe conversion failed:', error);
-
-            setConversionDialog(prev => ({
-                ...prev,
-                loading: false,
-                result: {
-                    success: false,
-                    error: error.message,
-                    rollbackSuccessful: false,
-                    message: 'Conversion failed with error: ' + error.message
-                }
-            }));
-        }
-    };
-
-    // Handle conversion dialog close
-    const handleConversionDialogClose = () => {
-        setConversionDialog({
-            open: false,
-            loading: false,
-            result: null
-        });
-    };
-
-    // Legacy conversion for non-draft shipments
-    const confirmConvertToQuickShip = () => {
+    // Handle conversion confirmation
+    const confirmConvertToQuickShip = async () => {
         setIsConverting(true);
         setShowConversionDialog(false);
 
         try {
-            const convertedData = convertToQuickShip();
+            // If we have an active draft, save the current form data first before converting
+            if (isEditingDraft && activeDraftId) {
+                console.log('🔄 Saving current form data before conversion...');
 
-            console.log('🔄 CreateShipmentX: About to call onConvertToQuickShip callback');
-            console.log('🔄 CreateShipmentX: onConvertToQuickShip exists?', !!onConvertToQuickShip);
-            console.log('🔄 CreateShipmentX: onConvertToQuickShip type:', typeof onConvertToQuickShip);
-            console.log('🔄 CreateShipmentX: onConvertToQuickShip value:', onConvertToQuickShip);
+                // Prepare the draft data with latest form values
+                const draftData = {
+                    shipmentInfo: {
+                        ...shipmentInfo,
+                        shipmentDate: shipmentInfo.shipmentDate || new Date().toISOString().split('T')[0]
+                    },
+                    shipFromAddress: shipFromAddress ? {
+                        ...shipFromAddress,
+                        id: shipFromAddress.id || shipFromAddress.addressID || shipFromAddress.uid
+                    } : null,
+                    shipToAddress: shipToAddress ? {
+                        ...shipToAddress,
+                        id: shipToAddress.id || shipToAddress.addressID || shipToAddress.uid
+                    } : null,
+                    packages,
+                    selectedRate,
+                    additionalServices,
+                    selectedBroker,
+                    brokerPort,
+                    brokerReference,
+                    shipmentID,
+                    creationMethod: 'advanced',
+                    status: 'draft',
+                    lastUpdated: new Date().toISOString(),
+                    selectedCustomerId: selectedCustomerId || 'all'
+                };
 
-            // Call the parent conversion handler
-            if (typeof onConvertToQuickShip === 'function') {
-                console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with data:', convertedData);
-                onConvertToQuickShip(convertedData);
-                console.log('🔄 CreateShipmentX: onConvertToQuickShip call completed');
-                showMessage('Successfully converted to QuickShip format!', 'success');
+                // Update the draft with latest data
+                const draftRef = doc(db, 'shipments', activeDraftId);
+
+                try {
+                    await updateDoc(draftRef, draftData);
+                    console.log('✅ Draft updated with latest form data before conversion');
+                } catch (updateError) {
+                    console.error('Error updating draft before conversion:', updateError);
+                    // Show error but allow conversion to continue with existing draft data
+                    showMessage('Warning: Could not save latest changes before conversion. Converting existing draft data.', 'warning');
+                }
+
+                console.log('🔄 Converting draft in database:', activeDraftId);
+
+                // Convert the draft in the database
+                const success = await convertDraftInDatabase(activeDraftId, 'quickship');
+
+                if (success) {
+                    showMessage('Successfully converted to QuickShip format!', 'success');
+
+                    // Call the parent conversion handler to reload with the converted draft
+                    if (typeof onConvertToQuickShip === 'function') {
+                        console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with draft ID');
+                        // Pass the draft ID so QuickShip can load it
+                        onConvertToQuickShip({ activeDraftId, isConversion: true });
+                    }
+                } else {
+                    showMessage('Failed to convert to QuickShip format', 'error');
+                }
             } else {
-                console.error('🚨 CreateShipmentX: onConvertToQuickShip callback is not a function!', {
-                    type: typeof onConvertToQuickShip,
-                    value: onConvertToQuickShip,
-                    exists: !!onConvertToQuickShip
-                });
-                showMessage('Conversion callback not available', 'error');
+                // For non-draft shipments, use the old method
+                const convertedData = convertToQuickShip();
+
+                console.log('🔄 CreateShipmentX: About to call onConvertToQuickShip callback');
+                console.log('🔄 CreateShipmentX: onConvertToQuickShip exists?', !!onConvertToQuickShip);
+                console.log('🔄 CreateShipmentX: onConvertToQuickShip type:', typeof onConvertToQuickShip);
+
+                // Call the parent conversion handler
+                if (typeof onConvertToQuickShip === 'function') {
+                    console.log('🔄 CreateShipmentX: Calling onConvertToQuickShip with data:', convertedData);
+                    onConvertToQuickShip(convertedData);
+                    showMessage('Successfully converted to QuickShip format!', 'success');
+                } else {
+                    console.error('🚨 CreateShipmentX: onConvertToQuickShip callback is not a function!');
+                    showMessage('Conversion callback not available', 'error');
+                }
             }
 
         } catch (error) {
@@ -4674,8 +4686,14 @@ const CreateShipmentX = (props) => {
                                                                     }}
                                                                 />
                                                             )}
+                                                            renderOption={(props, option) => (
+                                                                <Box component="li" {...props} sx={{ fontSize: '12px' }}>
+                                                                    {option.label}
+                                                                </Box>
+                                                            )}
                                                             sx={{
-                                                                '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                '& .MuiAutocomplete-input': { fontSize: '12px' },
+                                                                '& .MuiAutocomplete-option': { fontSize: '12px' }
                                                             }}
                                                         />
                                                     </Grid>
@@ -4688,8 +4706,21 @@ const CreateShipmentX = (props) => {
                                                             type="number"
                                                             value={pkg.packagingQuantity || 1}
                                                             onChange={(e) => {
-                                                                const value = Math.max(1, parseInt(e.target.value) || 1);
-                                                                updatePackage(pkg.id, 'packagingQuantity', value);
+                                                                const value = e.target.value;
+                                                                // Allow empty value during typing
+                                                                if (value === '') {
+                                                                    updatePackage(pkg.id, 'packagingQuantity', '');
+                                                                } else {
+                                                                    const numValue = parseInt(value);
+                                                                    if (!isNaN(numValue) && numValue > 0) {
+                                                                        updatePackage(pkg.id, 'packagingQuantity', numValue);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            onBlur={(e) => {
+                                                                // On blur, ensure we have at least 1
+                                                                const value = parseInt(e.target.value) || 1;
+                                                                updatePackage(pkg.id, 'packagingQuantity', Math.max(1, value));
                                                             }}
                                                             required
                                                             autoComplete="off"
@@ -4918,9 +4949,15 @@ const CreateShipmentX = (props) => {
                                                                         }}
                                                                     />
                                                                 )}
+                                                                renderOption={(props, option) => (
+                                                                    <Box component="li" {...props} sx={{ fontSize: '12px' }}>
+                                                                        {option.label}
+                                                                    </Box>
+                                                                )}
                                                                 sx={{
                                                                     minWidth: '70px',
-                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' },
+                                                                    '& .MuiAutocomplete-option': { fontSize: '12px' }
                                                                 }}
                                                             />
                                                         </Box>
@@ -4966,6 +5003,15 @@ const CreateShipmentX = (props) => {
                                                                         if (!value) return '';
                                                                         const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
                                                                         return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                                                    }}
+                                                                    MenuProps={{
+                                                                        PaperProps: {
+                                                                            sx: {
+                                                                                '& .MuiMenuItem-root': {
+                                                                                    fontSize: '12px'
+                                                                                }
+                                                                            }
+                                                                        }
                                                                     }}
                                                                 >
                                                                     <MenuItem value="" sx={{ fontSize: '12px' }}>
@@ -5722,7 +5768,7 @@ const CreateShipmentX = (props) => {
                 </Box>
             )}
 
-            {/* Conversion Confirmation Dialog */}
+            {/* Simple Conversion Confirmation Dialog */}
             <Dialog
                 open={showConversionDialog}
                 onClose={() => setShowConversionDialog(false)}
@@ -5742,64 +5788,19 @@ const CreateShipmentX = (props) => {
                     Convert to QuickShip
                 </DialogTitle>
                 <DialogContent sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body1" sx={{ mb: 2, fontSize: '14px' }}>
-                        Switch to manual rate entry for faster processing. Your shipment data will be preserved and you can convert back anytime before booking.
+                    <Typography variant="body1" sx={{ mb: 3, fontSize: '14px' }}>
+                        Switch to manual rate entry for faster processing.
                     </Typography>
 
-                    {/* Data Transfer Preview */}
-                    <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #0ea5e9' }}>
-                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 2 }}>
-                            📋 Data to be transferred:
-                        </Typography>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
-                                ✓ Shipment ID: {shipmentID}
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
-                                ✓ Addresses ({shipFromAddress ? '1' : '0'} from, {shipToAddress ? '1' : '0'} to)
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
-                                ✓ Packages ({packages.length} items)
-                            </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#075985' }}>
-                                ✓ Additional Services ({additionalServices.length})
-                            </Typography>
-                        </Box>
-                    </Box>
-
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
-                        Benefits of converting to QuickShip:
-                    </Typography>
-
-                    <Box sx={{ textAlign: 'left', mx: 2, mb: 2 }}>
-                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
-                            All shipment details will be preserved
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
-                            {selectedRate ? 'Selected rate will be converted to manual rate entries' : 'Ready for manual rate entry'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontSize: '12px', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
-                            Faster booking process with manual rates
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CheckCircleIcon sx={{ fontSize: 16, color: '#4caf50' }} />
-                            Full control over pricing and carrier selection
+                    <Box sx={{ mb: 3, p: 2, bgcolor: '#fff3cd', borderRadius: 1, border: '1px solid #ffeaa7' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#856404' }}>
+                            ⚠️ Note: Some data may not transfer perfectly between formats.
                         </Typography>
                     </Box>
 
-                    {selectedRate && (
-                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>
-                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#0c4a6e', mb: 1 }}>
-                                Selected Rate Preview:
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#075985' }}>
-                                {selectedRate.carrier?.name || selectedRate.sourceCarrierName} - ${(selectedRate.pricing?.total || selectedRate.totalCharges || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </Typography>
-                        </Box>
-                    )}
+                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Your shipment details will be preserved and you can convert back anytime before booking.
+                    </Typography>
                 </DialogContent>
                 <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
                     <Button
@@ -5829,30 +5830,7 @@ const CreateShipmentX = (props) => {
                 </DialogActions>
             </Dialog>
 
-            {/* New Comprehensive Conversion Confirmation Dialog */}
-            <ConversionConfirmationDialog
-                open={conversionDialog.open}
-                onClose={handleConversionDialogClose}
-                onConfirm={handleSafeConversionConfirm}
-                shipmentData={{
-                    shipmentInfo,
-                    shipFromAddress,
-                    shipToAddress,
-                    packages,
-                    selectedRate,
-                    additionalServices,
-                    selectedBroker,
-                    brokerPort,
-                    brokerReference,
-                    shipmentID,
-                    creationMethod: 'advanced'
-                }}
-                fromFormat="advanced"
-                toFormat="quickship"
-                convertedData={convertToQuickShip()}
-                loading={conversionDialog.loading}
-                conversionResult={conversionDialog.result}
-            />
+
 
             {/* Snackbar for messages */}
             <Snackbar

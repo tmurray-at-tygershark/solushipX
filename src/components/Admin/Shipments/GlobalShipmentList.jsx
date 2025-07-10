@@ -600,8 +600,10 @@ const GlobalShipmentList = () => {
 
     // Handle search input change with live results
     const handleSearchChange = useCallback((event) => {
-        const value = event.target.value.trim(); // CRITICAL FIX: Strip leading/trailing spaces
+        const value = event.target.value; // Keep spaces during typing
         setSearchValue(value);
+
+        const trimmedValue = value.trim(); // Only trim for search logic
 
         // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
         const isNaturalLanguage = (query) => {
@@ -628,16 +630,16 @@ const GlobalShipmentList = () => {
         };
 
         // ALWAYS generate live shipment results (existing powerful search)
-        if (value.length >= 2) {
-            const results = generateLiveShipmentResults(value, allShipments);
+        if (trimmedValue.length >= 2) {
+            const results = generateLiveShipmentResults(trimmedValue, allShipments);
             setLiveResults(results);
             setShowLiveResults(results.length > 0);
 
             // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language
-            if (value.length >= 5 && isNaturalLanguage(value)) {
+            if (trimmedValue.length >= 5 && isNaturalLanguage(trimmedValue)) {
                 console.log('🧠 Natural language detected, triggering semantic search');
                 // Trigger semantic search which will be used in the main filtering
-                performSemanticSearch(value, allShipments).then(semanticResults => {
+                performSemanticSearch(trimmedValue, allShipments).then(semanticResults => {
                     if (semanticResults && semanticResults.length > 0) {
                         // Create live results from semantic search results
                         const semanticLiveResults = semanticResults.slice(0, 6).map(shipment => ({
@@ -687,7 +689,7 @@ const GlobalShipmentList = () => {
         setSelectedResultIndex(-1);
 
         // Clear search params if value is empty
-        if (!value.trim()) {
+        if (!trimmedValue) {
             setShipmentsDeepLinkParams(null);
         }
     }, [generateLiveShipmentResults, allShipments, performSemanticSearch, reloadShipments]);
@@ -1798,19 +1800,25 @@ const GlobalShipmentList = () => {
                         onConvertToQuickShip={(convertedData) => {
                             console.log('🔄 Admin: Converting CreateShipmentX to QuickShip with data:', convertedData);
 
-                            // CRITICAL: Store the converted data for QuickShip
-                            setPrePopulatedData(convertedData);
-
                             // Close CreateShipmentX modal
                             setCreateShipmentOpen(false);
 
-                            // Clear any existing draft ID since we're converting, not editing
-                            setQuickShipDraftId(null);
+                            // CRITICAL: Pass the draft ID to QuickShip to load the converted draft
+                            if (convertedData.activeDraftId) {
+                                console.log('🔄 Admin: Setting QuickShip draft ID to load converted draft:', convertedData.activeDraftId);
+                                setQuickShipDraftId(convertedData.activeDraftId);
+                                // Clear any prepopulated data since we're loading from draft
+                                setPrePopulatedData(null);
+                            } else {
+                                // Legacy approach with full data
+                                setPrePopulatedData(convertedData);
+                                setQuickShipDraftId(null);
+                            }
 
-                            // Open QuickShip modal with converted data
+                            // Open QuickShip modal
                             setTimeout(() => {
                                 setQuickShipOpen(true);
-                                console.log('🔄 Admin: QuickShip modal opened with converted data:', convertedData);
+                                console.log('🔄 Admin: QuickShip modal opened with draft ID:', convertedData.activeDraftId);
                             }, 300);
                         }}
                     />
@@ -1844,13 +1852,23 @@ const GlobalShipmentList = () => {
                                 console.log('🔄 Admin: Converting QuickShip to CreateShipmentX with data:', convertedData);
                                 // Close QuickShip modal
                                 setQuickShipOpen(false);
-                                // Set prePopulated data for CreateShipmentX
-                                setPrePopulatedData(convertedData);
-                                setDraftIdToEdit(null); // Clear any existing draft ID
-                                // Open CreateShipmentX modal with converted data
+
+                                // CRITICAL: Pass the draft ID to CreateShipmentX to load the converted draft
+                                if (convertedData.activeDraftId) {
+                                    console.log('🔄 Admin: Setting CreateShipmentX draft ID to load converted draft:', convertedData.activeDraftId);
+                                    setDraftIdToEdit(convertedData.activeDraftId);
+                                    // Pass minimal prepopulated data with isConversion flag
+                                    setPrePopulatedData({ isConversion: true });
+                                } else {
+                                    // Legacy approach with full data
+                                    setPrePopulatedData(convertedData);
+                                    setDraftIdToEdit(null);
+                                }
+
+                                // Open CreateShipmentX modal
                                 setTimeout(() => {
                                     setCreateShipmentOpen(true);
-                                    console.log('🔄 Admin: CreateShipmentX modal should now be open with converted data');
+                                    console.log('🔄 Admin: CreateShipmentX modal opened with draft ID:', convertedData.activeDraftId);
                                 }, 300);
                             }}
                         />

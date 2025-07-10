@@ -36,7 +36,8 @@ import {
     Alert,
     FormControlLabel,
     Checkbox,
-    Checkbox as MuiCheckbox
+    Checkbox as MuiCheckbox,
+    TableContainer
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -53,7 +54,8 @@ import {
     CloudUpload as CloudUploadIcon,
     Save as SaveIcon,
     Remove as RemoveIcon,
-    Visibility as VisibilityIcon
+    Visibility as VisibilityIcon,
+    Business as BusinessIcon
 } from '@mui/icons-material';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -68,6 +70,15 @@ import AdminBreadcrumb from '../AdminBreadcrumb';
 // Import modular carrier components
 import AddCarrier from './AddCarrier';
 import EditCarrier from './EditCarrier';
+
+// Import QuickShip Carrier Dialog (similar to regular Carriers.jsx)
+let QuickShipCarrierDialog;
+try {
+    QuickShipCarrierDialog = require('../../CreateShipment/QuickShipCarrierDialog').default;
+} catch (error) {
+    console.error('Error importing QuickShipCarrierDialog:', error);
+    QuickShipCarrierDialog = () => <div>QuickShip Carrier Dialog failed to load</div>;
+}
 
 const carrierTypes = [
     { value: 'courier', label: 'Courier' },
@@ -166,9 +177,8 @@ const CarriersTableSkeleton = () => {
                         </TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
-                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
-                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
-                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                        <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell><Box sx={{ height: '16px', width: '90px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
                         <TableCell>
                             <IconButton size="small" disabled>
@@ -268,16 +278,45 @@ const CarriersPagination = ({
 };
 
 const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
-    // Main data states
+    // Main tab state - NEW: Two-tab system
+    const [mainTab, setMainTab] = useState(0); // 0 = Connected Carriers, 1 = Quickship Carriers
+
+    // Connected Carriers data states (existing functionality)
     const [carriers, setCarriers] = useState([]);
     const [allCarriers, setAllCarriers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
 
-    // Tab and filter states
+    // Connected Carriers tab and filter states
     const [selectedTab, setSelectedTab] = useState('all');
     const [page, setPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState(25);
+
+    // NEW: Quickship Carriers states
+    const [quickshipCarriers, setQuickshipCarriers] = useState([]);
+    const [allQuickshipCarriers, setAllQuickshipCarriers] = useState([]);
+    const [quickshipLoading, setQuickshipLoading] = useState(false);
+    const [quickshipTotalCount, setQuickshipTotalCount] = useState(0);
+    const [quickshipPage, setQuickshipPage] = useState(1);
+    const [quickshipRowsPerPage, setQuickshipRowsPerPage] = useState(25);
+
+    // NEW: Company filter for quickship carriers
+    const [companies, setCompanies] = useState([]);
+    const [selectedCompany, setSelectedCompany] = useState('all');
+
+    // NEW: Quickship search and filters
+    const [quickshipSearchFields, setQuickshipSearchFields] = useState({
+        carrierName: '',
+        contactName: '',
+        accountNumber: '',
+        companyName: ''
+    });
+
+    // NEW: Quickship dialog states
+    const [showQuickshipDialog, setShowQuickshipDialog] = useState(false);
+    const [editingQuickshipCarrier, setEditingQuickshipCarrier] = useState(null);
+    const [selectedQuickshipCarrier, setSelectedQuickshipCarrier] = useState(null);
+    const [quickshipActionMenuAnchor, setQuickshipActionMenuAnchor] = useState(null);
 
 
     // Filter states
@@ -364,6 +403,35 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const { currentUser } = useAuth();
     const { enqueueSnackbar } = useSnackbar();
 
+    // Determine user role for company filtering
+    const [userRole, setUserRole] = useState(null);
+    const [connectedCompanies, setConnectedCompanies] = useState([]);
+
+    // Check user role and connected companies
+    useEffect(() => {
+        const checkUserRole = async () => {
+            if (!currentUser?.email) return;
+
+            try {
+                const usersRef = collection(db, 'users');
+                const q = query(usersRef, where('email', '==', currentUser.email));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const userData = querySnapshot.docs[0].data();
+                    setUserRole(userData.role || 'user');
+                    setConnectedCompanies(userData.connectedCompanies?.companies || []);
+                    console.log('👤 User role detected:', userData.role, 'Connected companies:', userData.connectedCompanies?.companies?.length || 0);
+                }
+            } catch (error) {
+                console.error('❌ Error checking user role:', error);
+                setUserRole('user'); // Default to regular user
+            }
+        };
+
+        checkUserRole();
+    }, [currentUser]);
+
     // Helper function to show snackbar
     const showSnackbar = useCallback((message, severity = 'info') => {
         setSnackbar({
@@ -372,6 +440,183 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             severity
         });
     }, []);
+
+    // NEW: Load companies for the filter dropdown
+    const fetchCompanies = useCallback(async () => {
+        if (!userRole) return; // Wait for user role to be determined
+
+        try {
+            console.log('🏢 Fetching companies for admin view...', { userRole, connectedCompaniesCount: connectedCompanies.length });
+
+            let companiesData = [];
+
+            if (userRole === 'superadmin') {
+                // Super admins can see all companies
+                const companiesRef = collection(db, 'companies');
+                const companiesSnapshot = await getDocs(companiesRef);
+                companiesData = companiesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                console.log('👑 Super admin: loaded all companies:', companiesData.length);
+                console.log('🔍 Raw company data structure:', companiesData.slice(0, 3).map(c => ({
+                    id: c.id,
+                    companyName: c.companyName,
+                    name: c.name,
+                    companyname: c.companyname, // lowercase variant
+                    company_name: c.company_name, // underscore variant
+                    companyDisplayName: c.companyDisplayName, // camelCase variant
+                    allFields: Object.keys(c)
+                })));
+
+                // Extra debug: Check if we can find companies with ANY name-like field
+                const companiesWithAnyName = companiesData.filter(c =>
+                    c.companyName || c.name || c.companyname || c.company_name || c.companyDisplayName || c.displayName
+                );
+                console.log('🔍 Companies with any name field:', companiesWithAnyName.length, 'out of', companiesData.length);
+            } else if (userRole === 'admin') {
+                // Regular admins can only see their connected companies
+                if (connectedCompanies.length > 0) {
+                    const companiesRef = collection(db, 'companies');
+                    const companiesSnapshot = await getDocs(companiesRef);
+                    const allCompanies = companiesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    // Filter to only connected companies
+                    companiesData = allCompanies.filter(company =>
+                        connectedCompanies.some(connected =>
+                            connected.companyId === company.id ||
+                            connected.companyId === company.companyID
+                        )
+                    );
+                    console.log('👔 Regular admin: filtered to connected companies:', companiesData.length);
+                } else {
+                    console.log('📭 No connected companies for admin user');
+                }
+            } else {
+                console.log('🚫 User role does not have access to company management');
+                return;
+            }
+
+            // Filter and sort companies
+            const filteredCompanies = companiesData
+                .filter(company => {
+                    const hasName = company.companyName || company.name || company.companyname ||
+                        company.company_name || company.companyDisplayName || company.displayName;
+                    if (!hasName) {
+                        console.log('🚫 Filtering out company without name:', {
+                            id: company.id,
+                            companyName: company.companyName,
+                            name: company.name,
+                            companyname: company.companyname,
+                            company_name: company.company_name,
+                            companyDisplayName: company.companyDisplayName,
+                            displayName: company.displayName,
+                            allFields: Object.keys(company)
+                        });
+                    }
+                    return hasName;
+                }) // Include companies with any name field
+                .sort((a, b) => {
+                    const nameA = a.companyName || a.name || a.companyname || a.company_name || a.companyDisplayName || a.displayName || '';
+                    const nameB = b.companyName || b.name || b.companyname || b.company_name || b.companyDisplayName || b.displayName || '';
+                    return nameA.localeCompare(nameB);
+                }); // Sort alphabetically
+
+            console.log('✅ Loaded companies for admin:', filteredCompanies.length);
+            console.log('📋 Company details:', filteredCompanies.map(c => ({
+                id: c.id,
+                name: c.companyName || c.name || c.companyname || c.company_name || c.companyDisplayName || c.displayName,
+                companyID: c.companyID,
+                hasLogo: !!c.logoUrl,
+                logoFields: {
+                    logoUrl: c.logoUrl,
+                    logoURL: c.logoURL,
+                    companyLogo: c.companyLogo,
+                    logo: c.logo,
+                    companyLogoURL: c.companyLogoURL
+                }
+            })));
+
+            setCompanies(filteredCompanies);
+
+            // Auto-select first company for regular admins (or keep 'all' for super admins)
+            if (userRole === 'admin' && filteredCompanies.length === 1) {
+                setSelectedCompany(filteredCompanies[0].companyID || filteredCompanies[0].id);
+            } else if (userRole === 'admin' && filteredCompanies.length > 1) {
+                // For regular admins with multiple companies, auto-select the first one
+                setSelectedCompany(filteredCompanies[0].companyID || filteredCompanies[0].id);
+            }
+            // For super admins, selectedCompany defaults to 'all' which is correct
+        } catch (error) {
+            console.error('❌ Error loading companies:', error);
+            showSnackbar('Failed to load companies', 'error');
+        }
+    }, [userRole, connectedCompanies, showSnackbar]);
+
+    // NEW: Load quickship carriers across all companies (admin view)
+    const fetchQuickshipCarriers = useCallback(async () => {
+        console.log('🚚 Fetching quickship carriers...');
+        setQuickshipLoading(true);
+        try {
+            let carriersQuery;
+
+            if (selectedCompany === 'all') {
+                // Load all quickship carriers
+                carriersQuery = query(collection(db, 'quickshipCarriers'), orderBy('name', 'asc'));
+            } else {
+                // Load carriers for specific company
+                carriersQuery = query(
+                    collection(db, 'quickshipCarriers'),
+                    where('companyID', '==', selectedCompany),
+                    orderBy('name', 'asc')
+                );
+            }
+
+            const querySnapshot = await getDocs(carriersQuery);
+            const carriersData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log('✅ Loaded quickship carriers:', carriersData.length);
+            setAllQuickshipCarriers(carriersData);
+            setQuickshipTotalCount(carriersData.length);
+        } catch (error) {
+            console.error('❌ Error loading quickship carriers:', error);
+            // Try without orderBy if there's an index issue
+            try {
+                let fallbackQuery;
+                if (selectedCompany === 'all') {
+                    fallbackQuery = collection(db, 'quickshipCarriers');
+                } else {
+                    fallbackQuery = query(
+                        collection(db, 'quickshipCarriers'),
+                        where('companyID', '==', selectedCompany)
+                    );
+                }
+
+                const fallbackSnapshot = await getDocs(fallbackQuery);
+                const fallbackData = fallbackSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                console.log('✅ Loaded quickship carriers (fallback):', fallbackData.length);
+                setAllQuickshipCarriers(fallbackData);
+                setQuickshipTotalCount(fallbackData.length);
+            } catch (fallbackError) {
+                console.error('❌ Fallback query also failed:', fallbackError);
+                showSnackbar('Failed to load quickship carriers', 'error');
+                setAllQuickshipCarriers([]);
+                setQuickshipTotalCount(0);
+            }
+        } finally {
+            setQuickshipLoading(false);
+        }
+    }, [selectedCompany, showSnackbar]);
 
     // Fetch carriers data - moved up to avoid hoisting issues
     const fetchCarriers = useCallback(async () => {
@@ -474,10 +719,82 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         };
     }, [allCarriers]);
 
-    // Tab change handler
+    // Main tab change handler - NEW
+    const handleMainTabChange = (event, newValue) => {
+        setMainTab(newValue);
+        setPage(1);
+        setQuickshipPage(1);
+    };
+
+    // Connected Carriers tab change handler (existing)
     const handleTabChange = (event, newValue) => {
         setSelectedTab(newValue);
         setPage(1); // Reset to first page when tab changes
+    };
+
+    // NEW: Quickship carrier handlers
+    const handleAddQuickshipCarrier = () => {
+        // For super admins with "all" selected, they need to pick a specific company first
+        // For regular admins, they should have a specific company auto-selected
+        if (selectedCompany === 'all') {
+            showSnackbar('Please select a specific company from the dropdown before adding a QuickShip carrier', 'warning');
+            return;
+        }
+
+        // Ensure we have a valid company selected
+        if (!selectedCompany) {
+            showSnackbar('Please select a company before adding a QuickShip carrier', 'warning');
+            return;
+        }
+
+        setEditingQuickshipCarrier(null);
+        setShowQuickshipDialog(true);
+    };
+
+    const handleEditQuickshipCarrier = (carrier) => {
+        setEditingQuickshipCarrier(carrier);
+        setShowQuickshipDialog(true);
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleDeleteQuickshipCarrier = async (carrier) => {
+        if (!window.confirm(`Are you sure you want to delete ${carrier.name}?`)) {
+            return;
+        }
+
+        try {
+            await deleteDoc(doc(db, 'quickshipCarriers', carrier.id));
+            await fetchQuickshipCarriers(); // Refresh the list
+            showSnackbar(`${carrier.name} has been deleted successfully.`, 'success');
+        } catch (error) {
+            console.error('Error deleting quickship carrier:', error);
+            showSnackbar('Failed to delete carrier. Please try again.', 'error');
+        }
+        setQuickshipActionMenuAnchor(null);
+    };
+
+    const handleQuickshipCarrierSaved = async () => {
+        setShowQuickshipDialog(false);
+        setEditingQuickshipCarrier(null);
+        await fetchQuickshipCarriers(); // Refresh the list
+        showSnackbar('Quickship carrier saved successfully!', 'success');
+    };
+
+    // NEW: Quickship action menu handlers
+    const handleQuickshipActionMenuOpen = (event, carrier) => {
+        setSelectedQuickshipCarrier(carrier);
+        setQuickshipActionMenuAnchor(event.currentTarget);
+    };
+
+    const handleQuickshipActionMenuClose = () => {
+        setQuickshipActionMenuAnchor(null);
+        setSelectedQuickshipCarrier(null);
+    };
+
+    // NEW: Company filter change handler
+    const handleCompanyChange = (event) => {
+        setSelectedCompany(event.target.value);
+        setQuickshipPage(1); // Reset to first page when company changes
     };
 
 
@@ -495,6 +812,73 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     };
 
 
+
+    // NEW: Load companies and quickship carriers when component mounts or dependencies change
+    useEffect(() => {
+        fetchCompanies();
+        if (mainTab === 1) { // Only load quickship carriers when on quickship tab
+            fetchQuickshipCarriers();
+        }
+    }, [fetchCompanies, fetchQuickshipCarriers, mainTab]);
+
+    // NEW: Reload quickship carriers when company filter changes
+    useEffect(() => {
+        if (mainTab === 1) {
+            fetchQuickshipCarriers();
+        }
+    }, [selectedCompany, fetchQuickshipCarriers, mainTab]);
+
+    // NEW: Filter and paginate quickship carriers
+    useEffect(() => {
+        console.log('🔍 Filtering quickship carriers...', {
+            total: allQuickshipCarriers.length,
+            searchFields: quickshipSearchFields,
+            page: quickshipPage,
+            rowsPerPage: quickshipRowsPerPage
+        });
+
+        let filtered = [...allQuickshipCarriers];
+
+        // Apply search filters
+        if (quickshipSearchFields.carrierName) {
+            filtered = filtered.filter(carrier =>
+                carrier.name?.toLowerCase().includes(quickshipSearchFields.carrierName.toLowerCase())
+            );
+        }
+        if (quickshipSearchFields.contactName) {
+            filtered = filtered.filter(carrier =>
+                carrier.contactName?.toLowerCase().includes(quickshipSearchFields.contactName.toLowerCase())
+            );
+        }
+        if (quickshipSearchFields.accountNumber) {
+            filtered = filtered.filter(carrier =>
+                carrier.accountNumber?.toLowerCase().includes(quickshipSearchFields.accountNumber.toLowerCase())
+            );
+        }
+        if (quickshipSearchFields.companyName) {
+            // Find company name from companies array
+            filtered = filtered.filter(carrier => {
+                const company = companies.find(c => c.id === carrier.companyID || c.companyID === carrier.companyID);
+                const companyName = company?.companyName || '';
+                return companyName.toLowerCase().includes(quickshipSearchFields.companyName.toLowerCase());
+            });
+        }
+
+        // Apply pagination
+        const startIndex = (quickshipPage - 1) * quickshipRowsPerPage;
+        const endIndex = startIndex + quickshipRowsPerPage;
+        const paginated = filtered.slice(startIndex, endIndex);
+
+        console.log('✅ Quickship carriers after filtering and pagination:', {
+            filtered: filtered.length,
+            paginated: paginated.length,
+            startIndex,
+            endIndex
+        });
+
+        setQuickshipCarriers(paginated);
+        setQuickshipTotalCount(filtered.length);
+    }, [allQuickshipCarriers, quickshipSearchFields, quickshipPage, quickshipRowsPerPage, companies]);
 
     // Filter and paginate carriers
     useEffect(() => {
@@ -1073,6 +1457,252 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     };
 
     // Render table view
+    // NEW: Render quickship carriers table
+    const renderQuickshipCarriersView = () => (
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Table Section */}
+            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <TableContainer sx={{ width: '100%', px: 2 }}>
+                    {quickshipLoading ? (
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Contact</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {[...Array(10)].map((_, index) => (
+                                    <TableRow key={index}>
+                                        <TableCell><Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                                        <TableCell><Box sx={{ height: '16px', width: '100px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                                        <TableCell><Chip label="Loading" size="small" sx={{ bgcolor: '#e5e7eb', color: 'transparent' }} /></TableCell>
+                                        <TableCell><Box sx={{ height: '16px', width: '120px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                                        <TableCell><Box sx={{ height: '16px', width: '80px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                                        <TableCell><Box sx={{ height: '16px', width: '90px', bgcolor: '#e5e7eb', borderRadius: '4px' }} /></TableCell>
+                                        <TableCell>
+                                            <IconButton size="small" disabled>
+                                                <MoreVertIcon />
+                                            </IconButton>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    ) : (
+                        <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Company</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Contact</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {quickshipCarriers.map((carrier) => {
+                                    // Fix company lookup to handle different ID field combinations
+                                    const company = companies.find(c =>
+                                        c.id === carrier.companyID ||
+                                        c.companyID === carrier.companyID ||
+                                        c.id === carrier.companyId ||
+                                        c.companyID === carrier.companyId
+                                    );
+
+                                    // Debug logging for company lookup
+                                    if (!company) {
+                                        console.log('🔍 Company not found for carrier:', {
+                                            carrierName: carrier.name,
+                                            carrierCompanyID: carrier.companyID,
+                                            carrierCompanyId: carrier.companyId,
+                                            availableCompanies: companies.map(c => ({
+                                                id: c.id,
+                                                companyID: c.companyID,
+                                                companyName: c.companyName
+                                            }))
+                                        });
+                                    }
+
+                                    return (
+                                        <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
+                                            <TableCell>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Avatar
+                                                        src={carrier.logo && !carrier.logo.startsWith('blob:') ? carrier.logo : null}
+                                                        sx={{
+                                                            width: 32,
+                                                            height: 32,
+                                                            bgcolor: '#e5e7eb',
+                                                            border: '1px solid #e5e7eb'
+                                                        }}
+                                                    >
+                                                        <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            {carrier.name}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {carrier.contactName || 'No contact name'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Avatar
+                                                        src={company?.logoUrl || company?.logoURL || company?.companyLogo || company?.logo || company?.companyLogoURL}
+                                                        sx={{
+                                                            width: 32,
+                                                            height: 32,
+                                                            fontSize: '12px',
+                                                            border: '1px solid #e5e7eb'
+                                                        }}
+                                                    >
+                                                        {(company?.companyName || company?.name || company?.companyname || company?.company_name || company?.companyDisplayName || company?.displayName)?.[0]?.toUpperCase() || 'C'}
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            {company?.companyName || company?.name || company?.companyname || company?.company_name || company?.companyDisplayName || company?.displayName || 'Unknown Company'}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>
+                                                            {carrier.companyID || carrier.companyId || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={carrier.type || 'freight'}
+                                                    size="small"
+                                                    sx={{
+                                                        backgroundColor: getTypeColor(carrier.type || 'freight').bgcolor,
+                                                        color: getTypeColor(carrier.type || 'freight').color,
+                                                        fontSize: '11px',
+                                                        fontWeight: 500,
+                                                        '& .MuiChip-label': { px: 1.5 }
+                                                    }}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Box>
+                                                    {carrier.contactEmail && (
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            {carrier.contactEmail}
+                                                        </Typography>
+                                                    )}
+                                                    {carrier.contactPhone && (
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {carrier.contactPhone}
+                                                        </Typography>
+                                                    )}
+                                                    {!carrier.contactEmail && !carrier.contactPhone && (
+                                                        <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                                            No contact info
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {carrier.accountNumber || 'N/A'}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {(() => {
+                                                        try {
+                                                            if (!carrier.createdAt) return 'N/A';
+
+                                                            // Handle Firestore Timestamp
+                                                            if (carrier.createdAt && typeof carrier.createdAt.toDate === 'function') {
+                                                                return new Date(carrier.createdAt.toDate()).toLocaleDateString();
+                                                            }
+
+                                                            // Handle regular Date object
+                                                            if (carrier.createdAt instanceof Date) {
+                                                                return carrier.createdAt.toLocaleDateString();
+                                                            }
+
+                                                            // Handle timestamp objects with seconds
+                                                            if (carrier.createdAt && carrier.createdAt.seconds) {
+                                                                return new Date(carrier.createdAt.seconds * 1000).toLocaleDateString();
+                                                            }
+
+                                                            // Handle string dates
+                                                            if (typeof carrier.createdAt === 'string') {
+                                                                const date = new Date(carrier.createdAt);
+                                                                return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString();
+                                                            }
+
+                                                            return 'N/A';
+                                                        } catch (error) {
+                                                            console.warn('Error formatting date for carrier:', carrier.id, error);
+                                                            return 'N/A';
+                                                        }
+                                                    })()}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => handleQuickshipActionMenuOpen(e, carrier)}
+                                                >
+                                                    <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                                {quickshipCarriers.length === 0 && !quickshipLoading && (
+                                    <TableRow>
+                                        <TableCell colSpan={7} align="center">
+                                            <Box sx={{ py: 4 }}>
+                                                <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                                                <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                    No quickship carriers found
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                    {selectedCompany === 'all'
+                                                        ? 'Try adjusting your search criteria or create a new carrier'
+                                                        : 'No carriers found for the selected company'
+                                                    }
+                                                </Typography>
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    )}
+                </TableContainer>
+            </Box>
+
+            {/* Pagination Section */}
+            <Box sx={{ flexShrink: 0 }}>
+                <CarriersPagination
+                    totalCount={quickshipTotalCount}
+                    currentPage={quickshipPage}
+                    rowsPerPage={quickshipRowsPerPage}
+                    onPageChange={setQuickshipPage}
+                    onRowsPerPageChange={setQuickshipRowsPerPage}
+                />
+            </Box>
+        </Box>
+    );
+
     const renderTableView = () => (
         <Box sx={{
             display: 'flex',
@@ -1081,7 +1711,7 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         }}>
             {/* Header Section */}
             <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
-                {/* Title and Actions Row */}
+                {/* Title and Main Tabs Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
@@ -1096,314 +1726,331 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                         variant="contained"
                         size="small"
                         startIcon={<AddIcon />}
-                        onClick={handleOpenAddCarrier}
+                        onClick={mainTab === 0 ? handleOpenAddCarrier : handleAddQuickshipCarrier}
+                        disabled={mainTab === 1 && (selectedCompany === 'all' || !selectedCompany)}
                         sx={{ fontSize: '12px' }}
                     >
-                        Add Carrier
+                        {mainTab === 0 ? 'Add Connected Carrier' : 'Add Quickship Carrier'}
                     </Button>
                 </Box>
 
-                {/* Tabs and Filters Row */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {/* Main Tabs - NEW: Two-tab system */}
+                <Box sx={{ borderBottom: '1px solid #e5e7eb', mb: 2 }}>
                     <Tabs
-                        value={selectedTab}
-                        onChange={handleTabChange}
+                        value={mainTab}
+                        onChange={handleMainTabChange}
                         sx={{
                             '& .MuiTab-root': {
-                                fontSize: '11px',
-                                minHeight: '36px',
+                                fontSize: '14px',
+                                minHeight: '40px',
                                 textTransform: 'none',
-                                fontWeight: 500,
-                                padding: '6px 12px'
+                                fontWeight: 600,
+                                padding: '8px 16px'
                             }
                         }}
                     >
-                        <Tab label={`All (${stats.total})`} value="all" />
-                        <Tab label={`Enabled (${stats.enabled})`} value="enabled" />
-                        <Tab label={`Disabled (${stats.disabled})`} value="disabled" />
-                        <Tab label={`Courier (${stats.courier})`} value="courier" />
-                        <Tab label={`Freight (${stats.freight})`} value="freight" />
-                        <Tab label={`Hybrid (${stats.hybrid})`} value="hybrid" />
+                        <Tab
+                            label="Connected Carriers"
+                            value={0}
+                        />
+                        <Tab
+                            label="Quickship Carriers"
+                            value={1}
+                        />
                     </Tabs>
-
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<FilterListIcon />}
-                        onClick={() => setFiltersOpen(!filtersOpen)}
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Filters
-                    </Button>
                 </Box>
 
-                {/* Filters Panel */}
-                <Collapse in={filtersOpen}>
-                    <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    placeholder="Search carrier name..."
-                                    value={searchFields.carrierName}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierName: e.target.value }))}
-                                    InputProps={{
-                                        startAdornment: (
-                                            <InputAdornment position="start">
-                                                <SearchIcon sx={{ fontSize: '16px' }} />
-                                            </InputAdornment>
-                                        ),
-                                        sx: { fontSize: '12px' }
-                                    }}
-                                />
+                {/* Connected Carriers Sub-tabs and Filters Row - Only show when on Connected Carriers tab */}
+                {mainTab === 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Tabs
+                            value={selectedTab}
+                            onChange={handleTabChange}
+                            sx={{
+                                '& .MuiTab-root': {
+                                    fontSize: '11px',
+                                    minHeight: '36px',
+                                    textTransform: 'none',
+                                    fontWeight: 500,
+                                    padding: '6px 12px'
+                                }
+                            }}
+                        >
+                            <Tab label={`All (${stats.total})`} value="all" />
+                            <Tab label={`Enabled (${stats.enabled})`} value="enabled" />
+                            <Tab label={`Disabled (${stats.disabled})`} value="disabled" />
+                            <Tab label={`Courier (${stats.courier})`} value="courier" />
+                            <Tab label={`Freight (${stats.freight})`} value="freight" />
+                            <Tab label={`Hybrid (${stats.hybrid})`} value="hybrid" />
+                        </Tabs>
+
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<FilterListIcon />}
+                            onClick={() => setFiltersOpen(!filtersOpen)}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Filters
+                        </Button>
+                    </Box>
+                )}
+
+                {/* Connected Carriers Filters Panel - Only show when on Connected Carriers tab */}
+                {mainTab === 0 && (
+                    <Collapse in={filtersOpen}>
+                        <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} sm={4}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        placeholder="Search carrier name..."
+                                        value={searchFields.carrierName}
+                                        onChange={(e) => setSearchFields(prev => ({ ...prev, carrierName: e.target.value }))}
+                                        InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <SearchIcon sx={{ fontSize: '16px' }} />
+                                                </InputAdornment>
+                                            ),
+                                            sx: { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={4}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        placeholder="Search carrier ID..."
+                                        value={searchFields.carrierId}
+                                        onChange={(e) => setSearchFields(prev => ({ ...prev, carrierId: e.target.value }))}
+                                        InputProps={{
+                                            sx: { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} sm={4}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        placeholder="Search account number..."
+                                        value={searchFields.accountNumber}
+                                        onChange={(e) => setSearchFields(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                        InputProps={{
+                                            sx: { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                                <Button
+                                    variant="outlined"
                                     size="small"
-                                    placeholder="Search carrier ID..."
-                                    value={searchFields.carrierId}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, carrierId: e.target.value }))}
-                                    InputProps={{
-                                        sx: { fontSize: '12px' }
+                                    startIcon={<CloseIcon />}
+                                    onClick={() => {
+                                        setSearchFields({ carrierName: '', carrierId: '', accountNumber: '' });
+                                        setFilters({ status: 'all', type: 'all', enabled: 'all' });
                                     }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    placeholder="Search account number..."
-                                    value={searchFields.accountNumber}
-                                    onChange={(e) => setSearchFields(prev => ({ ...prev, accountNumber: e.target.value }))}
-                                    InputProps={{
-                                        sx: { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                        </Grid>
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<CloseIcon />}
-                                onClick={() => {
-                                    setSearchFields({ carrierName: '', carrierId: '', accountNumber: '' });
-                                    setFilters({ status: 'all', type: 'all', enabled: 'all' });
-                                }}
-                                sx={{ fontSize: '12px' }}
-                            >
-                                Clear Filters
-                            </Button>
-                        </Box>
-                    </Paper>
-                </Collapse>
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Clear Filters
+                                </Button>
+                            </Box>
+                        </Paper>
+                    </Collapse>
+                )}
             </Box>
 
-            {/* Table Section */}
+            {/* Content Section - Show different content based on main tab */}
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                <Box sx={{ width: '100%', px: 2 }}>
-                    {loading ? (
-                        <CarriersTableSkeleton />
-                    ) : (
-                        <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connection</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
-                                    <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {carriers.map((carrier) => (
-                                    <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
-                                        <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Avatar
-                                                    src={carrier.logoURL}
-                                                    sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
-                                                >
-                                                    <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
-                                                </Avatar>
-                                                <Box>
-                                                    <Typography
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            fontWeight: 500,
-                                                            color: '#1976d2',
-                                                            cursor: 'pointer',
-                                                            textDecoration: 'none',
-                                                            '&:hover': {
-                                                                color: '#1565c0',
-                                                                textDecoration: 'none'
-                                                            }
-                                                        }}
-                                                        onClick={() => handleViewCarrier(carrier.id)}
-                                                    >
-                                                        {carrier.name}
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                                        <Switch
-                                                            checked={carrier.enabled}
-                                                            onChange={() => handleToggleEnabled(carrier)}
-                                                            size="small"
-                                                        />
-                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            {carrier.enabled ? 'Enabled' : 'Disabled'}
-                                                        </Typography>
+                {mainTab === 0 ? (
+                    // Connected Carriers Content
+                    <>
+                        <Box sx={{ width: '100%', px: 2 }}>
+                            {loading ? (
+                                <CarriersTableSkeleton />
+                            ) : (
+                                <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connection</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {carriers.map((carrier) => (
+                                            <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
+                                                <TableCell>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Avatar
+                                                            src={carrier.logoURL}
+                                                            sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
+                                                        >
+                                                            <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                                        </Avatar>
+                                                        <Box>
+                                                            <Typography
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    fontWeight: 500,
+                                                                    color: '#1976d2',
+                                                                    cursor: 'pointer',
+                                                                    textDecoration: 'none',
+                                                                    '&:hover': {
+                                                                        color: '#1565c0',
+                                                                        textDecoration: 'none'
+                                                                    }
+                                                                }}
+                                                                onClick={() => handleViewCarrier(carrier.id)}
+                                                            >
+                                                                {carrier.name}
+                                                            </Typography>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                                                <Switch
+                                                                    checked={carrier.enabled}
+                                                                    onChange={() => handleToggleEnabled(carrier)}
+                                                                    size="small"
+                                                                />
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    {carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
                                                     </Box>
-                                                </Box>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Typography sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                                                    {carrier.carrierID}
-                                                </Typography>
-                                                <Tooltip title="Copy Carrier ID">
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Typography sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                                            {carrier.carrierID}
+                                                        </Typography>
+                                                        <Tooltip title="Copy Carrier ID">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleCopyToClipboard(carrier.carrierID, 'Carrier ID');
+                                                                }}
+                                                            >
+                                                                <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={carrier.type}
+                                                        size="small"
+                                                        sx={{
+                                                            backgroundColor: getTypeColor(carrier.type).bgcolor,
+                                                            color: getTypeColor(carrier.type).color,
+                                                            fontWeight: 500,
+                                                            fontSize: '11px',
+                                                            '& .MuiChip-label': { px: 1.5 }
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={carrier.connectionType}
+                                                        size="small"
+                                                        sx={{
+                                                            backgroundColor: getConnectionTypeColor(carrier.connectionType).bgcolor,
+                                                            color: getConnectionTypeColor(carrier.connectionType).color,
+                                                            fontWeight: 500,
+                                                            fontSize: '11px',
+                                                            '& .MuiChip-label': { px: 1.5 }
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={carrier.status || 'active'}
+                                                        size="small"
+                                                        sx={{
+                                                            backgroundColor: getStatusColor(carrier.status || 'active').bgcolor,
+                                                            color: getStatusColor(carrier.status || 'active').color,
+                                                            fontWeight: 500,
+                                                            fontSize: '11px',
+                                                            '& .MuiChip-label': { px: 1.5 }
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Typography sx={{ fontSize: '12px' }}>
+                                                        {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Typography sx={{ fontSize: '12px' }}>
+                                                        {new Date(carrier.createdAt?.toDate?.() || carrier.createdAt).toLocaleDateString()}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
                                                     <IconButton
                                                         size="small"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleCopyToClipboard(carrier.carrierID, 'Carrier ID');
-                                                        }}
+                                                        onClick={(e) => handleActionMenuOpen(e, carrier)}
                                                     >
-                                                        <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                        <MoreVertIcon sx={{ fontSize: '16px' }} />
                                                     </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={carrier.type}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: getTypeColor(carrier.type).bgcolor,
-                                                    color: getTypeColor(carrier.type).color,
-                                                    fontWeight: 500,
-                                                    fontSize: '11px',
-                                                    '& .MuiChip-label': { px: 1.5 }
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={carrier.connectionType}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: getConnectionTypeColor(carrier.connectionType).bgcolor,
-                                                    color: getConnectionTypeColor(carrier.connectionType).color,
-                                                    fontWeight: 500,
-                                                    fontSize: '11px',
-                                                    '& .MuiChip-label': { px: 1.5 }
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={carrier.status || 'active'}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: getStatusColor(carrier.status || 'active').bgcolor,
-                                                    color: getStatusColor(carrier.status || 'active').color,
-                                                    fontWeight: 500,
-                                                    fontSize: '11px',
-                                                    '& .MuiChip-label': { px: 1.5 }
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography sx={{ fontSize: '12px' }}>
-                                                {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography sx={{ fontSize: '12px' }}>
-                                                {carrier.createdAt ? new Date(carrier.createdAt.toDate()).toLocaleDateString() : 'N/A'}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => handleActionMenuOpen(e, carrier)}
-                                            >
-                                                <MoreVertIcon sx={{ fontSize: '16px' }} />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                                {carriers.length === 0 && !loading && (
-                                    <TableRow>
-                                        <TableCell colSpan={8} align="center">
-                                            <Box sx={{ py: 4 }}>
-                                                <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
-                                                <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
-                                                    No carriers found
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                                    Try adjusting your search criteria or create a new carrier
-                                                </Typography>
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                        {carriers.length === 0 && !loading && (
+                                            <TableRow>
+                                                <TableCell colSpan={8} align="center">
+                                                    <Box sx={{ py: 4 }}>
+                                                        <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                                                        <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                            No carriers found
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                            Try adjusting your search criteria or create a new carrier
+                                                        </Typography>
+                                                    </Box>
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </Box>
+
+                        {/* Connected Carriers Pagination */}
+                        <Box sx={{ flexShrink: 0 }}>
+                            <CarriersPagination
+                                totalCount={totalCount}
+                                currentPage={page}
+                                rowsPerPage={rowsPerPage}
+                                onPageChange={setPage}
+                                onRowsPerPageChange={setRowsPerPage}
+                            />
+                        </Box>
+                    </>
+                ) : (
+                    // Quickship Carriers Content
+                    renderQuickshipCarriersView()
+                )}
+            </Box>
+
+            {/* Pagination Section - Only for Connected Carriers */}
+            {mainTab === 0 && (
+                <Box sx={{ flexShrink: 0 }}>
+                    <CarriersPagination
+                        totalCount={totalCount}
+                        currentPage={page}
+                        rowsPerPage={rowsPerPage}
+                        onPageChange={setPage}
+                        onRowsPerPageChange={setRowsPerPage}
+                    />
                 </Box>
-            </Box>
-
-            {/* Pagination Section */}
-            <Box sx={{ flexShrink: 0 }}>
-                <CarriersPagination
-                    totalCount={totalCount}
-                    currentPage={page}
-                    rowsPerPage={rowsPerPage}
-                    onPageChange={setPage}
-                    onRowsPerPageChange={setRowsPerPage}
-                />
-            </Box>
-
-            {/* Action Menu */}
-            <Menu
-                anchorEl={actionMenuAnchorEl}
-                open={Boolean(actionMenuAnchorEl)}
-                onClose={handleActionMenuClose}
-            >
-                <MenuItem onClick={() => handleViewCarrier(selectedCarrier?.id)}>
-                    <ListItemIcon>
-                        <VisibilityIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>View Details</Typography>
-                    </ListItemText>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenEditCarrier(selectedCarrier?.id)}>
-                    <ListItemIcon>
-                        <EditIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Edit Carrier</Typography>
-                    </ListItemText>
-                </MenuItem>
-                <MenuItem onClick={() => {
-                    setOpenDeleteConfirm(true);
-                    handleActionMenuClose();
-                }}>
-                    <ListItemIcon>
-                        <DeleteIcon fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText>
-                        <Typography sx={{ fontSize: '12px' }}>Delete Carrier</Typography>
-                    </ListItemText>
-                </MenuItem>
-            </Menu>
+            )}
         </Box>
     );
 
@@ -1431,7 +2078,418 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                 overflow: 'hidden',
                 position: 'relative'
             }}>
-                {renderTableView()}
+                {/* Always show the main structure with tabs header */}
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%'
+                }}>
+                    {/* Header Section with Tabs - ALWAYS VISIBLE */}
+                    <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                        {/* Title Row */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                            <Box>
+                                <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
+                                    Carriers
+                                </Typography>
+                                {/* Breadcrumb */}
+                                {!isModal && (
+                                    <AdminBreadcrumb />
+                                )}
+                            </Box>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<AddIcon />}
+                                onClick={mainTab === 0 ? handleOpenAddCarrier : handleAddQuickshipCarrier}
+                                disabled={mainTab === 1 && (selectedCompany === 'all' || !selectedCompany)}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                {mainTab === 0 ? 'Add Connected Carrier' : 'Add Quickship Carrier'}
+                            </Button>
+                        </Box>
+
+                        {/* Main Tabs - ALWAYS VISIBLE */}
+                        <Box sx={{ borderBottom: '1px solid #e5e7eb', mb: 2 }}>
+                            <Tabs
+                                value={mainTab}
+                                onChange={handleMainTabChange}
+                                sx={{
+                                    '& .MuiTab-root': {
+                                        fontSize: '14px',
+                                        minHeight: '40px',
+                                        textTransform: 'none',
+                                        fontWeight: 600,
+                                        padding: '8px 16px'
+                                    }
+                                }}
+                            >
+                                <Tab
+                                    label="Connected Carriers"
+                                    value={0}
+                                />
+                                <Tab
+                                    label="Quickship Carriers"
+                                    value={1}
+                                />
+                            </Tabs>
+                        </Box>
+
+                        {/* Connected Carriers Sub-tabs and Filters Row - Only show when on Connected Carriers tab */}
+                        {mainTab === 0 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Tabs
+                                    value={selectedTab}
+                                    onChange={handleTabChange}
+                                    sx={{
+                                        '& .MuiTab-root': {
+                                            fontSize: '11px',
+                                            minHeight: '36px',
+                                            textTransform: 'none',
+                                            fontWeight: 500,
+                                            padding: '6px 12px'
+                                        }
+                                    }}
+                                >
+                                    <Tab label={`All (${stats.total})`} value="all" />
+                                    <Tab label={`Enabled (${stats.enabled})`} value="enabled" />
+                                    <Tab label={`Disabled (${stats.disabled})`} value="disabled" />
+                                    <Tab label={`Courier (${stats.courier})`} value="courier" />
+                                    <Tab label={`Freight (${stats.freight})`} value="freight" />
+                                    <Tab label={`Hybrid (${stats.hybrid})`} value="hybrid" />
+                                </Tabs>
+
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<FilterListIcon />}
+                                    onClick={() => setFiltersOpen(!filtersOpen)}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Filters
+                                </Button>
+                            </Box>
+                        )}
+
+                        {/* Quickship Carriers Company Filter Row - Only show when on Quickship Carriers tab */}
+                        {mainTab === 1 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <FormControl size="small" sx={{ minWidth: 200 }}>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Filter by Company</InputLabel>
+                                    <Select
+                                        value={selectedCompany}
+                                        onChange={handleCompanyChange}
+                                        label="Filter by Company"
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        {/* Only show "All Companies" option for super admins */}
+                                        {userRole === 'superadmin' && (
+                                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                                                    <Avatar sx={{ width: 32, height: 32, bgcolor: '#8b5cf6' }}>
+                                                        <BusinessIcon sx={{ fontSize: '16px', color: 'white' }} />
+                                                    </Avatar>
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            All Companies
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            View carriers across all companies
+                                                        </Typography>
+                                                    </Box>
+                                                    <Chip
+                                                        label={allQuickshipCarriers.length}
+                                                        size="small"
+                                                        sx={{ bgcolor: '#8b5cf6', color: 'white', fontSize: '10px', minWidth: '24px' }}
+                                                    />
+                                                </Box>
+                                            </MenuItem>
+                                        )}
+                                        {companies.map((company) => {
+                                            const carrierCount = allQuickshipCarriers.filter(c => c.companyID === company.id || c.companyID === company.companyID).length;
+                                            return (
+                                                <MenuItem key={company.id} value={company.companyID || company.id} sx={{ fontSize: '12px', py: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                                                        <Avatar
+                                                            src={company.logoUrl || company.logoURL || company.companyLogo || company.logo || company.companyLogoURL}
+                                                            sx={{
+                                                                width: 32,
+                                                                height: 32,
+                                                                fontSize: '12px',
+                                                                border: '1px solid #e5e7eb'
+                                                            }}
+                                                        >
+                                                            {(company.companyName || company.name || company.companyname || company.company_name || company.companyDisplayName || company.displayName)?.[0]?.toUpperCase() || 'C'}
+                                                        </Avatar>
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                {company.companyName || company.name || company.companyname || company.company_name || company.companyDisplayName || company.displayName}
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>
+                                                                {company.companyID || company.id}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Chip
+                                                            label={carrierCount}
+                                                            size="small"
+                                                            sx={{ bgcolor: '#f3f4f6', color: '#374151', fontSize: '10px', minWidth: '24px' }}
+                                                        />
+                                                    </Box>
+                                                </MenuItem>
+                                            );
+                                        })}
+                                    </Select>
+                                </FormControl>
+
+                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                    {quickshipTotalCount} carriers found
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {/* Connected Carriers Filters Panel */}
+                        {mainTab === 0 && (
+                            <Collapse in={filtersOpen}>
+                                <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                placeholder="Search carrier name..."
+                                                value={searchFields.carrierName}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, carrierName: e.target.value }))}
+                                                InputProps={{
+                                                    startAdornment: (
+                                                        <InputAdornment position="start">
+                                                            <SearchIcon sx={{ fontSize: '16px' }} />
+                                                        </InputAdornment>
+                                                    ),
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                placeholder="Search carrier ID..."
+                                                value={searchFields.carrierId}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, carrierId: e.target.value }))}
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                placeholder="Search account number..."
+                                                value={searchFields.accountNumber}
+                                                onChange={(e) => setSearchFields(prev => ({ ...prev, accountNumber: e.target.value }))}
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            startIcon={<CloseIcon />}
+                                            onClick={() => {
+                                                setSearchFields({ carrierName: '', carrierId: '', accountNumber: '' });
+                                                setFilters({ status: 'all', type: 'all', enabled: 'all' });
+                                            }}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Clear Filters
+                                        </Button>
+                                    </Box>
+                                </Paper>
+                            </Collapse>
+                        )}
+                    </Box>
+
+                    {/* Content Section - Show different content based on main tab */}
+                    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                        {mainTab === 0 ? (
+                            // Connected Carriers Content
+                            <Box sx={{ width: '100%', px: 2 }}>
+                                {loading ? (
+                                    <CarriersTableSkeleton />
+                                ) : (
+                                    <Table sx={{ position: 'sticky', top: 0, zIndex: 100 }}>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier ID</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Type</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connection</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Account Number</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Created</TableCell>
+                                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {carriers.map((carrier) => (
+                                                <TableRow key={carrier.id} hover sx={{ verticalAlign: 'top' }}>
+                                                    <TableCell>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Avatar
+                                                                src={carrier.logoURL}
+                                                                sx={{ width: 28, height: 28, bgcolor: '#e5e7eb' }}
+                                                            >
+                                                                <CarrierIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                                            </Avatar>
+                                                            <Box>
+                                                                <Typography
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        fontWeight: 500,
+                                                                        color: '#1976d2',
+                                                                        cursor: 'pointer',
+                                                                        textDecoration: 'none',
+                                                                        '&:hover': {
+                                                                            color: '#1565c0',
+                                                                            textDecoration: 'none'
+                                                                        }
+                                                                    }}
+                                                                    onClick={() => handleViewCarrier(carrier.id)}
+                                                                >
+                                                                    {carrier.name}
+                                                                </Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                                                    <Switch
+                                                                        checked={carrier.enabled}
+                                                                        onChange={() => handleToggleEnabled(carrier)}
+                                                                        size="small"
+                                                                    />
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontFamily: 'monospace' }}>
+                                                                {carrier.carrierID}
+                                                            </Typography>
+                                                            <Tooltip title="Copy Carrier ID">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleCopyToClipboard(carrier.carrierID, 'Carrier ID');
+                                                                    }}
+                                                                >
+                                                                    <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={carrier.type}
+                                                            size="small"
+                                                            sx={{
+                                                                backgroundColor: getTypeColor(carrier.type).bgcolor,
+                                                                color: getTypeColor(carrier.type).color,
+                                                                fontWeight: 500,
+                                                                fontSize: '11px',
+                                                                '& .MuiChip-label': { px: 1.5 }
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={carrier.connectionType}
+                                                            size="small"
+                                                            sx={{
+                                                                backgroundColor: getConnectionTypeColor(carrier.connectionType).bgcolor,
+                                                                color: getConnectionTypeColor(carrier.connectionType).color,
+                                                                fontWeight: 500,
+                                                                fontSize: '11px',
+                                                                '& .MuiChip-label': { px: 1.5 }
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={carrier.status || 'active'}
+                                                            size="small"
+                                                            sx={{
+                                                                backgroundColor: getStatusColor(carrier.status || 'active').bgcolor,
+                                                                color: getStatusColor(carrier.status || 'active').color,
+                                                                fontWeight: 500,
+                                                                fontSize: '11px',
+                                                                '& .MuiChip-label': { px: 1.5 }
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            {carrier.apiCredentials?.accountNumber || carrier.accountNumber || 'N/A'}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            {new Date(carrier.createdAt?.toDate?.() || carrier.createdAt).toLocaleDateString()}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => handleActionMenuOpen(e, carrier)}
+                                                        >
+                                                            <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            {carriers.length === 0 && !loading && (
+                                                <TableRow>
+                                                    <TableCell colSpan={8} align="center">
+                                                        <Box sx={{ py: 4 }}>
+                                                            <CarrierIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                                                            <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 1 }}>
+                                                                No carriers found
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                                Try adjusting your search criteria or create a new carrier
+                                                            </Typography>
+                                                        </Box>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                            </Box>
+                        ) : (
+                            // Quickship Carriers Content
+                            renderQuickshipCarriersView()
+                        )}
+                    </Box>
+
+                    {/* Pagination Section - Only for Connected Carriers */}
+                    {mainTab === 0 && (
+                        <Box sx={{ flexShrink: 0 }}>
+                            <CarriersPagination
+                                totalCount={totalCount}
+                                currentPage={page}
+                                rowsPerPage={rowsPerPage}
+                                onPageChange={setPage}
+                                onRowsPerPageChange={setRowsPerPage}
+                            />
+                        </Box>
+                    )}
+                </Box>
             </Box>
 
             {/* Comprehensive Carrier Form Dialog */}
@@ -2166,28 +3224,70 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
 
 
             {/* Modular Edit Carrier Dialog */}
-            {showEditCarrier && editCarrierId && (
-                <Dialog
-                    open={showEditCarrier}
-                    onClose={handleCloseEditCarrier}
-                    maxWidth={false}
-                    fullScreen
-                    PaperProps={{
-                        sx: {
-                            m: 0,
-                            borderRadius: 0
-                        }
-                    }}
-                >
-                    <EditCarrier
-                        carrierId={editCarrierId}
-                        isModal={true}
+            {
+                showEditCarrier && editCarrierId && (
+                    <Dialog
+                        open={showEditCarrier}
                         onClose={handleCloseEditCarrier}
-                        onCarrierUpdated={handleCarrierUpdated}
-                    />
-                </Dialog>
-            )}
-        </Box>
+                        maxWidth={false}
+                        fullScreen
+                        PaperProps={{
+                            sx: {
+                                m: 0,
+                                borderRadius: 0
+                            }
+                        }}
+                    >
+                        <EditCarrier
+                            carrierId={editCarrierId}
+                            isModal={true}
+                            onClose={handleCloseEditCarrier}
+                            onCarrierUpdated={handleCarrierUpdated}
+                        />
+                    </Dialog>
+                )
+            }
+
+            {/* QuickShip Carrier Dialog */}
+            <QuickShipCarrierDialog
+                open={showQuickshipDialog}
+                onClose={() => {
+                    setShowQuickshipDialog(false);
+                    setEditingQuickshipCarrier(null);
+                }}
+                onSuccess={handleQuickshipCarrierSaved}
+                companyId={selectedCompany && selectedCompany !== 'all' ? selectedCompany : null}
+                editingCarrier={editingQuickshipCarrier}
+                existingCarriers={allQuickshipCarriers}
+            />
+
+            {/* Action Menu for QuickShip Carriers */}
+            <Menu
+                anchorEl={quickshipActionMenuAnchor}
+                open={Boolean(quickshipActionMenuAnchor) && selectedQuickshipCarrier}
+                onClose={handleQuickshipActionMenuClose}
+            >
+                <MenuItem onClick={() => handleEditQuickshipCarrier(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Edit Carrier</Typography>
+                    </ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => handleDeleteQuickshipCarrier(selectedQuickshipCarrier)}>
+                    <ListItemIcon>
+                        <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Delete Carrier</Typography>
+                    </ListItemText>
+                </MenuItem>
+            </Menu>
+
+            {/* Snackbar for notifications */}
+            <Dialog open={false} />
+        </Box >
     );
 };
 

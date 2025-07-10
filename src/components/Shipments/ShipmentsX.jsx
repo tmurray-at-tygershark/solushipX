@@ -3015,7 +3015,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 placeholder="Search"
                                                 value={unifiedSearch}
                                                 onChange={(e) => {
-                                                    const value = e.target.value.trim(); // CRITICAL FIX: Strip leading/trailing spaces
+                                                    const value = e.target.value; // Keep spaces during typing
                                                     setUnifiedSearch(value);
 
                                                     // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
@@ -3041,7 +3041,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     };
 
                                                     // 🔍 CRITICAL FIX: Reset search state for completely new searches
-                                                    if (value.length < 2) {
+                                                    const trimmedValue = value.trim(); // Only trim for search logic, not for the input value
+                                                    if (trimmedValue.length < 2) {
                                                         // Clear everything when search is too short
                                                         setLiveResults([]);
                                                         setShowLiveResults(false);
@@ -3052,19 +3053,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     }
 
                                                     // ALWAYS generate live shipment results from ALL shipments including drafts (existing powerful search)
-                                                    if (value.length >= 2) {
+                                                    if (trimmedValue.length >= 2) {
                                                         // 🔍 Reset selection index for new search
                                                         setSelectedResultIndex(-1);
 
-                                                        const results = generateLiveShipmentResults(value, allShipments, customers);
+                                                        const results = generateLiveShipmentResults(trimmedValue, allShipments, customers);
                                                         setLiveResults(results);
                                                         setShowLiveResults(results.length > 0);
 
                                                         // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language including drafts
-                                                        if (value.length >= 5 && isNaturalLanguage(value)) {
+                                                        if (trimmedValue.length >= 5 && isNaturalLanguage(trimmedValue)) {
                                                             console.log('🧠 Natural language detected, triggering semantic search on ALL shipments including drafts');
                                                             // Trigger semantic search which will be used in the main filtering
-                                                            performSemanticSearch(value, allShipments).then(semanticResults => {
+                                                            performSemanticSearch(trimmedValue, allShipments).then(semanticResults => {
                                                                 if (semanticResults && semanticResults.results && semanticResults.results.length > 0) {
                                                                     // Create live results from semantic search results
                                                                     const semanticLiveResults = semanticResults.results.slice(0, 6).map(shipment => ({
@@ -3137,7 +3138,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     setSelectedResultIndex(-1);
 
                                                     // Clear legacy search fields when using unified search
-                                                    if (value) {
+                                                    if (trimmedValue) {
                                                         setSearchFields({
                                                             shipmentId: '',
                                                             referenceNumber: '',
@@ -3150,7 +3151,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                     }
 
                                                     // AUTO-SEARCH: Trigger search automatically for live results
-                                                    if (value.length >= 2) {
+                                                    if (trimmedValue.length >= 2) {
                                                         debouncedReload();
                                                     }
                                                 }}

@@ -1385,9 +1385,23 @@ const ShipmentInformation = ({
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                                 {(() => {
                                                     try {
-                                                        const date = shipment.shipmentInfo.eta1?.toDate ?
-                                                            shipment.shipmentInfo.eta1.toDate() :
-                                                            new Date(shipment.shipmentInfo.eta1);
+                                                        let date;
+
+                                                        // Handle Firestore Timestamp
+                                                        if (shipment.shipmentInfo.eta1?.toDate) {
+                                                            date = shipment.shipmentInfo.eta1.toDate();
+                                                        }
+                                                        // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                                        else if (typeof shipment.shipmentInfo.eta1 === 'string' &&
+                                                            shipment.shipmentInfo.eta1.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                            const parts = shipment.shipmentInfo.eta1.split('-');
+                                                            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                                        }
+                                                        // Handle other date formats
+                                                        else {
+                                                            date = new Date(shipment.shipmentInfo.eta1);
+                                                        }
+
                                                         return date.toLocaleDateString('en-US', {
                                                             weekday: 'short',
                                                             month: 'short',
@@ -1408,9 +1422,23 @@ const ShipmentInformation = ({
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                                 {(() => {
                                                     try {
-                                                        const date = shipment.shipmentInfo.eta2?.toDate ?
-                                                            shipment.shipmentInfo.eta2.toDate() :
-                                                            new Date(shipment.shipmentInfo.eta2);
+                                                        let date;
+
+                                                        // Handle Firestore Timestamp
+                                                        if (shipment.shipmentInfo.eta2?.toDate) {
+                                                            date = shipment.shipmentInfo.eta2.toDate();
+                                                        }
+                                                        // Handle date-only strings (YYYY-MM-DD) to avoid timezone issues
+                                                        else if (typeof shipment.shipmentInfo.eta2 === 'string' &&
+                                                            shipment.shipmentInfo.eta2.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                            const parts = shipment.shipmentInfo.eta2.split('-');
+                                                            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                                        }
+                                                        // Handle other date formats
+                                                        else {
+                                                            date = new Date(shipment.shipmentInfo.eta2);
+                                                        }
+
                                                         return date.toLocaleDateString('en-US', {
                                                             weekday: 'short',
                                                             month: 'short',

@@ -1,23 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     Card,
     CardContent,
-    Typography,
-    Button,
     Box,
-    Chip,
-    Collapse,
-    IconButton,
-    Divider,
+    Typography,
     Grid,
-    Tooltip
+    Chip,
+    Button,
+    Collapse,
+    Divider,
+    Tooltip,
+    IconButton
 } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import SecurityIcon from '@mui/icons-material/Security';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoIcon from '@mui/icons-material/Info';
+// Add missing imports for database functionality
+import { useState as useStateImport, useEffect } from 'react';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
 
 const EnhancedRateCard = ({
     rate,
@@ -28,6 +32,7 @@ const EnhancedRateCard = ({
     userRole = 'user'
 }) => {
     const [expanded, setExpanded] = useState(showDetails);
+    const [carrierLogoUrl, setCarrierLogoUrl] = useState(null);
 
     // Check if user is admin or super admin
     const isAdmin = userRole === 'admin' || userRole === 'superadmin';
@@ -70,58 +75,110 @@ const EnhancedRateCard = ({
 
     const costChargeInfo = getCostChargeInfo();
 
-    const getCarrierLogo = (rate) => {
-        // Enhanced carrier logo detection that checks master carrier identification
-        // This prioritizes sourceCarrier (master carrier like "eshipplus") over displayCarrier (sub-carrier like "Ward Trucking")
+    // Fetch carrier logo from database - DYNAMIC VERSION LIKE REVIEW.JSX
+    const fetchCarrierLogo = useCallback(async (carrierName) => {
+        if (!carrierName) return '/images/carrier-badges/solushipx.png';
 
-        const carrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
+        try {
+            // Map carrier display names to database carrierID values (same as Review.jsx)
+            const carrierNameToIdMap = {
+                'canpar express': 'CANPAR',
+                'canpar': 'CANPAR',
+                'eship plus': 'ESHIPPLUS',
+                'eshipplus': 'ESHIPPLUS',
+                'polaris transportation': 'POLARISTRANSPORTATION',
+                'polaris': 'POLARISTRANSPORTATION',
+                'fedex': 'FEDEX',
+                'ups': 'UPS',
+                'purolator': 'PUROLATOR',
+                'dhl': 'DHL',
+                'canada post': 'CANADAPOST',
+                'usps': 'USPS',
+                'ward trucking': 'ESHIPPLUS', // Ward Trucking is via eShip Plus
+                'ward': 'ESHIPPLUS',
+                'saia': 'ESHIPPLUS',
+                'estes': 'ESHIPPLUS',
+                'old dominion': 'ESHIPPLUS',
+                'odfl': 'ESHIPPLUS',
+                'yrc': 'ESHIPPLUS',
+                'xpo': 'ESHIPPLUS',
+                'fedex freight': 'ESHIPPLUS',
+                'road runner': 'ESHIPPLUS',
+                'roadrunner': 'ESHIPPLUS'
+            };
 
-        // Check for eShip Plus master carrier identification
-        const sourceCarrier = rate.sourceCarrier?.key || rate.sourceCarrier?.name;
-        const sourceCarrierName = rate.sourceCarrier?.name;
-        const sourceCarrierSystem = rate.sourceCarrier?.system;
+            // Normalize carrier name and map to carrierID
+            const normalizedCarrierName = carrierName.toLowerCase().trim();
+            const carrierID = carrierNameToIdMap[normalizedCarrierName] || carrierName.toUpperCase().replace(/\s+/g, '');
 
-        // Enhanced eShip Plus detection - check multiple fields for master carrier identification
-        const isEshipPlus =
-            sourceCarrier === 'ESHIPPLUS' ||
-            sourceCarrierName === 'eShip Plus' ||
-            sourceCarrierSystem === 'eshipplus' ||
-            rate.displayCarrierId === 'ESHIPPLUS' ||
-            rate.sourceCarrierName === 'eShipPlus' ||
-            // Check for freight carrier patterns that indicate eShip Plus sub-carriers
-            carrierName.toLowerCase().includes('freight') ||
-            carrierName.toLowerCase().includes('ltl') ||
-            carrierName.toLowerCase().includes('fedex freight') ||
-            carrierName.toLowerCase().includes('road runner') ||
-            carrierName.toLowerCase().includes('roadrunner') ||
-            carrierName.toLowerCase().includes('estes') ||
-            carrierName.toLowerCase().includes('yrc') ||
-            carrierName.toLowerCase().includes('xpo') ||
-            carrierName.toLowerCase().includes('old dominion') ||
-            carrierName.toLowerCase().includes('odfl') ||
-            carrierName.toLowerCase().includes('saia') ||
-            carrierName.toLowerCase().includes('ward');
+            console.log('EnhancedRateCard - Mapping carrier name to ID:', { carrierName, normalizedCarrierName, carrierID });
 
-        if (isEshipPlus) {
-            return '/images/carrier-badges/eship.png';
+            // Query carriers collection by carrierID field
+            const carriersQuery = query(
+                collection(db, 'carriers'),
+                where('carrierID', '==', carrierID),
+                limit(1)
+            );
+
+            const carriersSnapshot = await getDocs(carriersQuery);
+
+            if (!carriersSnapshot.empty) {
+                const carrierDoc = carriersSnapshot.docs[0];
+                const carrierData = carrierDoc.data();
+                const logoURL = carrierData.logoURL;
+
+                console.log('EnhancedRateCard - Fetched carrier logo from database:', { carrierName, carrierID, logoURL });
+                return logoURL || '/images/carrier-badges/solushipx.png';
+            } else {
+                console.log('EnhancedRateCard - Carrier not found in database:', { carrierName, carrierID });
+                return '/images/carrier-badges/solushipx.png';
+            }
+        } catch (error) {
+            console.error('EnhancedRateCard - Error fetching carrier logo:', error);
+            return '/images/carrier-badges/solushipx.png';
         }
+    }, []);
 
-        // Standard logo mapping for direct carriers
-        const logoMap = {
-            'eShip Plus': '/images/carrier-badges/eship.png',
-            'Canpar': '/images/carrier-badges/canpar.png',
-            'Canpar Express': '/images/carrier-badges/canpar.png',
-            'Polaris Transportation': '/images/carrier-badges/polaristransportation.png',
-            'FedEx': '/images/carrier-badges/fedex.png',
-            'UPS': '/images/carrier-badges/ups.png',
-            'DHL': '/images/carrier-badges/dhl.png',
-            'Canada Post': '/images/carrier-badges/canadapost.png',
-            'Purolator': '/images/carrier-badges/purolator.png',
-            'USPS': '/images/carrier-badges/usps.png'
+    // Load carrier logo when component mounts or rate changes
+    useEffect(() => {
+        const loadCarrierLogo = async () => {
+            // Determine the appropriate carrier name to fetch logo for
+            const carrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
+
+            // Check for eShip Plus master carrier identification
+            const sourceCarrier = rate.sourceCarrier?.key || rate.sourceCarrier?.name;
+            const sourceCarrierName = rate.sourceCarrier?.name;
+            const sourceCarrierSystem = rate.sourceCarrier?.system;
+
+            // Enhanced eShip Plus detection - check multiple fields for master carrier identification
+            const isEshipPlus =
+                sourceCarrier === 'ESHIPPLUS' ||
+                sourceCarrierName === 'eShip Plus' ||
+                sourceCarrierSystem === 'eshipplus' ||
+                rate.displayCarrierId === 'ESHIPPLUS' ||
+                rate.sourceCarrierName === 'eShipPlus' ||
+                // Check for freight carrier patterns that indicate eShip Plus sub-carriers
+                carrierName.toLowerCase().includes('freight') ||
+                carrierName.toLowerCase().includes('ltl') ||
+                carrierName.toLowerCase().includes('fedex freight') ||
+                carrierName.toLowerCase().includes('road runner') ||
+                carrierName.toLowerCase().includes('roadrunner') ||
+                carrierName.toLowerCase().includes('estes') ||
+                carrierName.toLowerCase().includes('yrc') ||
+                carrierName.toLowerCase().includes('xpo') ||
+                carrierName.toLowerCase().includes('old dominion') ||
+                carrierName.toLowerCase().includes('odfl') ||
+                carrierName.toLowerCase().includes('saia') ||
+                carrierName.toLowerCase().includes('ward');
+
+            // For eShip Plus sub-carriers, fetch eShip Plus logo
+            const logoCarrierName = isEshipPlus ? 'eShip Plus' : carrierName;
+            const logoUrl = await fetchCarrierLogo(logoCarrierName);
+            setCarrierLogoUrl(logoUrl);
         };
 
-        return logoMap[carrierName] || '/images/carrier-badges/solushipx.png';
-    };
+        loadCarrierLogo();
+    }, [rate, fetchCarrierLogo]);
 
     const formatPrice = (price) => {
         const currency = rate.pricing?.currency || 'USD';
@@ -333,7 +390,7 @@ const EnhancedRateCard = ({
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <Box
                         component="img"
-                        src={getCarrierLogo(rate)}
+                        src={carrierLogoUrl || '/images/carrier-badges/solushipx.png'}
                         alt={carrierName}
                         sx={{
                             width: 80,

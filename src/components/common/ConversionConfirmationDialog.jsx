@@ -213,22 +213,12 @@ const ConversionConfirmationDialog = ({
                         </Paper>
 
                         {/* Critical Warning */}
-                        <Alert severity="error" sx={{ mb: 3 }}>
-                            <AlertTitle>⚠️ CRITICAL WARNING - READ CAREFULLY</AlertTitle>
-                            <Typography variant="body2" sx={{ mb: 2 }}>
-                                This operation will <strong>completely replace</strong> the shipment's data structure.
-                                This is a <strong>complex and potentially risky</strong> operation.
+                        <Alert severity="info" sx={{ mb: 3 }}>
+                            <AlertTitle>Format Conversion</AlertTitle>
+                            <Typography variant="body2">
+                                Some data may be adjusted during the conversion to fit the new format.
+                                Your core shipment information will be preserved.
                             </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                What happens during conversion:
-                            </Typography>
-                            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                                <li>Full backup of original data is created</li>
-                                <li>All shipment data is replaced with new format</li>
-                                <li>ShipmentID and core metadata are preserved</li>
-                                <li>Automatic rollback if conversion fails</li>
-                                <li>Manual recovery available if needed</li>
-                            </ul>
                         </Alert>
 
                         {/* Safety Features */}
@@ -315,68 +305,24 @@ const ConversionConfirmationDialog = ({
                         <Divider sx={{ my: 3 }} />
 
                         {/* User Consent */}
-                        <Typography variant="h6" sx={{ mb: 2, color: '#d32f2f' }}>
-                            Required Confirmations
-                        </Typography>
-
                         <FormControlLabel
                             control={
                                 <Checkbox
                                     checked={userConsent.understandsRisk}
                                     onChange={(e) => setUserConsent(prev => ({
                                         ...prev,
-                                        understandsRisk: e.target.checked
-                                    }))}
-                                    color="error"
-                                />
-                            }
-                            label={
-                                <Typography variant="body2">
-                                    I understand this is a <strong>complex operation</strong> that will completely
-                                    replace the shipment's data structure and may result in data loss.
-                                </Typography>
-                            }
-                            sx={{ mb: 2, alignItems: 'flex-start' }}
-                        />
-
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={userConsent.acceptsDataLoss}
-                                    onChange={(e) => setUserConsent(prev => ({
-                                        ...prev,
+                                        understandsRisk: e.target.checked,
                                         acceptsDataLoss: e.target.checked
-                                    }))}
-                                    color="error"
-                                />
-                            }
-                            label={
-                                <Typography variant="body2">
-                                    I accept the risk of <strong>potential data loss</strong> and understand
-                                    that while safety measures are in place, data recovery may not always be possible.
-                                </Typography>
-                            }
-                            sx={{ mb: 2, alignItems: 'flex-start' }}
-                        />
-
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={userConsent.wantsBackup}
-                                    onChange={(e) => setUserConsent(prev => ({
-                                        ...prev,
-                                        wantsBackup: e.target.checked
                                     }))}
                                     color="primary"
                                 />
                             }
                             label={
                                 <Typography variant="body2">
-                                    <strong>Recommended:</strong> Create detailed backup for manual recovery
-                                    (slightly slower but much safer)
+                                    I want to proceed with the format conversion
                                 </Typography>
                             }
-                            sx={{ mb: 2, alignItems: 'flex-start' }}
+                            sx={{ mb: 2 }}
                         />
                     </>
                 )}
@@ -396,11 +342,11 @@ const ConversionConfirmationDialog = ({
                             onClick={handleConfirm}
                             disabled={!isConversionEnabled}
                             variant="contained"
-                            color="error"
+                            color="primary"
                             size="large"
                             sx={{ ml: 2 }}
                         >
-                            Convert Shipment
+                            Convert Now
                         </Button>
                     </>
                 )}

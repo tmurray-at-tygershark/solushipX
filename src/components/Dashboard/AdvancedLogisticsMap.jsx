@@ -859,6 +859,30 @@ const AdvancedLogisticsMap = ({
         }
     }, [onMapReady]);
 
+    // Handle marker click - zoom to street level instead of opening modal
+    const handleMarkerClick = useCallback((shipment, position, type) => {
+        console.log('🗺️ Marker clicked - zooming to street level:', { shipment: shipment.shipmentId, type });
+
+        // Zoom in to street level and center on the clicked marker
+        if (map && position) {
+            // Set zoom to street/building level (18-20)
+            map.setZoom(18);
+
+            // Center the map on the clicked position
+            map.panTo(position);
+
+            // Optional: Add a smooth animation to zoom in even more
+            setTimeout(() => {
+                map.setZoom(19); // Zoom in a bit more for building level
+            }, 300);
+        }
+
+        // Still call the original onMarkerClick if provided (for other functionality)
+        if (onMarkerClick) {
+            onMarkerClick(shipment, type);
+        }
+    }, [map, onMarkerClick]);
+
     // Update map type when satellite view changes
     useEffect(() => {
         if (map && window.google?.maps) {
@@ -1045,7 +1069,7 @@ const AdvancedLogisticsMap = ({
                             <Marker
                                 position={leg.start_location}
                                 icon={createShipmentMarker(shipment, leg.start_location, 'origin')}
-                                onClick={() => onMarkerClick && onMarkerClick(shipment, 'origin')}
+                                onClick={() => handleMarkerClick(shipment, leg.start_location, 'origin')}
                                 title={`${shipment.shipmentId} - Origin`}
                             />
 
@@ -1054,7 +1078,7 @@ const AdvancedLogisticsMap = ({
                                 <Marker
                                     position={livePosition.currentPosition}
                                     icon={createShipmentMarker(shipment, livePosition.currentPosition, 'current')}
-                                    onClick={() => onMarkerClick && onMarkerClick(shipment, 'current')}
+                                    onClick={() => handleMarkerClick(shipment, livePosition.currentPosition, 'current')}
                                     title={`${shipment.shipmentId} - Current Position (${Math.round(livePosition.progress * 100)}%)`}
                                 />
                             )}
@@ -1063,7 +1087,7 @@ const AdvancedLogisticsMap = ({
                             <Marker
                                 position={leg.end_location}
                                 icon={createShipmentMarker(shipment, leg.end_location, 'destination')}
-                                onClick={() => onMarkerClick && onMarkerClick(shipment, 'destination')}
+                                onClick={() => handleMarkerClick(shipment, leg.end_location, 'destination')}
                                 title={`${shipment.shipmentId} - Destination`}
                             />
                         </React.Fragment>
