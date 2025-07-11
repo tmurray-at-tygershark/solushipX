@@ -84,6 +84,9 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 // Import responsive CSS
 import './Dashboard.css';
 
+// Enhanced status chip component
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
+
 // Google Maps components (lazy loaded when needed)
 let GoogleMap, DirectionsRenderer, Marker;
 const loadGoogleMapsComponents = async () => {
@@ -149,6 +152,62 @@ const BrokersComponent = lazy(() => import('../Brokers/Brokers'));
 
 // Import ShipmentAgent for the main dashboard overlay
 const ShipmentAgent = lazy(() => import('../ShipmentAgent/ShipmentAgent'));
+
+// Helper functions for data formatting
+const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+
+    try {
+        let date;
+        if (timestamp && typeof timestamp.toDate === 'function') {
+            date = timestamp.toDate();
+        } else if (timestamp && timestamp.seconds) {
+            date = new Date(timestamp.seconds * 1000);
+        } else {
+            date = new Date(timestamp);
+        }
+
+        if (isNaN(date.getTime())) return 'N/A';
+
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    } catch (error) {
+        console.warn('Error formatting date:', error);
+        return 'N/A';
+    }
+};
+
+const formatAddress = (address) => {
+    if (!address) return 'Unknown';
+
+    const parts = [];
+    if (address.city) parts.push(address.city);
+    if (address.state) parts.push(address.state);
+    if (address.country && address.country !== 'US') parts.push(address.country);
+
+    return parts.length > 0 ? parts.join(', ') : 'Unknown';
+};
+
+// Simple loading wrapper components
+const LazyComponentWrapper = ({ children }) => (
+    <Suspense fallback={
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+            <CircularProgress size={24} />
+        </Box>
+    }>
+        {children}
+    </Suspense>
+);
+
+const MapsLoadingScreen = () => (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+        <CircularProgress size={24} />
+        <Typography sx={{ ml: 2 }}>Loading Map...</Typography>
+    </Box>
+);
 
 // Route View Badge Component
 const RouteViewBadge = ({ shipments, onRouteClick }) => {
@@ -900,17 +959,13 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
                                             height: '24px'
                                         }}
                                     />
-                                    <Chip
-                                        label={currentShipment.status?.replace(/_/g, ' ').toUpperCase()}
+                                    <EnhancedStatusChip
+                                        status={currentShipment.status}
                                         size="small"
+                                        compact={true}
+                                        displayMode="auto"
+                                        showTooltip={false}
                                         sx={{
-                                            backgroundColor: currentShipment.status === 'in_transit'
-                                                ? 'rgba(255, 193, 7, 0.1)'
-                                                : 'rgba(76, 175, 80, 0.1)',
-                                            color: currentShipment.status === 'in_transit'
-                                                ? '#F57C00'
-                                                : '#4CAF50',
-                                            fontWeight: 500,
                                             fontSize: '0.7rem',
                                             height: '24px'
                                         }}
@@ -2278,9 +2333,19 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
                         <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
                             {selectedShipment.shipmentId}
                         </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Status:</strong> {selectedShipment.status}
-                        </Typography>
+                        <Box sx={{ mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2">
+                                <strong>Status:</strong>
+                            </Typography>
+                            <EnhancedStatusChip
+                                status={selectedShipment.status}
+                                size="small"
+                                compact={true}
+                                displayMode="auto"
+                                showTooltip={false}
+                                sx={{ fontSize: '11px', height: '20px' }}
+                            />
+                        </Box>
                         <Typography variant="body2" sx={{ mb: 0.5 }}>
                             <strong>Customer:</strong> {selectedShipment.customer}
                         </Typography>
@@ -2314,212 +2379,6 @@ const GoogleMapsDashboard = ({ shipments, onShipmentClick, onTrackingClick }) =>
 const Transition = forwardRef(function Transition(props, ref) {
     return <Slide direction="up" ref={ref} {...props} timeout={{ enter: 500, exit: 300 }} easing={{ enter: 'cubic-bezier(0.4, 0, 0.2, 1)', exit: 'cubic-bezier(0.4, 0, 1, 1)' }} />;
 });
-
-// Enhanced Maps Loading Screen Component
-const MapsLoadingScreen = ({ phase = 'initializing' }) => {
-    const [progress, setProgress] = useState(0);
-    const [currentPhase, setCurrentPhase] = useState(0);
-
-    const loadingPhases = [
-        { text: 'Initializing SoluShipX Maps', description: 'Preparing route visualization engine' },
-        { text: 'Loading Google Maps', description: 'Connecting to mapping services' },
-        { text: 'Fetching Shipment Data', description: 'Retrieving your logistics network' },
-        { text: 'Calculating Routes', description: 'Computing optimal pathways' },
-        { text: 'Finalizing Dashboard', description: 'Almost ready to explore' }
-    ];
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setProgress((prevProgress) => {
-                const newProgress = prevProgress + Math.random() * 20 + 5; // Faster progress
-
-                // Update phase based on progress
-                const newPhase = Math.floor((newProgress / 100) * loadingPhases.length);
-                setCurrentPhase(Math.min(newPhase, loadingPhases.length - 1));
-
-                return newProgress >= 100 ? 100 : newProgress;
-            });
-        }, 200); // Faster interval
-
-        return () => clearInterval(timer);
-    }, [loadingPhases.length]);
-
-    const currentLoadingPhase = loadingPhases[currentPhase];
-
-    return (
-        <Box sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100vh',
-            background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
-            color: 'white',
-            position: 'relative',
-            overflow: 'hidden'
-        }}>
-            {/* Animated background particles */}
-            <Box sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: `
-                    radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
-                    radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-                    radial-gradient(circle at 40% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%)
-                `,
-                animation: 'float 6s ease-in-out infinite'
-            }} />
-
-            {/* Main loading content */}
-            <Box sx={{ textAlign: 'center', zIndex: 1, maxWidth: '400px', px: 3 }}>
-                {/* Progress circle with percentage */}
-                <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
-                    <CircularProgress
-                        variant="determinate"
-                        value={progress}
-                        size={100}
-                        thickness={2}
-                        sx={{
-                            color: '#60a5fa',
-                            filter: 'drop-shadow(0 0 10px rgba(96, 165, 250, 0.6))',
-                            '& .MuiCircularProgress-circle': {
-                                strokeLinecap: 'round',
-                            }
-                        }}
-                    />
-                    <Box sx={{
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        right: 0,
-                        position: 'absolute',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}>
-                        <Typography variant="h6" component="div" sx={{
-                            color: 'white',
-                            fontWeight: 600,
-                            fontSize: '1.2rem'
-                        }}>
-                            {Math.round(progress)}%
-                        </Typography>
-                    </Box>
-                </Box>
-
-                {/* Current phase text */}
-                <Fade in key={currentPhase} timeout={500}>
-                    <Box>
-                        <Typography variant="h6" sx={{
-                            fontSize: '1.3rem',
-                            fontWeight: 600,
-                            mb: 1,
-                            background: 'linear-gradient(45deg, #60a5fa, #8b5cf6)',
-                            backgroundClip: 'text',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent'
-                        }}>
-                            {currentLoadingPhase.text}
-                        </Typography>
-                        <Typography sx={{
-                            fontSize: '0.95rem',
-                            opacity: 0.8,
-                            color: 'rgba(255, 255, 255, 0.7)'
-                        }}>
-                            {currentLoadingPhase.description}
-                        </Typography>
-                    </Box>
-                </Fade>
-
-                {/* Phase indicators */}
-                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 3 }}>
-                    {loadingPhases.map((_, index) => (
-                        <Box
-                            key={index}
-                            sx={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: '50%',
-                                backgroundColor: index <= currentPhase ? '#60a5fa' : 'rgba(255, 255, 255, 0.2)',
-                                transition: 'all 0.3s ease',
-                                boxShadow: index <= currentPhase ? '0 0 10px rgba(96, 165, 250, 0.8)' : 'none'
-                            }}
-                        />
-                    ))}
-                </Box>
-            </Box>
-
-            {/* CSS animations */}
-            <style jsx>{`
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px) rotate(0deg); }
-                    33% { transform: translateY(-10px) rotate(1deg); }
-                    66% { transform: translateY(5px) rotate(-1deg); }
-                }
-                
-                @keyframes pulse {
-                    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
-                    50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.9; }
-                }
-            `}</style>
-        </Box>
-    );
-};
-
-// Helper function to format Firestore timestamp
-const formatDate = (timestamp) => {
-    if (!timestamp) return '';
-    return new Date(timestamp.seconds * 1000).toISOString().split('T')[0];
-};
-
-// Helper function to format address
-const formatAddress = (addressObj) => {
-    if (!addressObj) return '';
-    const parts = [
-        addressObj.street,
-        addressObj.street2,
-        addressObj.city,
-        addressObj.state,
-        addressObj.postalCode,
-        addressObj.country
-    ].filter(Boolean);
-    return parts.join(', ');
-};
-
-// Add error boundary wrapper for lazy components to handle chunk loading errors
-const LazyComponentWrapper = ({ children, fallback = <CircularProgress /> }) => {
-    const [hasError, setHasError] = useState(false);
-
-    useEffect(() => {
-        const handleChunkError = (event) => {
-            if (event.target.tagName === 'SCRIPT' && event.target.src.includes('chunk')) {
-                console.warn('Chunk loading failed, reloading page...');
-                window.location.reload();
-            }
-        };
-
-        window.addEventListener('error', handleChunkError);
-        return () => window.removeEventListener('error', handleChunkError);
-    }, []);
-
-    if (hasError) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 2 }}>
-                <CircularProgress />
-                <Typography>Loading component...</Typography>
-            </Box>
-        );
-    }
-
-    return (
-        <Suspense fallback={fallback}>
-            {children}
-        </Suspense>
-    );
-};
 
 const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
@@ -4197,23 +4056,22 @@ const Dashboard = () => {
                                                             })()}
 
                                                             {/* Status - moved to last position */}
-                                                            <Box sx={{
-                                                                backgroundColor: result.status === 'Delivered' ? '#dcfce7' :
-                                                                    result.status === 'In Transit' ? '#dbeafe' :
-                                                                        result.status === 'Pending' ? '#fef3c7' : '#f3f4f6',
-                                                                color: result.status === 'Delivered' ? '#166534' :
-                                                                    result.status === 'In Transit' ? '#1d4ed8' :
-                                                                        result.status === 'Pending' ? '#d97706' : '#6b7280',
-                                                                padding: '2px 6px',
-                                                                borderRadius: '10px',
-                                                                fontSize: '9px',
-                                                                fontWeight: 500,
-                                                                textTransform: 'uppercase',
-                                                                letterSpacing: '0.5px',
-                                                                whiteSpace: 'nowrap'
-                                                            }}>
-                                                                {result.status}
-                                                            </Box>
+                                                            <EnhancedStatusChip
+                                                                status={result.shipment?.status || result.status}
+                                                                size="small"
+                                                                compact={true}
+                                                                displayMode="auto"
+                                                                showTooltip={false}
+                                                                sx={{
+                                                                    fontSize: '9px',
+                                                                    height: '18px',
+                                                                    '& .MuiChip-label': {
+                                                                        fontSize: '9px',
+                                                                        lineHeight: 1,
+                                                                        px: 1
+                                                                    }
+                                                                }}
+                                                            />
                                                         </Box>
                                                     </Box>
 

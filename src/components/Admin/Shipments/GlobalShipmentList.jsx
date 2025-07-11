@@ -33,6 +33,7 @@ import { db } from '../../../firebase';
 import { useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import { semanticSearch } from '../../../utils/semanticSearch';
+import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 
 // Import the reusable components
 import ShipmentsX from '../../Shipments/ShipmentsX';
@@ -1337,23 +1338,24 @@ const GlobalShipmentList = () => {
                                                                         )}
 
                                                                         {/* Status - moved to last position */}
-                                                                        <Box sx={{
-                                                                            backgroundColor: result.status === 'Delivered' ? '#dcfce7' :
-                                                                                result.status === 'In Transit' ? '#dbeafe' :
-                                                                                    result.status === 'Pending' ? '#fef3c7' : '#f3f4f6',
-                                                                            color: result.status === 'Delivered' ? '#166534' :
-                                                                                result.status === 'In Transit' ? '#1d4ed8' :
-                                                                                    result.status === 'Pending' ? '#d97706' : '#6b7280',
-                                                                            padding: '2px 6px',
-                                                                            borderRadius: '10px',
-                                                                            fontSize: '9px',
-                                                                            fontWeight: 500,
-                                                                            textTransform: 'uppercase',
-                                                                            letterSpacing: '0.5px',
-                                                                            whiteSpace: 'nowrap'
-                                                                        }}>
-                                                                            {result.status}
-                                                                        </Box>
+                                                                        <EnhancedStatusChip
+                                                                            status={result.shipment.status}
+                                                                            size="small"
+                                                                            compact={true}
+                                                                            displayMode="auto"
+                                                                            showTooltip={false}
+                                                                            sx={{
+                                                                                fontSize: '9px',
+                                                                                height: '18px',
+                                                                                '& .MuiChip-label': {
+                                                                                    fontSize: '9px',
+                                                                                    fontWeight: 500,
+                                                                                    textTransform: 'uppercase',
+                                                                                    letterSpacing: '0.5px',
+                                                                                    px: 1
+                                                                                }
+                                                                            }}
+                                                                        />
                                                                     </Box>
 
                                                                     {/* Bottom row: Tracking Number */}

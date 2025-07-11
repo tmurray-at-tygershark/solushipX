@@ -19,7 +19,8 @@ import {
     TableCell,
     TableContainer,
     TableHead,
-    TableRow
+    TableRow,
+    Tooltip
 } from '@mui/material';
 import {
     LocalShipping as LocalShippingIcon,
@@ -1478,12 +1479,34 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Current Status</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                    <ManualStatusOverride
-                                        shipment={shipment}
-                                        onStatusUpdated={onStatusUpdated}
-                                        onShowSnackbar={onShowSnackbar}
-                                        disabled={shipment?.status === 'draft'}
-                                    />
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexGrow: 1 }}>
+                                        {/* Manual Override Indicator - Small Bold M (same as ShipmentTableRow) */}
+                                        {shipment?.statusOverride?.isManual && (
+                                            <Tooltip title="Status manually overridden">
+                                                <Box sx={{
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    backgroundColor: '#e5e7eb',
+                                                    color: '#374151',
+                                                    borderRadius: '3px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '10px',
+                                                    fontWeight: 'bold',
+                                                    flexShrink: 0
+                                                }}>
+                                                    M
+                                                </Box>
+                                            </Tooltip>
+                                        )}
+                                        <ManualStatusOverride
+                                            shipment={shipment}
+                                            onStatusUpdated={onStatusUpdated}
+                                            onShowSnackbar={onShowSnackbar}
+                                            disabled={shipment?.status === 'draft'}
+                                        />
+                                    </Box>
                                     <IconButton
                                         size="small"
                                         onClick={onRefreshStatus}

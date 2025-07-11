@@ -89,6 +89,7 @@ import CarrierLoadingDisplay from './CarrierLoadingDisplay';
 import RateErrorDisplay from './RateErrorDisplay';
 import ShipmentRateRequestSummary from './ShipmentRateRequestSummary';
 import CarrierStatsPopover from './CarrierStatsPopover';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 
 // Import Suspense for lazy loading
 import { Suspense } from 'react';
@@ -3481,7 +3482,23 @@ const CreateShipmentX = (props) => {
             {/* Modal Header */}
             {isModal && (
                 <ModalHeader
-                    title={isEditingDraft ? `Edit Dynamic Shipment Draft${shipmentID ? ` - ${shipmentID}` : ''}` : `Dynamic Shipment${shipmentID ? ` - ${shipmentID}` : ''}`}
+                    title={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Typography variant="h6" component="span" sx={{ fontWeight: 600, fontSize: '16px' }}>
+                                {isEditingDraft ? `Edit Dynamic Shipment Draft${shipmentID ? ` - ${shipmentID}` : ''}` : `Dynamic Shipment${shipmentID ? ` - ${shipmentID}` : ''}`}
+                            </Typography>
+                            {/* Show status chip when editing existing shipment */}
+                            {editShipment && editShipment.status && (
+                                <EnhancedStatusChip
+                                    status={editShipment.status}
+                                    size="small"
+                                    displayMode="master"
+                                    showTooltip={true}
+                                    sx={{ ml: 1 }}
+                                />
+                            )}
+                        </Box>
+                    }
                     onClose={onClose}
                     showCloseButton={showCloseButton}
                 />

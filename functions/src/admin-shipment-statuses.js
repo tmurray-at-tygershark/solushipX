@@ -15,7 +15,8 @@ const validateAdminPermissions = async (uid) => {
         const userData = userDoc.data();
         const userRole = userData.role;
         
-        if (userRole !== 'admin' && userRole !== 'superadmin') {
+        // Allow admin, superadmin, and company admin (user) roles to manage shipment statuses
+        if (userRole !== 'admin' && userRole !== 'superadmin' && userRole !== 'user') {
             throw new Error('Insufficient permissions. Admin access required.');
         }
         
@@ -243,10 +244,10 @@ exports.getMasterStatuses = onCall({
             throw new Error('Authentication required');
         }
         
-        // Validate admin permissions
-        await validateAdminPermissions(auth.uid);
-        
+        // Allow all authenticated users to fetch master statuses for UI display
+        // Only restrict editing/creating/deleting to admins
         const masterStatusesQuery = await db.collection('masterStatuses')
+            .where('enabled', '==', true) // Only return enabled statuses for regular users
             .orderBy('sortOrder')
             .orderBy('displayLabel')
             .get();
@@ -491,16 +492,19 @@ exports.getShipmentStatuses = onCall({
             throw new Error('Authentication required');
         }
         
-        // Validate admin permissions
-        await validateAdminPermissions(auth.uid);
+        // Allow all authenticated users to fetch shipment statuses for UI display
+        // Only restrict editing/creating/deleting to admins
         
         // Get shipment statuses with master status data
         const shipmentStatusesQuery = await db.collection('shipmentStatuses')
+            .where('enabled', '==', true) // Only return enabled statuses for regular users
             .orderBy('masterStatus')
             .orderBy('statusLabel')
             .get();
             
-        const masterStatusesQuery = await db.collection('masterStatuses').get();
+        const masterStatusesQuery = await db.collection('masterStatuses')
+            .where('enabled', '==', true) // Only return enabled statuses
+            .get();
         
         // Create master statuses lookup
         const masterStatusesMap = {};

@@ -18,7 +18,7 @@ exports.updateManualShipmentStatus = onCall({
     enforceAppCheck: false
 }, async (request) => {
     try {
-        const { shipmentId, newStatus, previousStatus, reason, timestamp } = request.data;
+        const { shipmentId, newStatus, previousStatus, reason, timestamp, enhancedStatus } = request.data;
         const { auth } = request;
 
         // Validate authentication
@@ -59,17 +59,6 @@ exports.updateManualShipmentStatus = onCall({
 
         const shipmentData = shipmentDoc.data();
 
-        // Check if status is actually changing
-        if (shipmentData.status === newStatus) {
-            return {
-                success: true,
-                message: 'Status is already set to the requested value',
-                statusChanged: false,
-                shipmentId,
-                status: newStatus
-            };
-        }
-
         // Create status override data
         const statusOverride = {
             isManual: true,
@@ -78,8 +67,15 @@ exports.updateManualShipmentStatus = onCall({
             originalStatus: shipmentData.status,
             manualStatus: newStatus,
             reason: reason || 'Manual status override',
-            preventAutoUpdates: true
+            preventAutoUpdates: true,
+            lastUpdate: new Date().toISOString(), // This ensures the field always changes
+            updateCount: (shipmentData.statusOverride?.updateCount || 0) + 1
         };
+
+        // Only add enhancedStatus if it's not undefined
+        if (enhancedStatus !== undefined && enhancedStatus !== null) {
+            statusOverride.enhancedStatus = enhancedStatus;
+        }
 
         // Create audit trail entry
         const auditEntry = {
@@ -113,14 +109,27 @@ exports.updateManualShipmentStatus = onCall({
         // Batch write to ensure atomicity
         const batch = db.batch();
 
-        // Update shipment document
-        batch.update(shipmentRef, {
+        // Prepare the update data for the shipment document
+        const updateData = {
             status: newStatus,
             statusOverride,
             statusLastUpdated: admin.firestore.FieldValue.serverTimestamp(),
             statusUpdateSource: 'manual_override',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // CRITICAL: Add fields that always change to ensure Firestore trigger fires
+            lastStatusChange: admin.firestore.FieldValue.serverTimestamp(),
+            statusChangeCounter: (shipmentData.statusChangeCounter || 0) + 1,
+            // Add unique identifier for each status change
+            statusChangeId: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        };
+
+        // Only add enhancedStatus if it's not undefined
+        if (enhancedStatus !== undefined && enhancedStatus !== null) {
+            updateData.enhancedStatus = enhancedStatus;
+        }
+
+        // Update shipment document
+        batch.update(shipmentRef, updateData);
 
         // Add audit trail entry
         const auditRef = db.collection('auditTrail').doc();

@@ -111,6 +111,9 @@ const sendCreateShipmentXNotificationsModule = require('./src/functions/generic/
 // Import manual status override function
 const { updateManualShipmentStatus } = require('./src/updateManualShipmentStatus');
 
+// Import enhanced manual status override function
+const { updateManualShipmentStatusEnhanced } = require('./src/updateManualShipmentStatusEnhanced');
+
 // Import sales commission functions
 const {
     createSalesPerson,
@@ -261,6 +264,13 @@ exports.sendCreateShipmentXNotifications = sendCreateShipmentXNotificationsModul
 
 // Export manual status override function
 exports.updateManualShipmentStatus = updateManualShipmentStatus;
+
+// Export test functions for diagnostics
+const { testEnhancedStatusEmails } = require('./src/testEnhancedStatusEmails');
+exports.testEnhancedStatusEmails = testEnhancedStatusEmails;
+
+const { quickDiagnosticEmailTest } = require('./src/quickDiagnosticEmailTest');
+exports.quickDiagnosticEmailTest = quickDiagnosticEmailTest;
 
 // Export sales commission functions
 exports.createSalesPerson = createSalesPerson;

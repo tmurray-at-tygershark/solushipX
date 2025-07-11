@@ -107,10 +107,40 @@ exports.uploadShipmentDocument = onCall(async (request) => {
         const userRole = userData.role;
         
         // Allow access if user is admin/superadmin or if shipment belongs to their company
+        // Handle both companyID (capital ID) and companyId (lowercase id) field naming conventions
+        const shipmentCompanyId = shipmentData.companyID || shipmentData.companyId;
+        
+        // Extract user's company ID from various possible data structures
+        let userCompanyId = null;
+        
+        // Check for direct company fields first (legacy)
+        if (userData.companyID || userData.companyId) {
+            userCompanyId = userData.companyID || userData.companyId;
+        }
+        // Check for connectedCompanies structure (current standard)
+        else if (userData.connectedCompanies?.companies?.length > 0) {
+            userCompanyId = userData.connectedCompanies.companies[0]; // Use first connected company
+        }
+        // Check for legacy companies array
+        else if (userData.companies?.length > 0) {
+            userCompanyId = userData.companies[0];
+        }
+        
         const hasAccess = ['admin', 'superadmin'].includes(userRole) || 
-                         shipmentData.companyID === userData.companyID;
+                         (shipmentCompanyId && userCompanyId && shipmentCompanyId === userCompanyId);
         
         if (!hasAccess) {
+            console.log('Access denied for document upload:', {
+                userRole,
+                userId: request.auth.uid,
+                userEmail: request.auth.token.email,
+                shipmentCompanyId,
+                userCompanyId,
+                userConnectedCompanies: userData.connectedCompanies,
+                userCompanies: userData.companies,
+                shipmentId,
+                firebaseDocId
+            });
             throw new Error('Access denied: You do not have permission to upload documents for this shipment');
         }
 
@@ -230,7 +260,7 @@ exports.deleteShipmentDocument = onCall(async (request) => {
             throw new Error('Missing required parameters: documentId, shipmentId');
         }
 
-        // Check if user is admin
+        // Check if user has access to this shipment (same logic as upload function)
         const userRef = db.collection('users').doc(request.auth.uid);
         const userDoc = await userRef.get();
         
@@ -240,12 +270,8 @@ exports.deleteShipmentDocument = onCall(async (request) => {
 
         const userData = userDoc.data();
         const userRole = userData.role;
-        
-        if (!['admin', 'superadmin'].includes(userRole)) {
-            throw new Error('Access denied: Admin privileges required');
-        }
 
-        // Get document metadata
+        // Get document metadata first to get shipment info
         const docRef = db.collection('shipmentDocuments').doc(documentId);
         const docDoc = await docRef.get();
         
@@ -255,6 +281,54 @@ exports.deleteShipmentDocument = onCall(async (request) => {
 
         const docData = docDoc.data();
         
+        // Get shipment to verify access
+        const shipmentRef = db.collection('shipments').doc(docData.firebaseDocId);
+        const shipmentDoc = await shipmentRef.get();
+        
+        if (!shipmentDoc.exists) {
+            throw new Error('Shipment not found');
+        }
+
+        const shipmentData = shipmentDoc.data();
+        
+        // Allow access if user is admin/superadmin or if shipment belongs to their company
+        // Handle both companyID (capital ID) and companyId (lowercase id) field naming conventions
+        const shipmentCompanyId = shipmentData.companyID || shipmentData.companyId;
+        
+        // Extract user's company ID from various possible data structures
+        let userCompanyId = null;
+        
+        // Check for direct company fields first (legacy)
+        if (userData.companyID || userData.companyId) {
+            userCompanyId = userData.companyID || userData.companyId;
+        }
+        // Check for connectedCompanies structure (current standard)
+        else if (userData.connectedCompanies?.companies?.length > 0) {
+            userCompanyId = userData.connectedCompanies.companies[0]; // Use first connected company
+        }
+        // Check for legacy companies array
+        else if (userData.companies?.length > 0) {
+            userCompanyId = userData.companies[0];
+        }
+        
+        const hasAccess = ['admin', 'superadmin'].includes(userRole) || 
+                         (shipmentCompanyId && userCompanyId && shipmentCompanyId === userCompanyId);
+        
+        if (!hasAccess) {
+            console.log('Access denied for document deletion:', {
+                userRole,
+                userId: request.auth.uid,
+                userEmail: request.auth.token.email,
+                shipmentCompanyId,
+                userCompanyId,
+                userConnectedCompanies: userData.connectedCompanies,
+                userCompanies: userData.companies,
+                shipmentId,
+                documentId
+            });
+            throw new Error('Access denied: You do not have permission to delete documents for this shipment');
+        }
+
         // Delete from Firebase Storage
         if (docData.storagePath) {
             try {
@@ -270,7 +344,6 @@ exports.deleteShipmentDocument = onCall(async (request) => {
         await docRef.delete();
         
         // Also delete from shipment's documents subcollection
-        const shipmentRef = db.collection('shipments').doc(docData.firebaseDocId);
         await shipmentRef.collection('documents').doc(documentId).delete();
 
         console.log(`Document deleted successfully: ${documentId}`);
@@ -327,11 +400,40 @@ exports.getShipmentDocuments = onCall(async (request) => {
 
         const shipmentData = shipmentDoc.data();
         
-        // Check access
+        // Check access - Handle both companyID and companyId field naming conventions
+        const shipmentCompanyId = shipmentData.companyID || shipmentData.companyId;
+        
+        // Extract user's company ID from various possible data structures
+        let userCompanyId = null;
+        
+        // Check for direct company fields first (legacy)
+        if (userData.companyID || userData.companyId) {
+            userCompanyId = userData.companyID || userData.companyId;
+        }
+        // Check for connectedCompanies structure (current standard)
+        else if (userData.connectedCompanies?.companies?.length > 0) {
+            userCompanyId = userData.connectedCompanies.companies[0]; // Use first connected company
+        }
+        // Check for legacy companies array
+        else if (userData.companies?.length > 0) {
+            userCompanyId = userData.companies[0];
+        }
+        
         const hasAccess = ['admin', 'superadmin'].includes(userRole) || 
-                         shipmentData.companyID === userData.companyID;
+                         (shipmentCompanyId && userCompanyId && shipmentCompanyId === userCompanyId);
         
         if (!hasAccess) {
+            console.log('Access denied for document retrieval:', {
+                userRole,
+                userId: request.auth.uid,
+                userEmail: request.auth.token.email,
+                shipmentCompanyId,
+                userCompanyId,
+                userConnectedCompanies: userData.connectedCompanies,
+                userCompanies: userData.companies,
+                shipmentId,
+                firebaseDocId
+            });
             throw new Error('Access denied');
         }
 

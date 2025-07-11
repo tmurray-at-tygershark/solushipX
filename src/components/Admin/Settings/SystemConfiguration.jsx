@@ -35,7 +35,9 @@ import {
     Tab,
     Divider,
     Popover,
-    ClickAwayListener
+    ClickAwayListener,
+    Menu,
+    MenuList
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -51,8 +53,15 @@ import {
     Category as CategoryIcon,
     List as ListIcon,
     ColorLens as ColorIcon,
+<<<<<<< HEAD
+    Notifications as NotificationsIcon,
+    DragIndicator as DragIndicatorIcon,
+    MoreVert as MoreVertIcon
+=======
     Notifications as NotificationsIcon
+>>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 } from '@mui/icons-material';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { useSnackbar } from 'notistack';
 import {
     doc,
@@ -123,7 +132,6 @@ const SystemConfiguration = () => {
         description: '',
         color: '#6b7280',
         fontColor: '#ffffff',
-        sortOrder: 0,
         enabled: true
     });
     const [colorPickerOpen, setColorPickerOpen] = useState(null); // 'background' or 'font'
@@ -132,9 +140,13 @@ const SystemConfiguration = () => {
         statusLabel: '',
         statusValue: '',
         description: '',
-        enabled: true,
-        sortOrder: 0
+        enabled: true
     });
+
+    // Context menu state
+    const [contextMenu, setContextMenu] = useState(null);
+    const [contextMenuType, setContextMenuType] = useState(null); // 'master' or 'shipment'
+    const [contextMenuData, setContextMenuData] = useState(null);
 
     useEffect(() => {
         loadConfiguration();
@@ -469,7 +481,6 @@ const SystemConfiguration = () => {
             description: '',
             color: '#6b7280',
             fontColor: '#ffffff',
-            sortOrder: masterStatuses.length,
             enabled: true
         });
         setMasterStatusDialogOpen(true);
@@ -483,7 +494,6 @@ const SystemConfiguration = () => {
             description: status.description || '',
             color: status.color || '#6b7280',
             fontColor: status.fontColor || '#ffffff',
-            sortOrder: status.sortOrder || 0,
             enabled: status.enabled !== false
         });
         setMasterStatusDialogOpen(true);
@@ -504,7 +514,6 @@ const SystemConfiguration = () => {
                 description: masterStatusForm.description.trim(),
                 color: masterStatusForm.color,
                 fontColor: masterStatusForm.fontColor,
-                sortOrder: parseInt(masterStatusForm.sortOrder) || 0,
                 enabled: masterStatusForm.enabled
             };
 
@@ -535,8 +544,7 @@ const SystemConfiguration = () => {
             statusLabel: '',
             statusValue: '',
             description: '',
-            enabled: true,
-            sortOrder: shipmentStatuses.length
+            enabled: true
         });
         setShipmentStatusDialogOpen(true);
     };
@@ -546,10 +554,9 @@ const SystemConfiguration = () => {
         setShipmentStatusForm({
             masterStatus: status.masterStatus || '',
             statusLabel: status.statusLabel || '',
-            statusValue: status.statusValue || '',
-            description: status.description || '',
-            enabled: status.enabled !== false,
-            sortOrder: status.sortOrder || 0
+            statusValue: status.statusValue || status.statusLabel || '', // Keep statusValue for display but map to statusLabel
+            description: status.statusMeaning || status.description || '', // Map statusMeaning to description for form
+            enabled: status.enabled !== false
         });
         setShipmentStatusDialogOpen(true);
     };
@@ -558,18 +565,16 @@ const SystemConfiguration = () => {
         try {
             setSaving(true);
 
-            if (!shipmentStatusForm.masterStatus || !shipmentStatusForm.statusLabel.trim() || !shipmentStatusForm.statusValue.trim()) {
-                enqueueSnackbar('Master Status, Status Label, and Status Value are required', { variant: 'error' });
+            if (!shipmentStatusForm.masterStatus || !shipmentStatusForm.statusLabel.trim()) {
+                enqueueSnackbar('Master Status and Status Label are required', { variant: 'error' });
                 return;
             }
 
             const statusData = {
                 masterStatus: shipmentStatusForm.masterStatus,
                 statusLabel: shipmentStatusForm.statusLabel.trim(),
-                statusValue: shipmentStatusForm.statusValue.trim().toLowerCase(),
-                description: shipmentStatusForm.description.trim(),
-                enabled: shipmentStatusForm.enabled,
-                sortOrder: parseInt(shipmentStatusForm.sortOrder) || 0
+                statusMeaning: shipmentStatusForm.description.trim(), // Map description to statusMeaning for backend
+                enabled: shipmentStatusForm.enabled
             };
 
             if (editingShipmentStatus) {
@@ -586,7 +591,7 @@ const SystemConfiguration = () => {
             await loadShipmentStatuses();
         } catch (error) {
             console.error('Error saving shipment status:', error);
-            enqueueSnackbar('Failed to save shipment status', { variant: 'error' });
+            enqueueSnackbar(`Failed to save shipment status: ${error.message}`, { variant: 'error' });
         } finally {
             setSaving(false);
         }
@@ -622,6 +627,126 @@ const SystemConfiguration = () => {
         } finally {
             setSaving(false);
         }
+    };
+
+    // Drag and Drop handlers
+    const handleMasterStatusDragEnd = async (result) => {
+        // Validate drag result
+        if (!result || !result.destination || !result.source) {
+            return;
+        }
+
+        // Prevent unnecessary updates
+        if (result.destination.index === result.source.index) {
+            return;
+        }
+
+        // Validate items array
+        if (!masterStatuses || masterStatuses.length === 0) {
+            return;
+        }
+
+        const items = Array.from(masterStatuses);
+        const [reorderedItem] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reorderedItem);
+
+        // Update local state immediately for better UX
+        setMasterStatuses(items);
+
+        try {
+            // Update sort orders in batch
+            const updatePromises = items.map((item, index) => {
+                if (!item || !item.id) return Promise.resolve();
+                const updateFunction = httpsCallable(functions, 'updateMasterStatus');
+                return updateFunction({
+                    masterStatusId: item.id,
+                    updates: { sortOrder: index }
+                });
+            });
+
+            await Promise.all(updatePromises);
+            enqueueSnackbar('Master status order updated successfully', { variant: 'success' });
+        } catch (error) {
+            console.error('Error updating master status order:', error);
+            enqueueSnackbar('Failed to update master status order', { variant: 'error' });
+            // Reload to revert changes on error
+            await loadMasterStatuses();
+        }
+    };
+
+    const handleShipmentStatusDragEnd = async (result) => {
+        // Validate drag result
+        if (!result || !result.destination || !result.source) {
+            return;
+        }
+
+        // Prevent unnecessary updates
+        if (result.destination.index === result.source.index) {
+            return;
+        }
+
+        // Validate items array
+        if (!shipmentStatuses || shipmentStatuses.length === 0) {
+            return;
+        }
+
+        const items = Array.from(shipmentStatuses);
+        const [reorderedItem] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reorderedItem);
+
+        // Update local state immediately for better UX
+        setShipmentStatuses(items);
+
+        try {
+            // Update sort orders in batch
+            const updatePromises = items.map((item, index) => {
+                if (!item || !item.id) return Promise.resolve();
+                const updateFunction = httpsCallable(functions, 'updateShipmentStatus');
+                return updateFunction({
+                    shipmentStatusId: item.id,
+                    updates: { sortOrder: index }
+                });
+            });
+
+            await Promise.all(updatePromises);
+            enqueueSnackbar('Shipment status order updated successfully', { variant: 'success' });
+        } catch (error) {
+            console.error('Error updating shipment status order:', error);
+            enqueueSnackbar('Failed to update shipment status order', { variant: 'error' });
+            // Reload to revert changes on error
+            await loadShipmentStatuses();
+        }
+    };
+
+    // Context menu handlers
+    const handleContextMenuOpen = (event, type, data) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setContextMenu({
+            mouseX: event.clientX - 2,
+            mouseY: event.clientY - 4,
+        });
+        setContextMenuType(type);
+        setContextMenuData(data);
+    };
+
+    const handleContextMenuClose = () => {
+        setContextMenu(null);
+        setContextMenuType(null);
+        setContextMenuData(null);
+    };
+
+    const handleContextMenuAction = (action) => {
+        if (action === 'edit') {
+            if (contextMenuType === 'master') {
+                handleEditMasterStatus(contextMenuData);
+            } else if (contextMenuType === 'shipment') {
+                handleEditShipmentStatus(contextMenuData);
+            }
+        } else if (action === 'delete') {
+            handleDeleteClick(contextMenuType, contextMenuData);
+        }
+        handleContextMenuClose();
     };
 
     if (loading) {
@@ -993,104 +1118,117 @@ const SystemConfiguration = () => {
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status Label</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status Value</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Order</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Actions</TableCell>
                                                     </TableRow>
                                                 </TableHead>
-                                                <TableBody>
-                                                    {statusesLoading ? (
+                                                {statusesLoading ? (
+                                                    <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
+                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3 }}>
                                                                 <CircularProgress size={24} />
                                                             </TableCell>
                                                         </TableRow>
-                                                    ) : shipmentStatuses.length === 0 ? (
+                                                    </TableBody>
+                                                ) : shipmentStatuses.length === 0 ? (
+                                                    <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
                                                                 No shipment statuses configured. Click "Add Shipment Status" to get started.
                                                             </TableCell>
                                                         </TableRow>
-                                                    ) : (
-                                                        shipmentStatuses.map((status) => {
-                                                            const masterStatus = masterStatuses.find(ms => ms.id === status.masterStatus);
-                                                            return (
-                                                                <TableRow
-                                                                    key={status.id}
-                                                                    sx={{
-                                                                        '&:hover': { bgcolor: '#f8fafc' },
-                                                                        backgroundColor: masterStatus?.color ? `${masterStatus.color}08` : 'transparent'
-                                                                    }}
+                                                    </TableBody>
+                                                ) : (
+                                                    <DragDropContext onDragEnd={handleShipmentStatusDragEnd}>
+                                                        <Droppable droppableId="shipmentStatuses">
+                                                            {(provided, snapshot) => (
+                                                                <TableBody
+                                                                    ref={provided.innerRef}
+                                                                    {...provided.droppableProps}
                                                                 >
-                                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                                        {masterStatus ? (
-                                                                            <Chip
-                                                                                label={masterStatus.displayLabel}
-                                                                                size="small"
-                                                                                sx={{
-                                                                                    fontSize: '10px',
-                                                                                    backgroundColor: masterStatus.color,
-                                                                                    color: masterStatus.fontColor || '#ffffff',
-                                                                                    border: `1px solid ${masterStatus.color}`,
-                                                                                    '& .MuiChip-label': {
-                                                                                        fontSize: '10px',
-                                                                                        fontWeight: 500
-                                                                                    }
-                                                                                }}
-                                                                            />
-                                                                        ) : (
-                                                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                                {status.masterStatus}
-                                                                            </Typography>
-                                                                        )}
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                        {status.statusLabel}
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                        {status.statusValue}
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                        {status.description || '-'}
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                                        {status.sortOrder}
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                                        <Chip
-                                                                            label={status.enabled ? 'Enabled' : 'Disabled'}
-                                                                            size="small"
-                                                                            color={status.enabled ? 'success' : 'default'}
-                                                                            sx={{ fontSize: '10px' }}
-                                                                        />
-                                                                    </TableCell>
-                                                                    <TableCell sx={{ fontSize: '12px' }}>
-                                                                        <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                                                            <Tooltip title="Edit Shipment Status">
-                                                                                <IconButton
-                                                                                    size="small"
-                                                                                    onClick={() => handleEditShipmentStatus(status)}
-                                                                                    sx={{ color: '#6b7280' }}
+                                                                    {shipmentStatuses.map((status, index) => (
+                                                                        <Draggable
+                                                                            key={status.id}
+                                                                            draggableId={status.id}
+                                                                            index={index}
+                                                                        >
+                                                                            {(provided, snapshot) => (
+                                                                                <TableRow
+                                                                                    ref={provided.innerRef}
+                                                                                    {...provided.draggableProps}
+                                                                                    sx={{
+                                                                                        '&:hover': { bgcolor: '#f8fafc' },
+                                                                                        backgroundColor: masterStatuses.find(ms => ms.id === status.masterStatus)?.color ? `${masterStatuses.find(ms => ms.id === status.masterStatus).color}08` : 'transparent',
+                                                                                        cursor: 'grab',
+                                                                                        '&:active': { cursor: 'grabbing' }
+                                                                                    }}
                                                                                 >
-                                                                                    <EditIcon sx={{ fontSize: 16 }} />
-                                                                                </IconButton>
-                                                                            </Tooltip>
-                                                                            <Tooltip title="Delete Shipment Status">
-                                                                                <IconButton
-                                                                                    size="small"
-                                                                                    onClick={() => handleDeleteClick('shipment', status)}
-                                                                                    sx={{ color: '#ef4444' }}
-                                                                                >
-                                                                                    <DeleteIcon sx={{ fontSize: 16 }} />
-                                                                                </IconButton>
-                                                                            </Tooltip>
-                                                                        </Box>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            );
-                                                        })
-                                                    )}
-                                                </TableBody>
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                            <Box {...provided.dragHandleProps} className="drag-handle">
+                                                                                                <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
+                                                                                            </Box>
+                                                                                            {masterStatuses.find(ms => ms.id === status.masterStatus) ? (
+                                                                                                <Chip
+                                                                                                    label={masterStatuses.find(ms => ms.id === status.masterStatus).displayLabel}
+                                                                                                    size="small"
+                                                                                                    sx={{
+                                                                                                        fontSize: '10px',
+                                                                                                        backgroundColor: masterStatuses.find(ms => ms.id === status.masterStatus).color,
+                                                                                                        color: masterStatuses.find(ms => ms.id === status.masterStatus).fontColor || '#ffffff',
+                                                                                                        border: `1px solid ${masterStatuses.find(ms => ms.id === status.masterStatus).color}`,
+                                                                                                        '& .MuiChip-label': {
+                                                                                                            fontSize: '10px',
+                                                                                                            fontWeight: 500
+                                                                                                        }
+                                                                                                    }}
+                                                                                                />
+                                                                                            ) : (
+                                                                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                                                    {status.masterStatus}
+                                                                                                </Typography>
+                                                                                            )}
+                                                                                        </Box>
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                        {status.statusLabel}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                                        {status.statusValue}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                                        {status.statusMeaning || status.description || '-'}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <Chip
+                                                                                            label={status.enabled ? 'Enabled' : 'Disabled'}
+                                                                                            size="small"
+                                                                                            color={status.enabled ? 'success' : 'default'}
+                                                                                            sx={{ fontSize: '10px' }}
+                                                                                        />
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <IconButton
+                                                                                            size="small"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleContextMenuOpen(e, 'shipment', status);
+                                                                                            }}
+                                                                                            sx={{ color: '#6b7280' }}
+                                                                                        >
+                                                                                            <MoreVertIcon sx={{ fontSize: 16 }} />
+                                                                                        </IconButton>
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            )}
+                                                                        </Draggable>
+                                                                    ))}
+                                                                    {provided.placeholder}
+                                                                </TableBody>
+                                                            )}
+                                                        </Droppable>
+                                                    </DragDropContext>
+                                                )}
                                             </Table>
                                         </TableContainer>
                                     </Box>
@@ -1122,84 +1260,105 @@ const SystemConfiguration = () => {
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Display Label</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Status Code</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Description</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Order</TableCell>
                                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Enabled</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '120px' }}>Actions</TableCell>
+                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Actions</TableCell>
                                                     </TableRow>
                                                 </TableHead>
-                                                <TableBody>
-                                                    {statusesLoading ? (
+                                                {statusesLoading ? (
+                                                    <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
+                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3 }}>
                                                                 <CircularProgress size={24} />
                                                             </TableCell>
                                                         </TableRow>
-                                                    ) : masterStatuses.length === 0 ? (
+                                                    </TableBody>
+                                                ) : masterStatuses.length === 0 ? (
+                                                    <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
                                                                 No master statuses configured. Click "Add Master Status" to get started.
                                                             </TableCell>
                                                         </TableRow>
-                                                    ) : (
-                                                        masterStatuses.map((status) => (
-                                                            <TableRow key={status.id} sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Box
-                                                                        sx={{
-                                                                            width: 20,
-                                                                            height: 20,
-                                                                            borderRadius: '50%',
-                                                                            backgroundColor: status.color,
-                                                                            border: '1px solid #e5e7eb'
-                                                                        }}
-                                                                    />
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                    {status.displayLabel}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                                    {status.label}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                    {status.description || '-'}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    {status.sortOrder}
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Chip
-                                                                        label={status.enabled ? 'Enabled' : 'Disabled'}
-                                                                        size="small"
-                                                                        color={status.enabled ? 'success' : 'default'}
-                                                                        sx={{ fontSize: '10px' }}
-                                                                    />
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                                                        <Tooltip title="Edit Master Status">
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={() => handleEditMasterStatus(status)}
-                                                                                sx={{ color: '#6b7280' }}
-                                                                            >
-                                                                                <EditIcon sx={{ fontSize: 16 }} />
-                                                                            </IconButton>
-                                                                        </Tooltip>
-                                                                        <Tooltip title="Delete Master Status">
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={() => handleDeleteClick('master', status)}
-                                                                                sx={{ color: '#ef4444' }}
-                                                                            >
-                                                                                <DeleteIcon sx={{ fontSize: 16 }} />
-                                                                            </IconButton>
-                                                                        </Tooltip>
-                                                                    </Box>
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))
-                                                    )}
-                                                </TableBody>
+                                                    </TableBody>
+                                                ) : (
+                                                    <DragDropContext onDragEnd={handleMasterStatusDragEnd}>
+                                                        <Droppable droppableId="masterStatuses">
+                                                            {(provided, snapshot) => (
+                                                                <TableBody
+                                                                    ref={provided.innerRef}
+                                                                    {...provided.droppableProps}
+                                                                >
+                                                                    {masterStatuses.map((status, index) => (
+                                                                        <Draggable
+                                                                            key={status.id}
+                                                                            draggableId={status.id}
+                                                                            index={index}
+                                                                        >
+                                                                            {(provided, snapshot) => (
+                                                                                <TableRow
+                                                                                    ref={provided.innerRef}
+                                                                                    {...provided.draggableProps}
+                                                                                    sx={{
+                                                                                        '&:hover': { bgcolor: '#f8fafc' },
+                                                                                        cursor: 'grab',
+                                                                                        '&:active': { cursor: 'grabbing' }
+                                                                                    }}
+                                                                                >
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                            <Box {...provided.dragHandleProps} className="drag-handle">
+                                                                                                <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
+                                                                                            </Box>
+                                                                                            <Box
+                                                                                                sx={{
+                                                                                                    width: 20,
+                                                                                                    height: 20,
+                                                                                                    borderRadius: '50%',
+                                                                                                    backgroundColor: status.color,
+                                                                                                    border: '1px solid #e5e7eb'
+                                                                                                }}
+                                                                                            />
+                                                                                        </Box>
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                        {status.displayLabel}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                                        {status.label}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                                        {status.description || '-'}
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <Chip
+                                                                                            label={status.enabled ? 'Enabled' : 'Disabled'}
+                                                                                            size="small"
+                                                                                            color={status.enabled ? 'success' : 'default'}
+                                                                                            sx={{ fontSize: '10px' }}
+                                                                                        />
+                                                                                    </TableCell>
+                                                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                                                        <IconButton
+                                                                                            size="small"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleContextMenuOpen(e, 'master', status);
+                                                                                            }}
+                                                                                            sx={{ color: '#6b7280' }}
+                                                                                        >
+                                                                                            <MoreVertIcon sx={{ fontSize: 16 }} />
+                                                                                        </IconButton>
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            )}
+                                                                        </Draggable>
+                                                                    ))}
+                                                                    {provided.placeholder}
+                                                                </TableBody>
+                                                            )}
+                                                        </Droppable>
+                                                    </DragDropContext>
+                                                )}
                                             </Table>
                                         </TableContainer>
                                     </Box>
@@ -1635,33 +1794,16 @@ const SystemConfiguration = () => {
                                 </Box>
                             </Box>
                         </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Sort Order"
-                                type="number"
-                                value={masterStatusForm.sortOrder}
-                                onChange={(e) => handleMasterStatusFormChange('sortOrder', e.target.value)}
-                                size="small"
-                                sx={{
-                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                }}
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                        <Grid item xs={12}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={masterStatusForm.enabled}
+                                        onChange={(e) => handleMasterStatusFormChange('enabled', e.target.checked)}
+                                    />
+                                }
+                                label={<Typography sx={{ fontSize: '12px' }}>Enabled</Typography>}
                             />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                                <FormControlLabel
-                                    control={
-                                        <Switch
-                                            checked={masterStatusForm.enabled}
-                                            onChange={(e) => handleMasterStatusFormChange('enabled', e.target.checked)}
-                                        />
-                                    }
-                                    label={<Typography sx={{ fontSize: '12px' }}>Enabled</Typography>}
-                                />
-                            </Box>
                         </Grid>
                         <Grid item xs={12}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2, p: 2, border: '1px solid #e5e7eb', borderRadius: 1, backgroundColor: '#f8fafc' }}>
@@ -2038,6 +2180,56 @@ const SystemConfiguration = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Context Menu */}
+            <Menu
+                open={contextMenu !== null}
+                onClose={handleContextMenuClose}
+                anchorReference="anchorPosition"
+                anchorPosition={
+                    contextMenu !== null
+                        ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+                        : undefined
+                }
+                slotProps={{
+                    paper: {
+                        sx: {
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            minWidth: '140px'
+                        }
+                    }
+                }}
+            >
+                <MenuList sx={{ py: 1 }}>
+                    <MenuItem
+                        onClick={() => handleContextMenuAction('edit')}
+                        sx={{
+                            fontSize: '12px',
+                            py: 1,
+                            px: 2,
+                            '&:hover': { backgroundColor: '#f8fafc' }
+                        }}
+                    >
+                        <EditIcon sx={{ fontSize: 16, mr: 1, color: '#6b7280' }} />
+                        Edit
+                    </MenuItem>
+                    <MenuItem
+                        onClick={() => handleContextMenuAction('delete')}
+                        sx={{
+                            fontSize: '12px',
+                            py: 1,
+                            px: 2,
+                            color: '#ef4444',
+                            '&:hover': { backgroundColor: '#fef2f2' }
+                        }}
+                    >
+                        <DeleteIcon sx={{ fontSize: 16, mr: 1, color: '#ef4444' }} />
+                        Delete
+                    </MenuItem>
+                </MenuList>
+            </Menu>
         </Box>
     );
 };

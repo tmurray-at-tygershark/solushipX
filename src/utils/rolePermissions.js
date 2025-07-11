@@ -324,8 +324,8 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.MANAGE_NOTIFICATIONS]: true,
     
     // System Settings
-    [PERMISSIONS.VIEW_SETTINGS]: false,
-    [PERMISSIONS.MANAGE_SETTINGS]: false,
+    [PERMISSIONS.VIEW_SETTINGS]: true, // Allow company admins to view settings
+    [PERMISSIONS.MANAGE_SETTINGS]: true, // Allow company admins to manage settings (shipment statuses)
     [PERMISSIONS.MANAGE_ROLES]: false,
     [PERMISSIONS.MANAGE_MARKUPS]: false,
     

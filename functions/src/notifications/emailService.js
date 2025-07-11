@@ -84,12 +84,20 @@ exports.onShipmentCreated = onDocumentWritten('shipments/{shipmentId}', async (e
     try {
         logger.info(`Sending shipment_created notification for company ${companyId}`);
         
+        // Import enhanced status display function
+        const { getEnhancedStatusDisplay } = require('../email/sendgridService');
+        
+        // Get enhanced status display for the shipment status
+        const statusDisplay = await getEnhancedStatusDisplay(shipmentData.status || 'booked');
+        
         // Get notification subscribers for this company
         const result = await sendNotificationEmail(
             'shipment_created',
             companyId,
             {
                 shipmentNumber: currentShipmentId,
+                statusDisplay: statusDisplay,
+                status: shipmentData.status || 'booked',
                 carrierName: shipmentData.carrier || 'Unknown Carrier',
                 trackingNumber: shipmentData.trackingNumber || currentShipmentId,
                 shipFrom: `${shipmentData.shipFrom?.companyName || shipmentData.shipFrom?.company || 'Unknown'}, ${shipmentData.shipFrom?.city || 'Unknown'}`,
@@ -317,6 +325,15 @@ async function handleQuickShipProcessing(shipmentData, firestoreDocId) {
  * Cloud Function triggered when shipment status changes
  */
 exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', async (event) => {
+<<<<<<< HEAD
+    // CRITICAL DEBUG: Log all trigger events
+    logger.info('🔔 onShipmentStatusChanged TRIGGER FIRED', {
+        shipmentId: event.params.shipmentId,
+        hasAfterData: !!event.data?.after,
+        hasBeforeData: !!event.data?.before,
+        timestamp: new Date().toISOString()
+    });
+=======
     // CRITICAL: Check if notifications are globally enabled
     const notificationsEnabled = await areNotificationsEnabled();
     if (!notificationsEnabled) {
@@ -328,16 +345,141 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
 
     const newData = event.data?.after?.data();
     const oldData = event.data?.before?.data();
+>>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 
-    if (!newData || !oldData) {
+    // CRITICAL: Check if notifications are globally enabled
+    const notificationsEnabled = await areNotificationsEnabled();
+    logger.info('🌐 Global notifications check', {
+        shipmentId: event.params.shipmentId,
+        notificationsEnabled: notificationsEnabled
+    });
+    
+    if (!notificationsEnabled) {
+        logger.info('📧 Notifications are globally disabled, skipping email notification');
         return;
     }
 
-    // Check if status actually changed
-    const oldStatus = oldData.status;
-    const newStatus = newData.status;
+    // Check if this is a real status change by comparing status-related fields
+    const newData = event.data.after.data();
+    const oldData = event.data.before ? event.data.before.data() : {};
+    
+    // COMPREHENSIVE DEBUG: Log all changed fields
+    const allChangedFields = [];
+    const allNewFields = Object.keys(newData);
+    const allOldFields = Object.keys(oldData);
+    
+    // Check for new fields
+    allNewFields.forEach(key => {
+        if (!(key in oldData)) {
+            allChangedFields.push({ field: key, type: 'new', oldValue: undefined, newValue: newData[key] });
+        }
+    });
+    
+    // Check for changed fields
+    allNewFields.forEach(key => {
+        if (key in oldData) {
+            const oldValue = oldData[key];
+            const newValue = newData[key];
+            
+            // Handle different data types
+            let isChanged = false;
+            if (typeof oldValue === 'object' && typeof newValue === 'object') {
+                isChanged = JSON.stringify(oldValue) !== JSON.stringify(newValue);
+            } else {
+                isChanged = oldValue !== newValue;
+            }
+            
+            if (isChanged) {
+                allChangedFields.push({ field: key, type: 'changed', oldValue, newValue });
+            }
+        }
+    });
+    
+    // Check for removed fields
+    allOldFields.forEach(key => {
+        if (!(key in newData)) {
+            allChangedFields.push({ field: key, type: 'removed', oldValue: oldData[key], newValue: undefined });
+        }
+    });
+    
+    logger.info('🔍 COMPREHENSIVE FIELD CHANGE ANALYSIS', {
+        shipmentId: event.params.shipmentId,
+        totalChangedFields: allChangedFields.length,
+        changedFields: allChangedFields.map(f => ({
+            field: f.field,
+            type: f.type,
+            oldValue: typeof f.oldValue === 'object' ? '[object]' : f.oldValue,
+            newValue: typeof f.newValue === 'object' ? '[object]' : f.newValue
+        }))
+    });
+    
+    const oldStatus = oldData.status || 'unknown';
+    const newStatus = newData.status || 'unknown';
+    
+    // ENHANCED: Check for any status-related changes, not just legacy status
+    // Helper function to safely compare timestamps
+    const compareTimestamps = (oldTimestamp, newTimestamp) => {
+        // If both are null/undefined, they're equal
+        if (!oldTimestamp && !newTimestamp) return false; // no change
+        
+        // If one is null/undefined and the other isn't, they're different
+        if (!oldTimestamp || !newTimestamp) return true; // changed
+        
+        // If both are Firestore Timestamps, compare their seconds and nanoseconds
+        if (oldTimestamp._seconds && newTimestamp._seconds) {
+            return oldTimestamp._seconds !== newTimestamp._seconds || 
+                   oldTimestamp._nanoseconds !== newTimestamp._nanoseconds;
+        }
+        
+        // If both are Date objects, compare their time values
+        if (oldTimestamp instanceof Date && newTimestamp instanceof Date) {
+            return oldTimestamp.getTime() !== newTimestamp.getTime();
+        }
+        
+        // Fallback to string comparison
+        return String(oldTimestamp) !== String(newTimestamp);
+    };
+    
+    const statusFieldsChanged = (
+        oldStatus !== newStatus ||
+        JSON.stringify(oldData.statusOverride) !== JSON.stringify(newData.statusOverride) ||
+        JSON.stringify(oldData.enhancedStatus) !== JSON.stringify(newData.enhancedStatus) ||
+        oldData.statusChangeCounter !== newData.statusChangeCounter ||
+        compareTimestamps(oldData.lastStatusChange, newData.lastStatusChange) ||
+        oldData.statusChangeId !== newData.statusChangeId
+    );
 
-    if (oldStatus === newStatus) {
+    // DETAILED STATUS FIELD ANALYSIS
+    const statusFieldAnalysis = {
+        statusChanged: oldStatus !== newStatus,
+        statusOverrideChanged: JSON.stringify(oldData.statusOverride) !== JSON.stringify(newData.statusOverride),
+        enhancedStatusChanged: JSON.stringify(oldData.enhancedStatus) !== JSON.stringify(newData.enhancedStatus),
+        statusChangeCounterChanged: oldData.statusChangeCounter !== newData.statusChangeCounter,
+        lastStatusChangeChanged: compareTimestamps(oldData.lastStatusChange, newData.lastStatusChange),
+        statusChangeIdChanged: oldData.statusChangeId !== newData.statusChangeId
+    };
+
+    logger.info('📊 DETAILED STATUS CHANGE ANALYSIS', {
+        shipmentId: event.params.shipmentId,
+        oldStatus,
+        newStatus,
+        statusFieldsChanged,
+        statusFieldAnalysis,
+        statusOverride: { old: oldData.statusOverride, new: newData.statusOverride },
+        enhancedStatus: { old: oldData.enhancedStatus, new: newData.enhancedStatus },
+        statusChangeCounter: { old: oldData.statusChangeCounter, new: newData.statusChangeCounter },
+        lastStatusChange: { old: oldData.lastStatusChange, new: newData.lastStatusChange },
+        statusChangeId: { old: oldData.statusChangeId, new: newData.statusChangeId }
+    });
+    
+    // Only proceed if there are actual status-related changes
+    if (!statusFieldsChanged) {
+        logger.info('📧 No status-related changes detected, skipping notification', {
+            shipmentId: event.params.shipmentId,
+            oldStatus,
+            newStatus,
+            message: 'Shipment was updated but status did not change'
+        });
         return;
     }
 
@@ -345,7 +487,7 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
     // These are already handled by booking-specific notification systems
     // (QuickShip notifications, CreateShipmentX notifications, etc.)
     if (oldStatus === 'draft' && newStatus === 'pending') {
-        logger.info(`Skipping redundant status change notification for draft -> pending transition`, {
+        logger.info(`⏭️ Skipping redundant status change notification for draft -> pending transition`, {
             shipmentId: event.params.shipmentId,
             shipmentNumber: newData.shipmentID || newData.shipmentNumber
         });
@@ -361,10 +503,17 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
                           newData.shipmentNumber ||
                           newData.shipmentInfo?.shipperReferenceNumber;
 
-    try {
+    logger.info('🏢 Company and shipment info extracted', {
+        shipmentId: event.params.shipmentId,
+        companyId: companyId,
+        shipmentNumber: shipmentNumber,
+        availableFields: Object.keys(newData)
+    });
 
-        logger.info(`Processing status change notification: ${oldStatus} -> ${newStatus}`, {
-            shipmentNumber: shipmentNumber
+    try {
+        logger.info(`🔄 Processing status change notification: ${oldStatus} -> ${newStatus}`, {
+            shipmentNumber: shipmentNumber,
+            companyId: companyId
         });
 
         // Determine notification type based on new status
@@ -378,13 +527,19 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
             notificationType = 'shipment_delayed';
         }
         
+        logger.info('📧 Notification type determined', {
+            shipmentNumber: shipmentNumber,
+            notificationType: notificationType,
+            newStatus: newStatus
+        });
+        
         if (!companyId) {
-            logger.warn(`No company ID found for shipment ${shipmentNumber}. Available fields: ${Object.keys(newData).join(', ')}`);
+            logger.warn(`❌ No company ID found for shipment ${shipmentNumber}. Available fields: ${Object.keys(newData).join(', ')}`);
             return;
         }
 
-        // Send notification using new subscription system
-        // The sendNotificationEmail function will handle recipient lookup internally
+        // Import enhanced status display function
+        const { getEnhancedStatusDisplay } = require('../email/sendgridService');
 
         // Extract comprehensive shipment data for status updates (like Tracking.jsx)
         const carrierBookingConfirmation = newData.carrierBookingConfirmation || {};
@@ -400,6 +555,34 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
                            newData.trackingNumber ||
                            newData.id;
 
+        // Get enhanced status displays for both old and new status
+        let previousStatusDisplay, currentStatusDisplay;
+        
+        try {
+            // Pass shipment data to extract enhanced status information
+            previousStatusDisplay = await getEnhancedStatusDisplay(oldStatus, oldData);
+            currentStatusDisplay = await getEnhancedStatusDisplay(newStatus, newData);
+            
+            logger.info('📧 Enhanced status display generated', {
+                shipmentNumber: shipmentNumber,
+                previousStatus: previousStatusDisplay.displayText,
+                currentStatus: currentStatusDisplay.displayText,
+                hasSubStatus: !currentStatusDisplay.isMasterOnly
+            });
+            
+        } catch (statusError) {
+            logger.error('Error getting enhanced status display:', statusError);
+            // Fallback to basic status display
+            previousStatusDisplay = { displayText: oldStatus, statusChip: null };
+            currentStatusDisplay = { displayText: newStatus, statusChip: null };
+        }
+
+        logger.info('📝 Status displays prepared', {
+            shipmentNumber: shipmentNumber,
+            currentStatusDisplay: currentStatusDisplay?.displayText,
+            previousStatusDisplay: previousStatusDisplay?.displayText
+        });
+
         // Prepare comprehensive email data for status updates
         let emailData = {
             // Basic Information
@@ -407,10 +590,12 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
             shipmentId: newData.shipmentID,
             companyID: companyId,
             
-            // Status Information
+            // Enhanced Status Information
             previousStatus: oldStatus,
             currentStatus: newStatus,
             updatedAt: new Date(),
+            statusDisplay: currentStatusDisplay,
+            previousStatusDisplay: previousStatusDisplay,
             
             // Carrier and Service Information
             carrier: {
@@ -483,6 +668,13 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
         // Add status description for all notification types
         emailData.description = getStatusDescription(newStatus);
 
+        logger.info('📧 About to send notification email', {
+            shipmentNumber: shipmentNumber,
+            notificationType: notificationType,
+            companyId: companyId,
+            emailDataKeys: Object.keys(emailData)
+        });
+
         // Send notification email using new subscription system
         const result = await sendNotificationEmail(
             notificationType,
@@ -491,17 +683,19 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
             `${notificationType}_${shipmentNumber}_${Date.now()}`
         );
 
-        logger.info(`Status change notification sent successfully`, {
+        logger.info(`✅ Status change notification sent successfully`, {
             shipmentNumber: shipmentNumber,
             statusChange: `${oldStatus} -> ${newStatus}`,
             notificationType,
             recipientCount: result.count,
-            companyId: companyId
+            companyId: companyId,
+            success: result.success
         });
 
     } catch (error) {
-        logger.error(`Failed to send status change notification`, {
+        logger.error(`❌ Failed to send status change notification`, {
             error: error.message,
+            errorStack: error.stack,
             shipmentNumber: shipmentNumber,
             statusChange: `${oldStatus} -> ${newStatus}`,
             shipmentId: event.params.shipmentId

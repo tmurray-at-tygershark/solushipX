@@ -64,6 +64,7 @@ import './Shipments.css';
 // Import common components
 import ModalHeader from '../common/ModalHeader';
 import EnhancedStatusFilter from '../StatusChip/EnhancedStatusFilter';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 
 // Import modular components
 import ShipmentFilters from './components/ShipmentFilters';
@@ -3603,23 +3604,24 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                                 })()}
 
                                                                                 {/* Status - moved to last position */}
-                                                                                <Box sx={{
-                                                                                    backgroundColor: result.status === 'Delivered' ? '#dcfce7' :
-                                                                                        result.status === 'In Transit' ? '#dbeafe' :
-                                                                                            result.status === 'Pending' ? '#fef3c7' : '#f3f4f6',
-                                                                                    color: result.status === 'Delivered' ? '#166534' :
-                                                                                        result.status === 'In Transit' ? '#1d4ed8' :
-                                                                                            result.status === 'Pending' ? '#d97706' : '#6b7280',
-                                                                                    padding: '2px 6px',
-                                                                                    borderRadius: '10px',
-                                                                                    fontSize: '9px',
-                                                                                    fontWeight: 500,
-                                                                                    textTransform: 'uppercase',
-                                                                                    letterSpacing: '0.5px',
-                                                                                    whiteSpace: 'nowrap'
-                                                                                }}>
-                                                                                    {result.status}
-                                                                                </Box>
+                                                                                <EnhancedStatusChip
+                                                                                    status={result.shipment.status}
+                                                                                    size="small"
+                                                                                    compact={true}
+                                                                                    displayMode="auto"
+                                                                                    showTooltip={false}
+                                                                                    sx={{
+                                                                                        fontSize: '9px',
+                                                                                        height: '18px',
+                                                                                        '& .MuiChip-label': {
+                                                                                            fontSize: '9px',
+                                                                                            fontWeight: 500,
+                                                                                            textTransform: 'uppercase',
+                                                                                            letterSpacing: '0.5px',
+                                                                                            px: 1
+                                                                                        }
+                                                                                    }}
+                                                                                />
                                                                             </Box>
                                                                         </Box>
 

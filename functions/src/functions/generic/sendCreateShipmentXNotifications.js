@@ -770,7 +770,7 @@ async function getNotificationSubscribers(companyID) {
             .collection('notificationSubscriptions')
             .where('companyId', '==', companyID)
             .where('notificationType', '==', 'shipment_created')
-            .where('enabled', '==', true)
+            .where('subscribed', '==', true)  // FIXED: Changed from 'enabled' to 'subscribed'
             .get();
         
         const subscribers = [];

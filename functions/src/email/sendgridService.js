@@ -1,13 +1,14 @@
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
+const { getFirestore } = require('firebase-admin/firestore');
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
     admin.initializeApp();
 }
 
-const db = admin.firestore();
+const db = getFirestore();
 
 // Constants
 const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
@@ -20,6 +21,280 @@ if (sendgridApiKey) {
     sgMail.setApiKey(sendgridApiKey);
 } else {
     console.warn('SendGrid API key not found in environment variables');
+}
+
+// Status Cache for email notifications
+let statusCache = {
+    masterStatuses: [],
+    shipmentStatuses: [],
+    lastUpdated: null
+};
+
+/**
+ * Load status configuration from database for email formatting
+ */
+async function loadStatusConfiguration() {
+    try {
+        // Check if cache is still valid (5 minutes)
+        if (statusCache.lastUpdated && Date.now() - statusCache.lastUpdated < 300000) {
+            return statusCache;
+        }
+
+        logger.info('Loading status configuration for email notifications...');
+
+        // Load master statuses
+        const masterStatusSnapshot = await db.collection('masterStatuses')
+            .where('enabled', '==', true)
+            .orderBy('sortOrder')
+            .get();
+
+        // Load shipment statuses  
+        const shipmentStatusSnapshot = await db.collection('shipmentStatuses')
+            .where('enabled', '==', true)
+            .orderBy('sortOrder')
+            .get();
+
+        statusCache.masterStatuses = masterStatusSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        statusCache.shipmentStatuses = shipmentStatusSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        statusCache.lastUpdated = Date.now();
+
+        logger.info('Status configuration loaded successfully', {
+            masterStatuses: statusCache.masterStatuses.length,
+            shipmentStatuses: statusCache.shipmentStatuses.length
+        });
+
+        return statusCache;
+    } catch (error) {
+        logger.error('Error loading status configuration:', error);
+        // Return empty cache if loading fails
+        return statusCache;
+    }
+}
+
+/**
+ * Get enhanced status display for emails with Master Status + Sub-Status support
+ * @param {string|object} statusIdentifier - Status code or shipment object with enhanced status
+ * @param {object} shipmentData - Optional shipment data containing statusOverride.enhancedStatus
+ */
+async function getEnhancedStatusDisplay(statusIdentifier, shipmentData = null) {
+    if (!statusIdentifier) return { displayText: 'Unknown', statusChip: null };
+
+    try {
+        // If shipmentData is provided, check for enhanced status in statusOverride
+        if (shipmentData && shipmentData.statusOverride && shipmentData.statusOverride.enhancedStatus) {
+            const enhancedStatus = shipmentData.statusOverride.enhancedStatus;
+            
+            console.log('📧 [getEnhancedStatusDisplay] Found enhanced status in shipment:', enhancedStatus);
+            
+            if (enhancedStatus.masterStatus) {
+                const masterStatus = enhancedStatus.masterStatus;
+                const subStatus = enhancedStatus.subStatus;
+                
+                if (subStatus) {
+                    // Has sub-status - show dual format
+                    return {
+                        displayText: `${masterStatus.displayLabel}: ${subStatus.statusLabel}`,
+                        statusChip: createDualStatusChipHTML(masterStatus, subStatus),
+                        description: subStatus.statusMeaning || masterStatus.description,
+                        isMasterOnly: false,
+                        masterStatus: masterStatus,
+                        subStatus: subStatus
+                    };
+                } else {
+                    // Master status only
+                    return {
+                        displayText: masterStatus.displayLabel,
+                        statusChip: createStatusChipHTML(masterStatus.displayLabel, masterStatus.color, masterStatus.fontColor),
+                        description: masterStatus.description,
+                        isMasterOnly: true,
+                        masterStatus: masterStatus
+                    };
+                }
+            }
+        }
+
+        const config = await loadStatusConfiguration();
+        
+        // First check if it's a direct master status match
+        const masterStatus = config.masterStatuses.find(ms => 
+            ms.label === statusIdentifier || 
+            ms.displayLabel.toLowerCase() === statusIdentifier.toLowerCase()
+        );
+
+        if (masterStatus) {
+            return {
+                displayText: masterStatus.displayLabel,
+                statusChip: createStatusChipHTML(masterStatus.displayLabel, masterStatus.color, masterStatus.fontColor),
+                description: masterStatus.description,
+                isMasterOnly: true
+            };
+        }
+
+        // Check if it's a sub-status
+        const subStatus = config.shipmentStatuses.find(ss => 
+            ss.statusLabel === statusIdentifier || 
+            ss.statusCode === statusIdentifier ||
+            ss.statusLabel.toLowerCase() === statusIdentifier.toLowerCase()
+        );
+
+        if (subStatus) {
+            const parentMaster = config.masterStatuses.find(ms => ms.id === subStatus.masterStatus);
+            
+            if (parentMaster) {
+                return {
+                    displayText: `${parentMaster.displayLabel}: ${subStatus.statusLabel}`,
+                    statusChip: createDualStatusChipHTML(parentMaster, subStatus),
+                    description: subStatus.statusMeaning || parentMaster.description,
+                    isMasterOnly: false,
+                    masterStatus: parentMaster,
+                    subStatus: subStatus
+                };
+            }
+        }
+
+        // Fall back to legacy status mapping
+        return {
+            displayText: getLegacyStatusDisplayName(statusIdentifier),
+            statusChip: null,
+            description: getStatusDescription(statusIdentifier),
+            isMasterOnly: true
+        };
+
+    } catch (error) {
+        logger.error('Error getting enhanced status display:', error);
+        return {
+            displayText: getLegacyStatusDisplayName(statusIdentifier),
+            statusChip: null,
+            description: getStatusDescription(statusIdentifier),
+            isMasterOnly: true
+        };
+    }
+}
+
+/**
+ * Create HTML status chip for master status only
+ */
+function createStatusChipHTML(label, backgroundColor, fontColor) {
+    return `
+        <span style="
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background-color: ${backgroundColor};
+            color: ${fontColor};
+            font-size: 12px;
+            font-weight: 600;
+            margin: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        ">
+            ${label}
+        </span>
+    `;
+}
+
+/**
+ * Create HTML status chip for master + sub status
+ */
+function createDualStatusChipHTML(masterStatus, subStatus) {
+    return `
+        <div style="display: inline-block; margin: 2px;">
+            <span style="
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 12px 12px 0 0;
+                background-color: ${masterStatus.color};
+                color: ${masterStatus.fontColor};
+                font-size: 12px;
+                font-weight: 600;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                margin: 0;
+            ">
+                ${masterStatus.displayLabel}
+            </span>
+            <span style="
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 0 0 12px 12px;
+                background-color: ${masterStatus.color};
+                border: 1px solid ${masterStatus.color};
+                border-top: none;
+                color: ${masterStatus.fontColor};
+                font-size: 11px;
+                font-weight: 500;
+                margin: 0;
+            ">
+                ${subStatus.statusLabel}
+            </span>
+        </div>
+    `;
+}
+
+/**
+ * Legacy status display function (renamed from getStatusDisplayName)
+ */
+function getLegacyStatusDisplayName(status) {
+    if (!status) return 'Unknown';
+    
+    const statusMap = {
+        'draft': 'Draft',
+        'pending': 'Pending',
+        'booked': 'Booked',
+        'scheduled': 'Scheduled',
+        'picked_up': 'Picked Up',
+        'in_transit': 'In Transit',
+        'out_for_delivery': 'Out for Delivery',
+        'delivered': 'Delivered',
+        'delayed': 'Delayed',
+        'exception': 'Exception',
+        'on_hold': 'On Hold',
+        'cancelled': 'Cancelled',
+        'canceled': 'Cancelled',
+        'void': 'Void',
+        'voided': 'Voided',
+        'ready_for_pickup': 'Ready for Pickup',
+        'returned': 'Returned'
+    };
+    
+    return statusMap[status.toLowerCase()] || status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+/**
+ * Enhanced status display function with dynamic status support
+ */
+async function getStatusDisplayName(status) {
+    const enhancedStatus = await getEnhancedStatusDisplay(status);
+    return enhancedStatus.displayText;
+}
+
+/**
+ * Get user-friendly status descriptions
+ */
+function getStatusDescription(status) {
+    const descriptions = {
+        'draft': 'Your shipment is being prepared.',
+        'pending': 'Your shipment is pending processing.',
+        'booked': 'Your shipment has been booked with the carrier.',
+        'scheduled': 'Your shipment is scheduled for pickup.',
+        'in_transit': 'Your shipment is on its way to the destination.',
+        'out_for_delivery': 'Your shipment is out for delivery.',
+        'delivered': 'Your shipment has been successfully delivered.',
+        'delayed': 'Your shipment has encountered a delay.',
+        'exception': 'Your shipment requires attention.',
+        'on_hold': 'Your shipment is temporarily on hold.',
+        'cancelled': 'Your shipment has been cancelled.',
+        'canceled': 'Your shipment has been cancelled.',
+        'void': 'Your shipment has been voided.'
+    };
+
+    return descriptions[status?.toLowerCase()] || 'Your shipment status has been updated.';
 }
 
 /**
@@ -50,35 +325,6 @@ function getServiceName(data) {
     if (data.shipmentInfo?.shipmentType === 'ftl') return 'FTL';
     if (data.shipmentInfo?.shipmentType === 'courier') return 'Ground';
     return 'Standard Service';
-}
-
-/**
- * Convert status codes to properly formatted display names
- */
-function getStatusDisplayName(status) {
-    if (!status) return 'Unknown';
-    
-    const statusMap = {
-        'draft': 'Draft',
-        'pending': 'Pending',
-        'booked': 'Booked',
-        'scheduled': 'Scheduled',
-        'picked_up': 'Picked Up',
-        'in_transit': 'In Transit',
-        'out_for_delivery': 'Out for Delivery',
-        'delivered': 'Delivered',
-        'delayed': 'Delayed',
-        'exception': 'Exception',
-        'on_hold': 'On Hold',
-        'cancelled': 'Cancelled',
-        'canceled': 'Cancelled',
-        'void': 'Void',
-        'voided': 'Voided',
-        'ready_for_pickup': 'Ready for Pickup',
-        'returned': 'Returned'
-    };
-    
-    return statusMap[status.toLowerCase()] || status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 /**
@@ -130,7 +376,12 @@ const EMAIL_TEMPLATES = {
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Customer ID:</strong></td><td style="padding: 8px 0;">${data.customerID || 'N/A'}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Created:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.createdAt)}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Status:</strong></td><td style="padding: 8px 0; text-transform: capitalize;">${data.status || 'pending'}</td></tr>
+                            <tr>
+                                <td style="padding: 12px 0; color: #666; vertical-align: top;"><strong>Status:</strong></td>
+                                <td style="padding: 12px 0; vertical-align: top;">
+                                    ${data.statusDisplay?.statusChip || `<span style="color: #1c277d; font-weight: bold; text-transform: capitalize;">${data.status || 'pending'}</span>`}
+                                </td>
+                            </tr>
                         </table>
                     </div>
 
@@ -295,8 +546,14 @@ Need help? Contact us at support@integratedcarriers.com
     },
 
     shipment_delivered: {
-        subject: (data) => `Shipment Delivered # ${data.shipmentNumber}`,
-        html: (data) => `
+        subject: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay('delivered');
+            return `${statusDisplay.displayText}: ${data.shipmentNumber}`;
+        },
+        html: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay('delivered');
+            
+            return `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                     <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
@@ -305,24 +562,33 @@ Need help? Contact us at support@integratedcarriers.com
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Enhanced Delivery Confirmation -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Delivery Confirmation</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0;">${data.shipmentNumber}</td></tr>
+                            <tr>
+                                <td style="padding: 12px 0; color: #666; vertical-align: top;"><strong>Status:</strong></td>
+                                <td style="padding: 12px 0; vertical-align: top;">
+                                    ${statusDisplay.statusChip || `<span style="color: #28a745; font-weight: bold; font-size: 14px;">${statusDisplay.displayText}</span>`}
+                                </td>
+                            </tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Delivered:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.deliveredAt)}</td></tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Carrier:</strong></td><td style="padding: 8px 0;">${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}</td></tr>
                             ${data.signature ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Signed by:</strong></td><td style="padding: 8px 0;">${data.signature}</td></tr>` : ''}
                         </table>
                     </div>
 
-                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
-                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Delivery Complete!</h3>
-                        <p style="margin: 0; color: #000;">Package delivered to: ${data.destination.city}, ${data.destination.state}</p>
+                    <!-- Success Message -->
+                    <div style="background: #d4edda; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                        <h3 style="color: #155724; margin: 0 0 10px 0;">🎉 Delivery Complete!</h3>
+                        <p style="margin: 0; color: #155724; font-weight: 500;">Package delivered to: ${data.destination.city}, ${data.destination.state}</p>
+                        ${statusDisplay.description ? `<p style="margin: 10px 0 0 0; color: #155724; font-size: 14px; font-style: italic;">${statusDisplay.description}</p>` : ''}
                     </div>
 
                     ${data.shipmentNumber ? `
                     <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
-                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">View Delivery Details</h3>
                         <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.shipmentNumber}</p>
                         <a href="https://solushipx.web.app/tracking/${data.shipmentNumber}" 
                            style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
@@ -337,27 +603,41 @@ Need help? Contact us at support@integratedcarriers.com
                     </div>
                 </div>
             </div>
-        `,
-        text: (data) => `
+        `;
+        },
+        text: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay('delivered');
+            
+            return `
 Shipment Delivered!
 
-Delivery Details:
+DELIVERY CONFIRMATION
 - Shipment #: ${data.shipmentNumber}
+- Status: ${statusDisplay.displayText}
 - Delivered: ${formatDateTimeEST(data.deliveredAt)}
 - Carrier: ${(data.carrier && data.carrier.name) || data.carrier || 'Unknown'}
 ${data.signature ? `- Signed by: ${data.signature}` : ''}
 
-Delivered to: ${data.destination.city}, ${data.destination.state}
+🎉 DELIVERY COMPLETE!
+Package delivered to: ${data.destination.city}, ${data.destination.state}
+${statusDisplay.description ? `${statusDisplay.description}` : ''}
 
 ${data.shipmentNumber ? `View delivery details: https://solushipx.web.app/tracking/${data.shipmentNumber}` : ''}
 
 Thank you for choosing SolushipX!
-        `
+        `;
+        }
     },
 
     shipment_delayed: {
-        subject: (data) => `Shipment Delayed # ${data.shipmentNumber}`,
-        html: (data) => `
+        subject: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay(data.currentStatus || 'delayed');
+            return `Shipment ${statusDisplay.displayText}: ${data.shipmentNumber}`;
+        },
+        html: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay(data.currentStatus || 'delayed');
+            
+            return `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                     <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
@@ -366,16 +646,33 @@ Thank you for choosing SolushipX!
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                    <!-- Enhanced Delay Information -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Delay Information</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Original ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.originalETA)}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>New ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.newETA)}</td></tr>
+                            <tr>
+                                <td style="padding: 12px 0; color: #666; vertical-align: top;"><strong>Current Status:</strong></td>
+                                <td style="padding: 12px 0; vertical-align: top;">
+                                    ${statusDisplay.statusChip || `<span style="color: #ffc107; font-weight: bold; font-size: 14px;">${statusDisplay.displayText}</span>`}
+                                    ${!statusDisplay.isMasterOnly ? '<br><span style="font-size: 11px; color: #666; font-style: italic;">Detailed status tracking</span>' : ''}
+                                </td>
+                            </tr>
+                            ${data.originalETA ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Original ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.originalETA)}</td></tr>` : ''}
+                            ${data.newETA ? `<tr><td style="padding: 8px 0; color: #666;"><strong>New ETA:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.newETA)}</td></tr>` : ''}
                             ${data.reason ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Reason:</strong></td><td style="padding: 8px 0;">${data.reason}</td></tr>` : ''}
                         </table>
                     </div>
 
+                    <!-- Status Description Section -->
+                    ${statusDisplay.description ? `
+                    <div style="background: #fff3cd; padding: 20px; border-radius: 0; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                        <h3 style="color: #856404; margin: 0 0 10px 0; font-size: 16px;">What This Means</h3>
+                        <p style="margin: 0; color: #856404; line-height: 1.5;">${statusDisplay.description}</p>
+                    </div>
+                    ` : ''}
+
+                    <!-- What's Next Section -->
                     <div style="background: #f5f5f5; padding: 20px; border-radius: 0; margin-bottom: 20px;">
                         <h3 style="color: #1c277d; margin: 0 0 10px 0;">What's Next?</h3>
                         <p style="margin: 0; color: #000;">We're actively monitoring your shipment and will notify you of any further updates. Thank you for your patience.</p>
@@ -398,27 +695,45 @@ Thank you for choosing SolushipX!
                     </div>
                 </div>
             </div>
-        `,
-        text: (data) => `
+        `;
+        },
+        text: async (data) => {
+            const statusDisplay = await getEnhancedStatusDisplay(data.currentStatus || 'delayed');
+            
+            return `
 Shipment Delay Notice
 
-Delay Information:
+DELAY INFORMATION
 - Shipment #: ${data.shipmentNumber}
-- Original ETA: ${formatDateTimeEST(data.originalETA)}
-- New ETA: ${formatDateTimeEST(data.newETA)}
+- Current Status: ${statusDisplay.displayText}
+${data.originalETA ? `- Original ETA: ${formatDateTimeEST(data.originalETA)}` : ''}
+${data.newETA ? `- New ETA: ${formatDateTimeEST(data.newETA)}` : ''}
 ${data.reason ? `- Reason: ${data.reason}` : ''}
 
+${statusDisplay.description ? `WHAT THIS MEANS
+${statusDisplay.description}
+
+` : ''}WHAT'S NEXT
 We're actively monitoring your shipment and will notify you of any further updates.
 
 ${data.shipmentNumber ? `Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}` : ''}
 
 Questions? Contact support@integratedcarriers.com
-        `
+        `;
+        }
     },
 
     status_changed: {
-        subject: (data) => `Status Update # ${data.shipmentNumber}`,
-        html: (data) => `
+        subject: async (data) => {
+            // Use the enhanced status display that was already prepared with shipment data
+            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+            return `Status Update: ${currentStatusDisplay.displayText} # ${data.shipmentNumber}`;
+        },
+        html: async (data) => {
+            // Use the enhanced status displays that were already prepared with shipment data
+            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+            
+            return `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                     <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
@@ -427,16 +742,29 @@ Questions? Contact support@integratedcarriers.com
                 </div>
                 
                 <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
-                    <!-- Status Update Summary -->
+                    <!-- Enhanced Status Update Summary -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Status Update</h2>
                         <table style="width: 100%; border-collapse: collapse;">
                             <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Previous Status:</strong></td><td style="padding: 8px 0;">${getStatusDisplayName(data.previousStatus)}</td></tr>
-                            <tr><td style="padding: 8px 0; color: #666;"><strong>Current Status:</strong></td><td style="padding: 8px 0; font-weight: bold; color: #1c277d;">${getStatusDisplayName(data.currentStatus)}</td></tr>
+                            <tr>
+                                <td style="padding: 12px 0; color: #666; vertical-align: top;"><strong>Current Status:</strong></td>
+                                <td style="padding: 12px 0; vertical-align: top;">
+                                    ${currentStatusDisplay.statusChip || `<span style="color: #1c277d; font-weight: bold; font-size: 14px;">${currentStatusDisplay.displayText}</span>`}
+                                    ${!currentStatusDisplay.isMasterOnly ? '<br><span style="font-size: 11px; color: #666; font-style: italic;">Detailed status tracking</span>' : ''}
+                                </td>
+                            </tr>
                             <tr><td style="padding: 8px 0; color: #666;"><strong>Updated:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.updatedAt)}</td></tr>
                         </table>
                     </div>
+
+                    <!-- Status Description Section -->
+                    ${currentStatusDisplay.description ? `
+                    <div style="background: #f0f8ff; padding: 20px; border-radius: 0; margin-bottom: 20px; border-left: 4px solid #1c277d;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0; font-size: 16px;">What This Means</h3>
+                        <p style="margin: 0; color: #333; line-height: 1.5;">${currentStatusDisplay.description}</p>
+                    </div>
+                    ` : ''}
 
                     <!-- Carrier & Tracking Information -->
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -473,13 +801,6 @@ Questions? Contact support@integratedcarriers.com
                         </div>
                     </div>
 
-                    ${data.description ? `
-                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; margin-bottom: 20px;">
-                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">What This Means</h3>
-                        <p style="margin: 0; color: #000;">${data.description}</p>
-                    </div>
-                    ` : ''}
-
                     <!-- Package Summary -->
                     ${data.totalPackages > 0 ? `
                     <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -493,31 +814,40 @@ Questions? Contact support@integratedcarriers.com
                     </div>
                     ` : ''}
 
+                    <!-- Tracking Link -->
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                        <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
+                        <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.shipmentNumber}</p>
+                        <a href="https://solushipx.web.app/tracking/${data.shipmentNumber}" 
+                           style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                           Track Shipment
+                        </a>
+                    </div>
+
                     <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e9ecef; color: #666;">
-                        <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
-                            <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
-                            <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.shipmentNumber}</p>
-                            <a href="https://solushipx.web.app/tracking/${data.shipmentNumber}" 
-                               style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
-                               Track Shipment
-                            </a>
-                        </div>
                         <p style="margin: 0; font-size: 14px;">© 2025 SolushipX. All rights reserved.</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Questions? Contact us at support@integratedcarriers.com</p>
                     </div>
                 </div>
             </div>
-        `,
-        text: (data) => `
+        `;
+        },
+        text: async (data) => {
+            // Use the enhanced status displays that were already prepared with shipment data
+            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+            
+            return `
 Shipment Status Update
 
 STATUS UPDATE
 - Shipment #: ${data.shipmentNumber}
-- Previous Status: ${getStatusDisplayName(data.previousStatus)}
-- Current Status: ${getStatusDisplayName(data.currentStatus)}
+- Current Status: ${currentStatusDisplay.displayText}
 - Updated: ${formatDateTimeEST(data.updatedAt)}
 
-TRACKING INFORMATION
+${currentStatusDisplay.description ? `WHAT THIS MEANS
+${currentStatusDisplay.description}
+
+` : ''}TRACKING INFORMATION
 - Carrier: ${(data.carrier && data.carrier.name) || (typeof data.carrier === 'string' ? data.carrier : 'Unknown')}
 - Service: ${getServiceName(data) || (data.carrier && data.carrier.service && typeof data.carrier.service === 'string' ? data.carrier.service : 'Standard Service')}
 - Tracking #: ${data.trackingNumber || 'N/A'}
@@ -532,14 +862,13 @@ ${data.totalPackages > 0 ? `PACKAGE SUMMARY
 - Total Packages: ${data.totalPackages}
 - Total Weight: ${data.totalWeight} lbs
 ${data.isInternational ? '- International: Yes' : ''}
-${data.isFreight ? '- Freight: Yes' : ''}` : ''}
+${data.isFreight ? '- Freight: Yes' : ''}
 
-${data.description ? `What This Means: ${data.description}` : ''}
-
-Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}
+` : ''}Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}
 
 Questions? Contact support@integratedcarriers.com
-        `
+        `;
+        }
     },
 
     customer_note_added: {
@@ -1239,9 +1568,11 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
         }
 
         const template = EMAIL_TEMPLATES[type];
-        const subject = template.subject(data);
-        const html = template.html(data);
-        const text = template.text(data);
+        
+        // Handle async template functions for enhanced status display
+        const subject = typeof template.subject === 'function' ? await template.subject(data) : template.subject(data);
+        const html = typeof template.html === 'function' ? await template.html(data) : template.html(data);
+        const text = typeof template.text === 'function' ? await template.text(data) : template.text(data);
 
         // Create individual messages for each subscriber (no BCC)
         const messages = subscriberEmails.map(email => ({
@@ -2237,20 +2568,20 @@ async function sendEmailWithAttachment(emailData) {
 }
 
 module.exports = {
-    sendEmail, // Add the missing sendEmail function
-    sendEmailWithAttachment, // Add attachment support function
-    sendNotificationEmail, // Main function for shipment notifications
-    sendReportNotificationEmail, // Function for report notifications
-    getEmailTemplate,
-    // Legacy functions (for backward compatibility)
+    sendEmail,
+    sendEmailWithAttachment,
+    sendNotificationEmail,
     getCompanyNotificationSubscribers,
-    updateUserNotificationSubscriptions,
-    getUserCompanyNotificationStatus,
-    // New V2 functions (collection-based)
     getCompanyNotificationSubscribersV2,
+    updateUserNotificationSubscriptions,
     updateUserNotificationSubscriptionsV2,
+    getUserCompanyNotificationStatus,
     getUserCompanyNotificationStatusV2,
     migrateNotificationSubscriptionsToCollection,
+    getDefaultPreferences,
+    sendReportNotificationEmail,
     logNotification,
-    getDefaultPreferences
+    getEnhancedStatusDisplay,  // Export the enhanced status display function
+    loadStatusConfiguration,   // Export the status configuration loader
+    getLegacyStatusDisplayName // Export the legacy status function
 }; 
