@@ -1,6 +1,8 @@
 const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
 const { sendEmail, sendNotificationEmail } = require('../../email/sendgridService');
+const { getFirestore } = require('firebase-admin/firestore');
+const { areNotificationsEnabled } = require('../functions/src/admin-system-settings');
 
 const db = admin.firestore();
 
@@ -56,23 +58,21 @@ function getServiceName(data) {
  */
 async function sendQuickShipNotifications({ shipmentData, carrierDetails, documentResults }) {
     try {
-        // Check if this is a warmup request
-        if (shipmentData?._isWarmupRequest || shipmentData?._skipEmailSending) {
-            logger.info('🔥 QuickShip notifications warmup request detected - returning quick response');
+        // CRITICAL: Check if notifications are globally enabled
+        const notificationsEnabled = await areNotificationsEnabled();
+        if (!notificationsEnabled) {
+            logger.info('QuickShip notifications skipped - global notifications disabled', {
+                shipmentId: shipmentData.shipmentID || shipmentData.id
+            });
             return {
                 success: true,
-                warmup: true,
-                message: 'Notifications function warmed successfully',
-                results: {
-                    total: 0,
-                    successful: 0,
-                    failed: 0
-                }
+                message: 'Notifications disabled globally',
+                results: []
             };
         }
         
         logger.info('Starting QuickShip notifications process', {
-            shipmentId: shipmentData.shipmentID,
+            shipmentId: shipmentData.shipmentID || shipmentData.id,
             hasCarrierDetails: !!carrierDetails,
             documentCount: documentResults?.length || 0
         });

@@ -4,6 +4,7 @@ const { logger } = require('firebase-functions');
 const { getFirestore } = require('firebase-admin/firestore');
 const { sendNotificationEmail } = require('../email/sendgridService');
 const { sampleShipments, sampleUsers } = require('./sampleData');
+const { areNotificationsEnabled } = require('../admin-system-settings');
 
 const db = getFirestore();
 
@@ -11,6 +12,15 @@ const db = getFirestore();
  * Cloud Function triggered when a shipment is created
  */
 exports.onShipmentCreated = onDocumentWritten('shipments/{shipmentId}', async (event) => {
+    // CRITICAL: Check if notifications are globally enabled
+    const notificationsEnabled = await areNotificationsEnabled();
+    if (!notificationsEnabled) {
+        logger.info('Shipment creation notification skipped - global notifications disabled', {
+            shipmentId: event.params.shipmentId
+        });
+        return;
+    }
+
     const shipmentData = event.data?.after?.data();
     const previousData = event.data?.before?.data();
 
@@ -307,6 +317,15 @@ async function handleQuickShipProcessing(shipmentData, firestoreDocId) {
  * Cloud Function triggered when shipment status changes
  */
 exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', async (event) => {
+    // CRITICAL: Check if notifications are globally enabled
+    const notificationsEnabled = await areNotificationsEnabled();
+    if (!notificationsEnabled) {
+        logger.info('Status change notification skipped - global notifications disabled', {
+            shipmentId: event.params.shipmentId
+        });
+        return;
+    }
+
     const newData = event.data?.after?.data();
     const oldData = event.data?.before?.data();
 

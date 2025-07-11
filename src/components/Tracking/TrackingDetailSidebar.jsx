@@ -20,7 +20,8 @@ import {
     Close as CloseIcon,
     QrCode as QrCodeIcon,
 } from '@mui/icons-material';
-import StatusChip from '../StatusChip/StatusChip';
+import { useAuth } from '../../contexts/AuthContext';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 import ShipmentTimeline from './ShipmentTimeline';
 import QRCode from 'qrcode';
 
@@ -294,7 +295,7 @@ const TrackingDetailSidebar = ({
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                                 Status
                             </Typography>
-                            <StatusChip status={shipmentData?.status} />
+                            <EnhancedStatusChip status={shipmentData?.status} />
                         </Box>
 
                         {/* QR Code Section */}

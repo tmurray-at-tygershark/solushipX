@@ -41,7 +41,7 @@ import { db, functions } from '../../firebase'; // Firebase setup
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import ShipmentTimeline from './ShipmentTimeline';
-import StatusChip from '../StatusChip/StatusChip'; // Import StatusChip
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 import { listenToShipmentEvents } from '../../utils/shipmentEvents'; // Import shipment events utilities
 import { useSmartStatusUpdate } from '../../hooks/useSmartStatusUpdate'; // Import smart status update hook
 import QRCode from 'qrcode'; // Import QR code library
@@ -889,7 +889,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
                                         Status
                                     </Typography>
-                                    <StatusChip status={overallStatus} />
+                                    <EnhancedStatusChip status={overallStatus} />
                                 </Box>
 
                                 <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
@@ -1344,7 +1344,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                             }}>
                                                 Status
                                             </Typography>
-                                            <StatusChip status={overallStatus} />
+                                            <EnhancedStatusChip status={overallStatus} />
                                         </Box>
 
                                         <Box>

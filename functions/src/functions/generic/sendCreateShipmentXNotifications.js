@@ -2,6 +2,7 @@ const { onCall } = require('firebase-functions/v2/https');
 const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
 const sgMail = require('@sendgrid/mail');
+const { areNotificationsEnabled } = require('../../admin-system-settings');
 
 const db = admin.firestore();
 
@@ -58,6 +59,19 @@ const sendCreateShipmentXNotifications = onCall({
     timeoutSeconds: 60
 }, async (request) => {
     try {
+        // CRITICAL: Check if notifications are globally enabled
+        const notificationsEnabled = await areNotificationsEnabled();
+        if (!notificationsEnabled) {
+            logger.info('CreateShipmentX notifications skipped - global notifications disabled', {
+                shipmentId: request.data?.shipmentData?.shipmentID || request.data?.shipmentData?.id
+            });
+            return {
+                success: true,
+                message: 'Notifications disabled globally',
+                results: []
+            };
+        }
+
         const { shipmentData, documentResults } = request.data;
         
         if (!shipmentData || !documentResults) {

@@ -37,7 +37,7 @@ import { Link as RouterLink } from 'react-router-dom';
 // Instead we'll create the map directly with the Google Maps JavaScript API
 import { db } from '../../../firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import StatusChip from '../../StatusChip/StatusChip';
+import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import ManualStatusOverride from './ManualStatusOverride';
 
 // CarrierDisplay component to show carrier logo and name

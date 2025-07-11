@@ -50,7 +50,8 @@ import {
     Speed as SpeedIcon,
     Category as CategoryIcon,
     List as ListIcon,
-    ColorLens as ColorIcon
+    ColorLens as ColorIcon,
+    Notifications as NotificationsIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import {
@@ -68,6 +69,7 @@ import {
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../../../firebase/firebase';
+import NotificationSettings from '../Configuration/NotificationSettings';
 
 const SystemConfiguration = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -660,6 +662,23 @@ const SystemConfiguration = () => {
 
             {/* Configuration Sections */}
             <Grid container spacing={3}>
+                {/* Notification Settings Section */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <NotificationsIcon sx={{ color: '#6b7280' }} />
+                                <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                    Notification Settings
+                                </Typography>
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <NotificationSettings />
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
                 {/* Service Levels Section */}
                 <Grid item xs={12}>
                     <Accordion>

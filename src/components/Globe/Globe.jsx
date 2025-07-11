@@ -28,9 +28,10 @@ import {
 import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
-
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
-import StatusChip from '../StatusChip/StatusChip';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 import './Globe.css';
 
 // Calculates the sun's position based on the current date for realistic lighting.
@@ -1564,7 +1565,7 @@ const ShipmentGlobe = React.forwardRef(({ width = '100%', height = '100%', showO
                                 </Typography>
                             </Box>
                             <Box sx={{ alignSelf: 'flex-start', paddingY: { xs: '4px', sm: '5px', md: '6px' } }}>
-                                <StatusChip
+                                <EnhancedStatusChip
                                     status={(activeShipment || shipments[0])?.status || 'pending'}
                                     size="small"
                                     sx={{

@@ -70,8 +70,7 @@ const PackageDetails = ({ packages = [] }) => {
         const valueNum = parseFloat(value) || 0;
         if (valueNum <= 0) return 'N/A';
 
-        const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
-        return `${currencySymbol}${valueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return `$${valueNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
     }, []);
 
     // Get freight class chip color

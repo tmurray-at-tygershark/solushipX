@@ -260,7 +260,16 @@ const RateDetails = ({
     };
 
     const currency = getCurrency();
-    const currencySymbol = currency === 'USD' ? 'USD$' : 'CAD$';
+
+    // Helper function to format currency amounts
+    const formatCurrency = (amount, includeCents = true) => {
+        const numAmount = parseFloat(amount) || 0;
+        if (includeCents) {
+            return `$${numAmount.toFixed(2)} ${currency}`;
+        } else {
+            return `$${Math.round(numAmount)} ${currency}`;
+        }
+    };
 
     // Calculate total cost and charge for admin display
     const calculateTotals = () => {
@@ -489,11 +498,11 @@ const RateDetails = ({
                             borderRadius: 1
                         }}>
                             <Typography sx={{ fontWeight: 600, fontSize: '14px', mb: 1, color: '#1e40af' }}>
-                                Markup Applied: {currencySymbol}{markupSummary.markupAmount.toFixed(2)} ({markupSummary.markupPercentage.toFixed(1)}%)
+                                Markup Applied: {formatCurrency(markupSummary.markupAmount)} ({markupSummary.markupPercentage.toFixed(1)}%)
                             </Typography>
                             <Typography sx={{ fontSize: '13px', color: '#374151' }}>
-                                Original Cost: {currencySymbol}{markupSummary.originalAmount.toFixed(2)} →
-                                Customer Charge: {currencySymbol}{markupSummary.finalAmount.toFixed(2)}
+                                Original Cost: {formatCurrency(markupSummary.originalAmount)} →
+                                Customer Charge: {formatCurrency(markupSummary.finalAmount)}
                             </Typography>
                         </Box>
                     )}
@@ -533,6 +542,11 @@ const RateDetails = ({
                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'right', width: '120px' }}>
                                             {enhancedIsAdmin ? 'Charge' : 'Amount'}
                                         </TableCell>
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '120px' }}>
+                                                Profit
+                                            </TableCell>
+                                        )}
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '100px' }}>
                                                 Actions
@@ -623,7 +637,7 @@ const RateDetails = ({
                                                             }}
                                                         />
                                                     ) : (
-                                                        !item.isMarkup ? `${currencySymbol}${safeNumber(item.cost).toFixed(2)}` : '-'
+                                                        !item.isMarkup ? formatCurrency(item.cost) : '-'
                                                     )}
                                                 </TableCell>
                                             )}
@@ -642,9 +656,61 @@ const RateDetails = ({
                                                         }}
                                                     />
                                                 ) : (
-                                                    `${currencySymbol}${safeNumber(item.amount).toFixed(2)}`
+                                                    formatCurrency(item.amount)
                                                 )}
                                             </TableCell>
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                    {editingIndex === index ? (
+                                                        // Show calculated profit during editing
+                                                        (() => {
+                                                            const profit = safeNumber(editingValues.amount || 0) - safeNumber(editingValues.cost || 0);
+                                                            const isProfit = profit > 0;
+                                                            const isLoss = profit < 0;
+                                                            const prefix = isProfit ? '+' : (isLoss ? '-' : '');
+                                                            const absProfit = Math.abs(profit);
+                                                            const color = isProfit ? '#059669' : (isLoss ? '#dc2626' : 'inherit');
+                                                            return (
+                                                                <Typography sx={{
+                                                                    fontSize: '12px',
+                                                                    color: color,
+                                                                    fontWeight: 400
+                                                                }}>
+                                                                    {`${prefix}${formatCurrency(absProfit)}`}
+                                                                </Typography>
+                                                            );
+                                                        })()
+                                                    ) : (
+                                                        // Show calculated profit for each line item
+                                                        !item.isMarkup ? (() => {
+                                                            const profit = safeNumber(item.amount) - safeNumber(item.cost);
+                                                            const isProfit = profit > 0;
+                                                            const isLoss = profit < 0;
+                                                            const prefix = isProfit ? '+' : (isLoss ? '-' : '');
+                                                            const absProfit = Math.abs(profit);
+                                                            const color = isProfit ? '#059669' : (isLoss ? '#dc2626' : 'inherit');
+                                                            return (
+                                                                <Typography sx={{
+                                                                    fontSize: '12px',
+                                                                    color: color,
+                                                                    fontWeight: 400
+                                                                }}>
+                                                                    {`${prefix}${formatCurrency(absProfit)}`}
+                                                                </Typography>
+                                                            );
+                                                        })() : (
+                                                            // For markup items, show the markup amount as profit
+                                                            <Typography sx={{
+                                                                fontSize: '12px',
+                                                                color: '#059669',
+                                                                fontWeight: 400
+                                                            }}>
+                                                                {`+${formatCurrency(item.amount)}`}
+                                                            </Typography>
+                                                        )
+                                                    )}
+                                                </TableCell>
+                                            )}
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
                                                     {editingIndex === index ? (
@@ -705,14 +771,32 @@ const RateDetails = ({
                                         </TableCell>
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
-                                                {currencySymbol}{localTotalCost.toFixed(2)}
+                                                {formatCurrency(localTotalCost)}
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'right', fontWeight: 700 }}>
-                                            {currencySymbol}{localTotalCharge.toFixed(2)}
+                                            {formatCurrency(localTotalCharge)}
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell />
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700 }}>
+                                                {(() => {
+                                                    const profit = localTotalCharge - localTotalCost;
+                                                    const isProfit = profit > 0;
+                                                    const isLoss = profit < 0;
+                                                    const prefix = isProfit ? '+' : (isLoss ? '-' : '');
+                                                    const absProfit = Math.abs(profit);
+                                                    const color = isProfit ? '#059669' : (isLoss ? '#dc2626' : 'inherit');
+                                                    return (
+                                                        <Typography sx={{
+                                                            fontSize: '14px',
+                                                            fontWeight: 700,
+                                                            color: color
+                                                        }}>
+                                                            {`${prefix}${formatCurrency(absProfit)}`}
+                                                        </Typography>
+                                                    );
+                                                })()}
+                                            </TableCell>
                                         )}
                                     </TableRow>
                                 </TableBody>

@@ -32,7 +32,7 @@ import {
 import { Link } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/firebase';
-import StatusChip from '../../StatusChip/StatusChip';
+import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import { formatDateTime, formatRoute, capitalizeShipmentType } from '../utils/shipmentHelpers';
 
 const ShipmentTableRow = ({
@@ -1430,24 +1430,10 @@ const ShipmentTableRow = ({
                                     // Ensure currency is valid, fallback to USD if invalid
                                     const validCurrency = currency && currency.length === 3 ? currency : 'USD';
 
-                                    // Format with currency symbol
-                                    const formatted = new Intl.NumberFormat('en-US', {
-                                        style: 'currency',
-                                        currency: validCurrency
-                                    }).format(amount);
+                                    // Format the amount
+                                    const numAmount = parseFloat(amount) || 0;
 
-                                    // For non-USD currencies, or when we want to show currency code explicitly
-                                    // Replace the generic $ with currency-specific prefix
-                                    if (validCurrency === 'CAD') {
-                                        return formatted.replace('CA$', 'CAD$');
-                                    } else if (validCurrency === 'USD') {
-                                        return formatted.replace('$', 'USD$');
-                                    } else if (validCurrency === 'EUR') {
-                                        return formatted.replace('€', 'EUR€');
-                                    }
-
-                                    // For other currencies, return as-is
-                                    return formatted;
+                                    return `$${numAmount.toFixed(2)} ${validCurrency}`;
                                 };
 
                                 return (
@@ -1494,7 +1480,13 @@ const ShipmentTableRow = ({
                                     </Box>
                                 </Tooltip>
                             )}
-                            <StatusChip status={shipment.status} size="small" />
+                            <EnhancedStatusChip
+                                status={shipment.status}
+                                size="small"
+                                compact={true}
+                                displayMode="auto"
+                                showTooltip={true}
+                            />
                         </Box>
                     </TableCell>
                 )}
@@ -1825,13 +1817,13 @@ const ShipmentTableRow = ({
                                                                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                                                             {showCosts ? (
                                                                                 <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                                    <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)}</span>
+                                                                                    <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)} {currency}</span>
                                                                                     <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
-                                                                                    <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)}</span>
+                                                                                    <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)} {currency}</span>
                                                                                 </Typography>
                                                                             ) : (
                                                                                 <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
-                                                                                    ${(component.charge || 0).toFixed(2)}
+                                                                                    ${(component.charge || 0).toFixed(2)} {currency}
                                                                                 </Typography>
                                                                             )}
                                                                         </Box>
@@ -1845,7 +1837,7 @@ const ShipmentTableRow = ({
                                                                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                                                         {showCosts ? (
                                                                             <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                                                <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)}</span>
+                                                                                <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)} {currency}</span>
                                                                                 <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
                                                                                 <span style={{ color: '#374151' }}>${(finalTotal || 0).toFixed(2)} {currency}</span>
                                                                             </Typography>

@@ -35,7 +35,7 @@ import { collection, getDocs, getFirestore } from 'firebase/firestore';
 import { app } from '../../firebase/firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import AdvancedLogisticsMap from './AdvancedLogisticsMap';
-import StatusChip from '../StatusChip/StatusChip';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 
 // Real-time status definitions - UPDATED with new statuses and icons
 const SHIPMENT_STATUSES = {
@@ -1006,7 +1006,7 @@ const LogisticsCommandCenter = ({
                                                 />
                                             )}
                                         </Box>
-                                        <StatusChip
+                                        <EnhancedStatusChip
                                             status={selectedShipment.status}
                                             size="small"
                                         />
