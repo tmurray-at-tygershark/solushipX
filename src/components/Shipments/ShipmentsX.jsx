@@ -208,6 +208,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Initialize state from deep link parameters only
     useEffect(() => {
+        // CRITICAL: Handle when deep link params are cleared (set to null)
+        if (deepLinkParams === null) {
+            console.log('🔗 Deep link params cleared - resetting search state');
+            // Clear the search state and reload shipments without search
+            setUnifiedSearch('');
+            setFiltersOpen(false);
+            setHasProcessedInitialSearch(false);
+
+            // Reload shipments without search term
+            setTimeout(() => {
+                console.log('🔄 Reloading shipments without search after deep link clear');
+                loadShipments(null, '');
+            }, 100);
+            return;
+        }
+
         // Handle deep link parameters from modal navigation
         if (deepLinkParams) {
             console.log('🔗 ShipmentsX: Received deep link parameters:', deepLinkParams);
