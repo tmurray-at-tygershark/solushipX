@@ -203,6 +203,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     const [slideDirection, setSlideDirection] = useState('forward'); // 'forward' or 'backward'
     const [mountedViews, setMountedViews] = useState(['table']);
 
+    // Track if we've already processed the initial search to prevent re-triggering
+    const [hasProcessedInitialSearch, setHasProcessedInitialSearch] = useState(false);
+
     // Initialize state from deep link parameters only
     useEffect(() => {
         // Handle deep link parameters from modal navigation
@@ -211,16 +214,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.log('🔗 ShipmentsX: Current navigation stack length:', navigationStack.length);
             console.log('🔗 ShipmentsX: hideSearch prop:', hideSearch);
 
-            // 🔍 CRITICAL: Force navigation back to table view when searching
-            if (deepLinkParams.forceTableView && navigationStack.length > 1) {
-                console.log('🔍 Search triggered - forcing navigation back to table view');
-                // Reset navigation stack to just the table view
+            // When search parameters are provided and we're not at table view, reset to table
+            // This only happens when first opening with search, not during navigation
+            if (deepLinkParams.unifiedSearch && navigationStack.length > 1 && !hasProcessedInitialSearch) {
+                console.log('🔍 Initial search detected with navigation stack > 1 - resetting to table view');
                 setNavigationStack([{ key: 'table', component: 'table', props: {} }]);
                 setMountedViews(['table']);
                 setSliding(false);
-                setIsReturningFromDetail(false);
-                setHasAutoOpenedShipment(false);
-                console.log('✅ Navigation reset to table view for search');
+                console.log('✅ Reset to table view for initial search');
             }
 
             // Handle deep link search parameters - use unified search for better results
@@ -231,12 +232,14 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 console.log('🔗 Direct unified search from deep link:', deepLinkParams.unifiedSearch);
                 setUnifiedSearch(deepLinkParams.unifiedSearch);
                 setFiltersOpen(true);
+                setHasProcessedInitialSearch(true); // Mark that we've processed the search
 
-                // CRITICAL FIX: Trigger search after setting unified search
+                // CRITICAL FIX: Immediately trigger search with the search term
+                // Don't wait for state update - pass the search term directly
                 setTimeout(() => {
-                    console.log('🔍 Triggering search for deep link unified search:', deepLinkParams.unifiedSearch);
-                    loadShipments();
-                }, 100);
+                    console.log('🔍 Triggering immediate search with deep link term:', deepLinkParams.unifiedSearch);
+                    loadShipments(null, deepLinkParams.unifiedSearch);
+                }, 100); // Small delay to ensure component is ready
             } else {
                 // Legacy approach - build from individual fields
                 if (deepLinkParams.customerId) {
@@ -259,11 +262,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     setUnifiedSearch(searchTerm);
                     setFiltersOpen(true);
 
-                    // CRITICAL FIX: Trigger search after setting unified search from legacy params
+                    // CRITICAL FIX: Immediately trigger search with the search term
+                    // Don't wait for state update - pass the search term directly
                     setTimeout(() => {
-                        console.log('🔍 Triggering search for legacy deep link search term:', searchTerm);
-                        loadShipments();
-                    }, 100);
+                        console.log('🔍 Triggering immediate search with legacy deep link term:', searchTerm);
+                        loadShipments(null, searchTerm);
+                    }, 100); // Small delay to ensure component is ready
                 }
             }
             if (deepLinkParams.status && deepLinkParams.status !== 'all') {
@@ -283,6 +287,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         return () => {
             console.log('🧹 Deep link params changed - clearing auto-open state');
             setHasAutoOpenedShipment(false);
+            setHasProcessedInitialSearch(false); // Reset for new searches
         };
     }, [deepLinkParams, navigationStack.length]);
 
@@ -1045,23 +1050,61 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return allFields.some(content => fuzzyMatch(content, normalizedSearchTerm, 0.7));
         });
 
-        console.log(`🔍 performUnifiedSearch returning ${filteredResults.length} results out of ${shipments.length} input shipments`);
+        // CRITICAL: Sort results by relevance to put best matches first
+        const scoredResults = filteredResults.map(shipment => {
+            let score = 0;
+            const searchLower = normalizedSearchTerm.toLowerCase();
 
-        // DEBUG: Special logging for Barrie search
-        if (normalizedSearchTerm === 'barrie') {
-            console.log('🔍 BARRIE SEARCH RESULTS:', {
+            // Highest priority: Exact matches in key fields
+            if (shipment.shipmentID?.toLowerCase() === searchLower) score += 100;
+            if (shipment.shipTo?.city?.toLowerCase() === searchLower) score += 90;
+            if (shipment.shipFrom?.city?.toLowerCase() === searchLower) score += 90;
+            if (shipment.shipTo?.companyName?.toLowerCase() === searchLower) score += 80;
+            if (shipment.shipFrom?.companyName?.toLowerCase() === searchLower) score += 80;
+
+            // High priority: Contains matches in important fields
+            if (shipment.shipTo?.city?.toLowerCase().includes(searchLower)) score += 50;
+            if (shipment.shipFrom?.city?.toLowerCase().includes(searchLower)) score += 50;
+            if (shipment.shipTo?.companyName?.toLowerCase().includes(searchLower)) score += 40;
+            if (shipment.shipFrom?.companyName?.toLowerCase().includes(searchLower)) score += 40;
+            if (shipment.shipTo?.street?.toLowerCase().includes(searchLower)) score += 30;
+            if (shipment.shipFrom?.street?.toLowerCase().includes(searchLower)) score += 30;
+
+            // Medium priority: Other identifying fields
+            if (shipment.referenceNumber?.toLowerCase().includes(searchLower)) score += 20;
+            if (shipment.trackingNumber?.toLowerCase().includes(searchLower)) score += 20;
+            if (shipment.carrier?.toLowerCase().includes(searchLower)) score += 15;
+
+            // Lower priority: General fields
+            if (shipment.notes?.toLowerCase().includes(searchLower)) score += 5;
+            if (shipment.specialInstructions?.toLowerCase().includes(searchLower)) score += 5;
+
+            return { shipment, score };
+        });
+
+        // Sort by score (highest first) and extract shipments
+        const sortedResults = scoredResults
+            .sort((a, b) => b.score - a.score)
+            .map(item => item.shipment);
+
+        console.log(`🔍 performUnifiedSearch returning ${sortedResults.length} results out of ${shipments.length} input shipments`);
+
+        // DEBUG: Special logging for search results
+        if (normalizedSearchTerm === 'smiths' || normalizedSearchTerm === 'barrie') {
+            console.log(`🔍 ${normalizedSearchTerm.toUpperCase()} SEARCH RESULTS:`, {
                 totalInput: shipments.length,
-                totalResults: filteredResults.length,
-                resultIds: filteredResults.map(s => s.shipmentID || s.id).slice(0, 10), // First 10 results
-                sampleShipmentAddresses: shipments.slice(0, 5).map(s => ({
+                totalResults: sortedResults.length,
+                topResults: sortedResults.slice(0, 5).map(s => ({
                     id: s.shipmentID || s.id,
                     fromCity: s.shipFrom?.city,
-                    toCity: s.shipTo?.city
+                    toCity: s.shipTo?.city,
+                    toCompany: s.shipTo?.companyName || s.shipTo?.company,
+                    score: scoredResults.find(sr => sr.shipment === s)?.score || 0
                 }))
             });
         }
 
-        return filteredResults;
+        return sortedResults;
     }, []); // No dependencies to prevent recreation
 
     // NEW: GENERATE LIVE SHIPMENT RESULTS for autocomplete
@@ -2158,7 +2201,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     }, []);
 
     // Load shipments - optimized for performance
-    const loadShipments = useCallback(async (currentTab = null) => {
+    const loadShipments = useCallback(async (currentTab = null, searchTerm = null) => {
         // Check if we're in admin "all companies" mode
         const isAdminAllView = adminViewMode === 'all';
 
@@ -2171,7 +2214,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
         // Use provided tab or current selectedTab
         const activeTab = currentTab || selectedTab;
-        console.log(`🏷️ Loading shipments for tab: ${activeTab}, adminViewMode: ${adminViewMode}`);
+        // CRITICAL FIX: Use provided search term or current unifiedSearch state
+        const currentSearchTerm = searchTerm !== null ? searchTerm : unifiedSearch;
+        console.log(`🏷️ Loading shipments for tab: ${activeTab}, adminViewMode: ${adminViewMode}, searchTerm: ${currentSearchTerm}`);
 
         setLoading(true);
         try {
@@ -2299,8 +2344,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             let filteredData = [...shipmentsData];
 
             // 1. APPLY UNIFIED SEARCH (Primary search - wildcard across ALL fields including DRAFTS)
-            if (unifiedSearch && unifiedSearch.trim()) {
-                console.log('🚀 ENTERPRISE UNIFIED SEARCH INCLUDING DRAFTS:', unifiedSearch);
+            console.log('🔍 DEBUG - Checking unified search:', {
+                unifiedSearch: currentSearchTerm,
+                trimmed: currentSearchTerm?.trim(),
+                hasValue: !!(currentSearchTerm && currentSearchTerm.trim()),
+                filteredDataCount: filteredData.length
+            });
+
+            if (currentSearchTerm && currentSearchTerm.trim()) {
+                console.log('🚀 ENTERPRISE UNIFIED SEARCH INCLUDING DRAFTS:', currentSearchTerm);
                 console.log('🔍 Input data before search:', filteredData.length, 'shipments (tab-filtered)');
                 console.log('🔍 All shipments available for search:', allShipments.length, 'shipments (including drafts)');
 
@@ -2357,8 +2409,42 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 } else {
                     // Fallback to regular unified search - search ALL shipments then apply tab filter
                     console.log('🔍 Calling performUnifiedSearch on ALL shipments (including drafts)');
-                    const searchResults = performUnifiedSearch(allShipments, unifiedSearch, customers, carrierData);
-                    console.log(`🔍 Search found ${searchResults.length} results across all shipments`);
+
+                    // DEBUG: Log what data we're searching
+                    console.log('🔍 DEBUG - Search input data:', {
+                        searchTerm: currentSearchTerm,
+                        totalDocsFromQuery: querySnapshot.docs.length,
+                        isAdminAllView,
+                        adminCompanyIds,
+                        companyIdForAddress,
+                        customerCount: Object.keys(customers).length,
+                        carrierDataCount: Object.keys(carrierData).length
+                    });
+
+                    // CRITICAL FIX: Use the unfiltered allShipments to search across ALL data
+                    // This ensures we search everything BEFORE applying tab filters
+                    const allUnfilteredShipments = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })).filter(s => {
+                        // Only exclude archived shipments from search
+                        const status = s.status?.toLowerCase()?.trim();
+                        return status !== 'archived';
+                    });
+
+                    // DEBUG: Sample some shipments to see what we're searching
+                    console.log('🔍 DEBUG - Sample shipments being searched:',
+                        allUnfilteredShipments.slice(0, 3).map(s => ({
+                            id: s.shipmentID || s.id,
+                            fromCity: s.shipFrom?.city,
+                            toCity: s.shipTo?.city,
+                            toCompany: s.shipTo?.company || s.shipTo?.companyName,
+                            status: s.status
+                        }))
+                    );
+
+                    const searchResults = performUnifiedSearch(allUnfilteredShipments, currentSearchTerm, customers, carrierData);
+                    console.log(`🔍 Search found ${searchResults.length} results across ${allUnfilteredShipments.length} shipments`);
 
                     // Now apply tab filter to search results
                     if (activeTab === 'all') {
@@ -2407,7 +2493,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             // 2. APPLY LEGACY SEARCH FIELDS (for backward compatibility and specific filters)
             // Only apply these if unified search is not being used
-            if (!unifiedSearch || !unifiedSearch.trim()) {
+            if (!currentSearchTerm || !currentSearchTerm.trim()) {
                 // Individual field searches with AND logic
                 if (searchFields.shipmentId) {
                     const searchTerm = searchFields.shipmentId.toLowerCase();
@@ -2625,7 +2711,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         } finally {
             setLoading(false);
         }
-    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds]); // Removed problematic dependencies that cause infinite loops
+    }, [companyIdForAddress, selectedTab, fetchCarrierData, adminViewMode, adminCompanyIds, customers, carrierData, allShipments.length, isSemanticMode, semanticSearchResults, searchFields, selectedCustomer, filters, dateRange, page, rowsPerPage, applyCarrierFilter, applyStatusFilter, performUnifiedSearch]); // Removed unifiedSearch from dependencies to prevent infinite loop
 
     // Create a stable reload function that can be called when needed
     const reloadShipments = useCallback(() => {
@@ -2645,15 +2731,16 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         }
 
         console.log('🔄 Manual reload triggered');
-        loadShipments();
-    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode, navigationStack]); // Removed companyData to prevent loops
+        // Use current unifiedSearch value at the time of execution
+        loadShipments(null, unifiedSearch);
+    }, [loadShipments, authLoading, companyCtxLoading, companyIdForAddress, adminViewMode, navigationStack]); // Removed unifiedSearch from dependencies
 
     // Add a shipment updated callback that refreshes the table data
     const handleShipmentUpdated = useCallback((updatedShipmentId, message = 'Shipment updated successfully') => {
         console.log('🔄 Shipment updated, refreshing table data:', updatedShipmentId);
 
         // Always reload shipments when one is updated
-        loadShipments();
+        loadShipments(null, unifiedSearch);
 
         // Show success message
         showSnackbar(message, 'success');
@@ -2666,18 +2753,18 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                 // The detail view should handle its own refresh through its refreshShipment function
             }
         }
-    }, [loadShipments, showSnackbar, navigationStack]);
+    }, [loadShipments, showSnackbar, navigationStack]); // Removed unifiedSearch from dependencies
 
     // Add a draft saved callback that refreshes the table data  
     const handleDraftSaved = useCallback((draftId, message = 'Draft saved successfully') => {
         console.log('🔄 Draft saved, refreshing table data:', draftId);
 
         // Always reload shipments when a draft is saved
-        loadShipments();
+        loadShipments(null, unifiedSearch);
 
         // Show success message
         showSnackbar(message, 'success');
-    }, [loadShipments, showSnackbar]);
+    }, [loadShipments, showSnackbar]); // Removed unifiedSearch from dependencies
 
     // Debounced version for search inputs
     const debounceTimeoutRef = useRef(null);
@@ -2688,10 +2775,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         debounceTimeoutRef.current = setTimeout(() => {
             // Check if we're still in the table view
             if (navigationStack.length === 1) {
-                reloadShipments();
+                // Use current unifiedSearch value at the time of execution
+                loadShipments(null, unifiedSearch);
             }
         }, 500);
-    }, [reloadShipments, navigationStack]);
+    }, [loadShipments, navigationStack]); // Removed unifiedSearch from dependencies to prevent loop
 
     // Tab change handler - memoized for performance
     const handleTabChange = useCallback((event, newValue) => {
@@ -2699,9 +2787,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setSelectedTab(newValue);
         setPage(0); // Reset to first page when tab changes
 
-        // Trigger reload for new tab with explicit tab value
-        setTimeout(() => loadShipments(newValue), 50);
-    }, [loadShipments]);
+        // Trigger reload for new tab with explicit tab value and current search
+        setTimeout(() => loadShipments(newValue, unifiedSearch), 50);
+    }, [loadShipments]); // Removed unifiedSearch from dependencies
 
     // Initialize
     useEffect(() => {
@@ -2781,6 +2869,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
 
 
+    // NOTE: Removed the problematic useEffect that was causing rerendering loops
+    // Search is now triggered directly by user actions (Enter key, filter changes, etc.)
+    // This prevents the infinite loop where unifiedSearch change -> useEffect -> loadShipments -> unifiedSearch change
+
+    // Removed admin view useEffect - now handled directly in deep link params processing
+
     // Load data when auth and company are ready
     useEffect(() => {
         // Check if we're in admin "all companies" mode
@@ -2797,8 +2891,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     // Load customers
                     promises.push(fetchCustomers());
 
-                    // Load shipments
-                    promises.push(loadShipments());
+                    // Load shipments (no search term for initial load)
+                    promises.push(loadShipments(null, null));
 
                     // Load dynamic carriers from database
                     promises.push(loadAvailableCarriers());
@@ -2942,7 +3036,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         onDraftSaved: handleDraftSaved,
                                                         onReturnToShipments: () => {
                                                             // Refresh the table when returning from QuickShip
-                                                            setTimeout(() => loadShipments(), 100);
+                                                            setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                         }
                                                     });
                                                 } else {
@@ -2973,7 +3067,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         onDraftSaved: handleDraftSaved,
                                                         onReturnToShipments: () => {
                                                             // Refresh the table when returning from shipment creation
-                                                            setTimeout(() => loadShipments(), 100);
+                                                            setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                         }
                                                     });
                                                 } else {
@@ -3016,6 +3110,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 value={unifiedSearch}
                                                 onChange={(e) => {
                                                     const value = e.target.value; // Keep spaces during typing
+                                                    console.log('🔍 Search input changed:', value);
                                                     setUnifiedSearch(value);
 
                                                     // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
@@ -3150,10 +3245,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                         setSelectedCustomer('');
                                                     }
 
-                                                    // AUTO-SEARCH: Trigger search automatically for live results
-                                                    if (trimmedValue.length >= 2) {
-                                                        debouncedReload();
-                                                    }
+                                                    // NOTE: Removed automatic search trigger to prevent infinite loops
+                                                    // Search is now only triggered by explicit user actions (Enter key, etc.)
                                                 }}
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'ArrowDown') {
@@ -3185,7 +3278,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             setSelectedResultIndex(-1);
                                                         } else {
                                                             console.log('🔍 ENTER pressed - triggering search');
-                                                            reloadShipments();
+                                                            loadShipments(null, unifiedSearch);
                                                         }
 
                                                         // Always hide all dropdowns when Enter is pressed
@@ -3244,7 +3337,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                 size="small"
                                                                 onClick={() => {
                                                                     setUnifiedSearch('');
-                                                                    reloadShipments();
+                                                                    loadShipments(null, '');
                                                                 }}
                                                                 sx={{
                                                                     color: '#6b7280',
@@ -3704,7 +3797,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     e.preventDefault();
-                                                                    reloadShipments();
+                                                                    loadShipments(null, unifiedSearch);
                                                                 }
                                                             }}
                                                             size="small"
@@ -3724,7 +3817,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                             size="small"
                                                                             onClick={() => {
                                                                                 setSearchFields(prev => ({ ...prev, shipmentId: '' }));
-                                                                                reloadShipments();
+                                                                                loadShipments(null, unifiedSearch);
                                                                             }}
                                                                         >
                                                                             <ClearIcon />
@@ -3749,7 +3842,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     e.preventDefault();
-                                                                    reloadShipments();
+                                                                    loadShipments(null, unifiedSearch);
                                                                 }
                                                             }}
                                                             size="small"
@@ -3767,7 +3860,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                     <InputAdornment position="end">
                                                                         <IconButton
                                                                             size="small"
-                                                                            onClick={() => setSearchFields(prev => ({ ...prev, referenceNumber: '' }))}
+                                                                            onClick={() => {
+                                                                                setSearchFields(prev => ({ ...prev, referenceNumber: '' }));
+                                                                                loadShipments(null, unifiedSearch);
+                                                                            }}
                                                                         >
                                                                             <ClearIcon />
                                                                         </IconButton>
@@ -3791,7 +3887,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     e.preventDefault();
-                                                                    reloadShipments();
+                                                                    loadShipments(null, unifiedSearch);
                                                                 }
                                                             }}
                                                             size="small"
@@ -3809,7 +3905,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                     <InputAdornment position="end">
                                                                         <IconButton
                                                                             size="small"
-                                                                            onClick={() => setSearchFields(prev => ({ ...prev, trackingNumber: '' }))}
+                                                                            onClick={() => {
+                                                                                setSearchFields(prev => ({ ...prev, trackingNumber: '' }));
+                                                                                loadShipments(null, unifiedSearch);
+                                                                            }}
                                                                         >
                                                                             <ClearIcon />
                                                                         </IconButton>
@@ -3826,7 +3925,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                 value={dateRange}
                                                                 onChange={(newValue) => {
                                                                     setDateRange(newValue);
-                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                    setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                                 }}
                                                                 label="Date Range"
                                                                 slotProps={{
@@ -3872,7 +3971,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                             value={selectedCustomer ? { id: selectedCustomer, name: customers[selectedCustomer] } : null}
                                                             onChange={(event, newValue) => {
                                                                 setSelectedCustomer(newValue?.id || '');
-                                                                setTimeout(() => reloadShipments(), 100);
+                                                                setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                             }}
                                                             renderInput={(params) => (
                                                                 <TextField
@@ -3924,7 +4023,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                         ...prev,
                                                                         carrier: e.target.value
                                                                     }));
-                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                    setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                                 }}
                                                                 label="Carrier"
                                                                 sx={{ fontSize: '12px' }}
@@ -3958,7 +4057,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                         ...prev,
                                                                         shipmentType: e.target.value
                                                                     }));
-                                                                    setTimeout(() => reloadShipments(), 100);
+                                                                    setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                                 }}
                                                                 label="Type"
                                                                 sx={{ fontSize: '12px' }}
@@ -3986,7 +4085,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                                     // Keep legacy status for backward compatibility
                                                                     status: value ? enhancedToLegacy(value) : 'all'
                                                                 }));
-                                                                setTimeout(() => reloadShipments(), 100);
+                                                                setTimeout(() => loadShipments(null, unifiedSearch), 100);
                                                             }}
                                                             label="Shipment Status"
                                                             showGroups={true}
@@ -4298,8 +4397,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setSelectedCustomer('');
 
         // Reload with cleared filters
-        setTimeout(() => reloadShipments(), 100);
-    }, [reloadShipments]);
+        setTimeout(() => loadShipments(null, ''), 100);
+    }, [loadShipments]);
 
     const handleBatchRefreshStatus = useCallback(async () => {
         if (selected.length === 0) return;
@@ -4340,7 +4439,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
             showSnackbar(`Successfully deleted ${draftShipments.length} draft shipment${draftShipments.length > 1 ? 's' : ''}`, 'success');
             setSelected([]); // Clear selection
-            loadShipments(); // Reload the shipments list
+            loadShipments(null, unifiedSearch); // Reload the shipments list
         } catch (error) {
             console.error('Error deleting selected drafts:', error);
             showSnackbar('Error deleting draft shipments', 'error');
@@ -4348,7 +4447,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             setIsDeletingDrafts(false);
             setIsDeleteDraftsDialogOpen(false);
         }
-    }, [selected, shipments, showSnackbar, loadShipments]);
+    }, [selected, shipments, showSnackbar, loadShipments]); // Removed unifiedSearch from dependencies
 
     // Handle editing a draft shipment
     const handleEditDraftShipment = useCallback(async (draftId) => {
@@ -4428,7 +4527,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         onDraftSaved: handleDraftSaved,
                         onReturnToShipments: () => {
                             // Refresh the table when returning from draft editing
-                            setTimeout(() => loadShipments(), 100);
+                            setTimeout(() => loadShipments(null, unifiedSearch), 100);
                         }
                     });
                 } else {
@@ -4446,7 +4545,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         onDraftSaved: handleDraftSaved,
                         onReturnToShipments: () => {
                             // Refresh the table when returning from draft editing
-                            setTimeout(() => loadShipments(), 100);
+                            setTimeout(() => loadShipments(null, unifiedSearch), 100);
                         }
                     });
                 } else {
@@ -4459,7 +4558,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error checking draft type:', error);
             showSnackbar('Error loading draft shipment', 'error');
         }
-    }, [onOpenCreateShipment, showSnackbar, userRole, companyIdForAddress, setCompanyContext, handleShipmentUpdated, handleDraftSaved, loadShipments]);
+    }, [onOpenCreateShipment, showSnackbar, userRole, companyIdForAddress, setCompanyContext, handleShipmentUpdated, handleDraftSaved, loadShipments]); // Removed unifiedSearch from dependencies
 
     // Handle repeating a shipment (creating a new draft with pre-populated data)
     const handleRepeatShipment = useCallback(async (shipment) => {
@@ -4521,7 +4620,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     onDraftSaved: handleDraftSaved,
                     onReturnToShipments: () => {
                         // Refresh the table when returning from shipment creation
-                        setTimeout(() => loadShipments(), 100);
+                        setTimeout(() => loadShipments(null, unifiedSearch), 100);
                     }
                 });
             } else {
@@ -4531,7 +4630,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error repeating shipment:', error);
             showSnackbar('Error creating repeat shipment', 'error');
         }
-    }, [onOpenCreateShipment, showSnackbar, handleShipmentUpdated, handleDraftSaved, loadShipments]);
+    }, [onOpenCreateShipment, showSnackbar, handleShipmentUpdated, handleDraftSaved, loadShipments, unifiedSearch]);
 
     // Handle editing a booked shipment
     const handleEditShipment = useCallback((shipment) => {
@@ -4551,9 +4650,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Handle refresh table data
     const handleRefreshTable = useCallback(() => {
-        reloadShipments();
+        loadShipments(null, unifiedSearch);
         showSnackbar('Refreshing shipments data...', 'info');
-    }, [reloadShipments, showSnackbar]);
+    }, [loadShipments, showSnackbar]); // Removed unifiedSearch from dependencies
 
     // Handle archive shipment
     const handleArchiveShipment = useCallback(async (shipment) => {
@@ -4571,7 +4670,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             if (result.data.success) {
                 showSnackbar('Shipment archived successfully', 'success');
                 // Reload shipments to reflect the change
-                loadShipments();
+                loadShipments(null, unifiedSearch);
             } else {
                 showSnackbar('Failed to archive shipment', 'error');
             }
@@ -4579,7 +4678,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error archiving shipment:', error);
             showSnackbar(error.message || 'Error archiving shipment', 'error');
         }
-    }, [showSnackbar, loadShipments]);
+    }, [showSnackbar, loadShipments]); // Removed unifiedSearch from dependencies
 
     // Create dynamic navigation object based on current state
     const getNavigationObject = () => {
@@ -4694,12 +4793,12 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         rowsPerPage={rowsPerPage}
                                         onPageChange={(event, newPage) => {
                                             setPage(newPage);
-                                            setTimeout(() => reloadShipments(), 50);
+                                            setTimeout(() => loadShipments(null, unifiedSearch), 50);
                                         }}
                                         onRowsPerPageChange={(event) => {
                                             setRowsPerPage(parseInt(event.target.value, 10));
                                             setPage(0);
-                                            setTimeout(() => reloadShipments(), 50);
+                                            setTimeout(() => loadShipments(null, unifiedSearch), 50);
                                         }}
                                     />
                                 </Box>
@@ -4926,7 +5025,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                         // Delete the shipment
                         await deleteDoc(doc(db, 'shipments', shipment.id));
                         showSnackbar('Draft shipment deleted successfully', 'success');
-                        loadShipments(); // Reload the shipments list
+                        loadShipments(null, unifiedSearch); // Reload the shipments list
                     } catch (error) {
                         console.error('Error deleting draft:', error);
                         showSnackbar('Error deleting draft shipment', 'error');

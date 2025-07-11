@@ -3731,8 +3731,8 @@ const Dashboard = () => {
 
         // Set search parameters for ShipmentsX modal - USE CORRECT PARAMETER NAME
         setShipmentsDeepLinkParams({
-            unifiedSearch: unifiedSearch.trim(), // This is what ShipmentsX expects
-            forceTableView: true // Force back to table view for search results
+            unifiedSearch: unifiedSearch.trim() // This is what ShipmentsX expects
+            // Removed forceTableView as it was causing navigation issues
         });
 
         // Open ShipmentsX modal
@@ -3741,7 +3741,7 @@ const Dashboard = () => {
         // Clear live results
         setShowLiveResults(false);
         setSelectedResultIndex(-1);
-    }, [unifiedSearch]);
+    }, []); // Removed unifiedSearch from dependencies to prevent infinite loop
 
     // Handle shipment selection from autocomplete
     const handleViewShipmentDetail = useCallback((shipmentDocumentId) => {

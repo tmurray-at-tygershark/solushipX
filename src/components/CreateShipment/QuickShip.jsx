@@ -3899,31 +3899,69 @@ const QuickShip = ({
                                     }
                                 }}
                                 disabled={loadingCustomers}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <PersonIcon sx={{ fontSize: '16px' }} />
-                                                Filter by Customer
-                                            </Box>
-                                        }
-                                        placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
-                                        size="small"
-                                        sx={{
-                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                        }}
-                                        helperText={
-                                            loadingCustomers ? 'Loading customers...' :
-                                                !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
-                                                    'No customers found for selected company' : ''
-                                        }
-                                        FormHelperTextProps={{
-                                            sx: { fontSize: '11px', color: '#6b7280' }
-                                        }}
-                                    />
-                                )}
+                                renderInput={(params) => {
+                                    const selectedCustomer = availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId);
+                                    const isAllSelected = !selectedCustomer || selectedCustomerId === 'all';
+
+                                    return (
+                                        <TextField
+                                            {...params}
+                                            label={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <PersonIcon sx={{ fontSize: '16px' }} />
+                                                    Filter by Customer
+                                                </Box>
+                                            }
+                                            placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-input': {
+                                                    fontSize: '12px',
+                                                    // Hide the input field completely when a customer is selected
+                                                    opacity: !isAllSelected && selectedCustomer ? 0 : 1,
+                                                    width: !isAllSelected && selectedCustomer ? 0 : 'auto',
+                                                    padding: !isAllSelected && selectedCustomer ? 0 : undefined
+                                                },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                            helperText={
+                                                loadingCustomers ? 'Loading customers...' :
+                                                    !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
+                                                        'No customers found for selected company' : ''
+                                            }
+                                            FormHelperTextProps={{
+                                                sx: { fontSize: '11px', color: '#6b7280' }
+                                            }}
+                                            InputProps={{
+                                                ...params.InputProps,
+                                                startAdornment: !isAllSelected && selectedCustomer ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5, width: '100%' }}>
+                                                        <Avatar
+                                                            src={selectedCustomer.logo || selectedCustomer.logoUrl}
+                                                            sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                bgcolor: '#059669',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600
+                                                            }}
+                                                        >
+                                                            {!selectedCustomer.logo && !selectedCustomer.logoUrl && (selectedCustomer.name || 'C').charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                        <Box>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.2 }}>
+                                                                {selectedCustomer.name}
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', lineHeight: 1 }}>
+                                                                ID: {selectedCustomer.customerID || selectedCustomer.id}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ) : params.InputProps.startAdornment,
+                                            }}
+                                        />
+                                    );
+                                }}
                                 renderOption={(props, option) => (
                                     <Box component="li" {...props} sx={{ p: 1.5 }}>
                                         {option.customerID === 'all' || option.id === 'all' ? (
