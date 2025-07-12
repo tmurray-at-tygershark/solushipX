@@ -3936,7 +3936,26 @@ const Dashboard = () => {
                                                 console.log('🎯 Navigating to shipment:', result.shipmentId);
                                                 setShowLiveResults(false);
                                                 setSelectedResultIndex(-1);
-                                                handleViewShipmentDetail(result.documentId);
+
+                                                // 📝 CRITICAL FIX: Check if this is a draft shipment and handle appropriately
+                                                if (result.shipment?.status === 'draft') {
+                                                    console.log('📝 Draft shipment detected, opening for editing:', result.documentId);
+
+                                                    // Set deep link params to trigger draft editing
+                                                    setShipmentsDeepLinkParams({
+                                                        editDraftShipment: true,
+                                                        selectedShipmentId: result.documentId
+                                                    });
+
+                                                    // Open ShipmentsX modal
+                                                    setIsShipmentsModalOpen(true);
+
+                                                    // Clear search
+                                                    setUnifiedSearch('');
+                                                } else {
+                                                    // Regular shipment - open detail view
+                                                    handleViewShipmentDetail(result.documentId);
+                                                }
                                             } else if (result.type === 'status_filter' || result.type === 'date_filter') {
                                                 setUnifiedSearch(result.value);
                                                 setShowLiveResults(false);

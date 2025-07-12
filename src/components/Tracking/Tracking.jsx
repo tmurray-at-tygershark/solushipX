@@ -51,6 +51,7 @@ import TrackingRouteMap from './TrackingRouteMap';
 import { Suspense } from 'react';
 import Footer from '../Footer/Footer';
 import Navigation from '../Navigation/Header';
+import { dynamicStatusService } from '../../services/DynamicStatusService';
 
 // Helper functions (copied from ShipmentDetail.jsx)
 const getStatusColor = (status) => {
@@ -247,9 +248,25 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [carrier, setCarrier] = useState('');
     const [hasAutoSearched, setHasAutoSearched] = useState(false);
+    const [statusService, setStatusService] = useState(null);
 
     // Use smart status update hook
     const { updateShipmentStatus } = useSmartStatusUpdate();
+
+    // Initialize DynamicStatusService
+    useEffect(() => {
+        const initializeStatusService = async () => {
+            try {
+                await dynamicStatusService.initialize();
+                setStatusService(dynamicStatusService);
+                console.log('📊 [Tracking] DynamicStatusService initialized');
+            } catch (error) {
+                console.error('📊 [Tracking] Failed to initialize DynamicStatusService:', error);
+            }
+        };
+
+        initializeStatusService();
+    }, []);
 
     // Copy to clipboard function
     const copyToClipboard = async (text, label) => {
@@ -338,6 +355,29 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         }
     };
 
+    // Helper function to format event status using DynamicStatusService
+    const formatEventStatus = (rawStatus) => {
+        if (!statusService) {
+            return rawStatus;
+        }
+
+        try {
+            const statusDisplay = statusService.getStatusDisplay(rawStatus);
+            if (statusDisplay && statusDisplay.masterStatus) {
+                const { masterStatus, subStatus } = statusDisplay;
+                if (subStatus) {
+                    return `${masterStatus.displayLabel}: ${subStatus.statusLabel}`;
+                } else {
+                    return masterStatus.displayLabel;
+                }
+            }
+        } catch (error) {
+            console.warn('📊 [Tracking] Error formatting event status:', error);
+        }
+
+        return rawStatus;
+    };
+
     const searchShipment = useCallback(async (identifier) => {
         console.log('🔍 [Tracking] searchShipment called with identifier:', identifier);
         setLoading(true);
@@ -409,18 +449,23 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 console.log('📋 [Tracking] Received real-time events:', events);
 
                 // Transform events to match ShipmentTimeline format (same as ShipmentDetailX)
-                const transformedEvents = (events || []).map(event => ({
-                    id: event.eventId || event.id || `event-${Date.now()}-${Math.random()}`,
-                    status: event.title || event.status || event.eventType || 'Status Update',
-                    description: event.description || event.message || `Event: ${event.title || event.status || event.eventType}`,
-                    location: event.location || { city: '', state: '', postalCode: '' },
-                    timestamp: parseTimestamp(event.timestamp) || new Date(),
-                    color: getStatusColor(event.eventType || event.status || event.title),
-                    icon: getStatusIcon(event.eventType || event.status || event.title),
-                    eventType: event.eventType || event.status || event.title,
-                    source: event.source || 'system',
-                    userData: event.userData || {}
-                }));
+                const transformedEvents = (events || []).map(event => {
+                    const rawStatus = event.title || event.status || event.eventType || 'Status Update';
+                    const formattedStatus = formatEventStatus(rawStatus);
+
+                    return {
+                        id: event.eventId || event.id || `event-${Date.now()}-${Math.random()}`,
+                        status: formattedStatus,
+                        description: event.description || event.message || `Event: ${formattedStatus}`,
+                        location: event.location || { city: '', state: '', postalCode: '' },
+                        timestamp: parseTimestamp(event.timestamp) || new Date(),
+                        color: getStatusColor(event.eventType || event.status || event.title),
+                        icon: getStatusIcon(event.eventType || event.status || event.title),
+                        eventType: event.eventType || event.status || event.title,
+                        source: event.source || 'system',
+                        userData: event.userData || {}
+                    };
+                });
 
                 // Add synthetic events from shipment data - ENHANCED FOR QUICKSHIP
                 const syntheticEvents = [];
@@ -486,10 +531,11 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         (e.status && typeof e.status === 'string' && e.status.toLowerCase() === fixedShipmentData.status.toLowerCase())
                     );
                     if (!hasCurrentStatus) {
+                        const formattedStatus = formatEventStatus(fixedShipmentData.status);
                         syntheticEvents.push({
                             id: 'current-status-' + identifier,
-                            status: fixedShipmentData.status.charAt(0).toUpperCase() + fixedShipmentData.status.slice(1),
-                            description: `Shipment status updated to ${fixedShipmentData.status}`,
+                            status: formattedStatus,
+                            description: `Shipment status updated to ${formattedStatus}`,
                             location: { city: '', state: '', postalCode: '' },
                             timestamp: parseTimestamp(fixedShipmentData.updatedAt) || parseTimestamp(fixedShipmentData.createdAt) || new Date(),
                             color: getStatusColor(fixedShipmentData.status),

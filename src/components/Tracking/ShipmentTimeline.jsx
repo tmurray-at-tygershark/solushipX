@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Typography, Paper } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Typography, Paper, Chip } from '@mui/material';
 import {
     Timeline,
     TimelineItem,
@@ -25,6 +25,7 @@ import {
     Description as DescriptionIcon,
     Assignment as AssignmentIcon
 } from '@mui/icons-material';
+import { dynamicStatusService } from '../../services/DynamicStatusService';
 
 // Consistent helper functions (can be moved to a utils file later)
 const formatTimestamp = (timestamp) => {
@@ -219,6 +220,64 @@ const getStatusIcon = (status, eventType) => {
 
 
 const ShipmentTimeline = ({ events }) => {
+    const [statusService, setStatusService] = useState(null);
+    const [statusServiceInitialized, setStatusServiceInitialized] = useState(false);
+
+    // Initialize DynamicStatusService
+    useEffect(() => {
+        const initializeStatusService = async () => {
+            try {
+                await dynamicStatusService.initialize();
+                setStatusService(dynamicStatusService);
+                setStatusServiceInitialized(true);
+                console.log('📊 [ShipmentTimeline] DynamicStatusService initialized');
+            } catch (error) {
+                console.error('📊 [ShipmentTimeline] Failed to initialize DynamicStatusService:', error);
+                setStatusServiceInitialized(true); // Still set to true to avoid infinite loading
+            }
+        };
+
+        initializeStatusService();
+    }, []);
+
+    // Function to format status display with master and substatus
+    const formatStatusDisplay = (event) => {
+        const rawStatus = event.status || event.title || 'Status Unavailable';
+
+        if (!statusService || !statusServiceInitialized) {
+            return { displayText: rawStatus, masterStatus: null, subStatus: null };
+        }
+
+        try {
+            const statusDisplay = statusService.getStatusDisplay(rawStatus);
+
+            if (statusDisplay && statusDisplay.masterStatus) {
+                const { masterStatus, subStatus } = statusDisplay;
+
+                if (subStatus) {
+                    // Show both master and substatus: "In Transit: Border Crossing"
+                    return {
+                        displayText: `${masterStatus.displayLabel}: ${subStatus.statusLabel}`,
+                        masterStatus,
+                        subStatus
+                    };
+                } else {
+                    // Show only master status: "In Transit"
+                    return {
+                        displayText: masterStatus.displayLabel,
+                        masterStatus,
+                        subStatus: null
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn('📊 [ShipmentTimeline] Error formatting status display:', error);
+        }
+
+        // Fallback to raw status
+        return { displayText: rawStatus, masterStatus: null, subStatus: null };
+    };
+
     if (!events || events.length === 0) {
         return (
             <Paper elevation={0} sx={{ mt: 3, p: 3, textAlign: 'center', border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
@@ -334,9 +393,32 @@ const ShipmentTimeline = ({ events }) => {
                             borderColor: 'divider',
                             bgcolor: index === 0 ? 'action.hover' : 'background.paper',
                         }}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5, fontSize: '12px' }}>
-                                {event.status || event.title || 'Status Unavailable'}
-                            </Typography>
+                            {(() => {
+                                const statusDisplay = formatStatusDisplay(event);
+                                return (
+                                    <Box sx={{ mb: 0.5 }}>
+                                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'text.primary', fontSize: '12px', mb: 0.5 }}>
+                                            {statusDisplay.displayText}
+                                        </Typography>
+                                        {statusDisplay.subStatus && (
+                                            <Chip
+                                                label={statusDisplay.subStatus.statusLabel}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '10px',
+                                                    height: '20px',
+                                                    backgroundColor: statusDisplay.masterStatus?.color || '#6b7280',
+                                                    color: statusDisplay.masterStatus?.fontColor || '#ffffff',
+                                                    '& .MuiChip-label': {
+                                                        px: 1,
+                                                        fontSize: '10px'
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                    </Box>
+                                );
+                            })()}
                             {(event.location && (typeof event.location === 'string' || event.location.city || event.location.state || event.location.postalCode)) && (
                                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontSize: '12px' }}>
                                     {typeof event.location === 'string'

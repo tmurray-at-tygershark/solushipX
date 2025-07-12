@@ -1183,9 +1183,6 @@ const GlobalShipmentList = () => {
 
                                                     if (result.type === 'live_shipment') {
                                                         console.log('🎯 Admin: Navigating to shipment:', result.shipmentId);
-                                                        console.log('🎯 Admin: Document ID:', result.documentId);
-                                                        console.log('🎯 Admin: Current company:', selectedCompanyId);
-                                                        console.log('🎯 Admin: Shipment company:', result.shipment.companyID);
 
                                                         // Set the company context to match the shipment's company
                                                         const shipmentCompany = availableCompanies.find(c => c.companyID === result.shipment.companyID);
@@ -1208,35 +1205,53 @@ const GlobalShipmentList = () => {
                                                             setViewMode('single');
                                                         }
 
-                                                        console.log('🎯 Admin: Direct navigation - bypassing table, going straight to detail');
+                                                        // 📝 CRITICAL FIX: Check if this is a draft shipment and handle appropriately
+                                                        if (result.shipment?.status === 'draft') {
+                                                            console.log('📝 Draft shipment detected, opening for editing:', result.documentId);
 
-                                                        // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
-                                                        console.log('🔄 Clearing existing deep link params before new navigation');
-                                                        setShipmentsDeepLinkParams(null);
+                                                            // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
+                                                            console.log('🔄 Clearing existing deep link params before draft edit');
+                                                            setShipmentsDeepLinkParams(null);
 
-                                                        // SET NAVIGATION STATE TO PREVENT PREMATURE CLEARING
-                                                        setIsNavigating(true);
-
-                                                        // Small delay to ensure clearing is processed, then set new params
-                                                        setTimeout(() => {
-                                                            // DIRECT NAVIGATION - Skip the table entirely and go straight to detail
-                                                            setShipmentsDeepLinkParams({
-                                                                bypassTable: true,
-                                                                directToDetail: true,
-                                                                selectedShipmentId: result.documentId,
-                                                                // Add timestamp to ensure uniqueness
-                                                                timestamp: Date.now()
-                                                            });
-
-                                                            console.log('🎯 Admin: Set bypass table navigation for shipment:', result.documentId);
-                                                            console.log('🔄 Navigation state set to prevent premature clearing');
-
-                                                            // Clear navigation state after successful navigation
+                                                            // Small delay to ensure clearing is processed, then trigger edit
                                                             setTimeout(() => {
-                                                                setIsNavigating(false);
-                                                                console.log('✅ Navigation completed, state cleared');
-                                                            }, 2000); // 2 second delay to allow navigation to complete
-                                                        }, 50); // Small delay to ensure null is processed first
+                                                                setShipmentsDeepLinkParams({
+                                                                    editDraftShipment: true,
+                                                                    selectedShipmentId: result.documentId,
+                                                                    timestamp: Date.now()
+                                                                });
+                                                            }, 50);
+                                                        } else {
+                                                            console.log('🎯 Admin: Direct navigation - bypassing table, going straight to detail');
+
+                                                            // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
+                                                            console.log('🔄 Clearing existing deep link params before new navigation');
+                                                            setShipmentsDeepLinkParams(null);
+
+                                                            // SET NAVIGATION STATE TO PREVENT PREMATURE CLEARING
+                                                            setIsNavigating(true);
+
+                                                            // Small delay to ensure clearing is processed, then set new params
+                                                            setTimeout(() => {
+                                                                // DIRECT NAVIGATION - Skip the table entirely and go straight to detail
+                                                                setShipmentsDeepLinkParams({
+                                                                    bypassTable: true,
+                                                                    directToDetail: true,
+                                                                    selectedShipmentId: result.documentId,
+                                                                    // Add timestamp to ensure uniqueness
+                                                                    timestamp: Date.now()
+                                                                });
+
+                                                                console.log('🎯 Admin: Set bypass table navigation for shipment:', result.documentId);
+                                                                console.log('🔄 Navigation state set to prevent premature clearing');
+
+                                                                // Clear navigation state after successful navigation
+                                                                setTimeout(() => {
+                                                                    setIsNavigating(false);
+                                                                    console.log('✅ Navigation completed, state cleared');
+                                                                }, 2000); // 2 second delay to allow navigation to complete
+                                                            }, 50); // Small delay to ensure null is processed first
+                                                        }
                                                     } else if (result.type === 'status_filter' || result.type === 'date_filter') {
                                                         console.log('🎯 Admin: Applying filter:', result.type, result.value);
                                                         setSearchValue(result.value);

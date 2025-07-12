@@ -1754,6 +1754,26 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             return;
         }
 
+        // 📝 Handle EDIT DRAFT SHIPMENT navigation - trigger draft editing
+        if (deepLinkParams.editDraftShipment && deepLinkParams.selectedShipmentId) {
+            console.log('📝 EDIT DRAFT: Triggering draft edit for shipment:', deepLinkParams.selectedShipmentId);
+
+            // KILL THE DEEP LINK IMMEDIATELY
+            if (onClearDeepLinkParams) {
+                onClearDeepLinkParams();
+                console.log('💀 KILLED deep link params for draft edit');
+            }
+
+            // Set rate limiting
+            window.lastAutoNavigation = now;
+
+            // Trigger draft editing
+            handleEditDraftShipment(deepLinkParams.selectedShipmentId);
+            setHasAutoOpenedShipment(true); // Prevent running again
+            console.log('✅ Draft edit navigation completed');
+            return;
+        }
+
         // SHIPMENTS DATA CHECK: Only proceed if shipments are loaded (for non-bypass navigation)
         if (!shipments || shipments.length === 0) {
             console.log('🚫 No shipments loaded yet - deferring auto-navigation');
