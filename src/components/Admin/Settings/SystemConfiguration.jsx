@@ -53,13 +53,9 @@ import {
     Category as CategoryIcon,
     List as ListIcon,
     ColorLens as ColorIcon,
-<<<<<<< HEAD
     Notifications as NotificationsIcon,
     DragIndicator as DragIndicatorIcon,
     MoreVert as MoreVertIcon
-=======
-    Notifications as NotificationsIcon
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { useSnackbar } from 'notistack';
