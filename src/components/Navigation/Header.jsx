@@ -56,10 +56,11 @@ const Navigation = () => {
     // Check if we're on an admin page
     const isAdminPage = location.pathname.startsWith('/admin');
 
-    // Update authentication check to include homepage and admin pages
+    // Update authentication check to include homepage, admin pages, and tracking pages
     const isAuthenticated = location.pathname !== '/login' &&
         location.pathname !== '/signup' &&
-        location.pathname !== '/';
+        location.pathname !== '/' &&
+        !location.pathname.startsWith('/tracking');
 
     // If we're on an admin page, don't render the navigation
     if (isAdminPage) {

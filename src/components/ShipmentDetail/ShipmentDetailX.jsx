@@ -53,6 +53,7 @@ import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticSt
 
 // Utils
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { fixShipmentEncoding } from '../../utils/textUtils';
 
 const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin, editMode = false, onShipmentUpdated: parentOnShipmentUpdated }) => {
     const { id } = useParams();

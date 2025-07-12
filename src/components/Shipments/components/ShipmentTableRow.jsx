@@ -34,9 +34,10 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/firebase';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import { formatDateTime, formatRoute, capitalizeShipmentType } from '../utils/shipmentHelpers';
+import { fixShipmentEncoding } from '../../../utils/textUtils';
 
 const ShipmentTableRow = ({
-    shipment,
+    shipment: rawShipment,
     selected,
     onSelect,
     onActionMenuOpen,
@@ -53,6 +54,9 @@ const ShipmentTableRow = ({
     columnConfig = {},
     adminViewMode
 }) => {
+    // Apply encoding fix to shipment data
+    const shipment = fixShipmentEncoding(rawShipment);
+
     const [expanded, setExpanded] = useState(false);
     const isSelected = selected.indexOf(shipment.id) !== -1;
 

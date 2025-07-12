@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/
 import { db } from '../../../firebase';
 import { getRateDetailsByDocumentId, getRatesForShipment } from '../../../utils/rateUtils';
 import { listenToShipmentEvents } from '../../../utils/shipmentEvents';
+import { fixShipmentEncoding } from '../../../utils/textUtils';
 
 export const useShipmentData = (shipmentId) => {
     const [shipment, setShipment] = useState(null);
@@ -65,7 +66,7 @@ export const useShipmentData = (shipmentId) => {
                     // Set tracking number based on carrier type
                     setTrackingNumber(shipmentData);
 
-                    setShipment(shipmentData);
+                    setShipment(fixShipmentEncoding(shipmentData));
                     console.log('ShipmentDetail: Final shipmentData loaded');
                 } else {
                     setError(`Shipment not found with ID: ${shipmentId}`);
