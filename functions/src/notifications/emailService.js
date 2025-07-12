@@ -325,7 +325,6 @@ async function handleQuickShipProcessing(shipmentData, firestoreDocId) {
  * Cloud Function triggered when shipment status changes
  */
 exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', async (event) => {
-<<<<<<< HEAD
     // CRITICAL DEBUG: Log all trigger events
     logger.info('🔔 onShipmentStatusChanged TRIGGER FIRED', {
         shipmentId: event.params.shipmentId,
@@ -333,19 +332,6 @@ exports.onShipmentStatusChanged = onDocumentUpdated('shipments/{shipmentId}', as
         hasBeforeData: !!event.data?.before,
         timestamp: new Date().toISOString()
     });
-=======
-    // CRITICAL: Check if notifications are globally enabled
-    const notificationsEnabled = await areNotificationsEnabled();
-    if (!notificationsEnabled) {
-        logger.info('Status change notification skipped - global notifications disabled', {
-            shipmentId: event.params.shipmentId
-        });
-        return;
-    }
-
-    const newData = event.data?.after?.data();
-    const oldData = event.data?.before?.data();
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 
     // CRITICAL: Check if notifications are globally enabled
     const notificationsEnabled = await areNotificationsEnabled();

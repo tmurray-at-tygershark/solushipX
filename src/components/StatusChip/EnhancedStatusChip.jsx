@@ -29,7 +29,6 @@ const EnhancedStatusChip = ({
                 setLoading(true);
                 setError(null);
 
-<<<<<<< HEAD
                 console.log(`[EnhancedStatusChip] Initializing for status: "${status}"`);
 
                 // Check if status is already an enhanced status object
@@ -70,17 +69,6 @@ const EnhancedStatusChip = ({
 
             } catch (err) {
                 console.error('[EnhancedStatusChip] Error initializing status display:', err);
-=======
-                // Initialize service if not already done
-                await dynamicStatusService.initialize();
-
-                // Get status display configuration
-                const display = dynamicStatusService.getStatusDisplay(status);
-                setStatusDisplay(display);
-
-            } catch (err) {
-                console.error('Error initializing status display:', err);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 setError(err.message);
             } finally {
                 setLoading(false);
@@ -90,10 +78,7 @@ const EnhancedStatusChip = ({
         if (status) {
             initializeStatus();
         } else {
-<<<<<<< HEAD
             console.warn('[EnhancedStatusChip] No status provided');
-=======
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
             setLoading(false);
         }
     }, [status]);
@@ -104,14 +89,11 @@ const EnhancedStatusChip = ({
 
         if (!statusDisplay) return 'master';
 
-<<<<<<< HEAD
         // If status is an enhanced object with subStatus, show both
         if (typeof status === 'object' && status.subStatus) {
             return 'both';
         }
 
-=======
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
         return dynamicStatusService.getDisplayMode(status);
     };
 
@@ -122,33 +104,21 @@ const EnhancedStatusChip = ({
                 chipHeight: 24,
                 fontSize: '11px',
                 padding: '4px 8px',
-<<<<<<< HEAD
                 subFontSize: '9px', // Even smaller for better hierarchy
-=======
-                subFontSize: '10px',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 gap: 0.5
             },
             medium: {
                 chipHeight: 32,
                 fontSize: '13px',
                 padding: '6px 12px',
-<<<<<<< HEAD
                 subFontSize: '10px', // Smaller for hierarchy
-=======
-                subFontSize: '11px',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 gap: 0.75
             },
             large: {
                 chipHeight: 40,
                 fontSize: '14px',
                 padding: '8px 16px',
-<<<<<<< HEAD
                 subFontSize: '11px', // Smaller for hierarchy
-=======
-                subFontSize: '12px',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 gap: 1
             }
         };
@@ -196,7 +166,6 @@ const EnhancedStatusChip = ({
         lightBorder: masterStatus.color + '40'
     };
 
-<<<<<<< HEAD
     // DEBUG: Log the actual styling values
     console.log(`[EnhancedStatusChip] Styling for "${status}":`, {
         masterStatusLabel: masterStatus.label,
@@ -207,8 +176,6 @@ const EnhancedStatusChip = ({
         finalDisplayMode: finalDisplayMode
     });
 
-=======
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
     // Render master status only
     const renderMasterOnly = () => {
         const chipElement = (
@@ -219,7 +186,6 @@ const EnhancedStatusChip = ({
                 disabled={disabled}
                 onClick={onClick}
                 className={className}
-<<<<<<< HEAD
                 color="default" // Force default to prevent theme color overrides
                 style={{
                     // Use inline styles for maximum specificity
@@ -228,18 +194,11 @@ const EnhancedStatusChip = ({
                     border: variant === 'outlined' ? `1px solid ${styling.borderColor}` : 'none'
                 }}
                 sx={{
-=======
-                sx={{
-                    backgroundColor: variant === 'filled' ? styling.backgroundColor : 'transparent',
-                    color: variant === 'filled' ? styling.color : styling.backgroundColor,
-                    border: variant === 'outlined' ? `1px solid ${styling.borderColor}` : 'none',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                     fontSize: sizeConfig.fontSize,
                     fontWeight: 600,
                     height: sizeConfig.chipHeight,
                     cursor: onClick ? 'pointer' : 'default',
                     '&:hover': onClick ? {
-<<<<<<< HEAD
                         backgroundColor: variant === 'filled' ? `${styling.backgroundColor} !important` : `${styling.lightBackground} !important`,
                         transform: 'scale(1.02)'
                     } : {},
@@ -272,13 +231,6 @@ const EnhancedStatusChip = ({
                     },
                     '& .MuiChip-label.MuiChip-labelMedium': {
                         color: `${variant === 'filled' ? styling.color : styling.backgroundColor} !important`
-=======
-                        backgroundColor: variant === 'filled' ? styling.backgroundColor : styling.lightBackground,
-                        transform: 'scale(1.02)'
-                    } : {},
-                    '& .MuiChip-label': {
-                        padding: sizeConfig.padding
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                     }
                 }}
             />
@@ -323,11 +275,7 @@ const EnhancedStatusChip = ({
                     {subStatus && (
                         <Typography sx={{
                             fontSize: sizeConfig.subFontSize,
-<<<<<<< HEAD
                             color: masterStatus.fontColor, // Use master status text color - same as master
-=======
-                            color: '#6b7280',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                             fontStyle: 'italic'
                         }}>
                             • {subStatus.statusLabel}
@@ -375,24 +323,16 @@ const EnhancedStatusChip = ({
                     variant={variant}
                     disabled={disabled}
                     onClick={onClick}
-<<<<<<< HEAD
                     color="default" // Force default to prevent theme color overrides
                     sx={{
                         backgroundColor: variant === 'filled' ? `${styling.backgroundColor} !important` : 'transparent',
                         color: variant === 'filled' ? `${styling.color} !important` : `${styling.backgroundColor} !important`,
                         border: variant === 'outlined' ? `1px solid ${styling.borderColor} !important` : 'none',
-=======
-                    sx={{
-                        backgroundColor: variant === 'filled' ? styling.backgroundColor : 'transparent',
-                        color: variant === 'filled' ? styling.color : styling.backgroundColor,
-                        border: variant === 'outlined' ? `1px solid ${styling.borderColor}` : 'none',
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                         fontSize: sizeConfig.fontSize,
                         fontWeight: 600,
                         height: sizeConfig.chipHeight,
                         cursor: onClick ? 'pointer' : 'default',
                         '&:hover': onClick ? {
-<<<<<<< HEAD
                             backgroundColor: variant === 'filled' ? `${styling.backgroundColor} !important` : `${styling.lightBackground} !important`,
                             transform: 'scale(1.02)'
                         } : {},
@@ -413,11 +353,6 @@ const EnhancedStatusChip = ({
                             backgroundColor: variant === 'filled' ? `${styling.backgroundColor} !important` : 'transparent !important',
                             color: variant === 'filled' ? `${styling.color} !important` : `${styling.backgroundColor} !important`
                         }
-=======
-                            backgroundColor: variant === 'filled' ? styling.backgroundColor : styling.lightBackground,
-                            transform: 'scale(1.02)'
-                        } : {}
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                     }}
                 />
 
@@ -425,21 +360,12 @@ const EnhancedStatusChip = ({
                 {subStatus && (
                     <Typography sx={{
                         fontSize: sizeConfig.subFontSize,
-<<<<<<< HEAD
                         color: masterStatus.fontColor, // Use master status text color
                         fontWeight: 500,
                         backgroundColor: masterStatus.color, // Use master status background color
                         padding: '2px 6px',
                         borderRadius: '8px',
                         border: `1px solid ${masterStatus.color}`, // Same color border
-=======
-                        color: styling.backgroundColor,
-                        fontWeight: 500,
-                        backgroundColor: styling.lightBackground,
-                        padding: '2px 6px',
-                        borderRadius: '8px',
-                        border: `1px solid ${styling.lightBorder}`,
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                         whiteSpace: 'nowrap'
                     }}>
                         {subStatus.statusLabel}
@@ -483,7 +409,6 @@ const EnhancedStatusChip = ({
     // Render based on display mode
     if (finalDisplayMode === 'master' || !subStatus) {
         return renderMasterOnly();
-<<<<<<< HEAD
     } else if (finalDisplayMode === 'sub' || finalDisplayMode === 'sub-only') {
         // Render only sub-status as a chip with master status colors
         const chipElement = (
@@ -553,8 +478,6 @@ const EnhancedStatusChip = ({
         }
 
         return chipElement;
-=======
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
     } else {
         return renderBoth();
     }

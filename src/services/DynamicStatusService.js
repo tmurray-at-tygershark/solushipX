@@ -6,11 +6,8 @@
 
 import { db } from '../firebase';
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-<<<<<<< HEAD
 import { functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
-=======
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 
 class DynamicStatusService {
     constructor() {
@@ -26,7 +23,6 @@ class DynamicStatusService {
      * Initialize the service by fetching data from database
      */
     async initialize() {
-<<<<<<< HEAD
         if (this.initialized) {
             console.log('[DynamicStatusService] Already initialized, skipping');
             return;
@@ -147,70 +143,6 @@ class DynamicStatusService {
 
         } catch (error) {
             console.error('[DynamicStatusService] Error during initialization:', error);
-=======
-        if (this.initialized) return;
-        
-        if (this.initPromise) {
-            return this.initPromise;
-        }
-
-        this.initPromise = this._fetchStatusData();
-        await this.initPromise;
-        this.initialized = true;
-    }
-
-    /**
-     * Fetch master statuses and shipment statuses from database
-     */
-    async _fetchStatusData() {
-        try {
-            // Fetch master statuses
-            const masterStatusQuery = query(
-                collection(db, 'masterStatuses'),
-                where('enabled', '==', true),
-                orderBy('sortOrder'),
-                orderBy('displayLabel')
-            );
-            
-            const masterStatusSnapshot = await getDocs(masterStatusQuery);
-            this.masterStatuses = [];
-            this.masterStatusMap.clear();
-
-            masterStatusSnapshot.forEach(doc => {
-                const data = { id: doc.id, ...doc.data() };
-                this.masterStatuses.push(data);
-                this.masterStatusMap.set(data.id, data);
-                this.masterStatusMap.set(data.label, data); // Also map by label for lookup
-            });
-
-            // Fetch shipment statuses
-            const shipmentStatusQuery = query(
-                collection(db, 'shipmentStatuses'),
-                where('enabled', '==', true),
-                orderBy('masterStatus'),
-                orderBy('statusLabel')
-            );
-            
-            const shipmentStatusSnapshot = await getDocs(shipmentStatusQuery);
-            this.shipmentStatuses = [];
-            this.shipmentStatusMap.clear();
-
-            shipmentStatusSnapshot.forEach(doc => {
-                const data = { id: doc.id, ...doc.data() };
-                this.shipmentStatuses.push(data);
-                this.shipmentStatusMap.set(data.id, data);
-                this.shipmentStatusMap.set(data.statusCode, data); // Map by status code
-                this.shipmentStatusMap.set(data.statusLabel.toLowerCase(), data); // Map by label
-            });
-
-            console.log('📊 Dynamic Status Service initialized:', {
-                masterStatuses: this.masterStatuses.length,
-                shipmentStatuses: this.shipmentStatuses.length
-            });
-
-        } catch (error) {
-            console.error('❌ Error initializing Dynamic Status Service:', error);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
             throw error;
         }
     }
@@ -270,7 +202,6 @@ class DynamicStatusService {
     }
 
     /**
-<<<<<<< HEAD
      * Get status display configuration for a given status
      * Handles both new dynamic statuses and legacy status mapping
      */
@@ -454,47 +385,10 @@ class DynamicStatusService {
                 sortOrder: 999
             },
             subStatus: null
-=======
-     * Get status display configuration for a shipment
-     * Returns the master status and optional sub-status
-     */
-    getStatusDisplay(shipmentStatusIdentifier) {
-        const shipmentStatus = this.getShipmentStatus(shipmentStatusIdentifier);
-        
-        if (!shipmentStatus) {
-            // Fallback to legacy status handling
-            return this._getLegacyStatusDisplay(shipmentStatusIdentifier);
-        }
-
-        const masterStatus = this.getMasterStatus(shipmentStatus.masterStatus);
-        
-        if (!masterStatus) {
-            console.warn('Master status not found for shipment status:', shipmentStatus);
-            return null;
-        }
-
-        return {
-            masterStatus: {
-                id: masterStatus.id,
-                label: masterStatus.label,
-                displayLabel: masterStatus.displayLabel,
-                description: masterStatus.description,
-                color: masterStatus.color,
-                fontColor: masterStatus.fontColor,
-                sortOrder: masterStatus.sortOrder
-            },
-            subStatus: {
-                id: shipmentStatus.id,
-                statusCode: shipmentStatus.statusCode,
-                statusLabel: shipmentStatus.statusLabel,
-                statusMeaning: shipmentStatus.statusMeaning
-            }
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
         };
     }
 
     /**
-<<<<<<< HEAD
      * Determine the appropriate display mode for a status
      */
     getDisplayMode(statusIdentifier) {
@@ -504,27 +398,6 @@ class DynamicStatusService {
             return 'master';
         }
         
-=======
-     * Determine display mode based on status configuration
-     * Returns 'master' for primary statuses, 'both' for detailed statuses
-     */
-    getDisplayMode(shipmentStatusIdentifier) {
-        const shipmentStatus = this.getShipmentStatus(shipmentStatusIdentifier);
-        
-        if (!shipmentStatus) {
-            return 'master'; // Default to master for legacy statuses
-        }
-
-        const masterStatus = this.getMasterStatus(shipmentStatus.masterStatus);
-        
-        // If the shipment status label is very similar to master status label,
-        // show only master status
-        if (masterStatus && this._isStatusSimilar(shipmentStatus.statusLabel, masterStatus.displayLabel)) {
-            return 'master';
-        }
-
-        // Otherwise show both master and sub-status
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
         return 'both';
     }
 
@@ -537,60 +410,6 @@ class DynamicStatusService {
     }
 
     /**
-<<<<<<< HEAD
-=======
-     * Legacy status display for backward compatibility
-     */
-    _getLegacyStatusDisplay(statusIdentifier) {
-        // Map legacy statuses to closest master status
-        const legacyMapping = {
-            'pending': 'pending',
-            'booked': 'booked',
-            'scheduled': 'scheduled',
-            'in_transit': 'in_transit',
-            'awaiting_shipment': 'scheduled',
-            'delivered': 'completed',
-            'on_hold': 'on_hold',
-            'cancelled': 'cancelled',
-            'canceled': 'cancelled',
-            'void': 'cancelled'
-        };
-
-        const mappedLabel = legacyMapping[statusIdentifier?.toLowerCase()] || 'pending';
-        const masterStatus = this.getMasterStatus(mappedLabel);
-
-        if (masterStatus) {
-            return {
-                masterStatus: {
-                    id: masterStatus.id,
-                    label: masterStatus.label,
-                    displayLabel: masterStatus.displayLabel,
-                    description: masterStatus.description,
-                    color: masterStatus.color,
-                    fontColor: masterStatus.fontColor,
-                    sortOrder: masterStatus.sortOrder
-                },
-                subStatus: null // No sub-status for legacy
-            };
-        }
-
-        // Ultimate fallback
-        return {
-            masterStatus: {
-                id: 'unknown',
-                label: 'unknown',
-                displayLabel: 'Unknown',
-                description: 'Unknown status',
-                color: '#6b7280',
-                fontColor: '#ffffff',
-                sortOrder: 999
-            },
-            subStatus: null
-        };
-    }
-
-    /**
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
      * Get status styling for UI components
      */
     getStatusStyling(shipmentStatusIdentifier) {

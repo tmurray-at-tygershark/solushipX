@@ -1503,412 +1503,400 @@ const ShipmentTableRow = ({
                                     />
                                 </Box>
                             )}
-<<<<<<< HEAD
-=======
-                            <EnhancedStatusChip
-                                status={shipment.status}
-                                size="small"
-                                compact={true}
-                                displayMode="auto"
-                                showTooltip={true}
-                            />
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
-                        </Box >
-                    </TableCell >
+                        </Box>
+                    </TableCell>
                 )}
 
-{/* Expand Button */ }
-<TableCell
-    align="center"
-    sx={{
-        verticalAlign: 'top',
-        padding: '8px 4px',
-        width: 40,
-        minWidth: 40,
-        maxWidth: 40
-    }}
->
-    <IconButton
-        size="small"
-        onClick={() => setExpanded(!expanded)}
-        sx={{
-            color: '#6b7280',
-            '&:hover': {
-                backgroundColor: 'rgba(107, 114, 128, 0.1)'
-            }
-        }}
-    >
-        {expanded ? <ArrowUpIcon fontSize="small" /> : <AddIcon fontSize="small" />}
-    </IconButton>
-</TableCell>
+                {/* Expand Button */}
+                <TableCell
+                    align="center"
+                    sx={{
+                        verticalAlign: 'top',
+                        padding: '8px 4px',
+                        width: 40,
+                        minWidth: 40,
+                        maxWidth: 40
+                    }}
+                >
+                    <IconButton
+                        size="small"
+                        onClick={() => setExpanded(!expanded)}
+                        sx={{
+                            color: '#6b7280',
+                            '&:hover': {
+                                backgroundColor: 'rgba(107, 114, 128, 0.1)'
+                            }
+                        }}
+                    >
+                        {expanded ? <ArrowUpIcon fontSize="small" /> : <AddIcon fontSize="small" />}
+                    </IconButton>
+                </TableCell>
 
-{/* Actions */ }
-{
-    visibleColumns.actions !== false && (
-        <TableCell sx={{
-            verticalAlign: 'top',
-            textAlign: 'right',
-            ...getColumnWidth('actions'),
-            padding: '8px 12px'
-        }} align="right">
-            <IconButton
-                onClick={(e) => onActionMenuOpen(e, shipment)}
-                size="small"
-            >
-                <MoreVertIcon />
-            </IconButton>
-        </TableCell>
-    )
-}
-            </TableRow >
+                {/* Actions */}
+                {visibleColumns.actions !== false && (
+                    <TableCell sx={{
+                        verticalAlign: 'top',
+                        textAlign: 'right',
+                        ...getColumnWidth('actions'),
+                        padding: '8px 12px'
+                    }} align="right">
+                        <IconButton
+                            onClick={(e) => onActionMenuOpen(e, shipment)}
+                            size="small"
+                        >
+                            <MoreVertIcon />
+                        </IconButton>
+                    </TableCell>
+                )}
+            </TableRow>
 
-    {/* Expanded Row Content */ }
-    < TableRow >
-    <TableCell
-        colSpan={adminViewMode ? 12 : 11}
-        sx={{
-            paddingBottom: 0,
-            paddingTop: 0,
-            borderBottom: expanded ? '1px solid #e2e8f0' : 'none'
-        }}
-    >
-        <Collapse in={expanded} timeout="auto" unmountOnExit>
-            <Box sx={{ margin: 2 }}>
+            {/* Expanded Row Content */}
+            <TableRow>
+                <TableCell
+                    colSpan={adminViewMode ? 12 : 11}
+                    sx={{
+                        paddingBottom: 0,
+                        paddingTop: 0,
+                        borderBottom: expanded ? '1px solid #e2e8f0' : 'none'
+                    }}
+                >
+                    <Collapse in={expanded} timeout="auto" unmountOnExit>
+                        <Box sx={{ margin: 2 }}>
 
-                <Grid container spacing={3}>
-                    {/* Route Information */}
-                    <Grid item xs={12} md={6}>
-                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                ROUTE INFORMATION
-                            </Typography>
+                            <Grid container spacing={3}>
+                                {/* Route Information */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            ROUTE INFORMATION
+                                        </Typography>
 
-                            {/* Ship From */}
-                            <Box sx={{ mb: 2 }}>
-                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
-                                    FROM:
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                    {shipment.shipFrom?.companyName || shipment.shipfrom?.companyName || 'N/A'}
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {[
-                                        shipment.shipFrom?.street || shipment.shipfrom?.street,
-                                        shipment.shipFrom?.city || shipment.shipfrom?.city,
-                                        shipment.shipFrom?.state || shipment.shipfrom?.state,
-                                        (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)?.toUpperCase?.() || (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)
-                                    ].filter(Boolean).join(', ')}
-                                </Typography>
-                            </Box>
-
-                            {/* Ship To */}
-                            <Box>
-                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
-                                    TO:
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                    {shipment.shipTo?.companyName || shipment.shipto?.companyName || 'N/A'}
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {[
-                                        shipment.shipTo?.street || shipment.shipto?.street,
-                                        shipment.shipTo?.city || shipment.shipto?.city,
-                                        shipment.shipTo?.state || shipment.shipto?.state,
-                                        (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)?.toUpperCase?.() || (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)
-                                    ].filter(Boolean).join(', ')}
-                                </Typography>
-                            </Box>
-                        </Box>
-                    </Grid>
-
-                    {/* Package Information */}
-                    <Grid item xs={12} md={6}>
-                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                PACKAGE INFORMATION
-                            </Typography>
-
-                            {/* Weight and Dimensions */}
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {(() => {
-                                    const packages = shipment.packages || [];
-                                    const totalWeight = packages.reduce((sum, pkg) =>
-                                        sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0
-                                    );
-                                    const totalPieces = packages.reduce((sum, pkg) =>
-                                        sum + parseInt(pkg.packagingQuantity || 1), 0
-                                    );
-
-                                    return (
-                                        <>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                    Total Weight:
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                    {totalWeight > 0 ? `${totalWeight} lbs` : 'N/A'}
-                                                </Typography>
-                                            </Box>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                    Total Pieces:
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                    {totalPieces > 0 ? totalPieces : 'N/A'}
-                                                </Typography>
-                                            </Box>
-                                            {packages.length > 0 && (
-                                                <Box sx={{ mt: 1 }}>
-                                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280', display: 'block', mb: 0.5 }}>
-                                                        ALL PACKAGES:
-                                                    </Typography>
-                                                    {packages.map((pkg, index) => (
-                                                        <Box key={index} sx={{ mb: 0.5 }}>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                Package {index + 1}: {pkg.length || 0}" × {pkg.width || 0}" × {pkg.height || 0}"
-                                                                {pkg.weight && ` (${pkg.weight} lbs)`}
-                                                                {pkg.packagingQuantity && parseInt(pkg.packagingQuantity) > 1 && ` × ${pkg.packagingQuantity} pieces`}
-                                                            </Typography>
-                                                            {pkg.description && (
-                                                                <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', ml: 1 }}>
-                                                                    {pkg.description}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    ))}
-                                                </Box>
-                                            )}
-                                        </>
-                                    );
-                                })()}
-                            </Box>
-                        </Box>
-                    </Grid>
-
-                    {/* Charges Information */}
-                    {adminViewMode && (
-                        <Grid item xs={12} md={6}>
-                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                    DETAILED CHARGES
-                                </Typography>
-
-                                {(() => {
-                                    // Get detailed charges breakdown from multiple possible sources
-                                    const selectedRate = shipment.selectedRate || shipment.selectedRateRef || {};
-                                    const pricing = selectedRate.pricing || selectedRate || {};
-                                    const manualRates = shipment.manualRates || [];
-                                    const actualRates = shipment.actualRates || {};
-                                    const markupRates = shipment.markupRates || {};
-
-                                    // Get currency from multiple sources
-                                    const currency = pricing.currency ||
-                                        selectedRate.currency ||
-                                        actualRates.currency ||
-                                        markupRates.currency ||
-                                        shipment.currency || 'USD';
-
-                                    // Check if user is admin/super admin (adminViewMode indicates admin access)
-                                    const showCosts = adminViewMode;
-
-                                    // Get all available charge components from multiple data sources
-                                    const chargeComponents = [];
-
-                                    // Method 1: Check for actualRates.billingDetails (Enhanced CreateShipmentX)
-                                    if (actualRates.billingDetails && actualRates.billingDetails.length > 0) {
-                                        actualRates.billingDetails.forEach(detail => {
-                                            if (detail.amount >= 0) { // Include $0.00 amounts
-                                                chargeComponents.push({
-                                                    name: detail.name,
-                                                    cost: parseFloat(detail.amount),
-                                                    charge: parseFloat(detail.amount) // For actualRates, cost = charge
-                                                });
-                                            }
-                                        });
-                                    }
-
-                                    // Method 2: Check for markupRates.billingDetails (Enhanced CreateShipmentX)
-                                    if (chargeComponents.length === 0 && markupRates.billingDetails && markupRates.billingDetails.length > 0) {
-                                        markupRates.billingDetails.forEach(detail => {
-                                            if (detail.amount >= 0) { // Include $0.00 amounts
-                                                // For markup rates, find corresponding actual rate
-                                                const actualDetail = actualRates.billingDetails?.find(ad => ad.name === detail.name);
-                                                chargeComponents.push({
-                                                    name: detail.name,
-                                                    cost: actualDetail ? parseFloat(actualDetail.amount) : parseFloat(detail.amount) * 0.85,
-                                                    charge: parseFloat(detail.amount)
-                                                });
-                                            }
-                                        });
-                                    }
-
-                                    // Method 3: Check for manual rates (QuickShip style)
-                                    if (chargeComponents.length === 0 && manualRates && manualRates.length > 0) {
-                                        manualRates.forEach(rate => {
-                                            if (rate.charge >= 0 || rate.cost >= 0) { // Include $0.00 amounts
-                                                chargeComponents.push({
-                                                    name: rate.chargeName || rate.description || rate.name || 'Manual Rate',
-                                                    cost: parseFloat(rate.cost) || 0,
-                                                    charge: parseFloat(rate.charge) || 0
-                                                });
-                                            }
-                                        });
-                                    }
-
-                                    // Method 4: Check pricing breakdown (standard structure)
-                                    if (chargeComponents.length === 0) {
-                                        // Base freight charges
-                                        if (pricing.freight >= 0) { // Include $0.00 amounts
-                                            chargeComponents.push({
-                                                name: 'Freight',
-                                                cost: pricing.freightCost || pricing.freight * 0.8,
-                                                charge: pricing.freight
-                                            });
-                                        }
-
-                                        // Fuel surcharge
-                                        if (pricing.fuel >= 0) { // Include $0.00 amounts
-                                            chargeComponents.push({
-                                                name: 'Fuel Surcharge',
-                                                cost: pricing.fuelCost || pricing.fuel * 0.85,
-                                                charge: pricing.fuel
-                                            });
-                                        }
-
-                                        // Service charges
-                                        if (pricing.service >= 0) { // Include $0.00 amounts
-                                            chargeComponents.push({
-                                                name: 'Service Fees',
-                                                cost: pricing.serviceCost || pricing.service * 0.9,
-                                                charge: pricing.service
-                                            });
-                                        }
-
-                                        // Additional charges
-                                        if (pricing.accessorial >= 0) { // Include $0.00 amounts
-                                            chargeComponents.push({
-                                                name: 'Accessorial',
-                                                cost: pricing.accessorialCost || pricing.accessorial * 0.85,
-                                                charge: pricing.accessorial
-                                            });
-                                        }
-
-                                        if (pricing.insurance >= 0) { // Include $0.00 amounts
-                                            chargeComponents.push({
-                                                name: 'Insurance',
-                                                cost: pricing.insuranceCost || pricing.insurance * 0.7,
-                                                charge: pricing.insurance
-                                            });
-                                        }
-                                    }
-
-                                    // Method 5: Check alternative field names
-                                    if (chargeComponents.length === 0) {
-                                        // Check for common alternative field names
-                                        const altFields = [
-                                            { name: 'Base Rate', cost: selectedRate.baseRate || selectedRate.baseCost, charge: selectedRate.baseCharge || selectedRate.baseRate },
-                                            { name: 'Freight', cost: selectedRate.freightCost, charge: selectedRate.freightCharge || selectedRate.freight },
-                                            { name: 'Fuel', cost: selectedRate.fuelCost, charge: selectedRate.fuelCharge || selectedRate.fuel },
-                                            { name: 'Accessorial', cost: selectedRate.accessorialCost, charge: selectedRate.accessorialCharge || selectedRate.accessorial }
-                                        ];
-
-                                        altFields.forEach(field => {
-                                            if (field.charge >= 0 || field.cost >= 0) { // Include $0.00 amounts
-                                                chargeComponents.push({
-                                                    name: field.name,
-                                                    cost: parseFloat(field.cost) || 0,
-                                                    charge: parseFloat(field.charge) || 0
-                                                });
-                                            }
-                                        });
-                                    }
-
-                                    // Calculate totals
-                                    const totalCost = chargeComponents.reduce((sum, item) => sum + item.cost, 0);
-                                    const totalCharge = chargeComponents.reduce((sum, item) => sum + item.charge, 0);
-                                    const finalTotal = pricing.total ||
-                                        totalCharge ||
-                                        markupRates.totalCharges ||
-                                        selectedRate.totalCharges ||
-                                        selectedRate.price ||
-                                        shipment.totalCharges || 0;
-
-                                    return (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                            {chargeComponents.length > 0 ? (
-                                                <>
-                                                    {chargeComponents.map((component, index) => (
-                                                        <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                {component.name}:
-                                                            </Typography>
-                                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                                {showCosts ? (
-                                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                        <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)} {currency}</span>
-                                                                        <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
-                                                                        <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)} {currency}</span>
-                                                                    </Typography>
-                                                                ) : (
-                                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
-                                                                        ${(component.charge || 0).toFixed(2)} {currency}
-                                                                    </Typography>
-                                                                )}
-                                                            </Box>
-                                                        </Box>
-                                                    ))}
-                                                    <Divider sx={{ my: 0.5 }} />
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                            Total:
-                                                        </Typography>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                            {showCosts ? (
-                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                                    <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)} {currency}</span>
-                                                                    <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
-                                                                    <span style={{ color: '#374151' }}>${(finalTotal || 0).toFixed(2)} {currency}</span>
-                                                                </Typography>
-                                                            ) : (
-                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                                    ${(finalTotal || 0).toFixed(2)} {currency}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    </Box>
-                                                </>
-                                            ) : (
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                        Total Charges:
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                        ${finalTotal.toFixed(2)} {currency}
-                                                    </Typography>
-                                                </Box>
-                                            )}
+                                        {/* Ship From */}
+                                        <Box sx={{ mb: 2 }}>
+                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
+                                                FROM:
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {shipment.shipFrom?.companyName || shipment.shipfrom?.companyName || 'N/A'}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                {[
+                                                    shipment.shipFrom?.street || shipment.shipfrom?.street,
+                                                    shipment.shipFrom?.city || shipment.shipfrom?.city,
+                                                    shipment.shipFrom?.state || shipment.shipfrom?.state,
+                                                    (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)?.toUpperCase?.() || (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)
+                                                ].filter(Boolean).join(', ')}
+                                            </Typography>
                                         </Box>
-                                    );
-                                })()}
-                            </Box>
-                        </Grid>
-                    )}
 
-                    {/* Documents */}
-                    <Grid item xs={12} md={adminViewMode ? 6 : 12}>
-                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                DOCUMENTS
-                            </Typography>
+                                        {/* Ship To */}
+                                        <Box>
+                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
+                                                TO:
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {shipment.shipTo?.companyName || shipment.shipto?.companyName || 'N/A'}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                {[
+                                                    shipment.shipTo?.street || shipment.shipto?.street,
+                                                    shipment.shipTo?.city || shipment.shipto?.city,
+                                                    shipment.shipTo?.state || shipment.shipto?.state,
+                                                    (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)?.toUpperCase?.() || (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)
+                                                ].filter(Boolean).join(', ')}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </Grid>
 
-                            <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} />
+                                {/* Package Information */}
+                                <Grid item xs={12} md={6}>
+                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            PACKAGE INFORMATION
+                                        </Typography>
+
+                                        {/* Weight and Dimensions */}
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                            {(() => {
+                                                const packages = shipment.packages || [];
+                                                const totalWeight = packages.reduce((sum, pkg) =>
+                                                    sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0
+                                                );
+                                                const totalPieces = packages.reduce((sum, pkg) =>
+                                                    sum + parseInt(pkg.packagingQuantity || 1), 0
+                                                );
+
+                                                return (
+                                                    <>
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                Total Weight:
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                                {totalWeight > 0 ? `${totalWeight} lbs` : 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                Total Pieces:
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                                {totalPieces > 0 ? totalPieces : 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                        {packages.length > 0 && (
+                                                            <Box sx={{ mt: 1 }}>
+                                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280', display: 'block', mb: 0.5 }}>
+                                                                    ALL PACKAGES:
+                                                                </Typography>
+                                                                {packages.map((pkg, index) => (
+                                                                    <Box key={index} sx={{ mb: 0.5 }}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                                            Package {index + 1}: {pkg.length || 0}" × {pkg.width || 0}" × {pkg.height || 0}"
+                                                                            {pkg.weight && ` (${pkg.weight} lbs)`}
+                                                                            {pkg.packagingQuantity && parseInt(pkg.packagingQuantity) > 1 && ` × ${pkg.packagingQuantity} pieces`}
+                                                                        </Typography>
+                                                                        {pkg.description && (
+                                                                            <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', ml: 1 }}>
+                                                                                {pkg.description}
+                                                                            </Typography>
+                                                                        )}
+                                                                    </Box>
+                                                                ))}
+                                                            </Box>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </Box>
+                                    </Box>
+                                </Grid>
+
+                                {/* Charges Information */}
+                                {adminViewMode && (
+                                    <Grid item xs={12} md={6}>
+                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                DETAILED CHARGES
+                                            </Typography>
+
+                                            {(() => {
+                                                // Get detailed charges breakdown from multiple possible sources
+                                                const selectedRate = shipment.selectedRate || shipment.selectedRateRef || {};
+                                                const pricing = selectedRate.pricing || selectedRate || {};
+                                                const manualRates = shipment.manualRates || [];
+                                                const actualRates = shipment.actualRates || {};
+                                                const markupRates = shipment.markupRates || {};
+
+                                                // Get currency from multiple sources
+                                                const currency = pricing.currency ||
+                                                    selectedRate.currency ||
+                                                    actualRates.currency ||
+                                                    markupRates.currency ||
+                                                    shipment.currency || 'USD';
+
+                                                // Check if user is admin/super admin (adminViewMode indicates admin access)
+                                                const showCosts = adminViewMode;
+
+                                                // Get all available charge components from multiple data sources
+                                                const chargeComponents = [];
+
+                                                // Method 1: Check for actualRates.billingDetails (Enhanced CreateShipmentX)
+                                                if (actualRates.billingDetails && actualRates.billingDetails.length > 0) {
+                                                    actualRates.billingDetails.forEach(detail => {
+                                                        if (detail.amount >= 0) { // Include $0.00 amounts
+                                                            chargeComponents.push({
+                                                                name: detail.name,
+                                                                cost: parseFloat(detail.amount),
+                                                                charge: parseFloat(detail.amount) // For actualRates, cost = charge
+                                                            });
+                                                        }
+                                                    });
+                                                }
+
+                                                // Method 2: Check for markupRates.billingDetails (Enhanced CreateShipmentX)
+                                                if (chargeComponents.length === 0 && markupRates.billingDetails && markupRates.billingDetails.length > 0) {
+                                                    markupRates.billingDetails.forEach(detail => {
+                                                        if (detail.amount >= 0) { // Include $0.00 amounts
+                                                            // For markup rates, find corresponding actual rate
+                                                            const actualDetail = actualRates.billingDetails?.find(ad => ad.name === detail.name);
+                                                            chargeComponents.push({
+                                                                name: detail.name,
+                                                                cost: actualDetail ? parseFloat(actualDetail.amount) : parseFloat(detail.amount) * 0.85,
+                                                                charge: parseFloat(detail.amount)
+                                                            });
+                                                        }
+                                                    });
+                                                }
+
+                                                // Method 3: Check for manual rates (QuickShip style)
+                                                if (chargeComponents.length === 0 && manualRates && manualRates.length > 0) {
+                                                    manualRates.forEach(rate => {
+                                                        if (rate.charge >= 0 || rate.cost >= 0) { // Include $0.00 amounts
+                                                            chargeComponents.push({
+                                                                name: rate.chargeName || rate.description || rate.name || 'Manual Rate',
+                                                                cost: parseFloat(rate.cost) || 0,
+                                                                charge: parseFloat(rate.charge) || 0
+                                                            });
+                                                        }
+                                                    });
+                                                }
+
+                                                // Method 4: Check pricing breakdown (standard structure)
+                                                if (chargeComponents.length === 0) {
+                                                    // Base freight charges
+                                                    if (pricing.freight >= 0) { // Include $0.00 amounts
+                                                        chargeComponents.push({
+                                                            name: 'Freight',
+                                                            cost: pricing.freightCost || pricing.freight * 0.8,
+                                                            charge: pricing.freight
+                                                        });
+                                                    }
+
+                                                    // Fuel surcharge
+                                                    if (pricing.fuel >= 0) { // Include $0.00 amounts
+                                                        chargeComponents.push({
+                                                            name: 'Fuel Surcharge',
+                                                            cost: pricing.fuelCost || pricing.fuel * 0.85,
+                                                            charge: pricing.fuel
+                                                        });
+                                                    }
+
+                                                    // Service charges
+                                                    if (pricing.service >= 0) { // Include $0.00 amounts
+                                                        chargeComponents.push({
+                                                            name: 'Service Fees',
+                                                            cost: pricing.serviceCost || pricing.service * 0.9,
+                                                            charge: pricing.service
+                                                        });
+                                                    }
+
+                                                    // Additional charges
+                                                    if (pricing.accessorial >= 0) { // Include $0.00 amounts
+                                                        chargeComponents.push({
+                                                            name: 'Accessorial',
+                                                            cost: pricing.accessorialCost || pricing.accessorial * 0.85,
+                                                            charge: pricing.accessorial
+                                                        });
+                                                    }
+
+                                                    if (pricing.insurance >= 0) { // Include $0.00 amounts
+                                                        chargeComponents.push({
+                                                            name: 'Insurance',
+                                                            cost: pricing.insuranceCost || pricing.insurance * 0.7,
+                                                            charge: pricing.insurance
+                                                        });
+                                                    }
+                                                }
+
+                                                // Method 5: Check alternative field names
+                                                if (chargeComponents.length === 0) {
+                                                    // Check for common alternative field names
+                                                    const altFields = [
+                                                        { name: 'Base Rate', cost: selectedRate.baseRate || selectedRate.baseCost, charge: selectedRate.baseCharge || selectedRate.baseRate },
+                                                        { name: 'Freight', cost: selectedRate.freightCost, charge: selectedRate.freightCharge || selectedRate.freight },
+                                                        { name: 'Fuel', cost: selectedRate.fuelCost, charge: selectedRate.fuelCharge || selectedRate.fuel },
+                                                        { name: 'Accessorial', cost: selectedRate.accessorialCost, charge: selectedRate.accessorialCharge || selectedRate.accessorial }
+                                                    ];
+
+                                                    altFields.forEach(field => {
+                                                        if (field.charge >= 0 || field.cost >= 0) { // Include $0.00 amounts
+                                                            chargeComponents.push({
+                                                                name: field.name,
+                                                                cost: parseFloat(field.cost) || 0,
+                                                                charge: parseFloat(field.charge) || 0
+                                                            });
+                                                        }
+                                                    });
+                                                }
+
+                                                // Calculate totals
+                                                const totalCost = chargeComponents.reduce((sum, item) => sum + item.cost, 0);
+                                                const totalCharge = chargeComponents.reduce((sum, item) => sum + item.charge, 0);
+                                                const finalTotal = pricing.total ||
+                                                    totalCharge ||
+                                                    markupRates.totalCharges ||
+                                                    selectedRate.totalCharges ||
+                                                    selectedRate.price ||
+                                                    shipment.totalCharges || 0;
+
+                                                return (
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        {chargeComponents.length > 0 ? (
+                                                            <>
+                                                                {chargeComponents.map((component, index) => (
+                                                                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                            {component.name}:
+                                                                        </Typography>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                            {showCosts ? (
+                                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                                                    <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)} {currency}</span>
+                                                                                    <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
+                                                                                    <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)} {currency}</span>
+                                                                                </Typography>
+                                                                            ) : (
+                                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
+                                                                                    ${(component.charge || 0).toFixed(2)} {currency}
+                                                                                </Typography>
+                                                                            )}
+                                                                        </Box>
+                                                                    </Box>
+                                                                ))}
+                                                                <Divider sx={{ my: 0.5 }} />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                                        Total:
+                                                                    </Typography>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                        {showCosts ? (
+                                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                                                <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)} {currency}</span>
+                                                                                <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
+                                                                                <span style={{ color: '#374151' }}>${(finalTotal || 0).toFixed(2)} {currency}</span>
+                                                                            </Typography>
+                                                                        ) : (
+                                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                                                ${(finalTotal || 0).toFixed(2)} {currency}
+                                                                            </Typography>
+                                                                        )}
+                                                                    </Box>
+                                                                </Box>
+                                                            </>
+                                                        ) : (
+                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    Total Charges:
+                                                                </Typography>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
+                                                                    ${finalTotal.toFixed(2)} {currency}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                );
+                                            })()}
+                                        </Box>
+                                    </Grid>
+                                )}
+
+                                {/* Documents */}
+                                <Grid item xs={12} md={adminViewMode ? 6 : 12}>
+                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            DOCUMENTS
+                                        </Typography>
+
+                                        <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} />
+                                    </Box>
+                                </Grid>
+                            </Grid>
                         </Box>
-                    </Grid>
-                </Grid>
-            </Box>
-        </Collapse>
-    </TableCell>
-            </TableRow >
+                    </Collapse>
+                </TableCell>
+            </TableRow>
         </>
     );
 };

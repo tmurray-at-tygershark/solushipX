@@ -12,7 +12,6 @@ import {
     CircularProgress,
     IconButton,
     Tooltip,
-<<<<<<< HEAD
     Card,
     CardContent,
     Grid,
@@ -22,12 +21,6 @@ import {
     StepLabel,
     StepContent,
     ButtonGroup
-=======
-    Autocomplete,
-    TextField,
-    ListItemText,
-    ListItemIcon
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 } from '@mui/material';
 import {
     Edit as EditIcon,
@@ -35,14 +28,10 @@ import {
     Check as CheckIcon,
     Close as CloseIcon,
     Category as CategoryIcon,
-<<<<<<< HEAD
     List as ListIcon,
     ArrowForward as ArrowForwardIcon,
     ArrowBack as ArrowBackIcon,
     Done as DoneIcon
-=======
-    List as ListIcon
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase';
@@ -57,7 +46,6 @@ const ManualStatusOverride = ({
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-<<<<<<< HEAD
     const [selectedMasterStatus, setSelectedMasterStatus] = useState(null);
     const [selectedSubStatus, setSelectedSubStatus] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -65,13 +53,6 @@ const ManualStatusOverride = ({
     const [masterStatuses, setMasterStatuses] = useState([]);
     const [subStatuses, setSubStatuses] = useState([]);
     const [step, setStep] = useState(0); // 0 = master status, 1 = sub status (optional)
-=======
-    const [selectedStatus, setSelectedStatus] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [statusesLoading, setStatusesLoading] = useState(true);
-    const [availableStatuses, setAvailableStatuses] = useState([]);
-    const [masterStatuses, setMasterStatuses] = useState([]);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
     const [error, setError] = useState(null);
 
     const currentStatus = shipment?.status;
@@ -87,7 +68,6 @@ const ManualStatusOverride = ({
                 // Initialize the dynamic status service
                 await dynamicStatusService.initialize();
 
-<<<<<<< HEAD
                 // Get all available statuses
                 const allMasterStatuses = dynamicStatusService.getMasterStatuses();
                 const allSubStatuses = dynamicStatusService.getShipmentStatuses();
@@ -98,18 +78,6 @@ const ManualStatusOverride = ({
                 console.log('📊 Enhanced Manual Status Override loaded:', {
                     masterStatuses: allMasterStatuses.length,
                     subStatuses: allSubStatuses.length
-=======
-                // Get all available statuses for manual override
-                const masterStatuses = dynamicStatusService.getMasterStatuses();
-                const shipmentStatuses = dynamicStatusService.getShipmentStatuses();
-
-                setMasterStatuses(masterStatuses);
-                setAvailableStatuses(shipmentStatuses);
-
-                console.log('📊 Manual Status Override loaded:', {
-                    masterStatuses: masterStatuses.length,
-                    shipmentStatuses: shipmentStatuses.length
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 });
 
             } catch (err) {
@@ -130,7 +98,6 @@ const ManualStatusOverride = ({
         return dynamicStatusService.getStatusDisplay(currentStatus);
     };
 
-<<<<<<< HEAD
     // Get sub-statuses for selected master status
     const getSubStatusesForMaster = () => {
         if (!selectedMasterStatus) return [];
@@ -141,36 +108,11 @@ const ManualStatusOverride = ({
         setSelectedMasterStatus(null);
         setSelectedSubStatus(null);
         setStep(0);
-=======
-    // Group statuses by master status for better UX
-    const getGroupedStatuses = () => {
-        const grouped = {};
-
-        availableStatuses.forEach(status => {
-            const masterStatus = masterStatuses.find(ms => ms.id === status.masterStatus);
-            if (masterStatus) {
-                if (!grouped[masterStatus.id]) {
-                    grouped[masterStatus.id] = {
-                        masterStatus,
-                        statuses: []
-                    };
-                }
-                grouped[masterStatus.id].statuses.push(status);
-            }
-        });
-
-        return Object.values(grouped).sort((a, b) => a.masterStatus.sortOrder - b.masterStatus.sortOrder);
-    };
-
-    const handleEditClick = () => {
-        setSelectedStatus(null);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
         setIsEditing(true);
     };
 
     const handleCancelEdit = () => {
         setIsEditing(false);
-<<<<<<< HEAD
         setSelectedMasterStatus(null);
         setSelectedSubStatus(null);
         setStep(0);
@@ -220,17 +162,6 @@ const ManualStatusOverride = ({
                 finalStatus: finalStatus
             });
 
-=======
-        setSelectedStatus(null);
-    };
-
-    const handleStatusChange = (event, newValue) => {
-        setSelectedStatus(newValue);
-    };
-
-    const handleConfirm = () => {
-        if (selectedStatus && selectedStatus.id !== currentStatus) {
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
             setConfirmDialogOpen(true);
         } else {
             setIsEditing(false);
@@ -299,12 +230,7 @@ const ManualStatusOverride = ({
 
             const result = await updateManualStatusFunction({
                 shipmentId: shipment.id,
-<<<<<<< HEAD
                 newStatus: legacyStatusCode, // Send legacy-compatible status code
-=======
-                newStatus: selectedStatus.statusLabel, // Use the status label
-                newStatusCode: selectedStatus.statusCode, // Include status code
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 previousStatus: currentStatus,
                 reason: selectedSubStatus ?
                     `Manual status override: ${selectedMasterStatus.displayLabel} → ${selectedSubStatus.statusLabel}` :
@@ -316,31 +242,19 @@ const ManualStatusOverride = ({
             });
 
             if (result.data.success) {
-<<<<<<< HEAD
                 const statusLabel = selectedSubStatus ? selectedSubStatus.statusLabel : selectedMasterStatus.displayLabel;
                 onShowSnackbar(`Status manually updated to ${statusLabel}`, 'success');
 
                 // Call the callback to refresh shipment data
                 if (onStatusUpdated) {
                     onStatusUpdated(legacyStatusCode); // Use the legacy status code for updates
-=======
-                onShowSnackbar(`Status manually updated to ${selectedStatus.statusLabel}`, 'success');
-
-                // Call the callback to refresh shipment data
-                if (onStatusUpdated) {
-                    onStatusUpdated(selectedStatus.statusLabel);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                 }
 
                 setIsEditing(false);
                 setConfirmDialogOpen(false);
-<<<<<<< HEAD
                 setSelectedMasterStatus(null);
                 setSelectedSubStatus(null);
                 setStep(0);
-=======
-                setSelectedStatus(null);
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
             } else {
                 throw new Error(result.data.error || 'Failed to update status');
             }
@@ -352,7 +266,6 @@ const ManualStatusOverride = ({
         }
     };
 
-<<<<<<< HEAD
     // Get enhanced status from shipment's statusOverride if available
     const getEnhancedStatusFromShipment = () => {
         // Check if there's enhanced status information in statusOverride
@@ -363,31 +276,6 @@ const ManualStatusOverride = ({
         // Fall back to the legacy status
         return currentStatus;
     };
-=======
-    // Loading state
-    if (statusesLoading) {
-        return (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CircularProgress size={16} />
-                <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                    Loading statuses...
-                </Typography>
-            </Box>
-        );
-    }
-
-    // Error state
-    if (error) {
-        return (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <WarningIcon color="error" sx={{ fontSize: 16 }} />
-                <Typography variant="body2" sx={{ fontSize: '12px', color: 'error.main' }}>
-                    Error loading statuses
-                </Typography>
-            </Box>
-        );
-    }
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
 
     // Loading state
     if (statusesLoading) {
@@ -417,7 +305,6 @@ const ManualStatusOverride = ({
         <Box>
             {/* Current Status Display */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-<<<<<<< HEAD
                 <EnhancedStatusChip
                     status={getEnhancedStatusFromShipment()}
                     size="small"
@@ -437,20 +324,20 @@ const ManualStatusOverride = ({
                         <EditIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                 </Tooltip>
-            </Box >
+            </Box>
 
-    {/* Enhanced Status Selection Dialog */ }
-    < Dialog
-open = { isEditing }
-onClose = { handleCancelEdit }
-maxWidth = "md"
-fullWidth
-PaperProps = {{
-    sx: {
-        borderRadius: 2,
-            minHeight: '500px'
-    }
-}}
+            {/* Enhanced Status Selection Dialog */}
+            <Dialog
+                open={isEditing}
+                onClose={handleCancelEdit}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        minHeight: '500px'
+                    }
+                }}
             >
                 <DialogTitle sx={{
                     display: 'flex',
@@ -716,141 +603,15 @@ PaperProps = {{
                         Cancel
                     </Button>
                 </DialogActions>
-            </Dialog >
-=======
-                {!isEditing ? (
-                    <>
-                        <EnhancedStatusChip
-                            status={currentStatus}
-                            size="small"
-                            displayMode="master"
-                            showTooltip={true}
-                        />
-                        {isManuallyOverridden && (
-                            <Tooltip title="Status manually overridden">
-                                <Chip
-                                    icon={<EditIcon sx={{ fontSize: '12px !important' }} />}
-                                    label="Manual"
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{
-                                        height: '20px',
-                                        fontSize: '10px',
-                                        color: 'orange',
-                                        borderColor: 'orange',
-                                        '& .MuiChip-icon': {
-                                            fontSize: '12px',
-                                            color: 'orange'
-                                        }
-                                    }}
-                                />
-                            </Tooltip>
-                        )}
-                        <Tooltip title="Override status manually">
-                            <IconButton
-                                size="small"
-                                onClick={handleEditClick}
-                                disabled={disabled}
-                                sx={{
-                                    padding: '4px',
-                                    '&:hover': { bgcolor: 'action.hover' }
-                                }}
-                            >
-                                <EditIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </>
-                ) : (
-                    <>
-                        {/* Status Selection Dropdown */}
-                        <Autocomplete
-                            value={selectedStatus}
-                            onChange={handleStatusChange}
-                            options={availableStatuses}
-                            getOptionLabel={(option) => option.statusLabel}
-                            groupBy={(option) => {
-                                const masterStatus = masterStatuses.find(ms => ms.id === option.masterStatus);
-                                return masterStatus ? masterStatus.displayLabel : 'Other';
-                            }}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    size="small"
-                                    sx={{ minWidth: 200 }}
-                                    placeholder="Select status..."
-                                />
-                            )}
-                            renderOption={(props, option) => {
-                                const masterStatus = masterStatuses.find(ms => ms.id === option.masterStatus);
-                                return (
-                                    <Box component="li" {...props}>
-                                        <ListItemIcon sx={{ minWidth: 32 }}>
-                                            <ListIcon sx={{ fontSize: 16, color: masterStatus?.color || '#6b7280' }} />
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={option.statusLabel}
-                                            secondary={option.statusMeaning}
-                                            primaryTypographyProps={{ fontSize: '12px' }}
-                                            secondaryTypographyProps={{ fontSize: '11px' }}
-                                        />
-                                    </Box>
-                                );
-                            }}
-                            renderGroup={(params) => {
-                                const masterStatus = masterStatuses.find(ms => ms.displayLabel === params.group);
-                                return (
-                                    <Box key={params.key}>
-                                        <Box sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
-                                            p: 1,
-                                            backgroundColor: masterStatus?.color + '10' || '#f5f5f5',
-                                            borderBottom: `2px solid ${masterStatus?.color || '#e0e0e0'}`
-                                        }}>
-                                            <CategoryIcon sx={{ fontSize: 14, color: masterStatus?.color || '#6b7280' }} />
-                                            <Typography variant="subtitle2" sx={{
-                                                fontSize: '11px',
-                                                fontWeight: 600,
-                                                color: masterStatus?.color || '#6b7280'
-                                            }}>
-                                                {params.group}
-                                            </Typography>
-                                        </Box>
-                                        {params.children}
-                                    </Box>
-                                );
-                            }}
-                        />
+            </Dialog>
 
-                        {/* Action Buttons */}
-                        <IconButton
-                            size="small"
-                            onClick={handleConfirm}
-                            disabled={!selectedStatus}
-                            sx={{ color: 'success.main' }}
-                        >
-                            <CheckIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                        <IconButton
-                            size="small"
-                            onClick={handleCancelEdit}
-                            sx={{ color: 'error.main' }}
-                        >
-                            <CloseIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </>
-                )}
-            </Box>
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
-
-    {/* Confirmation Dialog */ }
-    < Dialog
-open = { confirmDialogOpen }
-onClose = {() => setConfirmDialogOpen(false)}
-maxWidth = "sm"
-fullWidth
-    >
+            {/* Confirmation Dialog */}
+            <Dialog
+                open={confirmDialogOpen}
+                onClose={() => setConfirmDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
                 <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <WarningIcon color="warning" />
                     <Typography variant="h6">Confirm Status Override</Typography>
@@ -860,141 +621,81 @@ fullWidth
                         <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
                             Important: Manual Status Override
                         </Typography>
-<<<<<<< HEAD
-=======
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                            You are about to manually override the shipment status. This action will:
+                        <Typography variant="body2">
+                            You are about to manually override the shipment status.
                         </Typography>
-                        <Box component="ul" sx={{ pl: 2, mb: 1 }}>
-                            <li>Change the status to <strong>{selectedStatus?.statusLabel}</strong></li>
-                            <li>Prevent automatic status updates from the carrier</li>
-                            <li>Mark this shipment as manually managed</li>
-                            <li>Create an audit trail entry</li>
-                        </Box>
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
-<Typography variant="body2">
-    You are about to manually override the shipment status.
-</Typography>
-                    </Alert >
+                    </Alert>
 
-    {/* Status Change Preview */ }
-    < Box sx = {{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                    {/* Status Change Preview */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <Typography variant="caption" color="text.secondary">Current</Typography>
                             <EnhancedStatusChip
                                 status={currentStatus}
                                 size="small"
-<<<<<<< HEAD
                                 displayMode="auto"
-=======
-                                displayMode="master"
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
                             />
                         </Box>
                         <ArrowForwardIcon color="primary" />
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <Typography variant="caption" color="text.secondary">New</Typography>
-<<<<<<< HEAD
-<Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-    <Chip
-        label={selectedMasterStatus?.displayLabel}
-        size="small"
-        sx={{
-            backgroundColor: selectedMasterStatus?.color,
-            color: selectedMasterStatus?.fontColor,
-            fontSize: '11px',
-            fontWeight: 600
-        }}
-    />
-    {selectedSubStatus && (
-        <Chip
-            label={selectedSubStatus.statusLabel}
-            size="small"
-            sx={{
-                backgroundColor: selectedMasterStatus?.color,
-                color: selectedMasterStatus?.fontColor,
-                fontSize: '10px',
-                fontWeight: 500,
-                height: '20px'
-            }}
-        />
-    )}
-</Box>
-=======
-                            {selectedStatus && (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                                    {/* Show master status */}
-                                    {(() => {
-                                        const masterStatus = masterStatuses.find(ms => ms.id === selectedStatus.masterStatus);
-                                        return masterStatus ? (
-                                            <Chip
-                                                label={masterStatus.displayLabel}
-                                                size="small"
-                                                sx={{
-                                                    backgroundColor: masterStatus.color,
-                                                    color: masterStatus.fontColor,
-                                                    fontSize: '11px',
-                                                    fontWeight: 600
-                                                }}
-                                            />
-                                        ) : null;
-                                    })()}
-                                    {/* Show sub-status */}
-                                    <Typography sx={{
-                                        fontSize: '10px',
-                                        color: '#6b7280',
-                                        textAlign: 'center'
-                                    }}>
-                                        {selectedStatus.statusLabel}
-                                    </Typography>
-                                </Box>
-                            )}
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
-                        </Box >
-                    </Box >
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                                <Chip
+                                    label={selectedMasterStatus?.displayLabel}
+                                    size="small"
+                                    sx={{
+                                        backgroundColor: selectedMasterStatus?.color,
+                                        color: selectedMasterStatus?.fontColor,
+                                        fontSize: '11px',
+                                        fontWeight: 600
+                                    }}
+                                />
+                                {selectedSubStatus && (
+                                    <Chip
+                                        label={selectedSubStatus.statusLabel}
+                                        size="small"
+                                        sx={{
+                                            backgroundColor: selectedMasterStatus?.color,
+                                            color: selectedMasterStatus?.fontColor,
+                                            fontSize: '10px',
+                                            fontWeight: 500,
+                                            height: '20px'
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                        </Box>
+                    </Box>
 
-    {/* Status meaning */ }
-<<<<<<< HEAD
-    < Box sx = {{ mt: 2, p: 2, backgroundColor: '#f8fafc', borderRadius: 1 }}>
+                    {/* Status meaning */}
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#f8fafc', borderRadius: 1 }}>
                         <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 0.5 }}>
                             What this means:
                         </Typography>
                         <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
                             {selectedSubStatus ? selectedSubStatus.statusMeaning : selectedMasterStatus?.description}
                         </Typography>
-                    </Box >
-=======
-                    {selectedStatus && (
-                        <Box sx={{ mt: 2, p: 2, backgroundColor: '#f8fafc', borderRadius: 1 }}>
-                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 0.5 }}>
-                                What this means:
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                {selectedStatus.statusMeaning}
-                            </Typography>
-                        </Box>
-                    )}
->>>>>>> c0e02a1c3ec0a73a452d45f7a8a3116c12d1d4df
-                </DialogContent >
-    <DialogActions>
-        <Button
-            onClick={() => setConfirmDialogOpen(false)}
-            disabled={loading}
-        >
-            Cancel
-        </Button>
-        <Button
-            onClick={handleConfirmStatusOverride}
-            disabled={loading}
-            variant="contained"
-            color="warning"
-            startIcon={loading ? <CircularProgress size={16} /> : null}
-        >
-            {loading ? 'Updating...' : 'Override Status'}
-        </Button>
-    </DialogActions>
-            </Dialog >
-        </Box >
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setConfirmDialogOpen(false)}
+                        disabled={loading}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleConfirmStatusOverride}
+                        disabled={loading}
+                        variant="contained"
+                        color="warning"
+                        startIcon={loading ? <CircularProgress size={16} /> : null}
+                    >
+                        {loading ? 'Updating...' : 'Override Status'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
     );
 };
 

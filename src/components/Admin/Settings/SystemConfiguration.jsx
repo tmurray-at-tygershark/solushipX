@@ -627,20 +627,7 @@ const SystemConfiguration = () => {
 
     // Drag and Drop handlers
     const handleMasterStatusDragEnd = async (result) => {
-        // Validate drag result
-        if (!result || !result.destination || !result.source) {
-            return;
-        }
-
-        // Prevent unnecessary updates
-        if (result.destination.index === result.source.index) {
-            return;
-        }
-
-        // Validate items array
-        if (!masterStatuses || masterStatuses.length === 0) {
-            return;
-        }
+        if (!result.destination) return;
 
         const items = Array.from(masterStatuses);
         const [reorderedItem] = items.splice(result.source.index, 1);
@@ -652,7 +639,6 @@ const SystemConfiguration = () => {
         try {
             // Update sort orders in batch
             const updatePromises = items.map((item, index) => {
-                if (!item || !item.id) return Promise.resolve();
                 const updateFunction = httpsCallable(functions, 'updateMasterStatus');
                 return updateFunction({
                     masterStatusId: item.id,
@@ -671,20 +657,7 @@ const SystemConfiguration = () => {
     };
 
     const handleShipmentStatusDragEnd = async (result) => {
-        // Validate drag result
-        if (!result || !result.destination || !result.source) {
-            return;
-        }
-
-        // Prevent unnecessary updates
-        if (result.destination.index === result.source.index) {
-            return;
-        }
-
-        // Validate items array
-        if (!shipmentStatuses || shipmentStatuses.length === 0) {
-            return;
-        }
+        if (!result.destination) return;
 
         const items = Array.from(shipmentStatuses);
         const [reorderedItem] = items.splice(result.source.index, 1);
@@ -696,7 +669,6 @@ const SystemConfiguration = () => {
         try {
             // Update sort orders in batch
             const updatePromises = items.map((item, index) => {
-                if (!item || !item.id) return Promise.resolve();
                 const updateFunction = httpsCallable(functions, 'updateShipmentStatus');
                 return updateFunction({
                     shipmentStatusId: item.id,
@@ -1121,7 +1093,7 @@ const SystemConfiguration = () => {
                                                 {statusesLoading ? (
                                                     <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3 }}>
+                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
                                                                 <CircularProgress size={24} />
                                                             </TableCell>
                                                         </TableRow>
@@ -1129,7 +1101,7 @@ const SystemConfiguration = () => {
                                                 ) : shipmentStatuses.length === 0 ? (
                                                     <TableBody>
                                                         <TableRow>
-                                                            <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                            <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
                                                                 No shipment statuses configured. Click "Add Shipment Status" to get started.
                                                             </TableCell>
                                                         </TableRow>
@@ -1161,7 +1133,7 @@ const SystemConfiguration = () => {
                                                                                 >
                                                                                     <TableCell sx={{ fontSize: '12px' }}>
                                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                            <Box {...provided.dragHandleProps} className="drag-handle">
+                                                                                            <Box {...provided.dragHandleProps}>
                                                                                                 <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
                                                                                             </Box>
                                                                                             {masterStatuses.find(ms => ms.id === status.masterStatus) ? (
@@ -1302,7 +1274,7 @@ const SystemConfiguration = () => {
                                                                                 >
                                                                                     <TableCell sx={{ fontSize: '12px' }}>
                                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                                            <Box {...provided.dragHandleProps} className="drag-handle">
+                                                                                            <Box {...provided.dragHandleProps}>
                                                                                                 <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
                                                                                             </Box>
                                                                                             <Box
