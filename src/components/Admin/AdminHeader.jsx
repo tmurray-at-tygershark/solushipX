@@ -42,7 +42,8 @@ import {
     Add as AddIcon,
     FlashOn as QuickIcon,
     Assessment as AssessmentIcon,
-    Build as ConfigIcon
+    Build as ConfigIcon,
+    Assignment as TaskIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import './AdminHeader.css';
@@ -77,7 +78,8 @@ const AdminHeader = () => {
             items: [
                 { title: 'View Shipments', description: 'View and manage all shipments', icon: <ShippingIcon />, path: '/admin/shipments' },
                 { title: 'Quick Ship', description: 'Create shipments quickly', icon: <AddIcon />, path: '/admin/shipments?action=quickship' },
-                { title: 'Real Time Rates', description: 'Get instant shipping rates', icon: <AssessmentIcon />, path: '/admin/shipments?action=rates' }
+                { title: 'Real Time Rates', description: 'Get instant shipping rates', icon: <AssessmentIcon />, path: '/admin/shipments?action=rates' },
+                { title: 'Follow-ups', description: 'Manage shipment follow-up tasks and workflows', icon: <TaskIcon />, path: '/admin/followups' }
             ]
         },
         logistics: {

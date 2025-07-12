@@ -94,6 +94,9 @@ const GlobalAddressList = lazy(() => import('./components/Admin/Addresses/Global
 // Email Notification Preferences component
 const NotificationPreferences = lazy(() => import('./components/NotificationPreferences/NotificationPreferences'));
 
+// Follow-ups Dashboard component
+const FollowUpsDashboard = lazy(() => import('./components/FollowUps/FollowUpsDashboard'));
+
 // Loading Component
 const LoadingFallback = () => (
     <Box sx={{ 
@@ -291,6 +294,7 @@ function AppRoutes() {
                     <Route path="carriers/:carrierId/edit" element={<EditCarrier />} />
                     <Route path="markups" element={<MarkupsPage />} />
                     <Route path="addresses" element={<GlobalAddressList />} />
+                    <Route path="followups" element={<FollowUpsDashboard />} />
                     <Route path="profile" element={<Profile isModal={false} />} />
                 </Route>
 

@@ -46,6 +46,7 @@ const AdminBreadcrumb = ({
             'markups': 'Markups',
             'carrier-keys': 'Carrier Keys',
             'edi-mapping': 'EDI Mapping',
+            'followups': 'Follow-ups',
             'new': 'New',
             'edit': 'Edit',
             'generate': 'Generate Invoices',
