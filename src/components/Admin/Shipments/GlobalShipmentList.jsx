@@ -719,23 +719,34 @@ const GlobalShipmentList = () => {
                     // Navigate directly to shipment detail
                     console.log('🎯 Admin: Navigating to shipment:', selectedResult.shipmentId);
 
-                    // Set the company context to match the shipment's company
+                    // 🚀 APPLY SAME COMPANY CONTEXT SWITCHING LOGIC AS SHIPMENT TABLE ROW
                     const shipmentCompany = availableCompanies.find(c => c.companyID === selectedResult.shipment.companyID);
                     if (shipmentCompany && selectedResult.shipment.companyID !== selectedCompanyId) {
-                        // 💾 STORE ORIGINAL VIEW MODE before switching
-                        if (!originalViewMode) {
-                            console.log('💾 Storing original view mode for restoration:', viewMode);
-                            setOriginalViewMode(viewMode);
-                            setOriginalCompanyData(selectedCompanyData);
-                        }
+                        try {
+                            // 💾 STORE ORIGINAL VIEW MODE before switching
+                            if (!originalViewMode) {
+                                console.log('💾 Storing original view mode for restoration:', viewMode);
+                                setOriginalViewMode(viewMode);
+                                setOriginalCompanyData(selectedCompanyData);
+                            }
 
-                        setSelectedCompanyId(selectedResult.shipment.companyID);
-                        setSelectedCompanyData(shipmentCompany);
-                        // Only set company context if it's a real company (not "ALL")
-                        if (shipmentCompany.companyID !== 'all') {
-                            setCompanyContext(shipmentCompany);
+                            setSelectedCompanyId(selectedResult.shipment.companyID);
+                            setSelectedCompanyData(shipmentCompany);
+
+                            // Only set company context if it's a real company (not "ALL")
+                            if (shipmentCompany.companyID !== 'all') {
+                                console.log('🔄 Setting company context and waiting for update...');
+                                await setCompanyContext(shipmentCompany);
+
+                                // Small delay to ensure context is fully updated before proceeding
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                                console.log('✅ Company context switched successfully');
+                            }
+                            setViewMode('single');
+                        } catch (error) {
+                            console.error('❌ Error switching company context:', error);
+                            console.warn('Proceeding with current context due to error');
                         }
-                        setViewMode('single');
                     }
 
                     // FORCE CLEAR EXISTING DEEP LINK PARAMS FIRST
@@ -833,24 +844,35 @@ const GlobalShipmentList = () => {
 
                         console.log('🎯 Found exact shipment ID match, navigating directly to detail:', value);
 
-                        // Set the company context to match the shipment's company
+                        // 🚀 APPLY SAME COMPANY CONTEXT SWITCHING LOGIC AS SHIPMENT TABLE ROW
                         if (shipmentData.companyID && shipmentData.companyID !== selectedCompanyId) {
                             const shipmentCompany = availableCompanies.find(c => c.companyID === shipmentData.companyID);
                             if (shipmentCompany) {
-                                // 💾 STORE ORIGINAL VIEW MODE before switching
-                                if (!originalViewMode) {
-                                    console.log('💾 Storing original view mode for restoration:', viewMode);
-                                    setOriginalViewMode(viewMode);
-                                    setOriginalCompanyData(selectedCompanyData);
-                                }
+                                try {
+                                    // 💾 STORE ORIGINAL VIEW MODE before switching
+                                    if (!originalViewMode) {
+                                        console.log('💾 Storing original view mode for restoration:', viewMode);
+                                        setOriginalViewMode(viewMode);
+                                        setOriginalCompanyData(selectedCompanyData);
+                                    }
 
-                                setSelectedCompanyId(shipmentData.companyID);
-                                setSelectedCompanyData(shipmentCompany);
-                                // Only set company context if it's a real company (not "ALL")
-                                if (shipmentCompany.companyID !== 'all') {
-                                    setCompanyContext(shipmentCompany);
+                                    setSelectedCompanyId(shipmentData.companyID);
+                                    setSelectedCompanyData(shipmentCompany);
+
+                                    // Only set company context if it's a real company (not "ALL")
+                                    if (shipmentCompany.companyID !== 'all') {
+                                        console.log('🔄 Setting company context and waiting for update...');
+                                        await setCompanyContext(shipmentCompany);
+
+                                        // Small delay to ensure context is fully updated before proceeding
+                                        await new Promise(resolve => setTimeout(resolve, 200));
+                                        console.log('✅ Company context switched successfully');
+                                    }
+                                    setViewMode('single');
+                                } catch (error) {
+                                    console.error('❌ Error switching company context:', error);
+                                    console.warn('Proceeding with current context due to error');
                                 }
-                                setViewMode('single');
                             }
                         }
 
@@ -1178,31 +1200,43 @@ const GlobalShipmentList = () => {
                                                     },
                                                     transition: 'all 0.15s ease'
                                                 }}
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     console.log('🎯 Admin search result clicked:', result);
 
                                                     if (result.type === 'live_shipment') {
                                                         console.log('🎯 Admin: Navigating to shipment:', result.shipmentId);
 
-                                                        // Set the company context to match the shipment's company
+                                                        // 🚀 APPLY SAME COMPANY CONTEXT SWITCHING LOGIC AS SHIPMENT TABLE ROW
                                                         const shipmentCompany = availableCompanies.find(c => c.companyID === result.shipment.companyID);
                                                         if (shipmentCompany && result.shipment.companyID !== selectedCompanyId) {
                                                             console.log('🎯 Admin: Switching company context to:', shipmentCompany.name);
 
-                                                            // 💾 STORE ORIGINAL VIEW MODE before switching
-                                                            if (!originalViewMode) {
-                                                                console.log('💾 Storing original view mode for restoration:', viewMode);
-                                                                setOriginalViewMode(viewMode);
-                                                                setOriginalCompanyData(selectedCompanyData);
-                                                            }
+                                                            try {
+                                                                // 💾 STORE ORIGINAL VIEW MODE before switching
+                                                                if (!originalViewMode) {
+                                                                    console.log('💾 Storing original view mode for restoration:', viewMode);
+                                                                    setOriginalViewMode(viewMode);
+                                                                    setOriginalCompanyData(selectedCompanyData);
+                                                                }
 
-                                                            setSelectedCompanyId(result.shipment.companyID);
-                                                            setSelectedCompanyData(shipmentCompany);
-                                                            // Only set company context if it's a real company (not "ALL")
-                                                            if (shipmentCompany.companyID !== 'all') {
-                                                                setCompanyContext(shipmentCompany);
+                                                                setSelectedCompanyId(result.shipment.companyID);
+                                                                setSelectedCompanyData(shipmentCompany);
+
+                                                                // Only set company context if it's a real company (not "ALL")
+                                                                if (shipmentCompany.companyID !== 'all') {
+                                                                    console.log('🔄 Setting company context and waiting for update...');
+                                                                    await setCompanyContext(shipmentCompany);
+
+                                                                    // Small delay to ensure context is fully updated before proceeding
+                                                                    await new Promise(resolve => setTimeout(resolve, 200));
+                                                                    console.log('✅ Company context switched successfully');
+                                                                }
+                                                                setViewMode('single');
+                                                            } catch (error) {
+                                                                console.error('❌ Error switching company context:', error);
+                                                                // Don't show snackbar here since we don't have access to it
+                                                                console.warn('Proceeding with current context due to error');
                                                             }
-                                                            setViewMode('single');
                                                         }
 
                                                         // 📝 CRITICAL FIX: Check if this is a draft shipment and handle appropriately

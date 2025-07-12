@@ -31,6 +31,24 @@ const EnhancedStatusChip = ({
 
                 console.log(`[EnhancedStatusChip] Initializing for status: "${status}"`);
 
+                // 🐛 DRAFT STATUS FIX: Handle draft status with hard-coded chip
+                if (status === 'draft' || (typeof status === 'string' && status.toLowerCase() === 'draft')) {
+                    console.log('[EnhancedStatusChip] Draft status detected - using hard-coded display');
+                    const draftDisplay = {
+                        masterStatus: {
+                            label: 'draft',
+                            displayLabel: 'DRAFT',
+                            color: '#64748b',
+                            fontColor: '#ffffff',
+                            description: 'Draft shipment'
+                        },
+                        subStatus: null
+                    };
+                    setStatusDisplay(draftDisplay);
+                    setLoading(false);
+                    return;
+                }
+
                 // Check if status is already an enhanced status object
                 if (typeof status === 'object' && status.masterStatus) {
                     console.log('[EnhancedStatusChip] Status is already an enhanced status object:', status);

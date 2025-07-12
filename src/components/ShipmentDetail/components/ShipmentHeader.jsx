@@ -189,7 +189,7 @@ const ShipmentHeader = ({
 
                         <Stack direction="row" spacing={1} alignItems="center">
                             <Chip
-                                label={shipment?.status || 'Unknown'}
+                                label={shipment?.status === 'draft' ? 'DRAFT' : (shipment?.status || 'Unknown')}
                                 color={getStatusColor(shipment?.status)}
                                 size="small"
                                 sx={{ fontWeight: 500, fontSize: '11px' }}

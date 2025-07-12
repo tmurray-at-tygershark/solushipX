@@ -2402,10 +2402,21 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
                     // Apply the same tab filtering to semantic results
                     if (activeTab === 'all') {
-                        semanticFilteredResults = semanticFilteredResults.filter(s => {
-                            const status = s.status?.toLowerCase()?.trim();
-                            return status !== 'draft';
-                        });
+                        // 🐛 BUG FIX: Include drafts in "All" tab when searching by shipment ID
+                        const isShipmentIdSearch = /^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/i.test(currentSearchTerm.trim()) ||
+                            /^[A-Z0-9]{8,}$/i.test(currentSearchTerm.trim());
+
+                        if (isShipmentIdSearch) {
+                            // When searching by shipment ID, include drafts in "All" tab results
+                            console.log('🔍 Semantic: Shipment ID search detected - including drafts in "All" tab results');
+                            // Keep all semantic results including drafts
+                        } else {
+                            // Regular filtering - exclude drafts from "All" tab
+                            semanticFilteredResults = semanticFilteredResults.filter(s => {
+                                const status = s.status?.toLowerCase()?.trim();
+                                return status !== 'draft';
+                            });
+                        }
                     } else if (activeTab === 'draft') {
                         semanticFilteredResults = semanticFilteredResults.filter(s => {
                             const status = s.status?.toLowerCase()?.trim();
@@ -2485,10 +2496,21 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
                     // Now apply tab filter to search results
                     if (activeTab === 'all') {
-                        filteredData = searchResults.filter(s => {
-                            const status = s.status?.toLowerCase()?.trim();
-                            return status !== 'draft';
-                        });
+                        // 🐛 BUG FIX: Include drafts in "All" tab when searching by shipment ID
+                        const isShipmentIdSearch = /^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/i.test(currentSearchTerm.trim()) ||
+                            /^[A-Z0-9]{8,}$/i.test(currentSearchTerm.trim());
+
+                        if (isShipmentIdSearch) {
+                            // When searching by shipment ID, include drafts in "All" tab results
+                            console.log('🔍 Shipment ID search detected - including drafts in "All" tab results');
+                            filteredData = searchResults; // Include all search results including drafts
+                        } else {
+                            // Regular filtering - exclude drafts from "All" tab
+                            filteredData = searchResults.filter(s => {
+                                const status = s.status?.toLowerCase()?.trim();
+                                return status !== 'draft';
+                            });
+                        }
                     } else if (activeTab === 'draft') {
                         filteredData = searchResults.filter(s => {
                             const status = s.status?.toLowerCase()?.trim();
@@ -2824,9 +2846,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         setSelectedTab(newValue);
         setPage(0); // Reset to first page when tab changes
 
-        // Trigger reload for new tab with explicit tab value and current search
-        setTimeout(() => loadShipments(newValue, unifiedSearch), 50);
-    }, [loadShipments]); // Removed unifiedSearch from dependencies
+        // 🐛 BUG FIX: Clear search when switching tabs to reset filtering
+        console.log('🧹 Tab changed - clearing search filters to reset results');
+        setUnifiedSearch('');
+        setLiveResults([]);
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+        setIsSemanticMode(false);
+        setSemanticSearchResults(null);
+        setSearchConfidence(0);
+
+        // Trigger reload for new tab with no search term (cleared)
+        setTimeout(() => loadShipments(newValue, ''), 50);
+    }, [loadShipments]);
 
     // Initialize
     useEffect(() => {
@@ -4509,48 +4541,60 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.log('🏢 Current company context:', companyIdForAddress);
 
             // 🚀 SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
-            // If super admin clicks on a draft from a different company, automatically switch context
+            // Only switch context if we're not already in the correct company context
+            // (Admin view should have already switched context when clicking on the shipment)
             if (userRole === 'superadmin' && draftCompanyId && draftCompanyId !== companyIdForAddress) {
-                console.log('🚀 Super admin accessing draft from different company - auto-switching context');
+                console.log('🚀 Super admin accessing draft from different company - checking if context switch needed');
+                console.log('🔍 Draft company:', draftCompanyId, 'Current context:', companyIdForAddress);
 
-                try {
-                    // Query for the draft's company data
-                    const companiesQuery = query(
-                        collection(db, 'companies'),
-                        where('companyID', '==', draftCompanyId),
-                        limit(1)
-                    );
+                // Only switch if we're definitely in the wrong context
+                if (companyIdForAddress && companyIdForAddress !== 'all' && companyIdForAddress !== draftCompanyId) {
+                    console.log('⚠️ Context mismatch detected, but admin view should have handled this. Proceeding without switch.');
+                    showSnackbar(`Note: Editing draft from ${draftCompanyId} (current context: ${companyIdForAddress})`, 'info');
+                } else if (!companyIdForAddress || companyIdForAddress === 'all') {
+                    console.log('🔄 No company context set, switching to draft company context');
 
-                    const companiesSnapshot = await getDocs(companiesQuery);
+                    try {
+                        // Query for the draft's company data
+                        const companiesQuery = query(
+                            collection(db, 'companies'),
+                            where('companyID', '==', draftCompanyId),
+                            limit(1)
+                        );
 
-                    if (!companiesSnapshot.empty) {
-                        const companyDoc = companiesSnapshot.docs[0];
-                        const companyDocData = companyDoc.data();
+                        const companiesSnapshot = await getDocs(companiesQuery);
 
-                        const targetCompanyData = {
-                            ...companyDocData,
-                            id: companyDoc.id
-                        };
+                        if (!companiesSnapshot.empty) {
+                            const companyDoc = companiesSnapshot.docs[0];
+                            const companyDocData = companyDoc.data();
 
-                        console.log('🔄 Switching to company context:', targetCompanyData.name, '(', draftCompanyId, ')');
+                            const targetCompanyData = {
+                                ...companyDocData,
+                                id: companyDoc.id
+                            };
 
-                        // Switch company context - this will update companyIdForAddress and companyData
-                        await setCompanyContext(targetCompanyData);
+                            console.log('🔄 Switching to company context:', targetCompanyData.name, '(', draftCompanyId, ')');
 
-                        // Show success message
-                        showSnackbar(`Switched to ${targetCompanyData.name || draftCompanyId} to edit draft`, 'success');
+                            // Switch company context - this will update companyIdForAddress and companyData
+                            await setCompanyContext(targetCompanyData);
 
-                        // Small delay to ensure context is fully updated before proceeding
-                        await new Promise(resolve => setTimeout(resolve, 200));
+                            // Show success message
+                            showSnackbar(`Switched to ${targetCompanyData.name || draftCompanyId} to edit draft`, 'success');
 
-                        console.log('✅ Company context switched successfully');
-                    } else {
-                        console.warn('⚠️ Company not found for draft:', draftCompanyId);
-                        showSnackbar(`Warning: Company ${draftCompanyId} not found, proceeding with current context`, 'warning');
+                            // Small delay to ensure context is fully updated before proceeding
+                            await new Promise(resolve => setTimeout(resolve, 200));
+
+                            console.log('✅ Company context switched successfully');
+                        } else {
+                            console.warn('⚠️ Company not found for draft:', draftCompanyId);
+                            showSnackbar(`Warning: Company ${draftCompanyId} not found, proceeding with current context`, 'warning');
+                        }
+                    } catch (companyError) {
+                        console.error('❌ Error switching company context:', companyError);
+                        showSnackbar('Error switching company context, proceeding with current context', 'warning');
                     }
-                } catch (companyError) {
-                    console.error('❌ Error switching company context:', companyError);
-                    showSnackbar('Error switching company context, proceeding with current context', 'warning');
+                } else {
+                    console.log('✅ Company context already correct, proceeding with draft editing');
                 }
             }
 

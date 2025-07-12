@@ -3524,7 +3524,7 @@ const CreateShipmentX = (props) => {
             )}
 
             {/* Show error state if contexts are loaded but data is missing */}
-            {!authLoading && !companyLoading && (!user?.uid || !companyData?.companyID) && (
+            {!authLoading && !companyLoading && (!user?.uid || (!companyData?.companyID && userRole !== 'superadmin')) && (
                 <Box sx={{
                     flex: 1,
                     display: 'flex',
@@ -3546,11 +3546,11 @@ const CreateShipmentX = (props) => {
             )}
 
             {/* Main content - only show when both contexts are loaded and data is available */}
-            {!authLoading && !companyLoading && user?.uid && (
+            {!authLoading && !companyLoading && user?.uid && (companyData?.companyID || userRole === 'superadmin') && (
                 <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
                     {/* Company Selector for Super Admins */}
                     {(() => {
-                        const shouldShowSelector = userRole === 'superadmin';
+                        const shouldShowSelector = userRole === 'superadmin' && !companyIdForAddress;
                         console.log('🔍 CreateShipmentX Company Selector Debug:', {
                             userRole,
                             companyIdForAddress,

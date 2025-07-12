@@ -419,6 +419,12 @@ const StatusChip = React.memo(({ status }) => {
                     bgcolor: '#FEE2E2',
                     label: 'Cancelled'
                 };
+            case 'draft':
+                return {
+                    color: '#64748b',
+                    bgcolor: '#f1f5f9',
+                    label: 'DRAFT'
+                };
             default:
                 return {
                     color: '#6B7280',

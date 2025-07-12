@@ -152,7 +152,7 @@ const EnhancedStatusChip = React.memo(({ status, showAnimation = true }) => {
 
         return {
             ...config,
-            label: status?.charAt(0).toUpperCase() + status?.slice(1) || 'Unknown'
+            label: status?.toLowerCase() === 'draft' ? 'DRAFT' : (status?.charAt(0).toUpperCase() + status?.slice(1) || 'Unknown')
         };
     };
 
