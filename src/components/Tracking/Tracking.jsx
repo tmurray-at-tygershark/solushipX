@@ -33,7 +33,9 @@ import {
     HelpOutline as HelpOutlineIcon,
     ContentCopy as ContentCopyIcon,
     Refresh as RefreshIcon,
-    Menu as MenuIcon
+    Menu as MenuIcon,
+    AttachMoney as AttachMoneyIcon,
+    Description as DescriptionIcon
 } from '@mui/icons-material';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { db, functions } from '../../firebase'; // Firebase setup
@@ -97,6 +99,17 @@ const getStatusColor = (status) => {
         case 'void':
             return '#7f1d1d';
 
+        // QuickShip-specific event types
+        case 'rate_entry':
+        case 'rate entry':
+            return '#8b5cf6';
+        case 'carrier_selection':
+        case 'carrier selection':
+            return '#0891b2';
+        case 'document_generated':
+        case 'document generated':
+            return '#059669';
+
         default:
             return '#6b7280';  // Grey
     }
@@ -129,6 +142,16 @@ const getStatusIcon = (status) => {
             return <AccessTimeIcon sx={{ fontSize: 'inherit' }} />;
         case 'void':
             return <CancelIcon sx={{ fontSize: 'inherit' }} />;
+        // QuickShip-specific event types
+        case 'rate_entry':
+        case 'rate entry':
+            return <AttachMoneyIcon sx={{ fontSize: 'inherit' }} />;
+        case 'carrier_selection':
+        case 'carrier selection':
+            return <LocalShippingIcon sx={{ fontSize: 'inherit' }} />;
+        case 'document_generated':
+        case 'document generated':
+            return <DescriptionIcon sx={{ fontSize: 'inherit' }} />;
         default:
             return <HelpOutlineIcon sx={{ fontSize: 'inherit' }} />;
     }
@@ -211,17 +234,19 @@ const CarrierDisplay = React.memo(({ carrierName, size = 'medium' }) => {
 
 const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier, onClose }) => {
     const navigate = useNavigate();
-    const { trackingId } = useParams();
+    const { trackingIdentifier: trackingId } = useParams();
     const [trackingNumberInput, setTrackingNumberInput] = useState('');
     const [shipmentData, setShipmentData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [displayError, setDisplayError] = useState('');
     const [mergedEvents, setMergedEvents] = useState([]);
+    const [eventUnsubscribe, setEventUnsubscribe] = useState(null);
     const [overallStatus, setOverallStatus] = useState('');
     const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState('');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [carrier, setCarrier] = useState('');
+    const [hasAutoSearched, setHasAutoSearched] = useState(false);
 
     // Use smart status update hook
     const { updateShipmentStatus } = useSmartStatusUpdate();
@@ -313,7 +338,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         }
     };
 
-    const searchShipment = async (identifier) => {
+    const searchShipment = useCallback(async (identifier) => {
+        console.log('🔍 [Tracking] searchShipment called with identifier:', identifier);
         setLoading(true);
         setError('');
         setDisplayError('');
@@ -375,31 +401,177 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 'Unknown';
             setCarrier(carrierName);
 
-            // Get shipment events
-            const eventsRef = collection(db, 'shipmentEvents');
-            const eventsQuery = query(eventsRef, where('shipmentID', '==', identifier));
-            const eventsSnapshot = await getDocs(eventsQuery);
+            // Set up real-time event listening like ShipmentDetailX
+            console.log('📋 [Tracking] Setting up real-time event listening for shipment:', identifier);
 
-            const events = eventsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            // Use the same event loading mechanism as ShipmentDetailX
+            const unsubscribe = listenToShipmentEvents(identifier, (events) => {
+                console.log('📋 [Tracking] Received real-time events:', events);
 
-            // Merge with shipment status history if available
-            const statusHistory = fixedShipmentData.statusHistory || [];
-            const mergedEventsList = [...events, ...statusHistory];
+                // Transform events to match ShipmentTimeline format (same as ShipmentDetailX)
+                const transformedEvents = (events || []).map(event => ({
+                    id: event.eventId || event.id || `event-${Date.now()}-${Math.random()}`,
+                    status: event.title || event.status || event.eventType || 'Status Update',
+                    description: event.description || event.message || `Event: ${event.title || event.status || event.eventType}`,
+                    location: event.location || { city: '', state: '', postalCode: '' },
+                    timestamp: parseTimestamp(event.timestamp) || new Date(),
+                    color: getStatusColor(event.eventType || event.status || event.title),
+                    icon: getStatusIcon(event.eventType || event.status || event.title),
+                    eventType: event.eventType || event.status || event.title,
+                    source: event.source || 'system',
+                    userData: event.userData || {}
+                }));
 
-            // Sort events by timestamp (newest first)
-            mergedEventsList.sort((a, b) => {
-                const dateA = parseTimestamp(a.timestamp);
-                const dateB = parseTimestamp(b.timestamp);
-                if (!dateA && !dateB) return 0;
-                if (!dateA) return 1;
-                if (!dateB) return -1;
-                return dateB - dateA;
+                // Add synthetic events from shipment data - ENHANCED FOR QUICKSHIP
+                const syntheticEvents = [];
+                const isQuickShip = fixedShipmentData.creationMethod === 'quickship' || fixedShipmentData.isQuickShip;
+
+                console.log('📋 [Tracking] Shipment type detection:', {
+                    isQuickShip,
+                    creationMethod: fixedShipmentData.creationMethod,
+                    isQuickShipFlag: fixedShipmentData.isQuickShip,
+                    status: fixedShipmentData.status,
+                    bookedAt: fixedShipmentData.bookedAt,
+                    createdAt: fixedShipmentData.createdAt
+                });
+
+                // Add created event if not present
+                const hasCreated = transformedEvents.some(e => (e.eventType === 'created' || (e.status && typeof e.status === 'string' && e.status.toLowerCase().includes('created'))));
+                if (!hasCreated && fixedShipmentData?.createdAt) {
+                    syntheticEvents.push({
+                        id: 'created-' + identifier,
+                        status: 'Created',
+                        description: isQuickShip ? 'QuickShip shipment was created' : 'Shipment was created',
+                        location: { city: '', state: '', postalCode: '' },
+                        timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                        color: getStatusColor('created'),
+                        icon: getStatusIcon('created'),
+                        eventType: 'created',
+                        source: 'user',
+                        userData: {
+                            email: fixedShipmentData.createdByEmail || fixedShipmentData.createdBy || fixedShipmentData.userEmail || null,
+                            userId: fixedShipmentData.createdBy || null,
+                            userName: fixedShipmentData.createdByName || null
+                        }
+                    });
+                }
+
+                // Add booked event if present - ENHANCED FOR QUICKSHIP
+                const bookingTimestamp = fixedShipmentData?.bookedAt || fixedShipmentData?.bookingTimestamp;
+                if (bookingTimestamp && fixedShipmentData.status !== 'draft') {
+                    const hasBooked = transformedEvents.some(e => (e.eventType === 'booked' || (e.status && typeof e.status === 'string' && e.status.toLowerCase().includes('booked'))));
+                    if (!hasBooked) {
+                        const carrierName = fixedShipmentData.carrier || fixedShipmentData.selectedCarrier || 'carrier';
+                        syntheticEvents.push({
+                            id: 'booked-' + identifier,
+                            status: 'Booked',
+                            description: isQuickShip ?
+                                `QuickShip shipment booked with ${carrierName}` :
+                                'Shipment was booked with carrier',
+                            location: { city: '', state: '', postalCode: '' },
+                            timestamp: parseTimestamp(bookingTimestamp) || new Date(),
+                            color: getStatusColor('booked'),
+                            icon: getStatusIcon('booked'),
+                            eventType: 'booked',
+                            source: 'system',
+                            userData: {}
+                        });
+                    }
+                }
+
+                // Add current status event if different from existing events
+                if (fixedShipmentData?.status && fixedShipmentData.status !== 'draft') {
+                    const hasCurrentStatus = transformedEvents.some(e =>
+                        e.eventType === fixedShipmentData.status ||
+                        (e.status && typeof e.status === 'string' && e.status.toLowerCase() === fixedShipmentData.status.toLowerCase())
+                    );
+                    if (!hasCurrentStatus) {
+                        syntheticEvents.push({
+                            id: 'current-status-' + identifier,
+                            status: fixedShipmentData.status.charAt(0).toUpperCase() + fixedShipmentData.status.slice(1),
+                            description: `Shipment status updated to ${fixedShipmentData.status}`,
+                            location: { city: '', state: '', postalCode: '' },
+                            timestamp: parseTimestamp(fixedShipmentData.updatedAt) || parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                            color: getStatusColor(fixedShipmentData.status),
+                            icon: getStatusIcon(fixedShipmentData.status),
+                            eventType: fixedShipmentData.status,
+                            source: 'system',
+                            userData: {}
+                        });
+                    }
+                }
+
+                // Add QuickShip-specific events if this is a QuickShip shipment
+                if (isQuickShip) {
+                    // Add rate entry event
+                    if (fixedShipmentData.manualRates && fixedShipmentData.manualRates.length > 0) {
+                        const hasRateEntry = transformedEvents.some(e => e.eventType === 'rate_entry' || (e.status && e.status.toLowerCase().includes('rate')));
+                        if (!hasRateEntry) {
+                            syntheticEvents.push({
+                                id: 'rate-entry-' + identifier,
+                                status: 'Rate Entry',
+                                description: `Manual rates entered (${fixedShipmentData.manualRates.length} line items)`,
+                                location: { city: '', state: '', postalCode: '' },
+                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                color: getStatusColor('rate_entry'),
+                                icon: getStatusIcon('rate_entry'),
+                                eventType: 'rate_entry',
+                                source: 'user',
+                                userData: {}
+                            });
+                        }
+                    }
+
+                    // Add carrier selection event
+                    if (fixedShipmentData.carrier || fixedShipmentData.selectedCarrier) {
+                        const hasCarrierSelection = transformedEvents.some(e => e.eventType === 'carrier_selection' || (e.status && e.status.toLowerCase().includes('carrier')));
+                        if (!hasCarrierSelection) {
+                            const carrierName = fixedShipmentData.carrier || fixedShipmentData.selectedCarrier;
+                            syntheticEvents.push({
+                                id: 'carrier-selection-' + identifier,
+                                status: 'Carrier Selected',
+                                description: `Carrier selected: ${carrierName}`,
+                                location: { city: '', state: '', postalCode: '' },
+                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                color: getStatusColor('carrier_selection'),
+                                icon: getStatusIcon('carrier_selection'),
+                                eventType: 'carrier_selection',
+                                source: 'user',
+                                userData: {}
+                            });
+                        }
+                    }
+
+                    // Add document generation events if documents exist
+                    if (fixedShipmentData.documents || fixedShipmentData.generatedDocuments) {
+                        const hasDocumentGeneration = transformedEvents.some(e => e.eventType === 'document_generated' || (e.status && e.status.toLowerCase().includes('document')));
+                        if (!hasDocumentGeneration) {
+                            syntheticEvents.push({
+                                id: 'documents-generated-' + identifier,
+                                status: 'Documents Generated',
+                                description: 'BOL and carrier confirmation documents generated',
+                                location: { city: '', state: '', postalCode: '' },
+                                timestamp: parseTimestamp(bookingTimestamp) || parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                color: getStatusColor('document_generated'),
+                                icon: getStatusIcon('document_generated'),
+                                eventType: 'document_generated',
+                                source: 'system',
+                                userData: {}
+                            });
+                        }
+                    }
+                }
+
+                // Combine and sort all events
+                const allEvents = [...transformedEvents, ...syntheticEvents];
+                const sortedEvents = allEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                console.log('📋 [Tracking] Final events for timeline:', sortedEvents);
+                setMergedEvents(sortedEvents);
             });
 
-            setMergedEvents(mergedEventsList);
+            // Store the unsubscribe function to clean up later
+            setEventUnsubscribe(() => unsubscribe);
 
             // Determine overall status
             const currentStatus = fixedShipmentData.status || 'unknown';
@@ -460,14 +632,14 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
             // Check if shipment is delivered and get delivery date
             if (currentStatus?.toLowerCase() === 'delivered') {
-                // Look for delivery event in merged events
-                const deliveryEvent = mergedEventsList.find(event =>
-                    event.status?.toLowerCase().includes('delivered') ||
-                    event.title?.toLowerCase().includes('delivered')
-                );
+                // Check for delivered date in shipment data
+                const deliveredDate = fixedShipmentData.deliveredDate ||
+                    fixedShipmentData.deliveryDate ||
+                    fixedShipmentData.actualDeliveryDate ||
+                    fixedShipmentData.completedAt;
 
-                if (deliveryEvent && deliveryEvent.timestamp) {
-                    const deliveryDate = parseTimestamp(deliveryEvent.timestamp);
+                if (deliveredDate) {
+                    const deliveryDate = parseTimestamp(deliveredDate);
                     if (deliveryDate) {
                         setEstimatedDeliveryDate(deliveryDate.toLocaleDateString('en-US', {
                             year: 'numeric',
@@ -482,12 +654,34 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 }
             } else {
                 // For non-delivered shipments, use ETA fields
-                const eta1 = fixedShipmentData.ETA1;
-                const eta2 = fixedShipmentData.ETA2;
-                const estimatedDelivery = fixedShipmentData.estimatedDelivery;
+                // Check multiple possible ETA field names - ENHANCED FOR QUICKSHIP
+                const eta1 = fixedShipmentData.ETA1 ||
+                    fixedShipmentData.eta1 ||
+                    fixedShipmentData.ETA_1 ||
+                    fixedShipmentData.estimatedDeliveryDate1 ||
+                    fixedShipmentData.shipmentInfo?.eta1; // QuickShip ETA1
+                const eta2 = fixedShipmentData.ETA2 ||
+                    fixedShipmentData.eta2 ||
+                    fixedShipmentData.ETA_2 ||
+                    fixedShipmentData.estimatedDeliveryDate2 ||
+                    fixedShipmentData.shipmentInfo?.eta2; // QuickShip ETA2
+                const estimatedDelivery = fixedShipmentData.estimatedDelivery ||
+                    fixedShipmentData.estimatedDeliveryDate;
                 const carrierEstimatedDelivery = fixedShipmentData.carrierBookingConfirmation?.estimatedDeliveryDate ||
                     fixedShipmentData.selectedRate?.transit?.estimatedDelivery ||
                     fixedShipmentData.selectedRate?.estimatedDeliveryDate;
+
+                console.log('🗓️ [Tracking] ETA Debug:', {
+                    eta1: eta1,
+                    eta2: eta2,
+                    estimatedDelivery: estimatedDelivery,
+                    carrierEstimatedDelivery: carrierEstimatedDelivery,
+                    allFields: Object.keys(fixedShipmentData).filter(key =>
+                        key.toLowerCase().includes('eta') ||
+                        key.toLowerCase().includes('delivery') ||
+                        key.toLowerCase().includes('due')
+                    )
+                });
 
                 if (eta1 && eta2) {
                     const formattedEta1 = formatEtaDate(eta1);
@@ -516,18 +710,30 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    // Cleanup event listener when component unmounts or tracking ID changes
+    useEffect(() => {
+        return () => {
+            if (eventUnsubscribe) {
+                console.log('📋 [Tracking] Cleaning up event listener');
+                eventUnsubscribe();
+            }
+        };
+    }, [eventUnsubscribe]);
 
     // Effect to handle URL tracking ID
     useEffect(() => {
-        if (trackingId) {
-            setTrackingNumberInput(trackingId);
-            searchShipment(trackingId);
-        } else if (propTrackingIdentifier) {
-            setTrackingNumberInput(propTrackingIdentifier);
-            searchShipment(propTrackingIdentifier);
+        console.log('🔍 [Tracking] URL Effect - trackingId:', trackingId, 'propTrackingIdentifier:', propTrackingIdentifier, 'hasAutoSearched:', hasAutoSearched);
+
+        if (!hasAutoSearched && (trackingId || propTrackingIdentifier)) {
+            const identifier = trackingId || propTrackingIdentifier;
+            console.log('🔍 [Tracking] Auto-searching from URL/prop:', identifier);
+            setTrackingNumberInput(identifier);
+            setHasAutoSearched(true);
+            searchShipment(identifier);
         }
-    }, [trackingId, propTrackingIdentifier]);
+    }, [trackingId, propTrackingIdentifier, hasAutoSearched]);
 
     // Main content component
     const MainContent = (
@@ -714,96 +920,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         </Grid>
 
                         <Grid container spacing={3}>
-                            {/* Left Column: Primary Shipment Details */}
-                            <Grid item xs={12} lg={6}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '14px', color: 'primary.main' }}>
-                                        Shipment Details
-                                    </Typography>
-                                    {shipmentData?.status !== 'draft' && shipmentData?.status !== 'delivered' && (
-                                        <IconButton
-                                            size="small"
-                                            onClick={handleRefreshStatus}
-                                            disabled={loading}
-                                            title="Refresh tracking information"
-                                        >
-                                            {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: '16px' }} />}
-                                        </IconButton>
-                                    )}
-                                </Box>
-
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                            Carrier
-                                        </Typography>
-                                        <CarrierDisplay carrierName={carrier || (shipmentData?.carrier || 'Unknown')} size="small" />
-                                    </Box>
-
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                            Current Status
-                                        </Typography>
-                                        <EnhancedStatusChip status={overallStatus} />
-                                    </Box>
-
-                                    <Box>
-                                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                            {overallStatus?.toLowerCase() === 'delivered' ? 'Delivered On' : 'Estimated Delivery'}
-                                        </Typography>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <CalendarToday sx={{ fontSize: '16px', color: 'text.secondary' }} />
-                                            <Box>
-                                                {estimatedDeliveryDate?.hasBothETAs ? (
-                                                    <Box>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
-                                                            ETA 1: {estimatedDeliveryDate.eta1}
-                                                        </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
-                                                            ETA 2: {estimatedDeliveryDate.eta2}
-                                                        </Typography>
-                                                    </Box>
-                                                ) : (
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
-                                                        {estimatedDeliveryDate}
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                        </Box>
-                                    </Box>
-
-                                    {shipmentData?.shipFrom && (
-                                        <Box>
-                                            <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                                Origin
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <LocationOn sx={{ fontSize: '16px', color: 'success.main' }} />
-                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    {formatAddressDisplay(shipmentData.shipFrom)}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    )}
-
-                                    {shipmentData?.shipTo && (
-                                        <Box>
-                                            <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                                                Destination
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <LocationOn sx={{ fontSize: '16px', color: 'error.main' }} />
-                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    {formatAddressDisplay(shipmentData.shipTo)}
-                                                </Typography>
-                                            </Box>
-                                        </Box>
-                                    )}
-                                </Box>
-                            </Grid>
-
-                            {/* Right Column: Route Map & Timeline */}
-                            <Grid item xs={12} lg={6}>
+                            {/* Left Column: Route Map & Shipment Details */}
+                            <Grid item xs={12} md={6}>
                                 {/* Compact Route Map */}
                                 <Box sx={{ mb: 3 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '14px', color: 'text.primary' }}>
@@ -819,13 +937,103 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     </Paper>
                                 </Box>
 
-                                {/* Timeline */}
+                                {/* Shipment Details */}
+                                <Box>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '14px', color: 'primary.main' }}>
+                                            Shipment Details
+                                        </Typography>
+                                        {shipmentData?.status !== 'draft' && shipmentData?.status !== 'delivered' && (
+                                            <IconButton
+                                                size="small"
+                                                onClick={handleRefreshStatus}
+                                                disabled={loading}
+                                                title="Refresh tracking information"
+                                            >
+                                                {loading ? <CircularProgress size={16} /> : <RefreshIcon sx={{ fontSize: '16px' }} />}
+                                            </IconButton>
+                                        )}
+                                    </Box>
+
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                Carrier
+                                            </Typography>
+                                            <CarrierDisplay carrierName={carrier || (shipmentData?.carrier || 'Unknown')} size="small" />
+                                        </Box>
+
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                Current Status
+                                            </Typography>
+                                            <EnhancedStatusChip status={overallStatus} />
+                                        </Box>
+
+                                        <Box>
+                                            <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                {overallStatus?.toLowerCase() === 'delivered' ? 'Delivered On' : 'Estimated Delivery'}
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <CalendarToday sx={{ fontSize: '16px', color: 'text.secondary' }} />
+                                                <Box>
+                                                    {estimatedDeliveryDate?.hasBothETAs ? (
+                                                        <Box>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
+                                                                ETA 1: {estimatedDeliveryDate.eta1}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
+                                                                ETA 2: {estimatedDeliveryDate.eta2}
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: overallStatus?.toLowerCase() === 'delivered' ? 'success.main' : 'text.primary' }}>
+                                                            {estimatedDeliveryDate}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        </Box>
+
+                                        {shipmentData?.shipFrom && (
+                                            <Box>
+                                                <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                    Origin
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <LocationOn sx={{ fontSize: '16px', color: 'success.main' }} />
+                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        {formatAddressDisplay(shipmentData.shipFrom)}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+
+                                        {shipmentData?.shipTo && (
+                                            <Box>
+                                                <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                                    Destination
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <LocationOn sx={{ fontSize: '16px', color: 'error.main' }} />
+                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        {formatAddressDisplay(shipmentData.shipTo)}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Grid>
+
+                            {/* Right Column: Tracking History */}
+                            <Grid item xs={12} md={6}>
                                 <Box>
                                     <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '14px', color: 'text.primary' }}>
                                         Tracking History
                                     </Typography>
                                     <Box sx={{
-                                        maxHeight: '400px',
+                                        maxHeight: '600px',
                                         overflowY: 'auto',
                                         pr: 1,
                                         '&::-webkit-scrollbar': { width: '4px' },

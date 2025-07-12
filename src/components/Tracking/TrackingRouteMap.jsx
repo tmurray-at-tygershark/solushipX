@@ -156,12 +156,37 @@ const TrackingRouteMap = ({
             const distanceMeters = route.distanceMeters;
             const durationSeconds = parseInt(route.duration.replace('s', ''));
 
-            // Convert to display format
-            const distanceMiles = Math.round(distanceMeters * 0.000621371);
+            // Determine if route is Canada > Canada or cross-border
+            const originCountry = shipmentData.shipFrom?.country?.toUpperCase() || 'US';
+            const destinationCountry = shipmentData.shipTo?.country?.toUpperCase() || 'US';
+            const isCanadaToCanada = originCountry === 'CA' && destinationCountry === 'CA';
+            const isCrossBorder = originCountry !== destinationCountry;
+
+            // Convert to display format based on route type
+            let distanceDisplay;
+            if (isCanadaToCanada) {
+                // Canada > Canada: Use kilometers
+                const distanceKm = Math.round(distanceMeters / 1000);
+                distanceDisplay = `${distanceKm} km`;
+            } else {
+                // Cross-border or US routes: Use miles
+                const distanceMiles = Math.round(distanceMeters * 0.000621371);
+                distanceDisplay = `${distanceMiles} mi`;
+            }
+
             const durationMinutes = Math.round(durationSeconds / 60);
 
+            console.log('🗺️ [TrackingRouteMap] Route type detection:', {
+                originCountry,
+                destinationCountry,
+                isCanadaToCanada,
+                isCrossBorder,
+                distanceDisplay,
+                distanceMeters
+            });
+
             setRouteInfo({
-                distance: `${distanceMiles} mi`,
+                distance: distanceDisplay,
                 duration: `${durationMinutes} mins`
             });
 
