@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy, useRef } from 'react';
 import {
     Box,
     Paper,
@@ -13,18 +13,28 @@ import {
     IconButton,
     Drawer,
     Alert,
-    Snackbar
+    Snackbar,
+    TextField,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Avatar,
+    Chip,
+    Autocomplete
 } from '@mui/material';
 import {
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Add as AddIcon
 } from '@mui/icons-material';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../firebase';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
 
 // Components
 import ShipmentHeader from './components/ShipmentHeader';
@@ -35,6 +45,7 @@ import PackageDetails from './components/PackageDetails';
 import ShipmentHistory from './components/ShipmentHistory';
 import LoadingSkeleton from './components/LoadingSkeleton';
 import TrackingDrawer from '../Tracking/Tracking';
+import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 
 // Dialogs and Modals
 import PrintLabelDialog from './dialogs/PrintLabelDialog';
@@ -43,6 +54,7 @@ import CancelShipmentModal from './components/CancelShipmentModal';
 import SnackbarNotification from './components/SnackbarNotification';
 import EditShipmentModal from './components/EditShipmentModal';
 import DocumentRegenerationDialog from './components/DocumentRegenerationDialog';
+import FollowUpTable from './components/FollowUpTable';
 
 // Hooks
 import { useShipmentData } from './hooks/useShipmentData';
@@ -58,10 +70,49 @@ import { fixShipmentEncoding } from '../../utils/textUtils';
 const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: propIsAdmin, editMode = false, onShipmentUpdated: parentOnShipmentUpdated }) => {
     const { id } = useParams();
     const shipmentId = propShipmentId || id;
-    const { user } = useAuth();
+    const authState = useAuth();
+    const { currentUser: user } = authState;
+    const { companyIdForAddress } = useCompany();
+    console.log('🔐 Full Auth State in ShipmentDetailX:', authState);
+    console.log('👤 User from authState:', user);
+
+    // Get user ID from multiple possible sources
+    const userId = user?.uid || user?.id || authState?.currentUser?.uid || authState?.currentUser?.id;
+    console.log('🆔 Resolved userId:', userId);
 
     // Check if user is admin or super admin - use prop if provided, otherwise calculate
     const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (user?.role === 'admin' || user?.role === 'superadmin');
+
+    // Follow-up dialog state
+    const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+    const [followUpListOpen, setFollowUpListOpen] = useState(false);
+    const [existingFollowUps, setExistingFollowUps] = useState([]);
+    const [loadingFollowUps, setLoadingFollowUps] = useState(false);
+    const [editingFollowUp, setEditingFollowUp] = useState(null);
+    const [followUpData, setFollowUpData] = useState({
+        title: '',
+        description: '',
+        actionType: 'follow-up',
+        actionTypes: ['email'], // Multi-select action types
+        dueDate: '',
+        dueTime: '09:00',
+        assignmentType: 'general',
+        assignedTo: '',
+        estimatedDuration: 30,
+        category: 'manual',
+        notificationType: 'email', // Fixed to email only
+        tags: [],
+        reminders: []
+    });
+    const [availableUsers, setAvailableUsers] = useState([]);
+    const [loadingUsers, setLoadingUsers] = useState(false);
+    const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
+
+    // Refs for date/time inputs to make rows clickable
+    const dueDateRef = useRef(null);
+    const dueTimeRef = useRef(null);
+    const reminderDateRef = useRef(null);
+    const reminderTimeRef = useRef(null);
 
     // CRITICAL CLEANUP: Clear any shipment session data when component unmounts
     useEffect(() => {
@@ -89,6 +140,69 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         refreshShipment
     } = useShipmentData(shipmentId);
 
+    // Load available users for assignment - moved after shipment data is loaded
+    useEffect(() => {
+        const loadUsers = async () => {
+            if (!followUpDialogOpen || !shipment) return;
+
+            setLoadingUsers(true);
+            try {
+                // Get the company ID from the shipment
+                const shipmentCompanyId = shipment.companyID || shipment.companyId;
+
+                if (!shipmentCompanyId) {
+                    console.warn('No company ID found in shipment for user filtering');
+                    setAvailableUsers([]);
+                    return;
+                }
+
+                // Get all users
+                const usersSnapshot = await getDocs(collection(db, 'users'));
+                const allUsers = usersSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                })).filter(user => user.role && user.email);
+
+                // Filter users who have access to this shipment's company
+                const filteredUsers = allUsers.filter(user => {
+                    // Super admins can access all companies
+                    if (user.role === 'superadmin') return true;
+
+                    // Admins need to have the company in their connected companies
+                    if (user.role === 'admin' && user.connectedCompanies?.companies) {
+                        return user.connectedCompanies.companies.includes(shipmentCompanyId);
+                    }
+
+                    // Regular users need to belong to the same company
+                    if (user.role === 'user') {
+                        return user.companyID === shipmentCompanyId || user.companyId === shipmentCompanyId;
+                    }
+
+                    return false;
+                });
+
+                // Sort users by name for better UX
+                const sortedUsers = filteredUsers.sort((a, b) => {
+                    const nameA = a.firstName || a.displayName || a.email;
+                    const nameB = b.firstName || b.displayName || b.email;
+                    return nameA.localeCompare(nameB);
+                });
+
+                setAvailableUsers(sortedUsers);
+            } catch (error) {
+                console.error('Error loading users:', error);
+                setAvailableUsers([]);
+            } finally {
+                setLoadingUsers(false);
+            }
+        };
+
+        loadUsers();
+    }, [followUpDialogOpen, shipment]);
+
+    // Load existing follow-ups when shipment changes - will be defined after useShipmentActions
+    // (moved below to avoid initialization issues)
+
     const {
         shipmentDocuments,
         documentsLoading,
@@ -109,44 +223,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         wasSkipped
     } = useSmartStatusUpdate(shipment?.id, shipment);
 
-    // Enhanced PDF viewer function - identical to working ShipmentDetail
-    const viewPdfInModal = async (documentId, filename, title, actionType = 'printLabel', directUrl = null) => {
-        try {
-            let pdfUrl;
-
-            if (directUrl) {
-                // Use the direct URL (blob URL for multiplied PDFs)
-                pdfUrl = directUrl;
-            } else {
-                // Fetch the document URL from Firebase
-                const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
-                const result = await getDocumentDownloadUrlFunction({
-                    documentId: documentId,
-                    shipmentId: shipment?.id
-                });
-
-                if (result.data && result.data.success) {
-                    pdfUrl = result.data.downloadUrl;
-                    console.log('PDF viewer opened for document:', {
-                        documentId,
-                        title,
-                        foundInUnified: result.data.metadata?.foundInUnified,
-                        storagePath: result.data.metadata?.storagePath
-                    });
-                } else {
-                    throw new Error(result.data?.error || 'Failed to get document URL');
-                }
-            }
-
-            setCurrentPdfUrl(pdfUrl);
-            setCurrentPdfTitle(title || filename || 'Document');
-            setPdfViewerOpen(true);
-
-        } catch (error) {
-            console.error('Error viewing document:', error);
-            showSnackbar('Failed to load document: ' + error.message, 'error');
-        }
-    };
+    // Enhanced PDF viewer function - will be defined after useShipmentActions
+    const viewPdfInModalRef = useRef(null);
 
     const {
         actionStates,
@@ -166,7 +244,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         handleArchiveShipment,
         showRegenerationDialog,
         closeRegenerationDialog
-    } = useShipmentActions(shipment, carrierData, shipmentDocuments, viewPdfInModal, {
+    } = useShipmentActions(shipment, carrierData, shipmentDocuments, (...args) => viewPdfInModalRef.current?.(...args), {
         smartUpdateLoading,
         forceSmartRefresh,
         clearUpdateState,
@@ -210,6 +288,79 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         //     }, 2000); // Give time for the success message to show
         // }
     }, [refreshShipment, showSnackbar]);
+
+    // Load existing follow-ups for this shipment
+    const loadExistingFollowUps = useCallback(async () => {
+        if (!shipment?.id) return;
+
+        setLoadingFollowUps(true);
+        try {
+            const followUpsQuery = query(
+                collection(db, 'followUpTasks'),
+                where('shipmentId', '==', shipment.id),
+                orderBy('createdAt', 'desc')
+            );
+
+            const followUpsSnapshot = await getDocs(followUpsQuery);
+            const followUps = followUpsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            setExistingFollowUps(followUps);
+        } catch (error) {
+            console.error('Error loading follow-ups:', error);
+            showSnackbar('Failed to load follow-ups', 'error');
+        } finally {
+            setLoadingFollowUps(false);
+        }
+    }, [shipment?.id, showSnackbar]);
+
+    // Load existing follow-ups when shipment changes
+    useEffect(() => {
+        if (shipment?.id) {
+            loadExistingFollowUps();
+        }
+    }, [shipment?.id, loadExistingFollowUps]);
+
+    // Enhanced PDF viewer function - identical to working ShipmentDetail
+    viewPdfInModalRef.current = async (documentId, filename, title, actionType = 'printLabel', directUrl = null) => {
+        try {
+            let pdfUrl;
+
+            if (directUrl) {
+                // Use the direct URL (blob URL for multiplied PDFs)
+                pdfUrl = directUrl;
+            } else {
+                // Fetch the document URL from Firebase
+                const getDocumentDownloadUrlFunction = httpsCallable(functions, 'getDocumentDownloadUrl');
+                const result = await getDocumentDownloadUrlFunction({
+                    documentId: documentId,
+                    shipmentId: shipment?.id
+                });
+
+                if (result.data && result.data.success) {
+                    pdfUrl = result.data.downloadUrl;
+                    console.log('PDF viewer opened for document:', {
+                        documentId,
+                        title,
+                        foundInUnified: result.data.metadata?.foundInUnified,
+                        storagePath: result.data.metadata?.storagePath
+                    });
+                } else {
+                    throw new Error(result.data?.error || 'Failed to get document URL');
+                }
+            }
+
+            setCurrentPdfUrl(pdfUrl);
+            setCurrentPdfTitle(title || filename || 'Document');
+            setPdfViewerOpen(true);
+
+        } catch (error) {
+            console.error('Error viewing document:', error);
+            showSnackbar('Failed to load document: ' + error.message, 'error');
+        }
+    };
 
     // UI State - Remove expandedSections since we don't need collapsible sections anymore
     // const [expandedSections, setExpandedSections] = useState({
@@ -725,6 +876,185 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         setSelectedTrackingNumber(null);
     };
 
+
+
+    // Follow-up handlers
+    const handleViewFollowUps = useCallback(() => {
+        setFollowUpListOpen(true);
+        loadExistingFollowUps();
+    }, [loadExistingFollowUps]);
+
+    const handleEditFollowUp = useCallback((followUp) => {
+        setEditingFollowUp(followUp);
+        setFollowUpData({
+            title: followUp.title || 'Follow-up Task',
+            description: followUp.description || '',
+            actionType: followUp.actionType || 'follow-up',
+            actionTypes: followUp.actionTypes || ['email'],
+            dueDate: followUp.dueDate ? new Date(followUp.dueDate.seconds * 1000).toISOString().split('T')[0] : '',
+            dueTime: followUp.dueTime || '09:00',
+            reminderDate: followUp.reminderDate ? new Date(followUp.reminderDate.seconds * 1000).toISOString().split('T')[0] : '',
+            reminderTime: followUp.reminderTime || '08:00',
+            assignmentType: followUp.assignmentType || 'general',
+            assignedTo: followUp.assignedTo || '',
+            estimatedDuration: followUp.estimatedDuration || 30,
+            category: followUp.category || 'manual',
+            notificationType: followUp.notificationType || 'email',
+            tags: followUp.tags || [],
+            reminders: followUp.reminders || []
+        });
+        setFollowUpDialogOpen(true);
+    }, []);
+
+    const handleCreateFollowUp = useCallback(() => {
+        setEditingFollowUp(null);
+        setFollowUpDialogOpen(true);
+        // Pre-populate with shipment context
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        setFollowUpData({
+            title: 'Follow-up Task',
+            description: '',
+            actionType: 'follow-up',
+            actionTypes: ['email'],
+            dueDate: tomorrow.toISOString().split('T')[0],
+            dueTime: '09:00',
+            reminderDate: tomorrow.toISOString().split('T')[0],
+            reminderTime: '08:00',
+            assignmentType: 'general',
+            assignedTo: userId || '',
+            estimatedDuration: 30,
+            category: 'manual',
+            notificationType: 'email',
+            tags: [],
+            reminders: []
+        });
+    }, [shipment?.shipmentID, userId]);
+
+    const handleFollowUpSubmit = useCallback(async () => {
+        console.log('🔄 CREATE TASK clicked - handleFollowUpSubmit called');
+        console.log('📋 Follow-up data:', followUpData);
+        console.log('👤 User:', user);
+        console.log('📦 Shipment:', shipment);
+
+        try {
+            setFollowUpSubmitting(true);
+            console.log('🔍 Using userId from component:', userId);
+
+            if (!userId) {
+                console.log('❌ No user ID found');
+                showSnackbar('User authentication required to create follow-up tasks', 'error');
+                return;
+            }
+
+            // Combine date and time for due date
+            const dueDateTime = new Date(`${followUpData.dueDate}T${followUpData.dueTime}`);
+
+            // Combine date and time for reminder date if provided
+            const reminderDateTime = followUpData.reminderDate ?
+                new Date(`${followUpData.reminderDate}T${followUpData.reminderTime || '08:00'}`) : null;
+
+            const taskData = {
+                shipmentId: shipment.id,
+                companyId: shipment.companyID || companyIdForAddress,
+                customerId: shipment.customerId || null,
+                title: followUpData.title,
+                description: followUpData.description,
+                actionType: followUpData.actionType,
+                actionTypes: followUpData.actionTypes, // Multi-select action types
+                dueDate: dueDateTime.toISOString(),
+                scheduledFor: dueDateTime.toISOString(),
+                reminderDate: reminderDateTime ? reminderDateTime.toISOString() : null,
+                estimatedDuration: followUpData.estimatedDuration,
+                category: followUpData.category,
+                notificationType: followUpData.notificationType,
+                assignedTo: followUpData.assignmentType === 'general' ? 'general' : (followUpData.assignedTo || userId),
+                tags: followUpData.tags,
+                reminders: followUpData.reminders,
+                customFields: {
+                    shipmentID: shipment.shipmentID,
+                    customerName: shipment.shipTo?.companyName || shipment.shipTo?.company,
+                    route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                    shipmentStatus: shipment.status,
+                    actionType: followUpData.actionType,
+                    actionTypes: followUpData.actionTypes,
+                    assignmentType: followUpData.assignmentType,
+                    notificationType: followUpData.notificationType
+                }
+            };
+
+            if (editingFollowUp) {
+                // Update existing follow-up
+                const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
+                await updateFollowUpTask({
+                    taskId: editingFollowUp.id,
+                    ...taskData
+                });
+                showSnackbar('Follow-up task updated successfully!', 'success');
+            } else {
+                // Create new follow-up
+                const createFollowUpTask = httpsCallable(functions, 'createFollowUpTask');
+                await createFollowUpTask(taskData);
+                showSnackbar('Follow-up task created successfully!', 'success');
+            }
+            setFollowUpDialogOpen(false);
+
+            // Refresh the follow-up list if it's open
+            if (followUpListOpen) {
+                loadExistingFollowUps();
+            }
+
+            // Reset form
+            setFollowUpData({
+                title: '',
+                description: '',
+                actionType: 'follow-up',
+                actionTypes: ['email'],
+                dueDate: '',
+                dueTime: '09:00',
+                reminderDate: '',
+                reminderTime: '08:00',
+                assignmentType: 'general',
+                assignedTo: '',
+                estimatedDuration: 30,
+                category: 'manual',
+                notificationType: 'email',
+                tags: [],
+                reminders: []
+            });
+            setEditingFollowUp(null);
+        } catch (error) {
+            console.error('Error creating follow-up task:', error);
+            showSnackbar('Failed to create follow-up task', 'error');
+        } finally {
+            setFollowUpSubmitting(false);
+        }
+    }, [followUpData, shipment, userId, showSnackbar, editingFollowUp, followUpListOpen, loadExistingFollowUps]);
+
+    const handleFollowUpCancel = useCallback(() => {
+        setFollowUpDialogOpen(false);
+        setEditingFollowUp(null);
+        setFollowUpSubmitting(false);
+        setFollowUpData({
+            title: '',
+            description: '',
+            actionType: 'follow-up',
+            actionTypes: ['email'],
+            dueDate: '',
+            dueTime: '09:00',
+            reminderDate: '',
+            reminderTime: '08:00',
+            assignmentType: 'general',
+            assignedTo: '',
+            estimatedDuration: 30,
+            category: 'manual',
+            notificationType: 'email',
+            tags: [],
+            reminders: []
+        });
+    }, []);
+
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -769,6 +1099,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onRegenerateCarrierConfirmation={handleRegenerateCarrierConfirmation}
                     onEditShipment={handleEditShipmentClick}
                     onArchiveShipment={handleArchiveShipment}
+                    onCreateFollowUp={handleCreateFollowUp}
+                    onViewFollowUps={handleViewFollowUps}
+                    followUpCount={existingFollowUps.filter(f => f.status !== 'completed').length}
                     isAdmin={isAdmin}
                 />
 
@@ -797,7 +1130,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         documentsLoading={documentsLoading}
                         documentsError={documentsError}
                         onRetryFetch={fetchShipmentDocuments}
-                        onViewPdf={viewPdfInModal}
+                        onViewPdf={viewPdfInModalRef.current}
                     /> */}
 
                     {/* Documents Section */}
@@ -807,7 +1140,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         documentsLoading={documentsLoading}
                         documentsError={documentsError}
                         onRetryFetch={fetchShipmentDocuments}
-                        onViewPdf={viewPdfInModal}
+                        onViewPdf={viewPdfInModalRef.current}
                         onDocumentUploaded={fetchShipmentDocuments}
                         showNotification={showSnackbar}
                     />
@@ -993,6 +1326,605 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 shipmentID={shipment?.shipmentID}
                 isLoading={regenerationDialog.isLoading}
             />
+
+            {/* Follow-Up Dialog */}
+            <Dialog
+                open={followUpDialogOpen}
+                onClose={handleFollowUpCancel}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        maxHeight: '90vh'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    borderBottom: '1px solid #e5e7eb',
+                    pb: 2
+                }}>
+                    {editingFollowUp ? 'Edit Follow-Up Task' : 'Create Follow-Up Task'}
+                </DialogTitle>
+                <DialogContent sx={{ pt: 3 }}>
+                    <Grid container spacing={3}>
+                        {/* Shipment Context */}
+                        <Grid item xs={12}>
+                            <Paper sx={{
+                                p: 2,
+                                backgroundColor: '#f8fafc',
+                                border: '1px solid #e5e7eb'
+                            }}>
+
+                                <Grid container spacing={2} alignItems="center">
+                                    {/* Column 1: Shipment ID */}
+                                    <Grid item xs={4}>
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Shipment ID: {shipment?.shipmentID}
+                                        </Typography>
+                                    </Grid>
+
+                                    {/* Column 2: Ship Date, ETA1, ETA2 (stacked) */}
+                                    <Grid item xs={4}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                <strong>Ship Date:</strong> {shipment?.shipmentInfo?.shipmentDate ?
+                                                    new Date(shipment.shipmentInfo.shipmentDate).toLocaleDateString() :
+                                                    shipment?.bookedAt ? new Date(shipment.bookedAt).toLocaleDateString() : 'N/A'}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                <strong>ETA1:</strong> {(() => {
+                                                    const eta1 = shipment?.shipmentInfo?.eta1 || shipment?.eta1 || shipment?.ETA1;
+                                                    if (eta1) {
+                                                        try {
+                                                            let dateObj;
+                                                            // Handle Firestore Timestamp
+                                                            if (eta1?.toDate) {
+                                                                dateObj = eta1.toDate();
+                                                            }
+                                                            // Handle date-only strings (YYYY-MM-DD)
+                                                            else if (typeof eta1 === 'string' && eta1.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                                const parts = eta1.split('-');
+                                                                dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                                            }
+                                                            // Handle other date formats
+                                                            else {
+                                                                dateObj = new Date(eta1);
+                                                            }
+                                                            return dateObj.toLocaleDateString();
+                                                        } catch (error) {
+                                                            return 'N/A';
+                                                        }
+                                                    }
+                                                    return 'N/A';
+                                                })()}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                <strong>ETA2:</strong> {(() => {
+                                                    const eta2 = shipment?.shipmentInfo?.eta2 || shipment?.eta2 || shipment?.ETA2;
+                                                    if (eta2) {
+                                                        try {
+                                                            let dateObj;
+                                                            // Handle Firestore Timestamp
+                                                            if (eta2?.toDate) {
+                                                                dateObj = eta2.toDate();
+                                                            }
+                                                            // Handle date-only strings (YYYY-MM-DD)
+                                                            else if (typeof eta2 === 'string' && eta2.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                                                const parts = eta2.split('-');
+                                                                dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                                            }
+                                                            // Handle other date formats
+                                                            else {
+                                                                dateObj = new Date(eta2);
+                                                            }
+                                                            return dateObj.toLocaleDateString();
+                                                        } catch (error) {
+                                                            return 'N/A';
+                                                        }
+                                                    }
+                                                    return 'N/A';
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                    </Grid>
+
+                                    {/* Column 3: Status */}
+                                    <Grid item xs={4}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Status:
+                                            </Typography>
+                                            <EnhancedStatusChip
+                                                status={shipment?.status}
+                                                size="small"
+                                                compact={true}
+                                                displayMode="auto"
+                                                sx={{
+                                                    height: '18px',
+                                                    '& .MuiChip-label': {
+                                                        fontSize: '9px',
+                                                        fontWeight: 500,
+                                                        px: 1
+                                                    }
+                                                }}
+                                            />
+                                            {/* Show substatus if available */}
+                                            {(shipment?.statusOverride?.enhancedStatus?.subStatus || shipment?.subStatus) && (
+                                                <EnhancedStatusChip
+                                                    status={shipment?.statusOverride?.enhancedStatus || shipment?.subStatus}
+                                                    size="small"
+                                                    compact={true}
+                                                    displayMode="sub-only"
+                                                    sx={{
+                                                        height: '18px',
+                                                        '& .MuiChip-label': {
+                                                            fontSize: '9px',
+                                                            fontWeight: 500,
+                                                            px: 1
+                                                        }
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
+                                    </Grid>
+
+                                </Grid>
+                            </Paper>
+                        </Grid>
+
+
+
+
+
+                        {/* Action Type */}
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Action Type</InputLabel>
+                                <Select
+                                    value={followUpData.actionType}
+                                    label="Action Type"
+                                    onChange={(e) => setFollowUpData(prev => ({ ...prev, actionType: e.target.value }))}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="follow-up" sx={{ fontSize: '12px' }}>General Follow-Up</MenuItem>
+                                    <MenuItem value="rate-request" sx={{ fontSize: '12px' }}>Rate Request</MenuItem>
+                                    <MenuItem value="booking" sx={{ fontSize: '12px' }}>Booking Required</MenuItem>
+                                    <MenuItem value="requested-update" sx={{ fontSize: '12px' }}>Requested Update</MenuItem>
+                                    <MenuItem value="on-hold" sx={{ fontSize: '12px' }}>On Hold</MenuItem>
+                                    <MenuItem value="claim" sx={{ fontSize: '12px' }}>Claim/Issue</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        {/* Action Types (Multi-select) */}
+                        <Grid item xs={12} md={6}>
+                            <Autocomplete
+                                multiple
+                                value={followUpData.actionTypes}
+                                onChange={(event, newValue) => {
+                                    setFollowUpData(prev => ({ ...prev, actionTypes: newValue }));
+                                }}
+                                options={['email', 'phone', 'internal']}
+                                getOptionLabel={(option) => {
+                                    switch (option) {
+                                        case 'email': return 'Email';
+                                        case 'phone': return 'Phone';
+                                        case 'internal': return 'Internal';
+                                        default: return option;
+                                    }
+                                }}
+                                renderTags={(value, getTagProps) =>
+                                    value.map((option, index) => (
+                                        <Chip
+                                            {...getTagProps({ index })}
+                                            key={option}
+                                            label={option === 'email' ? 'Email' : option === 'phone' ? 'Phone' : 'Internal'}
+                                            size="small"
+                                            sx={{ fontSize: '10px' }}
+                                        />
+                                    ))
+                                }
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Communication Methods"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                )}
+                                sx={{
+                                    '& .MuiAutocomplete-inputRoot': {
+                                        fontSize: '12px'
+                                    },
+                                    '& .MuiAutocomplete-option': {
+                                        fontSize: '12px'
+                                    }
+                                }}
+                                componentsProps={{
+                                    popper: {
+                                        sx: {
+                                            '& .MuiAutocomplete-option': {
+                                                fontSize: '12px'
+                                            }
+                                        }
+                                    }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Note */}
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Note"
+                                value={followUpData.description}
+                                onChange={(e) => setFollowUpData(prev => ({ ...prev, description: e.target.value }))}
+                                fullWidth
+                                multiline
+                                rows={3}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                                placeholder="Note"
+                            />
+                        </Grid>
+
+                        {/* Scheduling & Assignment */}
+                        <Grid item xs={12}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
+                                Scheduling & Assignment
+                            </Typography>
+                        </Grid>
+
+                        {/* Due Date */}
+                        <Grid
+                            item
+                            xs={12}
+                            md={6}
+                            sx={{
+                                mt: 0,
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                }
+                            }}
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    dueDateRef.current?.focus();
+                                    dueDateRef.current?.click();
+                                }
+                            }}
+                        >
+                            <TextField
+                                ref={dueDateRef}
+                                label="Due Date"
+                                type="date"
+                                value={followUpData.dueDate}
+                                onChange={(e) => setFollowUpData(prev => ({ ...prev, dueDate: e.target.value }))}
+                                fullWidth
+                                required
+                                size="small"
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Due Time */}
+                        <Grid
+                            item
+                            xs={12}
+                            md={6}
+                            sx={{
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                }
+                            }}
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    dueTimeRef.current?.focus();
+                                    dueTimeRef.current?.click();
+                                }
+                            }}
+                        >
+                            <TextField
+                                ref={dueTimeRef}
+                                label="Due Time"
+                                type="time"
+                                value={followUpData.dueTime}
+                                onChange={(e) => setFollowUpData(prev => ({ ...prev, dueTime: e.target.value }))}
+                                fullWidth
+                                required
+                                size="small"
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Reminder Section */}
+
+                        {/* Reminder Date */}
+                        <Grid
+                            item
+                            xs={12}
+                            md={6}
+                            sx={{
+                                mt: 0,
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                }
+                            }}
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    reminderDateRef.current?.focus();
+                                    reminderDateRef.current?.click();
+                                }
+                            }}
+                        >
+                            <TextField
+                                ref={reminderDateRef}
+                                label="Reminder Date"
+                                type="date"
+                                value={followUpData.reminderDate}
+                                onChange={(e) => setFollowUpData(prev => ({ ...prev, reminderDate: e.target.value }))}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Reminder Time */}
+                        <Grid
+                            item
+                            xs={12}
+                            md={6}
+                            sx={{
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                }
+                            }}
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    reminderTimeRef.current?.focus();
+                                    reminderTimeRef.current?.click();
+                                }
+                            }}
+                        >
+                            <TextField
+                                ref={reminderTimeRef}
+                                label="Reminder Time"
+                                type="time"
+                                value={followUpData.reminderTime}
+                                onChange={(e) => setFollowUpData(prev => ({ ...prev, reminderTime: e.target.value }))}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ shrink: true }}
+                                sx={{
+                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                }}
+                            />
+                        </Grid>
+
+                        {/* Assignment Type */}
+                        <Grid item xs={12} md={6} sx={{ mt: 0 }}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Assignment Type</InputLabel>
+                                <Select
+                                    value={followUpData.assignmentType}
+                                    label="Assignment Type"
+                                    onChange={(e) => setFollowUpData(prev => ({
+                                        ...prev,
+                                        assignmentType: e.target.value,
+                                        assignedTo: e.target.value === 'general' ? '' : prev.assignedTo
+                                    }))}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="general" sx={{ fontSize: '12px' }}>General Assignment</MenuItem>
+                                    <MenuItem value="specific" sx={{ fontSize: '12px' }}>Specific User</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        {/* Specific User Assignment */}
+                        {followUpData.assignmentType === 'specific' && (
+                            <Grid item xs={12} md={6}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Assign To</InputLabel>
+                                    <Select
+                                        value={followUpData.assignedTo}
+                                        label="Assign To"
+                                        onChange={(e) => setFollowUpData(prev => ({ ...prev, assignedTo: e.target.value }))}
+                                        sx={{ fontSize: '12px' }}
+                                        disabled={loadingUsers}
+                                    >
+                                        {loadingUsers ? (
+                                            <MenuItem disabled sx={{ fontSize: '12px' }}>Loading users...</MenuItem>
+                                        ) : availableUsers.length === 0 ? (
+                                            <MenuItem disabled sx={{ fontSize: '12px' }}>No users available for this company</MenuItem>
+                                        ) : (
+                                            availableUsers.map(user => {
+                                                // Create a display name with proper formatting
+                                                const displayName = user.firstName && user.lastName
+                                                    ? `${user.firstName} ${user.lastName}`
+                                                    : user.displayName || user.email;
+
+                                                return (
+                                                    <MenuItem key={user.id} value={user.id} sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Avatar
+                                                            src={user.photoURL || user.avatar || user.profilePicture}
+                                                            sx={{
+                                                                width: 20,
+                                                                height: 20,
+                                                                fontSize: '10px',
+                                                                bgcolor: user.photoURL || user.avatar || user.profilePicture ? 'transparent' : '#6366f1'
+                                                            }}
+                                                        >
+                                                            {!user.photoURL && !user.avatar && !user.profilePicture && (
+                                                                displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                                                            )}
+                                                        </Avatar>
+                                                        <Box>
+                                                            {displayName} ({user.email})
+                                                        </Box>
+                                                    </MenuItem>
+                                                );
+                                            })
+                                        )}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        )}
+
+
+
+                        {/* Notification Type - Email Only */}
+                        <Grid item xs={12} sx={{ mt: 0 }}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Notification Type</InputLabel>
+                                <Select
+                                    value={followUpData.notificationType}
+                                    label="Notification Type"
+                                    onChange={(e) => setFollowUpData(prev => ({ ...prev, notificationType: e.target.value }))}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="email" sx={{ fontSize: '12px' }}>Email</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+
+                    </Grid>
+                </DialogContent>
+
+                <DialogActions sx={{
+                    px: 3,
+                    py: 2,
+                    borderTop: '1px solid #e5e7eb',
+                    gap: 1
+                }}>
+                    <Button
+                        onClick={handleFollowUpCancel}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            color: '#6b7280'
+                        }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            console.log('🖱️ CREATE TASK button clicked');
+                            console.log('📋 Current followUpData:', followUpData);
+                            console.log('✅ Button disabled state:', !followUpData.dueDate || !followUpData.actionTypes.length || (followUpData.assignmentType === 'specific' && !followUpData.assignedTo));
+                            console.log('📅 Due date:', followUpData.dueDate);
+                            console.log('🎯 Action types:', followUpData.actionTypes);
+                            console.log('👥 Assignment type:', followUpData.assignmentType);
+                            console.log('👤 Assigned to:', followUpData.assignedTo);
+                            handleFollowUpSubmit();
+                        }}
+                        variant="contained"
+                        disabled={followUpSubmitting || !followUpData.dueDate || !followUpData.actionTypes.length || (followUpData.assignmentType === 'specific' && !followUpData.assignedTo)}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            minWidth: 120
+                        }}
+                        startIcon={followUpSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
+                    >
+                        {followUpSubmitting ?
+                            (editingFollowUp ? 'Updating...' : 'Creating...') :
+                            (editingFollowUp ? 'Update Task' : 'Create Task')
+                        }
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Follow-Up List Dialog */}
+            <Dialog
+                open={followUpListOpen}
+                onClose={() => setFollowUpListOpen(false)}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 2,
+                        minHeight: '600px'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    fontSize: '18px',
+                    fontWeight: 600,
+                    borderBottom: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                }}>
+                    Follow-Up Tasks - {shipment?.shipmentID}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={handleCreateFollowUp}
+                            sx={{
+                                fontSize: '12px',
+                                bgcolor: '#f59e0b',
+                                '&:hover': {
+                                    bgcolor: '#d97706'
+                                }
+                            }}
+                        >
+                            Create New
+                        </Button>
+                        <IconButton
+                            onClick={() => setFollowUpListOpen(false)}
+                            sx={{
+                                color: '#6b7280',
+                                '&:hover': {
+                                    bgcolor: '#f3f4f6'
+                                }
+                            }}
+                        >
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0 }}>
+                    {loadingFollowUps ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+                            <CircularProgress />
+                        </Box>
+                    ) : (
+                        <FollowUpTable
+                            followUps={existingFollowUps}
+                            onEditFollowUp={handleEditFollowUp}
+                            onRefresh={loadExistingFollowUps}
+                            availableUsers={availableUsers}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
         </ErrorBoundary>
     );
 };

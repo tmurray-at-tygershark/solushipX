@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     TableRow,
     TableCell,
@@ -16,7 +16,12 @@ import {
     DialogTitle,
     DialogContent,
     Button,
-    Skeleton
+    Skeleton,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
+    Alert
 } from '@mui/material';
 import {
     MoreVert as MoreVertIcon,
@@ -27,7 +32,14 @@ import {
     Add as AddIcon,
     PictureAsPdf as PictureAsPdfIcon,
     FileDownload as FileDownloadIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    ExpandMore as ExpandMoreIcon,
+    ExpandLess as ExpandLessIcon,
+    LocalShipping as TrackingIcon,
+    Visibility as ViewIcon,
+    Assignment as FollowUpIcon,
+    Warning as WarningIcon,
+    PriorityHigh as UrgentIcon
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -54,11 +66,51 @@ const ShipmentTableRow = ({
     columnConfig = {},
     adminViewMode
 }) => {
-    // Apply encoding fix to shipment data
-    const shipment = fixShipmentEncoding(rawShipment);
-
     const [expanded, setExpanded] = useState(false);
-    const isSelected = selected.indexOf(shipment.id) !== -1;
+    const [documentsExpanded, setDocumentsExpanded] = useState(false);
+
+    // Follow-up state
+    const [followUpSummary, setFollowUpSummary] = useState(null);
+    const [followUpLoading, setFollowUpLoading] = useState(false);
+
+    // Memoize shipment to prevent unnecessary re-renders
+    const shipment = useMemo(() => {
+        if (!rawShipment) return null;
+
+        // If shipment is already processed, return as-is
+        if (rawShipment.processed) return rawShipment;
+
+        // Process and fix encoding issues
+        const processedShipment = fixShipmentEncoding(rawShipment);
+        processedShipment.processed = true;
+        return processedShipment;
+    }, [rawShipment]);
+
+    // Load follow-up summary when component mounts or shipment changes
+    useEffect(() => {
+        const loadFollowUpSummary = async () => {
+            if (!shipment?.id) return;
+
+            setFollowUpLoading(true);
+            try {
+                const getShipmentFollowUpSummary = httpsCallable(functions, 'getShipmentFollowUpSummary');
+                const result = await getShipmentFollowUpSummary({ shipmentId: shipment.id });
+
+                if (result.data?.summary) {
+                    setFollowUpSummary(result.data.summary);
+                }
+            } catch (error) {
+                console.error('Error loading follow-up summary:', error);
+                // Don't show error to user for this non-critical feature
+            } finally {
+                setFollowUpLoading(false);
+            }
+        };
+
+        loadFollowUpSummary();
+    }, [shipment?.id]);
+
+    const isSelected = selected.indexOf(shipment?.id) !== -1;
 
     // Check if we're in admin view mode
     const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
@@ -66,20 +118,20 @@ const ShipmentTableRow = ({
     // Calculate charges for admin view
     const getCharges = () => {
         // FIXED: Handle cancelled shipments - they should show $0.00
-        if (shipment.status === 'cancelled' || shipment.status === 'canceled') {
+        if (shipment?.status === 'cancelled' || shipment?.status === 'canceled') {
             return {
                 cost: 0,
                 companyCharge: 0,
-                currency: shipment.currency || 'USD'
+                currency: shipment?.currency || 'USD'
             };
         }
 
         // Use the new dual rate storage system if available
-        if (shipment.actualRates && shipment.markupRates) {
+        if (shipment?.actualRates && shipment?.markupRates) {
             return {
-                cost: parseFloat(shipment.actualRates.totalCharges) || 0,
-                companyCharge: parseFloat(shipment.markupRates.totalCharges) || 0,
-                currency: shipment.actualRates.currency || shipment.markupRates.currency || 'USD'
+                cost: parseFloat(shipment?.actualRates.totalCharges) || 0,
+                companyCharge: parseFloat(shipment?.markupRates.totalCharges) || 0,
+                currency: shipment?.actualRates.currency || shipment?.markupRates.currency || 'USD'
             };
         }
 
@@ -88,10 +140,10 @@ const ShipmentTableRow = ({
         let companyCharge = 0;
 
         // For QuickShip shipments, extract cost and charge from manual rates
-        if (shipment.creationMethod === 'quickship' && shipment.manualRates) {
-            const totalCost = shipment.manualRates.reduce((sum, rate) =>
+        if (shipment?.creationMethod === 'quickship' && shipment?.manualRates) {
+            const totalCost = shipment?.manualRates.reduce((sum, rate) =>
                 sum + (parseFloat(rate.cost) || 0), 0);
-            const totalCharge = shipment.manualRates.reduce((sum, rate) =>
+            const totalCharge = shipment?.manualRates.reduce((sum, rate) =>
                 sum + (parseFloat(rate.charge) || 0), 0);
 
             if (totalCost > 0 || totalCharge > 0) {
@@ -103,28 +155,28 @@ const ShipmentTableRow = ({
         // If not QuickShip or no manual rates, check for dual rate fields
         if (cost === 0 && companyCharge === 0) {
             // Try to find separate cost and charge values
-            cost = shipment.actualCost ||
-                shipment.carrierCost ||
-                shipment.originalAmount ||
-                shipment.totalCost ||
-                shipment.cost || 0;
+            cost = shipment?.actualCost ||
+                shipment?.carrierCost ||
+                shipment?.originalAmount ||
+                shipment?.totalCost ||
+                shipment?.cost || 0;
 
-            companyCharge = shipment.customerCharge ||
-                shipment.finalAmount ||
-                shipment.totalCharges ||
-                shipment.selectedRate?.totalCharges ||
-                shipment.selectedRate?.price ||
-                shipment.selectedRateRef?.totalCharges ||
-                shipment.selectedRateRef?.price || 0;
+            companyCharge = shipment?.customerCharge ||
+                shipment?.finalAmount ||
+                shipment?.totalCharges ||
+                shipment?.selectedRate?.totalCharges ||
+                shipment?.selectedRate?.price ||
+                shipment?.selectedRateRef?.totalCharges ||
+                shipment?.selectedRateRef?.price || 0;
         }
 
         // Final fallback - if we still don't have values, use any available amount
         if (cost === 0 && companyCharge === 0) {
-            const fallbackAmount = shipment.totalCharges ||
-                shipment.selectedRate?.totalCharges ||
-                shipment.selectedRate?.price ||
-                shipment.selectedRateRef?.totalCharges ||
-                shipment.selectedRateRef?.price || 0;
+            const fallbackAmount = shipment?.totalCharges ||
+                shipment?.selectedRate?.totalCharges ||
+                shipment?.selectedRate?.price ||
+                shipment?.selectedRateRef?.totalCharges ||
+                shipment?.selectedRateRef?.price || 0;
 
             // For true legacy shipments without cost/charge separation, 
             // estimate cost as 85% of charge (common markup scenario)
@@ -146,31 +198,31 @@ const ShipmentTableRow = ({
         // 6. Manual rates currency (for QuickShip)
         // 7. Booking confirmation currency
         // 8. Carrier data currency
-        if (shipment.currency) {
-            currency = shipment.currency;
-        } else if (shipment.selectedRate?.currency) {
-            currency = shipment.selectedRate.currency;
-        } else if (shipment.selectedRate?.pricing?.currency) {
+        if (shipment?.currency) {
+            currency = shipment?.currency;
+        } else if (shipment?.selectedRate?.currency) {
+            currency = shipment?.selectedRate.currency;
+        } else if (shipment?.selectedRate?.pricing?.currency) {
             // For advanced shipments, check pricing.currency
-            currency = shipment.selectedRate.pricing.currency;
-        } else if (shipment.selectedRateRef?.currency) {
-            currency = shipment.selectedRateRef.currency;
-        } else if (shipment.selectedRateRef?.pricing?.currency) {
-            currency = shipment.selectedRateRef.pricing.currency;
-        } else if (shipment.rateDetails?.currency) {
-            currency = shipment.rateDetails.currency;
-        } else if (shipment.shipmentInfo?.currency) {
-            currency = shipment.shipmentInfo.currency;
-        } else if (shipment.manualRates && shipment.manualRates.length > 0) {
+            currency = shipment?.selectedRate.pricing.currency;
+        } else if (shipment?.selectedRateRef?.currency) {
+            currency = shipment?.selectedRateRef.currency;
+        } else if (shipment?.selectedRateRef?.pricing?.currency) {
+            currency = shipment?.selectedRateRef.pricing.currency;
+        } else if (shipment?.rateDetails?.currency) {
+            currency = shipment?.rateDetails.currency;
+        } else if (shipment?.shipmentInfo?.currency) {
+            currency = shipment?.shipmentInfo.currency;
+        } else if (shipment?.manualRates && shipment?.manualRates.length > 0) {
             // For QuickShip shipments, check manual rates for currency
-            const rateWithCurrency = shipment.manualRates.find(rate => rate.currency);
+            const rateWithCurrency = shipment?.manualRates.find(rate => rate.currency);
             if (rateWithCurrency) {
                 currency = rateWithCurrency.currency;
             }
-        } else if (shipment.carrierBookingConfirmation?.currency) {
-            currency = shipment.carrierBookingConfirmation.currency;
-        } else if (carrierData[shipment.id]?.currency) {
-            currency = carrierData[shipment.id].currency;
+        } else if (shipment?.carrierBookingConfirmation?.currency) {
+            currency = shipment?.carrierBookingConfirmation.currency;
+        } else if (carrierData[shipment?.id]?.currency) {
+            currency = carrierData[shipment?.id].currency;
         }
 
         return {
@@ -183,28 +235,28 @@ const ShipmentTableRow = ({
     // Get tracking number
     const getTrackingNumber = () => {
         // For draft shipments, there won't be tracking numbers yet
-        if (shipment.status === 'draft') {
+        if (shipment?.status === 'draft') {
             return '';
         }
 
-        const trackingNumber = shipment.trackingNumber ||
-            shipment.carrierTrackingNumber || // Check top-level carrierTrackingNumber for QuickShip
-            shipment.shipmentInfo?.carrierTrackingNumber || // Check inside shipmentInfo for QuickShip
-            shipment.selectedRate?.trackingNumber ||
-            shipment.selectedRate?.TrackingNumber ||
-            shipment.selectedRateRef?.trackingNumber ||
-            shipment.selectedRateRef?.TrackingNumber ||
-            shipment.carrierTrackingData?.trackingNumber ||
-            shipment.carrierBookingConfirmation?.trackingNumber ||
-            shipment.carrierBookingConfirmation?.proNumber ||
-            shipment.carrierBookingConfirmation?.confirmationNumber ||
-            shipment.bookingReferenceNumber ||
-            shipment.selectedRate?.BookingReferenceNumber ||
-            shipment.selectedRate?.bookingReferenceNumber ||
-            shipment.selectedRateRef?.BookingReferenceNumber ||
-            shipment.selectedRateRef?.bookingReferenceNumber ||
-            shipment.carrierTrackingData?.bookingReferenceNumber ||
-            shipment.carrierBookingConfirmation?.bookingReference ||
+        const trackingNumber = shipment?.trackingNumber ||
+            shipment?.carrierTrackingNumber || // Check top-level carrierTrackingNumber for QuickShip
+            shipment?.shipmentInfo?.carrierTrackingNumber || // Check inside shipmentInfo for QuickShip
+            shipment?.selectedRate?.trackingNumber ||
+            shipment?.selectedRate?.TrackingNumber ||
+            shipment?.selectedRateRef?.trackingNumber ||
+            shipment?.selectedRateRef?.TrackingNumber ||
+            shipment?.carrierTrackingData?.trackingNumber ||
+            shipment?.carrierBookingConfirmation?.trackingNumber ||
+            shipment?.carrierBookingConfirmation?.proNumber ||
+            shipment?.carrierBookingConfirmation?.confirmationNumber ||
+            shipment?.bookingReferenceNumber ||
+            shipment?.selectedRate?.BookingReferenceNumber ||
+            shipment?.selectedRate?.bookingReferenceNumber ||
+            shipment?.selectedRateRef?.BookingReferenceNumber ||
+            shipment?.selectedRateRef?.bookingReferenceNumber ||
+            shipment?.carrierTrackingData?.bookingReferenceNumber ||
+            shipment?.carrierBookingConfirmation?.bookingReference ||
             '';
 
         return trackingNumber;
@@ -213,10 +265,10 @@ const ShipmentTableRow = ({
     // Get carrier name with eShipPlus detection
     const getCarrierDisplay = () => {
         // For draft shipments, especially advanced drafts, carrier data may not exist yet
-        if (shipment.status === 'draft') {
+        if (shipment?.status === 'draft') {
             // Check if there's a selected rate with carrier info
-            const selectedRateCarrier = shipment.selectedRate?.carrier ||
-                shipment.selectedRateRef?.carrier;
+            const selectedRateCarrier = shipment?.selectedRate?.carrier ||
+                shipment?.selectedRateRef?.carrier;
 
             if (selectedRateCarrier) {
                 // Handle both string carrier names and carrier objects
@@ -226,8 +278,8 @@ const ShipmentTableRow = ({
 
                 return {
                     name: carrierName,
-                    isEShipPlus: shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-                        shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS'
+                    isEShipPlus: shipment?.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                        shipment?.selectedRateRef?.displayCarrierId === 'ESHIPPLUS'
                 };
             }
 
@@ -239,10 +291,10 @@ const ShipmentTableRow = ({
         }
 
         // Extract carrier name with proper object handling
-        let carrierName = carrierData[shipment.id]?.carrier ||
-            shipment.selectedRateRef?.carrier ||
-            shipment.selectedRate?.carrier ||
-            shipment.carrier || 'N/A';
+        let carrierName = carrierData[shipment?.id]?.carrier ||
+            shipment?.selectedRateRef?.carrier ||
+            shipment?.selectedRate?.carrier ||
+            shipment?.carrier || 'N/A';
 
         // Handle carrier objects (extract the name property)
         if (typeof carrierName === 'object' && carrierName?.name) {
@@ -251,15 +303,15 @@ const ShipmentTableRow = ({
 
         // For QuickShip drafts, respect the manually selected carrier
         // and don't apply eShip Plus logic unless explicitly detected
-        if (shipment.creationMethod === 'quickship') {
+        if (shipment?.creationMethod === 'quickship') {
             // Only check for explicit eShip Plus indicators for QuickShip drafts
             const isExplicitEShipPlus =
-                shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
-                shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-                shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-                carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
-                carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus';
+                shipment?.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment?.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+                shipment?.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+                shipment?.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+                carrierData[shipment?.id]?.displayCarrierId === 'ESHIPPLUS' ||
+                carrierData[shipment?.id]?.sourceCarrierName === 'eShipPlus';
 
             return {
                 name: isExplicitEShipPlus && carrierName !== 'N/A' ?
@@ -271,12 +323,12 @@ const ShipmentTableRow = ({
 
         // For non-QuickShip shipments, use the enhanced eShipPlus detection
         const isEShipPlus =
-            shipment.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
-            shipment.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
-            shipment.selectedRate?.sourceCarrierName === 'eShipPlus' ||
-            shipment.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
-            carrierData[shipment.id]?.displayCarrierId === 'ESHIPPLUS' ||
-            carrierData[shipment.id]?.sourceCarrierName === 'eShipPlus' ||
+            shipment?.selectedRate?.displayCarrierId === 'ESHIPPLUS' ||
+            shipment?.selectedRateRef?.displayCarrierId === 'ESHIPPLUS' ||
+            shipment?.selectedRate?.sourceCarrierName === 'eShipPlus' ||
+            shipment?.selectedRateRef?.sourceCarrierName === 'eShipPlus' ||
+            carrierData[shipment?.id]?.displayCarrierId === 'ESHIPPLUS' ||
+            carrierData[shipment?.id]?.sourceCarrierName === 'eShipPlus' ||
             (carrierName && carrierName !== 'N/A' && typeof carrierName === 'string' && (
                 carrierName.toLowerCase().includes('ward trucking') ||
                 carrierName.toLowerCase().includes('fedex freight') ||
@@ -348,7 +400,7 @@ const ShipmentTableRow = ({
                     }}>
                         <Checkbox
                             checked={isSelected}
-                            onChange={() => onSelect(shipment.id)}
+                            onChange={() => onSelect(shipment?.id)}
                             size="small"
                             sx={{ p: 0.5 }}
                         />
@@ -381,7 +433,7 @@ const ShipmentTableRow = ({
                                 }}>
                                     {(() => {
                                         // Enhanced logo detection - check multiple possible sources
-                                        const company = companyData[shipment.companyID];
+                                        const company = companyData[shipment?.companyID];
 
                                         // Check multiple possible logo field names
                                         const logoUrl = company?.logoUrl ||
@@ -390,7 +442,7 @@ const ShipmentTableRow = ({
                                             company?.logoURL ||
                                             company?.companyLogoUrl;
 
-                                        const companyName = company?.name || company?.companyName || shipment.companyID || 'CO';
+                                        const companyName = company?.name || company?.companyName || shipment?.companyID || 'CO';
 
                                         if (logoUrl) {
                                             return (
@@ -436,7 +488,7 @@ const ShipmentTableRow = ({
                                     color: '#000000',
                                     lineHeight: 1.2
                                 }}>
-                                    {companyData[shipment.companyID]?.name || shipment.companyID || 'Unknown Company'}
+                                    {companyData[shipment?.companyID]?.name || shipment?.companyID || 'Unknown Company'}
                                 </Typography>
                             </Box>
                         </TableCell>
@@ -452,34 +504,47 @@ const ShipmentTableRow = ({
                             lineHeight: 1.3
                         }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                {shipment.status === 'draft' ? (
+                                {/* Follow-up indicator */}
+                                {followUpSummary?.requiresAttention && (
+                                    <Tooltip title={`${followUpSummary.overdueTasks > 0 ? 'Overdue tasks' : followUpSummary.urgentTasks > 0 ? 'Urgent tasks' : 'Follow-up required'}`}>
+                                        <WarningIcon
+                                            sx={{
+                                                fontSize: '14px',
+                                                color: followUpSummary.overdueTasks > 0 ? '#ef4444' : '#f59e0b',
+                                                animation: followUpSummary.urgentTasks > 0 ? 'pulse 2s infinite' : 'none'
+                                            }}
+                                        />
+                                    </Tooltip>
+                                )}
+
+                                {shipment?.status === 'draft' ? (
                                     onEditDraftShipment ? (
                                         <span
-                                            onClick={() => onEditDraftShipment(shipment.id)}
+                                            onClick={() => onEditDraftShipment(shipment?.id)}
                                             className="shipment-link"
                                             style={{ cursor: 'pointer', fontSize: '11px' }}
                                         >
                                             <span>{highlightSearchTerm(
-                                                shipment.shipmentID || shipment.id,
+                                                shipment?.shipmentID || shipment?.id,
                                                 searchFields.shipmentId
                                             )}</span>
                                         </span>
                                     ) : (
                                         <span className="shipment-link" style={{ fontSize: '11px', color: '#64748b' }}>
                                             <span>{highlightSearchTerm(
-                                                shipment.shipmentID || shipment.id,
+                                                shipment?.shipmentID || shipment?.id,
                                                 searchFields.shipmentId
                                             )}</span>
                                         </span>
                                     )
                                 ) : (
                                     <span
-                                        onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
+                                        onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment?.shipmentID || shipment?.id)}
                                         className="shipment-link"
                                         style={{ cursor: 'pointer', fontSize: '11px' }}
                                     >
                                         <span>{highlightSearchTerm(
-                                            shipment.shipmentID || shipment.id,
+                                            shipment?.shipmentID || shipment?.id,
                                             searchFields.shipmentId
                                         )}</span>
                                     </span>
@@ -487,7 +552,7 @@ const ShipmentTableRow = ({
                                 <IconButton
                                     size="small"
                                     onClick={() => {
-                                        navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
+                                        navigator.clipboard.writeText(shipment?.shipmentID || shipment?.id);
                                         showSnackbar('Shipment ID copied!', 'success');
                                     }}
                                     sx={{ padding: '2px' }}
@@ -513,34 +578,47 @@ const ShipmentTableRow = ({
                                 lineHeight: 1.3
                             }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {shipment.status === 'draft' ? (
+                                    {/* Follow-up indicator */}
+                                    {followUpSummary?.requiresAttention && (
+                                        <Tooltip title={`${followUpSummary.overdueTasks > 0 ? 'Overdue tasks' : followUpSummary.urgentTasks > 0 ? 'Urgent tasks' : 'Follow-up required'}`}>
+                                            <WarningIcon
+                                                sx={{
+                                                    fontSize: '14px',
+                                                    color: followUpSummary.overdueTasks > 0 ? '#ef4444' : '#f59e0b',
+                                                    animation: followUpSummary.urgentTasks > 0 ? 'pulse 2s infinite' : 'none'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    )}
+
+                                    {shipment?.status === 'draft' ? (
                                         onEditDraftShipment ? (
                                             <span
-                                                onClick={() => onEditDraftShipment(shipment.id)}
+                                                onClick={() => onEditDraftShipment(shipment?.id)}
                                                 className="shipment-link"
                                                 style={{ cursor: 'pointer', fontSize: '11px' }}
                                             >
                                                 <span>{highlightSearchTerm(
-                                                    shipment.shipmentID || shipment.id,
+                                                    shipment?.shipmentID || shipment?.id,
                                                     searchFields.shipmentId
                                                 )}</span>
                                             </span>
                                         ) : (
                                             <span className="shipment-link" style={{ fontSize: '11px', color: '#64748b' }}>
                                                 <span>{highlightSearchTerm(
-                                                    shipment.shipmentID || shipment.id,
+                                                    shipment?.shipmentID || shipment?.id,
                                                     searchFields.shipmentId
                                                 )}</span>
                                             </span>
                                         )
                                     ) : (
                                         <span
-                                            onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment.shipmentID || shipment.id)}
+                                            onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment?.shipmentID || shipment?.id)}
                                             className="shipment-link"
                                             style={{ cursor: 'pointer', fontSize: '11px' }}
                                         >
                                             <span>{highlightSearchTerm(
-                                                shipment.shipmentID || shipment.id,
+                                                shipment?.shipmentID || shipment?.id,
                                                 searchFields.shipmentId
                                             )}</span>
                                         </span>
@@ -548,7 +626,7 @@ const ShipmentTableRow = ({
                                     <IconButton
                                         size="small"
                                         onClick={() => {
-                                            navigator.clipboard.writeText(shipment.shipmentID || shipment.id);
+                                            navigator.clipboard.writeText(shipment?.shipmentID || shipment?.id);
                                             showSnackbar('Shipment ID copied!', 'success');
                                         }}
                                         sx={{ padding: '2px' }}
@@ -575,21 +653,21 @@ const ShipmentTableRow = ({
                                     let dateToFormat = null;
 
                                     // Priority order for date fields: shipment date (preferred) > bookedAt (QuickShip) > createdAt (fallback)
-                                    if (shipment.shipmentInfo?.shipmentDate) {
+                                    if (shipment?.shipmentInfo?.shipmentDate) {
                                         // Preferred ship date from shipment info
-                                        dateToFormat = shipment.shipmentInfo.shipmentDate;
-                                    } else if (shipment.shipmentDate) {
+                                        dateToFormat = shipment?.shipmentInfo.shipmentDate;
+                                    } else if (shipment?.shipmentDate) {
                                         // Direct shipment date field
-                                        dateToFormat = shipment.shipmentDate;
-                                    } else if (shipment.scheduledDate) {
+                                        dateToFormat = shipment?.shipmentDate;
+                                    } else if (shipment?.scheduledDate) {
                                         // Scheduled date field
-                                        dateToFormat = shipment.scheduledDate;
-                                    } else if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+                                        dateToFormat = shipment?.scheduledDate;
+                                    } else if (shipment?.creationMethod === 'quickship' && shipment?.bookedAt) {
                                         // For QuickShip records, use bookedAt when shipmentDate is not available
-                                        dateToFormat = shipment.bookedAt;
-                                    } else if (shipment.createdAt) {
+                                        dateToFormat = shipment?.bookedAt;
+                                    } else if (shipment?.createdAt) {
                                         // Final fallback to creation date
-                                        dateToFormat = shipment.createdAt;
+                                        dateToFormat = shipment?.createdAt;
                                     }
 
                                     if (dateToFormat) {
@@ -625,8 +703,8 @@ const ShipmentTableRow = ({
                                 padding: '8px 12px'
                             }}>
                                 {(() => {
-                                    const eta1 = shipment.shipmentInfo?.eta1 || shipment.eta1;
-                                    const eta2 = shipment.shipmentInfo?.eta2 || shipment.eta2;
+                                    const eta1 = shipment?.shipmentInfo?.eta1 || shipment?.eta1;
+                                    const eta2 = shipment?.shipmentInfo?.eta2 || shipment?.eta2;
 
                                     const formatEtaDate = (date) => {
                                         if (!date) return null;
@@ -681,9 +759,9 @@ const ShipmentTableRow = ({
 
                                     // Fallback to carrier estimated delivery date
                                     const carrierEstimatedDelivery =
-                                        shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                        shipment.selectedRate?.transit?.estimatedDelivery ||
-                                        shipment.selectedRate?.estimatedDeliveryDate;
+                                        shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                        shipment?.selectedRate?.transit?.estimatedDelivery ||
+                                        shipment?.selectedRate?.estimatedDeliveryDate;
 
                                     if (carrierEstimatedDelivery) {
                                         const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
@@ -722,13 +800,13 @@ const ShipmentTableRow = ({
 
                                     // Primary reference number sources
                                     const primarySources = [
-                                        shipment.shipmentInfo?.shipperReferenceNumber,
-                                        shipment.referenceNumber,
-                                        shipment.shipperReferenceNumber,
-                                        shipment.selectedRate?.referenceNumber,
-                                        shipment.selectedRateRef?.referenceNumber,
-                                        shipment.shipmentInfo?.bookingReferenceNumber,
-                                        shipment.bookingReferenceNumber
+                                        shipment?.shipmentInfo?.shipperReferenceNumber,
+                                        shipment?.referenceNumber,
+                                        shipment?.shipperReferenceNumber,
+                                        shipment?.selectedRate?.referenceNumber,
+                                        shipment?.selectedRateRef?.referenceNumber,
+                                        shipment?.shipmentInfo?.bookingReferenceNumber,
+                                        shipment?.bookingReferenceNumber
                                     ];
 
                                     // Add all non-empty primary references
@@ -739,8 +817,8 @@ const ShipmentTableRow = ({
                                     });
 
                                     // Additional reference numbers from shipmentInfo.referenceNumbers array
-                                    if (shipment.shipmentInfo?.referenceNumbers && Array.isArray(shipment.shipmentInfo.referenceNumbers)) {
-                                        shipment.shipmentInfo.referenceNumbers.forEach(ref => {
+                                    if (shipment?.shipmentInfo?.referenceNumbers && Array.isArray(shipment?.shipmentInfo.referenceNumbers)) {
+                                        shipment?.shipmentInfo.referenceNumbers.forEach(ref => {
                                             let refValue = null;
                                             if (typeof ref === 'string') {
                                                 refValue = ref.trim();
@@ -754,8 +832,8 @@ const ShipmentTableRow = ({
                                     }
 
                                     // Legacy reference numbers array
-                                    if (shipment.referenceNumbers && Array.isArray(shipment.referenceNumbers)) {
-                                        shipment.referenceNumbers.forEach(ref => {
+                                    if (shipment?.referenceNumbers && Array.isArray(shipment?.referenceNumbers)) {
+                                        shipment?.referenceNumbers.forEach(ref => {
                                             let refValue = null;
                                             if (typeof ref === 'string') {
                                                 refValue = ref.trim();
@@ -770,10 +848,10 @@ const ShipmentTableRow = ({
 
                                     // Additional fields that might contain reference numbers
                                     const additionalSources = [
-                                        shipment.customerReferenceNumber,
-                                        shipment.poNumber,
-                                        shipment.invoiceNumber,
-                                        shipment.orderNumber
+                                        shipment?.customerReferenceNumber,
+                                        shipment?.poNumber,
+                                        shipment?.invoiceNumber,
+                                        shipment?.orderNumber
                                     ];
 
                                     additionalSources.forEach(ref => {
@@ -841,9 +919,9 @@ const ShipmentTableRow = ({
                             }}>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {highlightSearchTerm(
-                                        shipment.shipTo?.companyName ||
-                                        shipment.shipTo?.company ||
-                                        customers[shipment.shipTo?.customerID] ||
+                                        shipment?.shipTo?.companyName ||
+                                        shipment?.shipTo?.company ||
+                                        customers[shipment?.shipTo?.customerID] ||
                                         'N/A',
                                         searchFields.customerName
                                     )}
@@ -861,8 +939,8 @@ const ShipmentTableRow = ({
                             }}>
                                 {(() => {
                                     const route = formatRoute(
-                                        shipment.shipFrom || shipment.shipfrom,
-                                        shipment.shipTo || shipment.shipto,
+                                        shipment?.shipFrom || shipment?.shipfrom,
+                                        shipment?.shipTo || shipment?.shipto,
                                         searchFields.origin,
                                         searchFields.destination
                                     );
@@ -934,12 +1012,12 @@ const ShipmentTableRow = ({
 
                                     {/* Service Type */}
                                     {(() => {
-                                        const serviceType = carrierData[shipment.id]?.service ||
-                                            shipment.selectedRate?.service?.name ||
-                                            shipment.selectedRate?.service ||
-                                            shipment.selectedRateRef?.service?.name ||
-                                            shipment.selectedRateRef?.service ||
-                                            shipment.serviceType;
+                                        const serviceType = carrierData[shipment?.id]?.service ||
+                                            shipment?.selectedRate?.service?.name ||
+                                            shipment?.selectedRate?.service ||
+                                            shipment?.selectedRateRef?.service?.name ||
+                                            shipment?.selectedRateRef?.service ||
+                                            shipment?.serviceType;
 
                                         if (serviceType && typeof serviceType === 'string') {
                                             return (
@@ -992,14 +1070,14 @@ const ShipmentTableRow = ({
                                     )}
 
                                     {/* Service Level */}
-                                    {carrierData[shipment.id]?.service && (
+                                    {carrierData[shipment?.id]?.service && (
                                         <Typography variant="body2" sx={{
                                             fontSize: '12px',
                                             color: '#64748b',
                                             wordBreak: 'break-word',
                                             lineHeight: 1.2
                                         }}>
-                                            {carrierData[shipment.id]?.service}
+                                            {carrierData[shipment?.id]?.service}
                                         </Typography>
                                     )}
                                 </Box>
@@ -1026,16 +1104,16 @@ const ShipmentTableRow = ({
                                 let dateToFormat = null;
 
                                 // Priority order for date fields: shipment date (preferred) > bookedAt (QuickShip) > createdAt (fallback)
-                                if (shipment.shipmentInfo?.shipmentDate) {
-                                    dateToFormat = shipment.shipmentInfo.shipmentDate;
-                                } else if (shipment.shipmentDate) {
-                                    dateToFormat = shipment.shipmentDate;
-                                } else if (shipment.scheduledDate) {
-                                    dateToFormat = shipment.scheduledDate;
-                                } else if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
-                                    dateToFormat = shipment.bookedAt;
-                                } else if (shipment.createdAt) {
-                                    dateToFormat = shipment.createdAt;
+                                if (shipment?.shipmentInfo?.shipmentDate) {
+                                    dateToFormat = shipment?.shipmentInfo.shipmentDate;
+                                } else if (shipment?.shipmentDate) {
+                                    dateToFormat = shipment?.shipmentDate;
+                                } else if (shipment?.scheduledDate) {
+                                    dateToFormat = shipment?.scheduledDate;
+                                } else if (shipment?.creationMethod === 'quickship' && shipment?.bookedAt) {
+                                    dateToFormat = shipment?.bookedAt;
+                                } else if (shipment?.createdAt) {
+                                    dateToFormat = shipment?.createdAt;
                                 }
 
                                 if (dateToFormat) {
@@ -1068,8 +1146,8 @@ const ShipmentTableRow = ({
                             padding: '8px 12px'
                         }}>
                             {(() => {
-                                const eta1 = shipment.shipmentInfo?.eta1 || shipment.eta1;
-                                const eta2 = shipment.shipmentInfo?.eta2 || shipment.eta2;
+                                const eta1 = shipment?.shipmentInfo?.eta1 || shipment?.eta1;
+                                const eta2 = shipment?.shipmentInfo?.eta2 || shipment?.eta2;
 
                                 const formatEtaDate = (date) => {
                                     if (!date) return null;
@@ -1124,9 +1202,9 @@ const ShipmentTableRow = ({
 
                                 // Fallback to carrier estimated delivery date
                                 const carrierEstimatedDelivery =
-                                    shipment.carrierBookingConfirmation?.estimatedDeliveryDate ||
-                                    shipment.selectedRate?.transit?.estimatedDelivery ||
-                                    shipment.selectedRate?.estimatedDeliveryDate;
+                                    shipment?.carrierBookingConfirmation?.estimatedDeliveryDate ||
+                                    shipment?.selectedRate?.transit?.estimatedDelivery ||
+                                    shipment?.selectedRate?.estimatedDeliveryDate;
 
                                 if (carrierEstimatedDelivery) {
                                     const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
@@ -1163,13 +1241,13 @@ const ShipmentTableRow = ({
 
                                 // Primary reference number sources
                                 const primarySources = [
-                                    shipment.shipmentInfo?.shipperReferenceNumber,
-                                    shipment.referenceNumber,
-                                    shipment.shipperReferenceNumber,
-                                    shipment.selectedRate?.referenceNumber,
-                                    shipment.selectedRateRef?.referenceNumber,
-                                    shipment.shipmentInfo?.bookingReferenceNumber,
-                                    shipment.bookingReferenceNumber
+                                    shipment?.shipmentInfo?.shipperReferenceNumber,
+                                    shipment?.referenceNumber,
+                                    shipment?.shipperReferenceNumber,
+                                    shipment?.selectedRate?.referenceNumber,
+                                    shipment?.selectedRateRef?.referenceNumber,
+                                    shipment?.shipmentInfo?.bookingReferenceNumber,
+                                    shipment?.bookingReferenceNumber
                                 ];
 
                                 // Add all non-empty primary references
@@ -1180,8 +1258,8 @@ const ShipmentTableRow = ({
                                 });
 
                                 // Additional reference numbers from shipmentInfo.referenceNumbers array
-                                if (shipment.shipmentInfo?.referenceNumbers && Array.isArray(shipment.shipmentInfo.referenceNumbers)) {
-                                    shipment.shipmentInfo.referenceNumbers.forEach(ref => {
+                                if (shipment?.shipmentInfo?.referenceNumbers && Array.isArray(shipment?.shipmentInfo.referenceNumbers)) {
+                                    shipment?.shipmentInfo.referenceNumbers.forEach(ref => {
                                         let refValue = null;
                                         if (typeof ref === 'string') {
                                             refValue = ref.trim();
@@ -1195,8 +1273,8 @@ const ShipmentTableRow = ({
                                 }
 
                                 // Legacy reference numbers array
-                                if (shipment.referenceNumbers && Array.isArray(shipment.referenceNumbers)) {
-                                    shipment.referenceNumbers.forEach(ref => {
+                                if (shipment?.referenceNumbers && Array.isArray(shipment?.referenceNumbers)) {
+                                    shipment?.referenceNumbers.forEach(ref => {
                                         let refValue = null;
                                         if (typeof ref === 'string') {
                                             refValue = ref.trim();
@@ -1211,10 +1289,10 @@ const ShipmentTableRow = ({
 
                                 // Additional fields that might contain reference numbers
                                 const additionalSources = [
-                                    shipment.customerReferenceNumber,
-                                    shipment.poNumber,
-                                    shipment.invoiceNumber,
-                                    shipment.orderNumber
+                                    shipment?.customerReferenceNumber,
+                                    shipment?.poNumber,
+                                    shipment?.invoiceNumber,
+                                    shipment?.orderNumber
                                 ];
 
                                 additionalSources.forEach(ref => {
@@ -1278,8 +1356,8 @@ const ShipmentTableRow = ({
                         }}>
                             {(() => {
                                 const route = formatRoute(
-                                    shipment.shipFrom || shipment.shipfrom,
-                                    shipment.shipTo || shipment.shipto,
+                                    shipment?.shipFrom || shipment?.shipfrom,
+                                    shipment?.shipTo || shipment?.shipto,
                                     searchFields.origin,
                                     searchFields.destination
                                 );
@@ -1349,12 +1427,12 @@ const ShipmentTableRow = ({
 
                                 {/* Service Type */}
                                 {(() => {
-                                    const serviceType = carrierData[shipment.id]?.service ||
-                                        shipment.selectedRate?.service?.name ||
-                                        shipment.selectedRate?.service ||
-                                        shipment.selectedRateRef?.service?.name ||
-                                        shipment.selectedRateRef?.service ||
-                                        shipment.serviceType;
+                                    const serviceType = carrierData[shipment?.id]?.service ||
+                                        shipment?.selectedRate?.service?.name ||
+                                        shipment?.selectedRate?.service ||
+                                        shipment?.selectedRateRef?.service?.name ||
+                                        shipment?.selectedRateRef?.service ||
+                                        shipment?.serviceType;
 
                                     if (serviceType && typeof serviceType === 'string') {
                                         return (
@@ -1407,14 +1485,14 @@ const ShipmentTableRow = ({
                                 )}
 
                                 {/* Service Level */}
-                                {carrierData[shipment.id]?.service && (
+                                {carrierData[shipment?.id]?.service && (
                                     <Typography variant="body2" sx={{
                                         fontSize: '12px',
                                         color: '#64748b',
                                         wordBreak: 'break-word',
                                         lineHeight: 1.2
                                     }}>
-                                        {carrierData[shipment.id]?.service}
+                                        {carrierData[shipment?.id]?.service}
                                     </Typography>
                                 )}
                             </Box>
@@ -1467,7 +1545,7 @@ const ShipmentTableRow = ({
                             {/* Top row: Manual Override Indicator + Master Status */}
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {/* Manual Override Indicator - Small Bold M */}
-                                {shipment.statusOverride?.isManual && (
+                                {shipment?.statusOverride?.isManual && (
                                     <Tooltip title="Status manually overridden">
                                         <Box sx={{
                                             width: '16px',
@@ -1487,7 +1565,7 @@ const ShipmentTableRow = ({
                                     </Tooltip>
                                 )}
                                 <EnhancedStatusChip
-                                    status={shipment.statusOverride?.enhancedStatus || shipment.status}
+                                    status={shipment?.statusOverride?.enhancedStatus || shipment?.status}
                                     size="small"
                                     compact={true}
                                     displayMode="master"
@@ -1496,10 +1574,10 @@ const ShipmentTableRow = ({
                             </Box>
 
                             {/* Bottom row: Sub-status if available */}
-                            {shipment.statusOverride?.enhancedStatus?.subStatus && (
-                                <Box sx={{ pl: shipment.statusOverride?.isManual ? 2.5 : 0 }}>
+                            {shipment?.statusOverride?.enhancedStatus?.subStatus && (
+                                <Box sx={{ pl: shipment?.statusOverride?.isManual ? 2.5 : 0 }}>
                                     <EnhancedStatusChip
-                                        status={shipment.statusOverride.enhancedStatus}
+                                        status={shipment?.statusOverride.enhancedStatus}
                                         size="small"
                                         compact={false}
                                         displayMode="sub-only"
@@ -1581,14 +1659,14 @@ const ShipmentTableRow = ({
                                                 FROM:
                                             </Typography>
                                             <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                {shipment.shipFrom?.companyName || shipment.shipfrom?.companyName || 'N/A'}
+                                                {shipment?.shipFrom?.companyName || shipment?.shipfrom?.companyName || 'N/A'}
                                             </Typography>
                                             <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
                                                 {[
-                                                    shipment.shipFrom?.street || shipment.shipfrom?.street,
-                                                    shipment.shipFrom?.city || shipment.shipfrom?.city,
-                                                    shipment.shipFrom?.state || shipment.shipfrom?.state,
-                                                    (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)?.toUpperCase?.() || (shipment.shipFrom?.postalCode || shipment.shipfrom?.postalCode)
+                                                    shipment?.shipFrom?.street || shipment?.shipfrom?.street,
+                                                    shipment?.shipFrom?.city || shipment?.shipfrom?.city,
+                                                    shipment?.shipFrom?.state || shipment?.shipfrom?.state,
+                                                    (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)?.toUpperCase?.() || (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)
                                                 ].filter(Boolean).join(', ')}
                                             </Typography>
                                         </Box>
@@ -1599,14 +1677,14 @@ const ShipmentTableRow = ({
                                                 TO:
                                             </Typography>
                                             <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                {shipment.shipTo?.companyName || shipment.shipto?.companyName || 'N/A'}
+                                                {shipment?.shipTo?.companyName || shipment?.shipto?.companyName || 'N/A'}
                                             </Typography>
                                             <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
                                                 {[
-                                                    shipment.shipTo?.street || shipment.shipto?.street,
-                                                    shipment.shipTo?.city || shipment.shipto?.city,
-                                                    shipment.shipTo?.state || shipment.shipto?.state,
-                                                    (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)?.toUpperCase?.() || (shipment.shipTo?.postalCode || shipment.shipto?.postalCode)
+                                                    shipment?.shipTo?.street || shipment?.shipto?.street,
+                                                    shipment?.shipTo?.city || shipment?.shipto?.city,
+                                                    shipment?.shipTo?.state || shipment?.shipto?.state,
+                                                    (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)?.toUpperCase?.() || (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)
                                                 ].filter(Boolean).join(', ')}
                                             </Typography>
                                         </Box>
@@ -1623,7 +1701,7 @@ const ShipmentTableRow = ({
                                         {/* Weight and Dimensions */}
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                                             {(() => {
-                                                const packages = shipment.packages || [];
+                                                const packages = shipment?.packages || [];
                                                 const totalWeight = packages.reduce((sum, pkg) =>
                                                     sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0
                                                 );
@@ -1687,18 +1765,18 @@ const ShipmentTableRow = ({
 
                                             {(() => {
                                                 // Get detailed charges breakdown from multiple possible sources
-                                                const selectedRate = shipment.selectedRate || shipment.selectedRateRef || {};
+                                                const selectedRate = shipment?.selectedRate || shipment?.selectedRateRef || {};
                                                 const pricing = selectedRate.pricing || selectedRate || {};
-                                                const manualRates = shipment.manualRates || [];
-                                                const actualRates = shipment.actualRates || {};
-                                                const markupRates = shipment.markupRates || {};
+                                                const manualRates = shipment?.manualRates || [];
+                                                const actualRates = shipment?.actualRates || {};
+                                                const markupRates = shipment?.markupRates || {};
 
                                                 // Get currency from multiple sources
                                                 const currency = pricing.currency ||
                                                     selectedRate.currency ||
                                                     actualRates.currency ||
                                                     markupRates.currency ||
-                                                    shipment.currency || 'USD';
+                                                    shipment?.currency || 'USD';
 
                                                 // Check if user is admin/super admin (adminViewMode indicates admin access)
                                                 const showCosts = adminViewMode;
@@ -1823,7 +1901,7 @@ const ShipmentTableRow = ({
                                                     markupRates.totalCharges ||
                                                     selectedRate.totalCharges ||
                                                     selectedRate.price ||
-                                                    shipment.totalCharges || 0;
+                                                    shipment?.totalCharges || 0;
 
                                                 return (
                                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -1882,6 +1960,77 @@ const ShipmentTableRow = ({
                                                     </Box>
                                                 );
                                             })()}
+                                        </Box>
+                                    </Grid>
+                                )}
+
+                                {/* Follow-Up Tasks */}
+                                {followUpSummary?.hasFollowUps && (
+                                    <Grid item xs={12} md={adminViewMode ? 6 : 12}>
+                                        <Box sx={{ p: 2, bgcolor: '#fef3c7', borderRadius: 1, border: '1px solid #f59e0b' }}>
+                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#92400e', mb: 1 }}>
+                                                FOLLOW-UP TASKS
+                                            </Typography>
+
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#92400e' }}>
+                                                        Total Tasks: {followUpSummary.totalTasks}
+                                                    </Typography>
+                                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                                        {followUpSummary.overdueTasks > 0 && (
+                                                            <Chip
+                                                                label={`${followUpSummary.overdueTasks} Overdue`}
+                                                                size="small"
+                                                                sx={{
+                                                                    bgcolor: '#fee2e2',
+                                                                    color: '#dc2626',
+                                                                    fontSize: '10px',
+                                                                    height: 20
+                                                                }}
+                                                            />
+                                                        )}
+                                                        {followUpSummary.urgentTasks > 0 && (
+                                                            <Chip
+                                                                label={`${followUpSummary.urgentTasks} Urgent`}
+                                                                size="small"
+                                                                sx={{
+                                                                    bgcolor: '#fef3c7',
+                                                                    color: '#d97706',
+                                                                    fontSize: '10px',
+                                                                    height: 20
+                                                                }}
+                                                            />
+                                                        )}
+                                                        {followUpSummary.pendingTasks > 0 && (
+                                                            <Chip
+                                                                label={`${followUpSummary.pendingTasks} Pending`}
+                                                                size="small"
+                                                                sx={{
+                                                                    bgcolor: '#e0e7ff',
+                                                                    color: '#3730a3',
+                                                                    fontSize: '10px',
+                                                                    height: 20
+                                                                }}
+                                                            />
+                                                        )}
+                                                    </Box>
+                                                </Box>
+
+                                                {followUpSummary.nextTask && (
+                                                    <Box sx={{ pt: 1, borderTop: '1px solid #f59e0b' }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#92400e', mb: 0.5 }}>
+                                                            Next Task:
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '10px', color: '#92400e' }}>
+                                                            {followUpSummary.nextTask.title}
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ fontSize: '10px', color: '#b45309' }}>
+                                                            Due: {new Date(followUpSummary.nextTask.dueDate).toLocaleDateString()}
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                            </Box>
                                         </Box>
                                     </Grid>
                                 )}
@@ -1953,13 +2102,13 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded }) => {
 
     // Load documents when expanded
     useEffect(() => {
-        if (expanded && !documentData && !loadingDocs && shipment.status !== 'draft') {
+        if (expanded && !documentData && !loadingDocs && shipment?.status !== 'draft') {
             setLoadingDocs(true);
 
             const getShipmentDocumentsFunction = httpsCallable(functions, 'getShipmentDocuments');
 
             getShipmentDocumentsFunction({
-                shipmentId: shipment.id,
+                shipmentId: shipment?.id,
                 organized: true
             }).then(result => {
                 if (result.data && result.data.success) {
@@ -1974,15 +2123,15 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded }) => {
                 setLoadingDocs(false);
             });
         }
-    }, [expanded, documentData, loadingDocs, shipment.id, shipment.status]);
+    }, [expanded, documentData, loadingDocs, shipment?.id, shipment?.status]);
 
     // Reset document data when shipment changes
     useEffect(() => {
         setDocumentData(null);
-    }, [shipment.id]);
+    }, [shipment?.id]);
 
     // Check if this is a draft shipment
-    if (shipment.status === 'draft') {
+    if (shipment?.status === 'draft') {
         return (
             <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                 No documents created

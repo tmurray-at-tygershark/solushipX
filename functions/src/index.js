@@ -440,4 +440,73 @@ console.log('LOG-MAIN-INDEX: exports.updateShipmentField defined.');
 exports.uploadShipmentDocument = uploadShipmentDocument;
 console.log('LOG-MAIN-INDEX: exports.uploadShipmentDocument defined.');
 
+// Import and export test follow-up function
+const { testFollowUp } = require('./testFollowUp');
+exports.testFollowUp = testFollowUp;
+console.log('LOG-MAIN-INDEX: exports.testFollowUp defined.');
+
+// Import and export follow-up engine functions
+const followUpFunctions = require('./followUps/followUpEngine');
+console.log('LOG-MAIN-INDEX: followUpFunctions imported.');
+
+if (followUpFunctions && followUpFunctions.createFollowUpRule) {
+    exports.createFollowUpRule = followUpFunctions.createFollowUpRule;
+    console.log('LOG-MAIN-INDEX: exports.createFollowUpRule defined.');
+}
+
+if (followUpFunctions && followUpFunctions.updateFollowUpRule) {
+    exports.updateFollowUpRule = followUpFunctions.updateFollowUpRule;
+    console.log('LOG-MAIN-INDEX: exports.updateFollowUpRule defined.');
+}
+
+if (followUpFunctions && followUpFunctions.getFollowUpRules) {
+    exports.getFollowUpRules = followUpFunctions.getFollowUpRules;
+    console.log('LOG-MAIN-INDEX: exports.getFollowUpRules defined.');
+}
+
+if (followUpFunctions && followUpFunctions.createFollowUpTask) {
+    exports.createFollowUpTask = followUpFunctions.createFollowUpTask;
+    console.log('LOG-MAIN-INDEX: exports.createFollowUpTask defined.');
+}
+
+if (followUpFunctions && followUpFunctions.updateFollowUpTask) {
+    exports.updateFollowUpTask = followUpFunctions.updateFollowUpTask;
+    console.log('LOG-MAIN-INDEX: exports.updateFollowUpTask defined.');
+}
+
+if (followUpFunctions && followUpFunctions.getFollowUpTasks) {
+    exports.getFollowUpTasks = followUpFunctions.getFollowUpTasks;
+    console.log('LOG-MAIN-INDEX: exports.getFollowUpTasks defined.');
+}
+
+if (followUpFunctions && followUpFunctions.deleteFollowUpTask) {
+    exports.deleteFollowUpTask = followUpFunctions.deleteFollowUpTask;
+    console.log('LOG-MAIN-INDEX: exports.deleteFollowUpTask defined.');
+}
+
+if (followUpFunctions && followUpFunctions.getFollowUpTasksByShipment) {
+    exports.getFollowUpTasksByShipment = followUpFunctions.getFollowUpTasksByShipment;
+    console.log('LOG-MAIN-INDEX: exports.getFollowUpTasksByShipment defined.');
+}
+
+if (followUpFunctions && followUpFunctions.addTaskNote) {
+    exports.addTaskNote = followUpFunctions.addTaskNote;
+    console.log('LOG-MAIN-INDEX: exports.addTaskNote defined.');
+}
+
+if (followUpFunctions && followUpFunctions.completeTask) {
+    exports.completeTask = followUpFunctions.completeTask;
+    console.log('LOG-MAIN-INDEX: exports.completeTask defined.');
+}
+
+if (followUpFunctions && followUpFunctions.escalateTask) {
+    exports.escalateTask = followUpFunctions.escalateTask;
+    console.log('LOG-MAIN-INDEX: exports.escalateTask defined.');
+}
+
+if (followUpFunctions && followUpFunctions.getShipmentFollowUpSummary) {
+    exports.getShipmentFollowUpSummary = followUpFunctions.getShipmentFollowUpSummary;
+    console.log('LOG-MAIN-INDEX: exports.getShipmentFollowUpSummary defined.');
+}
+
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');

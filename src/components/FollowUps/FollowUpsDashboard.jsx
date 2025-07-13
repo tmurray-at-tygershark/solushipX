@@ -40,7 +40,23 @@ import {
     ListItem,
     ListItemText,
     ListItemAvatar,
-    ListItemSecondaryAction
+    ListItemSecondaryAction,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    TablePagination,
+    Skeleton,
+    CircularProgress,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    FormControlLabel,
+    Switch,
+    InputAdornment,
+    Collapse
 } from '@mui/material';
 
 import {
@@ -66,29 +82,59 @@ import {
     LocalShipping as ShipmentIcon,
     Business as CompanyIcon,
     Today as TodayIcon,
-    DateRange as DateRangeIcon
+    DateRange as DateRangeIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Visibility as ViewIcon,
+    LocalShipping as TrackingIcon,
+    ExpandMore as ExpandMoreIcon,
+    Search as SearchIcon,
+    Clear as ClearIcon,
+    CalendarToday as CalendarIcon,
+    AccessTime as TimeIcon,
+    Group as GroupIcon,
+    Notifications as NotificationsIcon,
+    AccountCircle as AccountIcon,
+    PlayArrow as PlayIcon,
+    Pause as PauseIcon,
+    Stop as StopIcon
 } from '@mui/icons-material';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import ModalHeader from '../common/ModalHeader';
 import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../firebase';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 // ===================================================================
 // MAIN DASHBOARD COMPONENT
 // ===================================================================
 
 const FollowUpsDashboard = ({ isModal = false, onClose }) => {
-    const { user } = useAuth();
-    const { companyIdForAddress } = useCompany();
+    const { currentUser: user, userRole, loading: authLoading } = useAuth();
+    const { companyIdForAddress, companyData } = useCompany();
 
     // State Management
     const [selectedTab, setSelectedTab] = useState('overview');
     const [tasks, setTasks] = useState([]);
     const [rules, setRules] = useState([]);
     const [staff, setStaff] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [shipments, setShipments] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+
+    // Company & Customer Management
+    const [availableCompanies, setAvailableCompanies] = useState([]);
+    const [selectedCompanyId, setSelectedCompanyId] = useState('all');
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [loadingCompanies, setLoadingCompanies] = useState(false);
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     // Filters & Search
     const [filters, setFilters] = useState({
@@ -106,6 +152,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const [createTaskDialog, setCreateTaskDialog] = useState(false);
     const [createRuleDialog, setCreateRuleDialog] = useState(false);
     const [taskDetailDialog, setTaskDetailDialog] = useState(false);
+    const [editTaskDialog, setEditTaskDialog] = useState(false);
+    const [deleteTaskDialog, setDeleteTaskDialog] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null);
 
     // Statistics
@@ -118,122 +166,303 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         averageCompletionTime: 0
     });
 
-    // Load Data
+    // Load companies for super admin and admin users
     useEffect(() => {
-        loadFollowUpData();
-    }, [companyIdForAddress]);
+        const loadCompanies = async () => {
+            if (!user || userRole === 'user') return;
 
-    const loadFollowUpData = useCallback(async () => {
+            setLoadingCompanies(true);
+            try {
+                let companiesQuery;
+
+                if (userRole === 'superadmin') {
+                    // Super admins can see all companies
+                    companiesQuery = query(collection(db, 'companies'));
+                } else if (userRole === 'admin') {
+                    // Admins can see their connected companies
+                    const userDoc = await getDocs(
+                        query(collection(db, 'users'), where('uid', '==', user.uid))
+                    );
+
+                    if (!userDoc.empty) {
+                        const userData = userDoc.docs[0].data();
+                        const connectedCompanyIds = userData.connectedCompanies?.companies || [];
+
+                        if (connectedCompanyIds.length > 0) {
+                            companiesQuery = query(
+                                collection(db, 'companies'),
+                                where('companyID', 'in', connectedCompanyIds)
+                            );
+                        }
+                    }
+                }
+
+                if (companiesQuery) {
+                    const companiesSnapshot = await getDocs(companiesQuery);
+                    const companies = companiesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    companies.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                    setAvailableCompanies(companies);
+                }
+            } catch (error) {
+                console.error('Error loading companies:', error);
+                setAvailableCompanies([]);
+            } finally {
+                setLoadingCompanies(false);
+            }
+        };
+
+        loadCompanies();
+    }, [user, userRole]);
+
+    // Load customers based on selected company
+    useEffect(() => {
+        const loadCustomers = async () => {
+            if (!companyIdForAddress && selectedCompanyId === 'all') return;
+
+            setLoadingCustomers(true);
+            try {
+                const targetCompanyId = selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId;
+
+                if (targetCompanyId) {
+                    const customersQuery = query(
+                        collection(db, 'customers'),
+                        where('companyId', '==', targetCompanyId),
+                        orderBy('name')
+                    );
+
+                    const customersSnapshot = await getDocs(customersQuery);
+                    const customers = customersSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    setAvailableCustomers(customers);
+                }
+            } catch (error) {
+                console.error('Error loading customers:', error);
+                setAvailableCustomers([]);
+            } finally {
+                setLoadingCustomers(false);
+            }
+        };
+
+        loadCustomers();
+    }, [companyIdForAddress, selectedCompanyId]);
+
+    // Load tasks with enhanced filtering
+    const loadTasks = async () => {
         try {
+            console.log('🔄 loadTasks called!');
             setLoading(true);
 
-            // Load tasks, rules, and staff data
-            const [tasksData, rulesData, staffData] = await Promise.all([
-                loadTasks(),
-                loadRules(),
-                loadStaff()
-            ]);
+            // For super admins, "all" means ALL companies. For regular users, "all" means their company.
+            let targetCompanyId = null;
+            if (selectedCompanyId === 'all') {
+                if (userRole === 'superadmin') {
+                    targetCompanyId = null; // No company filter - show all
+                } else {
+                    targetCompanyId = companyIdForAddress; // Regular users see only their company
+                }
+            } else {
+                targetCompanyId = selectedCompanyId; // Specific company selected
+            }
 
-            setTasks(tasksData);
-            setRules(rulesData);
-            setStaff(staffData);
+            console.log('🔄 Loading tasks with params:', {
+                userRole: userRole,
+                selectedCompanyId: selectedCompanyId,
+                companyId: targetCompanyId,
+                customerId: selectedCustomerId === 'all' ? null : selectedCustomerId,
+                filters: filters,
+                searchTerm: searchTerm,
+                sortBy: sortBy,
+                sortOrder: sortOrder
+            });
 
-            // Calculate statistics
-            calculateStats(tasksData);
+            const getFollowUpTasks = httpsCallable(functions, 'getFollowUpTasks');
+            const result = await getFollowUpTasks({
+                companyId: targetCompanyId,
+                customerId: selectedCustomerId === 'all' ? null : selectedCustomerId,
+                status: filters.status === 'all' ? null : filters.status,
+                priority: filters.priority === 'all' ? null : filters.priority,
+                assignedTo: filters.assignedTo === 'all' ? null : filters.assignedTo,
+                category: filters.category === 'all' ? null : filters.category,
+                limit: 100
+            });
 
+            console.log('📋 Tasks result:', result);
+            console.log('📋 Tasks data:', result.data);
+            console.log('📋 Tasks array:', result.data?.tasks);
+
+            setTasks(result.data?.tasks || []);
         } catch (error) {
-            console.error('Error loading follow-up data:', error);
-            setError('Failed to load follow-up data');
+            console.error('Error loading tasks:', error);
+            setError('Failed to load follow-up tasks');
+            setTasks([]); // Ensure tasks is always an array
         } finally {
             setLoading(false);
         }
-    }, [companyIdForAddress]);
-
-    const loadTasks = async () => {
-        // TODO: Implement API call to load tasks
-        return [];
     };
 
+    // Load rules
     const loadRules = async () => {
-        // TODO: Implement API call to load rules
-        return [];
+        try {
+            console.log('🔄 loadRules called!');
+
+            const targetCompanyId = selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId;
+
+            const getFollowUpRules = httpsCallable(functions, 'getFollowUpRules');
+            const result = await getFollowUpRules({
+                companyId: targetCompanyId
+            });
+
+            console.log('📋 Rules result:', result);
+            console.log('📋 Rules data:', result.data);
+
+            setRules(result.data || []);
+        } catch (error) {
+            console.error('Error loading rules:', error);
+            setRules([]); // Ensure rules is always an array
+        }
     };
 
+    // Load staff members
     const loadStaff = async () => {
-        // TODO: Implement API call to load staff
-        return [];
-    };
+        try {
+            console.log('🔄 loadStaff called!');
+            // For testing - just set empty staff
+            setStaff([]);
+            return;
 
-    const calculateStats = (tasksData) => {
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-        const stats = {
-            totalTasks: tasksData.length,
-            pendingTasks: tasksData.filter(t => t.status === 'pending').length,
-            overdueTasks: tasksData.filter(t => t.status === 'overdue').length,
-            completedToday: tasksData.filter(t =>
-                t.status === 'completed' &&
-                new Date(t.completedAt) >= todayStart
-            ).length,
-            activeRules: rules.filter(r => r.isActive).length,
-            averageCompletionTime: 0 // TODO: Calculate from completed tasks
-        };
-
-        setStats(stats);
-    };
-
-    // Filtered and Sorted Tasks
-    const filteredTasks = useMemo(() => {
-        let filtered = tasks;
-
-        // Apply filters
-        if (filters.status !== 'all') {
-            filtered = filtered.filter(task => task.status === filters.status);
-        }
-
-        if (filters.priority !== 'all') {
-            filtered = filtered.filter(task => task.priority === filters.priority);
-        }
-
-        if (filters.assignedTo !== 'all') {
-            filtered = filtered.filter(task => task.assignedTo === filters.assignedTo);
-        }
-
-        if (filters.category !== 'all') {
-            filtered = filtered.filter(task => task.category === filters.category);
-        }
-
-        // Apply search
-        if (searchTerm) {
-            filtered = filtered.filter(task =>
-                task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                task.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                task.shipmentId.toLowerCase().includes(searchTerm.toLowerCase())
+            const staffQuery = query(
+                collection(db, 'users'),
+                where('role', 'in', ['admin', 'user']),
+                orderBy('firstName')
             );
+
+            const staffSnapshot = await getDocs(staffQuery);
+            const staffMembers = staffSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            setStaff(staffMembers);
+        } catch (error) {
+            console.error('Error loading staff:', error);
         }
+    };
 
-        // Apply sorting
-        filtered.sort((a, b) => {
-            let aVal = a[sortBy];
-            let bVal = b[sortBy];
+    // Load shipments requiring follow-up
+    const loadShipments = async () => {
+        try {
+            console.log('🔄 loadShipments called!');
 
-            if (sortBy === 'dueDate') {
-                aVal = new Date(aVal);
-                bVal = new Date(bVal);
+            const targetCompanyId = selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId;
+
+            if (!targetCompanyId) {
+                setShipments([]);
+                return;
             }
 
-            if (sortOrder === 'asc') {
-                return aVal > bVal ? 1 : -1;
-            } else {
-                return aVal < bVal ? 1 : -1;
-            }
+            // Query shipments that might need follow-up
+            const shipmentsQuery = query(
+                collection(db, 'shipments'),
+                where('companyID', '==', targetCompanyId),
+                orderBy('createdAt', 'desc'),
+                limit(50)
+            );
+
+            const shipmentsSnapshot = await getDocs(shipmentsQuery);
+            const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Filter shipments that might need follow-up (in transit, delayed, etc.)
+            const followUpShipments = shipmentsData.filter(shipment => {
+                const status = shipment.status?.toLowerCase();
+                return status && ['in_transit', 'delayed', 'exception', 'on_hold'].includes(status);
+            });
+
+            setShipments(followUpShipments);
+        } catch (error) {
+            console.error('Error loading shipments:', error);
+            setShipments([]);
+        }
+    };
+
+    // Calculate statistics
+    const calculateStats = useCallback(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        // Ensure tasks and rules are arrays
+        const taskArray = Array.isArray(tasks) ? tasks : [];
+        const rulesArray = Array.isArray(rules) ? rules : [];
+
+        const totalTasks = taskArray.length;
+        const pendingTasks = taskArray.filter(task => task.status === 'pending').length;
+        const overdueTasks = taskArray.filter(task => {
+            const dueDate = task.dueDate?.toDate?.() || new Date(task.dueDate);
+            return task.status !== 'completed' && dueDate < now;
+        }).length;
+        const completedToday = taskArray.filter(task => {
+            const completedDate = task.completedAt?.toDate?.() || new Date(task.completedAt);
+            return task.status === 'completed' && completedDate >= today;
+        }).length;
+        const activeRules = rulesArray.filter(rule => rule.active).length;
+
+        // Calculate average completion time (in hours)
+        const completedTasks = taskArray.filter(task => task.status === 'completed' && task.completedAt && task.createdAt);
+        const averageCompletionTime = completedTasks.length > 0
+            ? completedTasks.reduce((sum, task) => {
+                const created = task.createdAt?.toDate?.() || new Date(task.createdAt);
+                const completed = task.completedAt?.toDate?.() || new Date(task.completedAt);
+                return sum + (completed - created);
+            }, 0) / completedTasks.length / (1000 * 60 * 60) // Convert to hours
+            : 0;
+
+        setStats({
+            totalTasks,
+            pendingTasks,
+            overdueTasks,
+            completedToday,
+            activeRules,
+            averageCompletionTime: Math.round(averageCompletionTime * 10) / 10
         });
+    }, [tasks, rules]);
 
-        return filtered;
-    }, [tasks, filters, searchTerm, sortBy, sortOrder]);
+    // Load data on component mount and when dependencies change
+    useEffect(() => {
+        console.log('🔄 useEffect triggered with user:', user);
+        if (user) { // Only load data when user is available
+            console.log('🔄 User available, loading data...');
+            loadTasks();
+            loadRules();
+            loadStaff();
+            loadShipments();
+        } else {
+            console.log('❌ User not available, skipping data load');
+        }
+    }, [user, companyIdForAddress, selectedCompanyId, selectedCustomerId, filters, searchTerm, sortBy, sortOrder]);
 
-    // Event Handlers
+    // Update selectedCompanyId when companyIdForAddress changes (for non-super admins only)
+    useEffect(() => {
+        if (companyIdForAddress && selectedCompanyId === 'all' && userRole !== 'superadmin') {
+            console.log('🔄 Setting selectedCompanyId to user company for non-super admin:', companyIdForAddress);
+            setSelectedCompanyId(companyIdForAddress);
+        }
+    }, [companyIdForAddress, selectedCompanyId, userRole]);
+
+    // Recalculate stats when tasks or rules change
+    useEffect(() => {
+        calculateStats();
+    }, [tasks, rules, calculateStats]);
+
+    // Event handlers
     const handleTabChange = (event, newValue) => {
         setSelectedTab(newValue);
     };
@@ -251,6 +480,80 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         setTaskDetailDialog(true);
     };
 
+    const handleEditTask = (task) => {
+        setSelectedTask(task);
+        setEditTaskDialog(true);
+    };
+
+    const handleDeleteTask = (task) => {
+        setSelectedTask(task);
+        setDeleteTaskDialog(true);
+    };
+
+    const handleConfirmDeleteTask = async () => {
+        if (!selectedTask) return;
+
+        try {
+            const deleteFollowUpTask = httpsCallable(functions, 'deleteFollowUpTask');
+            await deleteFollowUpTask({ taskId: selectedTask.id });
+
+            setDeleteTaskDialog(false);
+            setSelectedTask(null);
+            refreshData();
+        } catch (error) {
+            console.error('Error deleting task:', error);
+        }
+    };
+
+    const handleUpdateTask = async (updatedTaskData) => {
+        if (!selectedTask) return;
+
+        try {
+            const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
+            await updateFollowUpTask({
+                taskId: selectedTask.id,
+                ...updatedTaskData
+            });
+
+            setEditTaskDialog(false);
+            setSelectedTask(null);
+            refreshData();
+        } catch (error) {
+            console.error('Error updating task:', error);
+        }
+    };
+
+    const handleCreateNewTask = async (taskData) => {
+        try {
+            const createFollowUpTask = httpsCallable(functions, 'createFollowUpTask');
+            await createFollowUpTask({
+                ...taskData,
+                companyId: selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId,
+                customerId: selectedCustomerId === 'all' ? null : selectedCustomerId
+            });
+
+            setCreateTaskDialog(false);
+            refreshData();
+        } catch (error) {
+            console.error('Error creating task:', error);
+        }
+    };
+
+    const handleCreateNewRule = async (ruleData) => {
+        try {
+            const createFollowUpRule = httpsCallable(functions, 'createFollowUpRule');
+            await createFollowUpRule({
+                ...ruleData,
+                companyId: selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId
+            });
+
+            setCreateRuleDialog(false);
+            refreshData();
+        } catch (error) {
+            console.error('Error creating rule:', error);
+        }
+    };
+
     const handleFilterChange = (filterType, value) => {
         setFilters(prev => ({
             ...prev,
@@ -258,37 +561,64 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         }));
     };
 
-    // Render Functions
+    const handleCompanyChange = (event) => {
+        setSelectedCompanyId(event.target.value);
+        setSelectedCustomerId('all'); // Reset customer selection when company changes
+    };
+
+    const handleCustomerChange = (event) => {
+        setSelectedCustomerId(event.target.value);
+    };
+
+    const refreshData = () => {
+        loadTasks();
+        loadRules();
+        loadStaff();
+        loadShipments();
+    };
+
+    // Professional header with SolushipX styling
     const renderHeader = () => (
         <Box sx={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            mb: 3
+            p: 3,
+            borderBottom: '1px solid #e5e7eb',
+            backgroundColor: '#ffffff'
         }}>
             <Box>
-                <Typography variant="h4" sx={{
+                <Typography variant="h5" sx={{
                     fontWeight: 600,
-                    fontSize: '1.5rem',
-                    color: '#111827'
+                    color: '#111827',
+                    fontSize: '22px',
+                    mb: 0.5
                 }}>
-                    Shipment Follow-Ups
+                    Follow-Up Management
                 </Typography>
-                <Typography variant="body2" sx={{
+                <Typography sx={{
                     color: '#6b7280',
-                    fontSize: '12px',
-                    mt: 0.5
+                    fontSize: '13px'
                 }}>
-                    Automated task management and shipment tracking
+                    Automated shipment follow-up tasks and rules
                 </Typography>
             </Box>
-
             <Box sx={{ display: 'flex', gap: 1 }}>
                 <Button
                     variant="outlined"
                     size="small"
                     startIcon={<SettingsIcon />}
-                    sx={{ fontSize: '12px' }}
+                    onClick={handleCreateRule}
+                    sx={{
+                        fontSize: '12px',
+                        textTransform: 'none',
+                        borderColor: '#d1d5db',
+                        color: '#374151',
+                        '&:hover': {
+                            borderColor: '#6b7280',
+                            backgroundColor: '#f9fafb'
+                        }
+                    }}
                 >
                     Rules
                 </Button>
@@ -297,515 +627,1949 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     size="small"
                     startIcon={<AddIcon />}
                     onClick={handleCreateTask}
-                    sx={{ fontSize: '12px' }}
+                    sx={{
+                        fontSize: '12px',
+                        textTransform: 'none',
+                        backgroundColor: '#3b82f6',
+                        '&:hover': {
+                            backgroundColor: '#2563eb'
+                        }
+                    }}
                 >
                     New Task
                 </Button>
-                {isModal && (
-                    <IconButton size="small" onClick={onClose}>
-                        <MoreIcon />
-                    </IconButton>
-                )}
             </Box>
         </Box>
     );
 
+    // Enhanced stats cards with professional styling
     const renderStatsCards = () => (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid container spacing={3} sx={{ p: 3 }}>
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#3b82f6'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <TaskIcon sx={{ color: '#3b82f6', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <TaskIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.totalTasks}
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Total Tasks
-                                </Typography>
-                            </Box>
+                                Total Tasks
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.totalTasks}
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
 
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#f59e0b'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <ScheduleIcon sx={{ color: '#f59e0b', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <ScheduleIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.pendingTasks}
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Pending
-                                </Typography>
-                            </Box>
+                                Pending
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.pendingTasks}
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
 
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#ef4444'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <WarningIcon sx={{ color: '#ef4444', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <WarningIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.overdueTasks}
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Overdue
-                                </Typography>
-                            </Box>
+                                Overdue
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.overdueTasks}
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
 
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#10b981'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <CompletedIcon sx={{ color: '#10b981', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <CompletedIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.completedToday}
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Completed Today
-                                </Typography>
-                            </Box>
+                                Completed Today
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.completedToday}
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
 
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#8b5cf6'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <SettingsIcon sx={{ color: '#8b5cf6', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <SettingsIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.activeRules}
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Active Rules
-                                </Typography>
-                            </Box>
+                                Active Rules
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.activeRules}
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
 
             <Grid item xs={12} sm={6} md={2}>
-                <Card elevation={0} sx={{
+                <Card sx={{
+                    height: '100%',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    borderRadius: '8px'
                 }}>
                     <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{
-                                width: 32,
-                                height: 32,
-                                bgcolor: '#06b6d4'
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <TimeIcon sx={{ color: '#06b6d4', mr: 1, fontSize: '20px' }} />
+                            <Typography sx={{
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                color: '#6b7280',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
                             }}>
-                                <TimelineIcon sx={{ fontSize: 18 }} />
-                            </Avatar>
-                            <Box>
-                                <Typography variant="h6" sx={{
-                                    fontSize: '18px',
-                                    fontWeight: 600,
-                                    color: '#111827'
-                                }}>
-                                    {stats.averageCompletionTime}m
-                                </Typography>
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Avg. Time
-                                </Typography>
-                            </Box>
+                                Avg. Completion
+                            </Typography>
                         </Box>
+                        <Typography sx={{
+                            fontSize: '24px',
+                            fontWeight: 600,
+                            color: '#111827'
+                        }}>
+                            {stats.averageCompletionTime}h
+                        </Typography>
                     </CardContent>
                 </Card>
             </Grid>
         </Grid>
     );
 
+    // Professional tabs with SolushipX styling
     const renderTabs = () => (
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Box sx={{
+            borderBottom: '1px solid #e5e7eb',
+            backgroundColor: '#ffffff'
+        }}>
             <Tabs
                 value={selectedTab}
                 onChange={handleTabChange}
                 sx={{
+                    px: 3,
                     '& .MuiTab-root': {
                         fontSize: '12px',
                         textTransform: 'none',
-                        fontWeight: 500
+                        fontWeight: 500,
+                        color: '#6b7280',
+                        minHeight: '48px',
+                        '&.Mui-selected': {
+                            color: '#3b82f6',
+                            fontWeight: 600
+                        }
+                    },
+                    '& .MuiTabs-indicator': {
+                        backgroundColor: '#3b82f6'
                     }
                 }}
             >
                 <Tab
-                    label="Overview"
+                    label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <DashboardIcon sx={{ fontSize: '16px' }} />
+                            Overview
+                        </Box>
+                    }
                     value="overview"
-                    icon={<DashboardIcon />}
-                    iconPosition="start"
                 />
                 <Tab
                     label={
-                        <Badge badgeContent={stats.pendingTasks} color="primary">
-                            My Tasks
-                        </Badge>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <TaskIcon sx={{ fontSize: '16px' }} />
+                            Tasks
+                            <Chip
+                                label={stats.pendingTasks}
+                                size="small"
+                                sx={{
+                                    height: '16px',
+                                    fontSize: '10px',
+                                    backgroundColor: '#f59e0b',
+                                    color: '#ffffff',
+                                    '& .MuiChip-label': {
+                                        px: 1
+                                    }
+                                }}
+                            />
+                        </Box>
                     }
-                    value="my-tasks"
-                    icon={<PersonIcon />}
-                    iconPosition="start"
+                    value="tasks"
                 />
                 <Tab
                     label={
-                        <Badge badgeContent={stats.totalTasks} color="secondary">
-                            All Tasks
-                        </Badge>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SettingsIcon sx={{ fontSize: '16px' }} />
+                            Rules
+                            <Chip
+                                label={stats.activeRules}
+                                size="small"
+                                sx={{
+                                    height: '16px',
+                                    fontSize: '10px',
+                                    backgroundColor: '#10b981',
+                                    color: '#ffffff',
+                                    '& .MuiChip-label': {
+                                        px: 1
+                                    }
+                                }}
+                            />
+                        </Box>
                     }
-                    value="all-tasks"
-                    icon={<TaskIcon />}
-                    iconPosition="start"
-                />
-                <Tab
-                    label="Rules"
                     value="rules"
-                    icon={<SettingsIcon />}
-                    iconPosition="start"
                 />
                 <Tab
-                    label="Analytics"
-                    value="analytics"
-                    icon={<TimelineIcon />}
-                    iconPosition="start"
+                    label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <ShipmentIcon sx={{ fontSize: '16px' }} />
+                            Shipments
+                        </Box>
+                    }
+                    value="shipments"
                 />
             </Tabs>
         </Box>
     );
 
+    // Enhanced task card with professional styling
     const renderTaskCard = (task) => (
         <Card
             key={task.id}
-            elevation={0}
             sx={{
-                border: '1px solid #e5e7eb',
-                borderRadius: 2,
                 mb: 2,
+                border: '1px solid #e5e7eb',
+                boxShadow: 'none',
+                borderRadius: '8px',
                 cursor: 'pointer',
+                transition: 'all 0.2s ease',
                 '&:hover': {
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    transform: 'translateY(-1px)',
-                    transition: 'all 0.2s ease-in-out'
+                    borderColor: '#3b82f6',
+                    backgroundColor: '#f8fafc'
                 }
             }}
             onClick={() => handleTaskClick(task)}
         >
             <CardContent sx={{ p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                    <Box sx={{ flex: 1 }}>
-                        <Typography variant="h6" sx={{
-                            fontSize: '14px',
-                            fontWeight: 600,
-                            color: '#111827',
-                            mb: 0.5
-                        }}>
-                            {task.title}
-                        </Typography>
-                        <Typography variant="body2" sx={{
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            mb: 1
-                        }}>
-                            {task.description}
-                        </Typography>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                            <Chip
-                                label={task.shipmentId}
-                                size="small"
-                                icon={<ShipmentIcon />}
-                                sx={{
-                                    fontSize: '10px',
-                                    height: 24,
-                                    bgcolor: '#f3f4f6',
-                                    color: '#374151'
-                                }}
-                            />
-                            <Chip
-                                label={task.category}
-                                size="small"
-                                sx={{
-                                    fontSize: '10px',
-                                    height: 24,
-                                    bgcolor: '#fef3c7',
-                                    color: '#92400e'
-                                }}
-                            />
-                            <Chip
-                                label={task.priority}
-                                size="small"
-                                color={task.priority === 'urgent' ? 'error' : task.priority === 'high' ? 'warning' : 'default'}
-                                sx={{
-                                    fontSize: '10px',
-                                    height: 24
-                                }}
-                            />
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <PersonIcon sx={{ fontSize: 16, color: '#6b7280' }} />
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    {task.assignedTo}
-                                </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <ScheduleIcon sx={{ fontSize: 16, color: '#6b7280' }} />
-                                <Typography variant="caption" sx={{
-                                    fontSize: '10px',
-                                    color: '#6b7280'
-                                }}>
-                                    Due: {new Date(task.dueDate).toLocaleDateString()}
-                                </Typography>
-                            </Box>
-                        </Box>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                    <Typography sx={{
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        color: '#111827'
+                    }}>
+                        {task.title}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip
+                            label={task.priority}
+                            size="small"
+                            sx={{
+                                height: '20px',
+                                fontSize: '10px',
+                                backgroundColor:
+                                    task.priority === 'high' ? '#fee2e2' :
+                                        task.priority === 'medium' ? '#fef3c7' : '#f0fdf4',
+                                color:
+                                    task.priority === 'high' ? '#dc2626' :
+                                        task.priority === 'medium' ? '#d97706' : '#16a34a',
+                                '& .MuiChip-label': {
+                                    fontWeight: 500,
+                                    textTransform: 'capitalize'
+                                }
+                            }}
+                        />
                         <EnhancedStatusChip
                             status={task.status}
                             size="small"
-                            sx={{ fontSize: '10px' }}
+                            sx={{
+                                height: '20px',
+                                fontSize: '10px',
+                                '& .MuiChip-label': {
+                                    fontSize: '10px'
+                                }
+                            }}
                         />
-                        {task.progress > 0 && (
-                            <Box sx={{ width: 60 }}>
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={task.progress}
-                                    sx={{ height: 4, borderRadius: 2 }}
-                                />
+                    </Box>
+                </Box>
+
+                <Typography sx={{
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    mb: 1,
+                    lineHeight: 1.4
+                }}>
+                    {task.description}
+                </Typography>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {task.shipmentId && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <ShipmentIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    {task.shipmentId}
+                                </Typography>
                             </Box>
                         )}
+                        {task.assignedTo && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <PersonIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    {task.assignedTo}
+                                </Typography>
+                            </Box>
+                        )}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {task.dueDate && (
+                            <Typography sx={{
+                                fontSize: '11px',
+                                color: new Date(task.dueDate.toDate?.() || task.dueDate) < new Date() ? '#dc2626' : '#6b7280'
+                            }}>
+                                Due: {new Date(task.dueDate.toDate?.() || task.dueDate).toLocaleDateString()}
+                            </Typography>
+                        )}
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditTask(task);
+                            }}
+                            sx={{
+                                color: '#6b7280',
+                                '&:hover': {
+                                    backgroundColor: '#f3f4f6'
+                                }
+                            }}
+                        >
+                            <EditIcon sx={{ fontSize: '14px' }} />
+                        </IconButton>
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTask(task);
+                            }}
+                            sx={{
+                                color: '#6b7280',
+                                '&:hover': {
+                                    backgroundColor: '#f3f4f6',
+                                    color: '#dc2626'
+                                }
+                            }}
+                        >
+                            <DeleteIcon sx={{ fontSize: '14px' }} />
+                        </IconButton>
                     </Box>
                 </Box>
             </CardContent>
         </Card>
     );
 
+    // Enhanced tasks list with professional styling
     const renderTasksList = () => (
-        <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" sx={{
-                    fontSize: '14px',
+        <Box sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography sx={{
+                    fontSize: '16px',
                     fontWeight: 600,
                     color: '#111827'
                 }}>
-                    Tasks ({filteredTasks.length})
+                    Follow-Up Tasks
                 </Typography>
-
                 <Box sx={{ display: 'flex', gap: 1 }}>
+                    <TextField
+                        size="small"
+                        placeholder="Search tasks..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                </InputAdornment>
+                            ),
+                            endAdornment: searchTerm && (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setSearchTerm('')}
+                                        sx={{ color: '#6b7280' }}
+                                    >
+                                        <ClearIcon sx={{ fontSize: '16px' }} />
+                                    </IconButton>
+                                </InputAdornment>
+                            )
+                        }}
+                        sx={{
+                            width: 250,
+                            '& .MuiOutlinedInput-root': {
+                                fontSize: '12px',
+                                backgroundColor: '#f9fafb',
+                                '&:hover': {
+                                    backgroundColor: '#f3f4f6'
+                                },
+                                '&.Mui-focused': {
+                                    backgroundColor: '#ffffff'
+                                }
+                            }
+                        }}
+                    />
                     <Button
                         variant="outlined"
                         size="small"
                         startIcon={<FilterIcon />}
-                        sx={{ fontSize: '12px' }}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            borderColor: '#d1d5db',
+                            color: '#374151'
+                        }}
                     >
                         Filter
-                    </Button>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<SortIcon />}
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Sort
                     </Button>
                 </Box>
             </Box>
 
-            {filteredTasks.length === 0 ? (
+            {loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress size={24} />
+                </Box>
+            ) : tasks.length === 0 ? (
                 <Paper sx={{
                     p: 4,
                     textAlign: 'center',
                     border: '1px solid #e5e7eb',
-                    borderRadius: 2
+                    boxShadow: 'none',
+                    backgroundColor: '#f9fafb'
                 }}>
-                    <TaskIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
-                    <Typography variant="h6" sx={{
-                        fontSize: '16px',
+                    <TaskIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                    <Typography sx={{
+                        fontSize: '14px',
                         color: '#6b7280',
                         mb: 1
                     }}>
-                        No tasks found
+                        No follow-up tasks found
                     </Typography>
-                    <Typography variant="body2" sx={{
+                    <Typography sx={{
                         fontSize: '12px',
-                        color: '#9ca3af',
-                        mb: 2
+                        color: '#9ca3af'
                     }}>
-                        Create a new task or adjust your filters
+                        Create your first task to get started
                     </Typography>
-                    <Button
-                        variant="contained"
-                        size="small"
-                        startIcon={<AddIcon />}
-                        onClick={handleCreateTask}
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Create Task
-                    </Button>
                 </Paper>
             ) : (
                 <Box>
-                    {filteredTasks.map(task => renderTaskCard(task))}
+                    {tasks.map(task => renderTaskCard(task))}
                 </Box>
             )}
         </Box>
     );
 
-    // Main Render
-    if (loading) {
+    // Enhanced shipments table with professional styling
+    const renderShipmentsTable = () => (
+        <Box sx={{ p: 3 }}>
+            <Typography sx={{
+                fontSize: '16px',
+                fontWeight: 600,
+                color: '#111827',
+                mb: 3
+            }}>
+                Shipments Requiring Follow-Up
+            </Typography>
+
+            <TableContainer
+                component={Paper}
+                sx={{
+                    border: '1px solid #e5e7eb',
+                    boxShadow: 'none',
+                    borderRadius: '8px'
+                }}
+            >
+                <Table>
+                    <TableHead sx={{ backgroundColor: '#f8fafc' }}>
+                        <TableRow>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Customer</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Status</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Ship Date</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>ETA</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Follow-Up</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {shipments.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={8} sx={{ textAlign: 'center', py: 4 }}>
+                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                        No shipments requiring follow-up
+                                    </Typography>
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            shipments.map((shipment) => (
+                                <TableRow
+                                    key={shipment.id}
+                                    sx={{
+                                        '&:hover': {
+                                            backgroundColor: '#f8fafc'
+                                        }
+                                    }}
+                                >
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <ShipmentIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {shipment.shipmentID || shipment.id}
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown'}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <EnhancedStatusChip
+                                            status={shipment.status || 'pending'}
+                                            size="small"
+                                            sx={{
+                                                height: '20px',
+                                                fontSize: '10px'
+                                            }}
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {`${shipment.shipFrom?.city || 'Unknown'} → ${shipment.shipTo?.city || 'Unknown'}`}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {shipment.shipmentInfo?.shipmentDate ?
+                                            new Date(shipment.shipmentInfo.shipmentDate.toDate?.() || shipment.shipmentInfo.shipmentDate).toLocaleDateString() :
+                                            shipment.createdAt ?
+                                                new Date(shipment.createdAt.toDate?.() || shipment.createdAt).toLocaleDateString() :
+                                                'N/A'
+                                        }
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        {shipment.eta1 ?
+                                            new Date(shipment.eta1.toDate?.() || shipment.eta1).toLocaleDateString() :
+                                            'N/A'
+                                        }
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <Chip
+                                            label="Pending"
+                                            size="small"
+                                            sx={{
+                                                height: '20px',
+                                                fontSize: '10px',
+                                                backgroundColor: '#fef3c7',
+                                                color: '#d97706'
+                                            }}
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: '12px' }}>
+                                        <IconButton
+                                            size="small"
+                                            sx={{ color: '#6b7280' }}
+                                            onClick={() => handleCreateTask()}
+                                        >
+                                            <AddIcon sx={{ fontSize: '14px' }} />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+        </Box>
+    );
+
+    // Enhanced company/customer filters with professional styling
+    const renderCompanyCustomerFilters = () => (
+        <Box sx={{
+            p: 3,
+            borderBottom: '1px solid #e5e7eb',
+            backgroundColor: '#f9fafb'
+        }}>
+            <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={6}>
+                    <FormControl
+                        fullWidth
+                        size="small"
+                        sx={{
+                            '& .MuiInputLabel-root': {
+                                fontSize: '12px',
+                                color: '#6b7280'
+                            },
+                            '& .MuiSelect-select': {
+                                fontSize: '12px'
+                            }
+                        }}
+                    >
+                        <InputLabel>Company</InputLabel>
+                        <Select
+                            value={selectedCompanyId}
+                            onChange={handleCompanyChange}
+                            label="Company"
+                            disabled={loadingCompanies}
+                        >
+                            <MenuItem value="all" sx={{ fontSize: '12px' }}>All Companies</MenuItem>
+                            {availableCompanies.map(company => (
+                                <MenuItem
+                                    key={company.id}
+                                    value={company.companyID}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    {company.name}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <FormControl
+                        fullWidth
+                        size="small"
+                        sx={{
+                            '& .MuiInputLabel-root': {
+                                fontSize: '12px',
+                                color: '#6b7280'
+                            },
+                            '& .MuiSelect-select': {
+                                fontSize: '12px'
+                            }
+                        }}
+                    >
+                        <InputLabel>Customer</InputLabel>
+                        <Select
+                            value={selectedCustomerId}
+                            onChange={handleCustomerChange}
+                            label="Customer"
+                            disabled={loadingCustomers}
+                        >
+                            <MenuItem value="all" sx={{ fontSize: '12px' }}>All Customers</MenuItem>
+                            {availableCustomers.map(customer => (
+                                <MenuItem
+                                    key={customer.id}
+                                    value={customer.id}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    {customer.name}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+            </Grid>
+        </Box>
+    );
+
+    // Main tab content renderer
+    const renderTabContent = () => {
+        switch (selectedTab) {
+            case 'overview':
+                return (
+                    <Box>
+                        {renderStatsCards()}
+                        {renderCompanyCustomerFilters()}
+                        <Box sx={{ p: 3 }}>
+                            <Typography sx={{
+                                fontSize: '16px',
+                                fontWeight: 600,
+                                color: '#111827',
+                                mb: 2
+                            }}>
+                                Recent Activity
+                            </Typography>
+                            <Alert
+                                severity="info"
+                                sx={{
+                                    fontSize: '12px',
+                                    backgroundColor: '#f0f9ff',
+                                    border: '1px solid #e0f2fe',
+                                    color: '#0369a1'
+                                }}
+                            >
+                                Follow-up dashboard is loading recent activity...
+                            </Alert>
+                        </Box>
+                    </Box>
+                );
+            case 'tasks':
+                return (
+                    <Box>
+                        {renderCompanyCustomerFilters()}
+                        {renderTasksList()}
+                    </Box>
+                );
+            case 'rules':
+                return (
+                    <Box>
+                        {renderCompanyCustomerFilters()}
+                        <Box sx={{ p: 3 }}>
+                            <Typography sx={{
+                                fontSize: '16px',
+                                fontWeight: 600,
+                                color: '#111827',
+                                mb: 2
+                            }}>
+                                Automation Rules
+                            </Typography>
+                            <Alert
+                                severity="info"
+                                sx={{
+                                    fontSize: '12px',
+                                    backgroundColor: '#f0f9ff',
+                                    border: '1px solid #e0f2fe',
+                                    color: '#0369a1'
+                                }}
+                            >
+                                Rules management interface will be displayed here...
+                            </Alert>
+                        </Box>
+                    </Box>
+                );
+            case 'shipments':
+                return (
+                    <Box>
+                        {renderCompanyCustomerFilters()}
+                        {renderShipmentsTable()}
+                    </Box>
+                );
+            default:
+                return null;
+        }
+    };
+
+    // Auth loading state
+    if (authLoading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <LinearProgress sx={{ width: '100%' }} />
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '400px',
+                backgroundColor: '#f9fafb'
+            }}>
+                <CircularProgress size={32} />
             </Box>
         );
     }
 
-    if (error) {
+    // Data loading state
+    if (loading && tasks.length === 0) {
         return (
-            <Alert severity="error" sx={{ m: 2 }}>
-                {error}
-            </Alert>
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '400px',
+                backgroundColor: '#f9fafb'
+            }}>
+                <CircularProgress size={32} />
+            </Box>
         );
     }
 
-    const content = (
-        <Box sx={{ p: isModal ? 0 : 3 }}>
-            {!isModal && renderHeader()}
-            {renderStatsCards()}
-            {renderTabs()}
-
-            {selectedTab === 'overview' && renderTasksList()}
-            {selectedTab === 'my-tasks' && renderTasksList()}
-            {selectedTab === 'all-tasks' && renderTasksList()}
-            {selectedTab === 'rules' && <Typography>Rules Management Coming Soon</Typography>}
-            {selectedTab === 'analytics' && <Typography>Analytics Coming Soon</Typography>}
-        </Box>
-    );
-
-    if (isModal) {
+    // Error state
+    if (error) {
         return (
-            <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-                <ModalHeader
-                    title="Shipment Follow-Ups"
-                    onClose={onClose}
-                    showCloseButton={true}
-                />
-                <Box sx={{ flex: 1, overflow: 'auto' }}>
-                    {content}
-                </Box>
+            <Box sx={{ p: 3 }}>
+                <Alert
+                    severity="error"
+                    sx={{
+                        fontSize: '12px',
+                        backgroundColor: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        color: '#dc2626'
+                    }}
+                >
+                    {error}
+                </Alert>
             </Box>
         );
     }
 
     return (
-        <Container maxWidth="xl">
-            {content}
-        </Container>
+        <Box sx={{
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: '#f9fafb'
+        }}>
+            {/* Modal Header */}
+            {isModal && (
+                <ModalHeader
+                    title="Follow-Up Management"
+                    onClose={onClose}
+                    showCloseButton={true}
+                />
+            )}
+
+            {/* Main Header */}
+            {renderHeader()}
+
+            {/* Navigation Tabs */}
+            {renderTabs()}
+
+            {/* Scrollable Content */}
+            <Box sx={{
+                flex: 1,
+                overflow: 'auto',
+                backgroundColor: '#ffffff'
+            }}>
+                {renderTabContent()}
+            </Box>
+
+            {/* Delete Task Dialog */}
+            <Dialog
+                open={deleteTaskDialog}
+                onClose={() => setDeleteTaskDialog(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: '#111827'
+                }}>
+                    Delete Follow-Up Task
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Are you sure you want to delete this follow-up task?
+                    </Typography>
+                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        This action cannot be undone.
+                    </Typography>
+                    {selectedTask && (
+                        <Alert severity="warning" sx={{ mt: 2, fontSize: '12px' }}>
+                            <strong>Task:</strong> {selectedTask.title}
+                        </Alert>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button
+                        onClick={() => setDeleteTaskDialog(false)}
+                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleConfirmDeleteTask}
+                        variant="contained"
+                        color="error"
+                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                    >
+                        Delete Task
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Create Task Dialog */}
+            <Dialog
+                open={createTaskDialog}
+                onClose={() => setCreateTaskDialog(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    Create New Follow-Up Task
+                </DialogTitle>
+                <DialogContent>
+                    <CreateTaskForm
+                        onSave={handleCreateNewTask}
+                        onCancel={() => setCreateTaskDialog(false)}
+                    />
+                </DialogContent>
+            </Dialog>
+
+            {/* Create Rule Dialog */}
+            <Dialog
+                open={createRuleDialog}
+                onClose={() => setCreateRuleDialog(false)}
+                maxWidth="lg"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    Create Automation Rule
+                </DialogTitle>
+                <DialogContent>
+                    <CreateRuleForm
+                        onSave={handleCreateNewRule}
+                        onCancel={() => setCreateRuleDialog(false)}
+                    />
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Task Dialog */}
+            <Dialog
+                open={editTaskDialog}
+                onClose={() => setEditTaskDialog(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    Edit Follow-Up Task
+                </DialogTitle>
+                <DialogContent>
+                    <EditTaskForm
+                        task={selectedTask}
+                        onSave={handleUpdateTask}
+                        onCancel={() => setEditTaskDialog(false)}
+                    />
+                </DialogContent>
+            </Dialog>
+        </Box>
+    );
+};
+
+// ===================================================================
+// EDIT TASK FORM COMPONENT
+// ===================================================================
+
+const EditTaskForm = ({ task, onSave, onCancel }) => {
+    const [formData, setFormData] = useState({
+        title: task?.title || '',
+        description: task?.description || '',
+        priority: task?.priority || 'medium',
+        status: task?.status || 'pending',
+        assignedTo: task?.assignedTo || '',
+        dueDate: task?.dueDate ? new Date(task.dueDate.toDate?.() || task.dueDate).toISOString().split('T')[0] : '',
+        category: task?.category || 'manual'
+    });
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave({
+            ...formData,
+            dueDate: formData.dueDate ? new Date(formData.dueDate) : null
+        });
+    };
+
+    return (
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+            <Grid container spacing={2}>
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Task Title"
+                        value={formData.title}
+                        onChange={(e) => handleChange('title', e.target.value)}
+                        required
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Description"
+                        value={formData.description}
+                        onChange={(e) => handleChange('description', e.target.value)}
+                        multiline
+                        rows={3}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
+                        <Select
+                            value={formData.priority}
+                            onChange={(e) => handleChange('priority', e.target.value)}
+                            label="Priority"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
+                            <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
+                            <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                        <Select
+                            value={formData.status}
+                            onChange={(e) => handleChange('status', e.target.value)}
+                            label="Status"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
+                            <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
+                            <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
+                            <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Assigned To"
+                        value={formData.assignedTo}
+                        onChange={(e) => handleChange('assignedTo', e.target.value)}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Due Date"
+                        type="date"
+                        value={formData.dueDate}
+                        onChange={(e) => handleChange('dueDate', e.target.value)}
+                        InputLabelProps={{ shrink: true }}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+            </Grid>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 3 }}>
+                <Button
+                    onClick={onCancel}
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Save Changes
+                </Button>
+            </Box>
+        </Box>
+    );
+};
+
+// ===================================================================
+// CREATE TASK FORM COMPONENT
+// ===================================================================
+
+const CreateTaskForm = ({ onSave, onCancel }) => {
+    const [formData, setFormData] = useState({
+        title: '',
+        description: '',
+        priority: 'medium',
+        status: 'pending',
+        assignedTo: '',
+        dueDate: '',
+        category: 'manual',
+        shipmentId: '',
+        selectedShipment: null
+    });
+
+    const [shipmentSearchTerm, setShipmentSearchTerm] = useState('');
+    const [shipmentOptions, setShipmentOptions] = useState([]);
+    const [loadingShipments, setLoadingShipments] = useState(false);
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const handleShipmentSearch = async (searchTerm) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            setShipmentOptions([]);
+            return;
+        }
+
+        setLoadingShipments(true);
+        try {
+            // Search shipments by ID, reference number, or customer name
+            const shipmentsQuery = query(
+                collection(db, 'shipments'),
+                orderBy('createdAt', 'desc'),
+                limit(10)
+            );
+
+            const shipmentsSnapshot = await getDocs(shipmentsQuery);
+            const shipments = shipmentsSnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(shipment =>
+                    shipment.shipmentID?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    shipment.referenceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    shipment.shipTo?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+
+            setShipmentOptions(shipments);
+        } catch (error) {
+            console.error('Error searching shipments:', error);
+            setShipmentOptions([]);
+        } finally {
+            setLoadingShipments(false);
+        }
+    };
+
+    const handleShipmentSelect = (shipment) => {
+        setFormData(prev => ({
+            ...prev,
+            shipmentId: shipment.shipmentID,
+            selectedShipment: shipment
+        }));
+        setShipmentSearchTerm(shipment.shipmentID);
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!formData.shipmentId) {
+            alert('Please select a shipment for this follow-up task');
+            return;
+        }
+        onSave({
+            ...formData,
+            dueDate: formData.dueDate ? new Date(formData.dueDate) : null
+        });
+    };
+
+    return (
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+            <Grid container spacing={2}>
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Task Title"
+                        value={formData.title}
+                        onChange={(e) => handleChange('title', e.target.value)}
+                        required
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+
+                <Grid item xs={12}>
+                    <Typography sx={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#374151',
+                        mb: 1
+                    }}>
+                        Shipment Selection *
+                    </Typography>
+                </Grid>
+
+                {!formData.selectedShipment ? (
+                    <Grid item xs={12}>
+                        <TextField
+                            fullWidth
+                            label="Search Shipments"
+                            value={shipmentSearchTerm}
+                            onChange={(e) => {
+                                setShipmentSearchTerm(e.target.value);
+                                handleShipmentSearch(e.target.value);
+                            }}
+                            placeholder="Enter shipment ID, Reference, or Customer..."
+                            size="small"
+                            sx={{
+                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                            }}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: loadingShipments && (
+                                    <InputAdornment position="end">
+                                        <CircularProgress size={16} />
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+
+                        {shipmentOptions.length > 0 && (
+                            <Paper sx={{ mt: 1, maxHeight: 200, overflow: 'auto' }}>
+                                <List dense>
+                                    {shipmentOptions.map((shipment) => (
+                                        <ListItem
+                                            key={shipment.id}
+                                            button
+                                            onClick={() => handleShipmentSelect(shipment)}
+                                            sx={{
+                                                '&:hover': { backgroundColor: '#f5f5f5' },
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <ListItemText
+                                                primary={
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                            {shipment.shipmentID || shipment.id}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {shipment.shipTo?.companyName || 'Unknown'} • {shipment.referenceNumber || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
+                                                }
+                                                secondary={
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Status: {shipment.status || 'Unknown'}
+                                                    </Typography>
+                                                }
+                                            />
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            </Paper>
+                        )}
+                    </Grid>
+                ) : (
+                    <Grid item xs={12}>
+                        <Paper sx={{ p: 2, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                        Selected Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                        From: {formData.selectedShipment.shipFrom?.companyName || 'Unknown'}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                        To: {formData.selectedShipment.shipTo?.companyName || 'Unknown'}
+                                    </Typography>
+                                    <Chip
+                                        label={formData.selectedShipment.status || 'pending'}
+                                        size="small"
+                                        sx={{ fontSize: '10px' }}
+                                    />
+                                </Box>
+                                <Button
+                                    size="small"
+                                    onClick={() => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            shipmentId: '',
+                                            selectedShipment: null
+                                        }));
+                                        setShipmentSearchTerm('');
+                                    }}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Change
+                                </Button>
+                            </Box>
+                        </Paper>
+                    </Grid>
+                )}
+
+                {/* Task Details */}
+                <Grid item xs={12}>
+                    <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mt: 2 }}>
+                        Task Details
+                    </Typography>
+                </Grid>
+
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Task Title"
+                        value={formData.title}
+                        onChange={(e) => handleChange('title', e.target.value)}
+                        required
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                        placeholder="e.g., Contact customer about delivery delay"
+                    />
+                </Grid>
+
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Description"
+                        value={formData.description}
+                        onChange={(e) => handleChange('description', e.target.value)}
+                        multiline
+                        rows={3}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                        placeholder="Detailed instructions for this follow-up task"
+                    />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                        <Select
+                            value={formData.category}
+                            onChange={(e) => handleChange('category', e.target.value)}
+                            label="Category"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual</MenuItem>
+                            <MenuItem value="automated" sx={{ fontSize: '12px' }}>Automated</MenuItem>
+                            <MenuItem value="scheduled" sx={{ fontSize: '12px' }}>Scheduled</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
+                        <Select
+                            value={formData.priority}
+                            onChange={(e) => handleChange('priority', e.target.value)}
+                            label="Priority"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
+                            <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
+                            <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
+                            <MenuItem value="urgent" sx={{ fontSize: '12px' }}>Urgent</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Assigned To"
+                        value={formData.assignedTo}
+                        onChange={(e) => handleChange('assignedTo', e.target.value)}
+                        required
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Due Date"
+                        type="date"
+                        value={formData.dueDate}
+                        onChange={(e) => handleChange('dueDate', e.target.value)}
+                        required
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+            </Grid>
+
+            <Box sx={{ display: 'flex', gap: 1, mt: 4, justifyContent: 'flex-end' }}>
+                <Button
+                    onClick={onCancel}
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={!formData.title || !formData.selectedShipment}
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Create Task
+                </Button>
+            </Box>
+        </Box>
+    );
+};
+
+// ===================================================================
+// CREATE RULE FORM COMPONENT
+// ===================================================================
+
+const CreateRuleForm = ({ onSave, onCancel }) => {
+    const [formData, setFormData] = useState({
+        name: '',
+        description: '',
+        active: true,
+        scope: {
+            type: 'all_shipments', // all_shipments, specific_company, shipment_type, service_level, carrier, conditions
+            companyId: '',
+            shipmentType: '',
+            serviceLevel: '',
+            carrier: '',
+            conditions: []
+        },
+        timing: {
+            trigger: 'status_change', // status_change, time_before_eta, time_after_eta, fixed_time, manual
+            statusChange: {
+                fromStatus: '',
+                toStatus: ''
+            },
+            timeOffset: {
+                value: 1,
+                unit: 'hours' // minutes, hours, days
+            },
+            fixedTime: ''
+        },
+        checkpoints: {
+            statusChecks: [],
+            timeChecks: [],
+            conditionChecks: []
+        },
+        taskTemplate: {
+            title: '',
+            description: '',
+            priority: 'medium',
+            category: 'automated',
+            assignmentRules: {
+                type: 'specific_user', // specific_user, role_based, round_robin, load_balanced
+                assignTo: '',
+                role: '',
+                department: ''
+            }
+        }
+    });
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const handleScopeChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            scope: {
+                ...prev.scope,
+                [field]: value
+            }
+        }));
+    };
+
+    const handleTimingChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            timing: {
+                ...prev.timing,
+                [field]: value
+            }
+        }));
+    };
+
+    const handleCheckpointChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            checkpoints: {
+                ...prev.checkpoints,
+                [field]: value
+            }
+        }));
+    };
+
+    const handleAssignmentChange = (field, value) => {
+        setFormData(prev => ({
+            ...prev,
+            taskTemplate: {
+                ...prev.taskTemplate,
+                assignmentRules: {
+                    ...prev.taskTemplate.assignmentRules,
+                    [field]: value
+                }
+            }
+        }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+
+    return (
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+            <Grid container spacing={3}>
+                {/* Basic Information */}
+                <Grid item xs={12}>
+                    <Accordion defaultExpanded>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                Basic Information
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Rule Name"
+                                        value={formData.name}
+                                        onChange={(e) => handleChange('name', e.target.value)}
+                                        required
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={formData.active}
+                                                onChange={(e) => handleChange('active', e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={<Typography sx={{ fontSize: '12px' }}>Active</Typography>}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Description"
+                                        value={formData.description}
+                                        onChange={(e) => handleChange('description', e.target.value)}
+                                        multiline
+                                        rows={2}
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Rule Scope */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                Rule Scope
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Apply To</InputLabel>
+                                        <Select
+                                            value={formData.scope.type}
+                                            onChange={(e) => handleScopeChange('type', e.target.value)}
+                                            label="Apply To"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="all_shipments" sx={{ fontSize: '12px' }}>All Shipments</MenuItem>
+                                            <MenuItem value="specific_company" sx={{ fontSize: '12px' }}>Specific Company</MenuItem>
+                                            <MenuItem value="shipment_type" sx={{ fontSize: '12px' }}>Shipment Type</MenuItem>
+                                            <MenuItem value="service_level" sx={{ fontSize: '12px' }}>Service Level</MenuItem>
+                                            <MenuItem value="carrier" sx={{ fontSize: '12px' }}>Specific Carrier</MenuItem>
+                                            <MenuItem value="conditions" sx={{ fontSize: '12px' }}>Custom Conditions</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+
+                                {formData.scope.type === 'shipment_type' && (
+                                    <Grid item xs={12} md={6}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
+                                            <Select
+                                                value={formData.scope.shipmentType}
+                                                onChange={(e) => handleScopeChange('shipmentType', e.target.value)}
+                                                label="Shipment Type"
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                <MenuItem value="ltl" sx={{ fontSize: '12px' }}>LTL</MenuItem>
+                                                <MenuItem value="ftl" sx={{ fontSize: '12px' }}>FTL</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+                                )}
+
+                                {formData.scope.type === 'carrier' && (
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Carrier Name"
+                                            value={formData.scope.carrier}
+                                            onChange={(e) => handleScopeChange('carrier', e.target.value)}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                )}
+                            </Grid>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Timing & Triggers */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                Timing & Triggers
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Trigger Type</InputLabel>
+                                        <Select
+                                            value={formData.timing.trigger}
+                                            onChange={(e) => handleTimingChange('trigger', e.target.value)}
+                                            label="Trigger Type"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="status_change" sx={{ fontSize: '12px' }}>Status Change</MenuItem>
+                                            <MenuItem value="time_before_eta" sx={{ fontSize: '12px' }}>Time Before ETA</MenuItem>
+                                            <MenuItem value="time_after_eta" sx={{ fontSize: '12px' }}>Time After ETA</MenuItem>
+                                            <MenuItem value="fixed_time" sx={{ fontSize: '12px' }}>Fixed Time</MenuItem>
+                                            <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual Trigger</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+
+                                {(formData.timing.trigger === 'time_before_eta' || formData.timing.trigger === 'time_after_eta') && (
+                                    <>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Time Value"
+                                                type="number"
+                                                value={formData.timing.timeOffset.value}
+                                                onChange={(e) => handleTimingChange('timeOffset', {
+                                                    ...formData.timing.timeOffset,
+                                                    value: parseInt(e.target.value) || 1
+                                                })}
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                inputProps={{ min: 1 }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>Unit</InputLabel>
+                                                <Select
+                                                    value={formData.timing.timeOffset.unit}
+                                                    onChange={(e) => handleTimingChange('timeOffset', {
+                                                        ...formData.timing.timeOffset,
+                                                        unit: e.target.value
+                                                    })}
+                                                    label="Unit"
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    <MenuItem value="minutes" sx={{ fontSize: '12px' }}>Minutes</MenuItem>
+                                                    <MenuItem value="hours" sx={{ fontSize: '12px' }}>Hours</MenuItem>
+                                                    <MenuItem value="days" sx={{ fontSize: '12px' }}>Days</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                    </>
+                                )}
+
+                                {formData.timing.trigger === 'fixed_time' && (
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Time"
+                                            type="time"
+                                            value={formData.timing.fixedTime}
+                                            onChange={(e) => handleTimingChange('fixedTime', e.target.value)}
+                                            size="small"
+                                            InputLabelProps={{ shrink: true }}
+                                            sx={{
+                                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                        />
+                                    </Grid>
+                                )}
+                            </Grid>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Checkpoint Configuration */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                Task to Create
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Task Title"
+                                        value={formData.checkpoint.name}
+                                        onChange={(e) => handleCheckpointChange('name', e.target.value)}
+                                        required
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                        placeholder="e.g., Contact customer about delayed delivery"
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Task Description"
+                                        value={formData.checkpoint.description}
+                                        onChange={(e) => handleCheckpointChange('description', e.target.value)}
+                                        multiline
+                                        rows={2}
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                        placeholder="Detailed instructions for the task"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                                        <Select
+                                            value={formData.checkpoint.category}
+                                            onChange={(e) => handleCheckpointChange('category', e.target.value)}
+                                            label="Category"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Delivery</MenuItem>
+                                            <MenuItem value="pickup" sx={{ fontSize: '12px' }}>Pickup</MenuItem>
+                                            <MenuItem value="documentation" sx={{ fontSize: '12px' }}>Documentation</MenuItem>
+                                            <MenuItem value="customer_service" sx={{ fontSize: '12px' }}>Customer Service</MenuItem>
+                                            <MenuItem value="billing" sx={{ fontSize: '12px' }}>Billing</MenuItem>
+                                            <MenuItem value="exception" sx={{ fontSize: '12px' }}>Exception Handling</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
+                                        <Select
+                                            value={formData.checkpoint.priority}
+                                            onChange={(e) => handleCheckpointChange('priority', e.target.value)}
+                                            label="Priority"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
+                                            <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
+                                            <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
+                                            <MenuItem value="urgent" sx={{ fontSize: '12px' }}>Urgent</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                            </Grid>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Assignment */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                Task Assignment
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Assignment Type</InputLabel>
+                                        <Select
+                                            value={formData.assignment.type}
+                                            onChange={(e) => handleAssignmentChange('type', e.target.value)}
+                                            label="Assignment Type"
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <MenuItem value="specific_user" sx={{ fontSize: '12px' }}>Specific User</MenuItem>
+                                            <MenuItem value="role_based" sx={{ fontSize: '12px' }}>Role Based</MenuItem>
+                                            <MenuItem value="round_robin" sx={{ fontSize: '12px' }}>Round Robin</MenuItem>
+                                            <MenuItem value="load_balanced" sx={{ fontSize: '12px' }}>Load Balanced</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label={formData.assignment.type === 'specific_user' ? 'User Email' :
+                                            formData.assignment.type === 'role_based' ? 'Role' : 'Team'}
+                                        value={formData.assignment.value}
+                                        onChange={(e) => handleAssignmentChange('value', e.target.value)}
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                        placeholder={
+                                            formData.assignment.type === 'specific_user' ? 'user@company.com' :
+                                                formData.assignment.type === 'role_based' ? 'customer_service' : 'team_name'
+                                        }
+                                    />
+                                </Grid>
+                            </Grid>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+            </Grid>
+
+            <Box sx={{ display: 'flex', gap: 1, mt: 4, justifyContent: 'flex-end' }}>
+                <Button
+                    onClick={onCancel}
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    sx={{ fontSize: '12px', textTransform: 'none' }}
+                >
+                    Create Rule
+                </Button>
+            </Box>
+        </Box>
     );
 };
 

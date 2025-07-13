@@ -178,6 +178,24 @@ const {
     getShipmentStatuses
 } = require('./src/admin-shipment-statuses');
 
+// Import follow-up functions
+const {
+    createFollowUpRule,
+    updateFollowUpRule,
+    getFollowUpRules,
+    createFollowUpTask,
+    updateFollowUpTask,
+    getFollowUpTasks,
+    deleteFollowUpTask,
+    getFollowUpTasksByShipment,
+    addTaskNote,
+    completeTask,
+    escalateTask,
+    getShipmentFollowUpSummary
+} = require('./src/followUps/followUpEngine');
+
+
+
 // Export Callable functions
 exports.getRatesEShipPlus = getRatesEShipPlus;
 exports.cancelShipmentEShipPlus = cancelShipmentEShipPlus;
@@ -342,6 +360,20 @@ exports.createShipmentStatus = createShipmentStatus;
 exports.updateShipmentStatus = updateShipmentStatus;
 exports.deleteShipmentStatus = deleteShipmentStatus;
 exports.getShipmentStatuses = getShipmentStatuses;
+
+// Export follow-up functions
+exports.createFollowUpRule = createFollowUpRule;
+exports.updateFollowUpRule = updateFollowUpRule;
+exports.getFollowUpRules = getFollowUpRules;
+exports.createFollowUpTask = createFollowUpTask;
+exports.updateFollowUpTask = updateFollowUpTask;
+exports.getFollowUpTasks = getFollowUpTasks;
+exports.deleteFollowUpTask = deleteFollowUpTask;
+exports.getFollowUpTasksByShipment = getFollowUpTasksByShipment;
+exports.addTaskNote = addTaskNote;
+exports.completeTask = completeTask;
+exports.escalateTask = escalateTask;
+exports.getShipmentFollowUpSummary = getShipmentFollowUpSummary;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

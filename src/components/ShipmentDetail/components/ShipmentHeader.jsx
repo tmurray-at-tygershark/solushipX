@@ -17,7 +17,8 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
-    CircularProgress
+    CircularProgress,
+    Badge
 } from '@mui/material';
 import {
     Edit as EditIcon,
@@ -30,7 +31,8 @@ import {
     LocalShipping as ShipmentIcon,
     FileCopy as DuplicateIcon,
     Archive as ArchiveIcon,
-    NotificationsActive as NotifyIcon
+    NotificationsActive as NotifyIcon,
+    AssignmentInd as FollowUpIcon
 } from '@mui/icons-material';
 
 // Add CSS for spinning animation
@@ -60,6 +62,9 @@ const ShipmentHeader = ({
     onRegenerateCarrierConfirmation,
     onRefreshShipment,
     onArchiveShipment,
+    onCreateFollowUp, // Add follow-up handler
+    onViewFollowUps, // Add view follow-ups handler
+    followUpCount = 0, // Add follow-up counter
     actionStates = {}
 }) => {
     // Menu states
@@ -226,6 +231,41 @@ const ShipmentHeader = ({
                                 Edit
                             </Button>
                         )}
+
+                        {/* Follow-Up Button - After Edit Button */}
+                        <Badge
+                            badgeContent={followUpCount}
+                            color="error"
+                            sx={{
+                                '& .MuiBadge-badge': {
+                                    fontSize: '10px',
+                                    height: '18px',
+                                    minWidth: '18px',
+                                    right: -3,
+                                    top: 3
+                                }
+                            }}
+                        >
+                            <Button
+                                variant="outlined"
+                                startIcon={<FollowUpIcon />}
+                                onClick={onViewFollowUps}
+                                disabled={actionStates.createFollowUp?.loading}
+                                sx={{
+                                    minWidth: 120,
+                                    fontSize: '12px',
+                                    borderColor: '#f59e0b',
+                                    color: '#f59e0b',
+                                    paddingRight: '16px', // Add 8px padding (8px + default 8px = 16px)
+                                    '&:hover': {
+                                        borderColor: '#d97706',
+                                        bgcolor: '#fef3c7'
+                                    }
+                                }}
+                            >
+                                Follow-Ups
+                            </Button>
+                        </Badge>
 
                         {/* Print BOL Button - Direct Access */}
                         {!isDraft && isFreightShipment && (

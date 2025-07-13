@@ -213,24 +213,88 @@ class DynamicStatusService {
 
         console.log(`Processing status: "${statusIdentifier}" (type: ${typeof statusIdentifier})`);
 
+        // Extract actual status from formatted titles
+        const extractedStatus = this.extractStatusFromTitle(statusIdentifier);
+        console.log(`Extracted status: "${extractedStatus}" from title: "${statusIdentifier}"`);
+
         // Try to find in dynamic system first
-        const dynamicResult = this.findDynamicStatus(statusIdentifier);
+        const dynamicResult = this.findDynamicStatus(extractedStatus);
         if (dynamicResult) {
             console.log(`Found in dynamic system:`, dynamicResult.masterStatus.displayLabel);
             return dynamicResult;
         }
 
         // Fall back to legacy status mapping
-        console.log(`Not found in dynamic system, trying legacy mapping for: "${statusIdentifier}"`);
-        const legacyResult = this.mapLegacyStatus(statusIdentifier);
+        console.log(`Not found in dynamic system, trying legacy mapping for: "${extractedStatus}"`);
+        const legacyResult = this.mapLegacyStatus(extractedStatus);
         if (legacyResult) {
-            console.log(`Successfully mapped legacy status "${statusIdentifier}" to "${legacyResult.masterStatus.displayLabel}"`);
+            console.log(`Successfully mapped legacy status "${extractedStatus}" to "${legacyResult.masterStatus.displayLabel}"`);
             return legacyResult;
         }
 
         // Ultimate fallback
-        console.warn(`No mapping found for status: "${statusIdentifier}", using unknown status display`);
+        console.warn(`No mapping found for status: "${extractedStatus}", using unknown status display`);
         return this.getUnknownStatusDisplay();
+    }
+
+    /**
+     * Extract actual status from formatted event titles
+     */
+    extractStatusFromTitle(title) {
+        if (!title || typeof title !== 'string') {
+            return title;
+        }
+
+        // Handle "Status Manually Updated: <status>" format (from manual overrides)
+        if (title.startsWith('Status Manually Updated:')) {
+            const extracted = title.replace('Status Manually Updated:', '').trim();
+            return extracted || title;
+        }
+
+        // Handle "Status Updated: <status>" format
+        if (title.startsWith('Status Updated:')) {
+            const extracted = title.replace('Status Updated:', '').trim();
+            return extracted || title;
+        }
+
+        // Handle "Status Updated - <status>" format
+        if (title.startsWith('Status Updated -')) {
+            const extracted = title.replace('Status Updated -', '').trim();
+            return extracted || title;
+        }
+
+        // Handle "Shipment booking confirmed" -> "booking confirmed"
+        if (title === 'Shipment booking confirmed') {
+            return 'booking confirmed';
+        }
+
+        // Handle "Booking confirmed" -> "booked"
+        if (title === 'Booking confirmed') {
+            return 'booked';
+        }
+
+        // Handle "Tracking Update" -> return as-is (will be handled by legacy mapping)
+        if (title === 'Tracking Update') {
+            return 'in_transit'; // Most tracking updates indicate in transit
+        }
+
+        // Handle "Created" -> "created"
+        if (title === 'Created') {
+            return 'created';
+        }
+
+        // Handle "BOL Generated" -> "booked" (BOL generation typically happens after booking)
+        if (title.includes('BOL Generated') || title.includes('BOL generated')) {
+            return 'booked';
+        }
+
+        // Handle "Carrier Confirmation Generated" -> "booked"
+        if (title.includes('Carrier Confirmation Generated') || title.includes('Carrier confirmation generated')) {
+            return 'booked';
+        }
+
+        // Return the original title if no extraction pattern matches
+        return title;
     }
 
     /**
