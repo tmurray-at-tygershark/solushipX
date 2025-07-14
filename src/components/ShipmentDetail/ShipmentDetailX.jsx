@@ -1077,7 +1077,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     return (
         <ErrorBoundary>
-            <Box sx={{ width: '100%', minHeight: '100vh', p: 3 }}>
+            <Box sx={{ width: '100%', minHeight: '100vh', p: 3, pt: onBackToTable ? 1 : 3 }}>
                 {/* Header with action buttons */}
                 <ShipmentHeader
                     shipment={shipment}

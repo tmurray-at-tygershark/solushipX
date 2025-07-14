@@ -2382,6 +2382,7 @@ const Transition = forwardRef(function Transition(props, ref) {
 
 const Dashboard = () => {
     const [shipments, setShipments] = useState([]);
+    const [allShipmentsIncludingDrafts, setAllShipmentsIncludingDrafts] = useState([]); // NEW: Include drafts for search
     const [loading, setLoading] = useState(true);
     const [customers, setCustomers] = useState({});
     const { companyIdForAddress, companyData, loading: companyLoading, isAdmin, getAdminReturnPath, clearAdminReturnPath, clearStoredCompanyContext, setCompanyContext } = useCompany();
@@ -2504,12 +2505,17 @@ const Dashboard = () => {
         console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
 
         // Function to process and combine shipment results
-        const processShipments = (normalDocs, quickShipDocs) => {
-            console.log(`Dashboard: Processing ${normalDocs.length} normal + ${quickShipDocs.length} QuickShip shipments`);
+        const processShipments = (normalDocs, quickShipDocs, draftDocs = []) => {
+            console.log(`Dashboard: Processing ${normalDocs.length} normal + ${quickShipDocs.length} QuickShip + ${draftDocs.length} draft shipments`);
 
-            // Combine both sets of documents, removing duplicates
+            // Combine all three sets of documents, removing duplicates
             const allDocs = [...normalDocs];
             quickShipDocs.forEach(doc => {
+                if (!allDocs.find(existing => existing.id === doc.id)) {
+                    allDocs.push(doc);
+                }
+            });
+            draftDocs.forEach(doc => {
                 if (!allDocs.find(existing => existing.id === doc.id)) {
                     allDocs.push(doc);
                 }
@@ -2632,7 +2638,13 @@ const Dashboard = () => {
                     // Override the createdAt with our corrected timestamp
                     createdAt: validTimestamp
                 };
-            }).filter(shipment => {
+            });
+
+            // Create two filtered datasets: 
+            // 1. Display shipments (excluding drafts for dashboard display)
+            // 2. All shipments including drafts (for search functionality)
+
+            const displayShipments = shipmentsData.filter(shipment => {
                 const status = shipment.status?.toLowerCase();
 
                 // EXCLUDE ALL CANCELLED/CANCELED AND ARCHIVED SHIPMENTS COMPLETELY
@@ -2662,12 +2674,25 @@ const Dashboard = () => {
                 return status !== 'draft' && status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided' && status !== 'archived';
             });
 
-            console.log('Dashboard: Processed shipments data:', shipmentsData.length, 'shipments (excluding drafts)');
-            setShipments(shipmentsData);
+            // For search: include all shipments including drafts (but still exclude cancelled/archived)
+            const allShipmentsForSearch = shipmentsData.filter(shipment => {
+                const status = shipment.status?.toLowerCase();
 
-            // Set the same data for enterprise search (dashboard search doesn't need drafts)
-            // In a full implementation, we could fetch drafts separately for search if needed
-            console.log('🔍 Dashboard: Setting shipments for enterprise search:', shipmentsData.length);
+                // EXCLUDE ONLY CANCELLED/CANCELED AND ARCHIVED SHIPMENTS (keep drafts for search)
+                if (status === 'cancelled' || status === 'canceled' || status === 'cancelled' || status === 'cancelled' || status === 'void' || status === 'voided' || status === 'archived') {
+                    return false;
+                }
+
+                return true; // Include all other shipments including drafts
+            });
+
+            console.log('Dashboard: Processed shipments data:', displayShipments.length, 'shipments for display (excluding drafts)');
+            console.log('🔍 Dashboard: Processed shipments data for search:', allShipmentsForSearch.length, 'shipments (including drafts)');
+
+            setShipments(displayShipments);
+            setAllShipmentsIncludingDrafts(allShipmentsForSearch);
+
+            console.log('🔍 Dashboard: Setting shipments for enterprise search with drafts enabled:', allShipmentsForSearch.length);
 
             setLoading(false);
         };
@@ -2689,7 +2714,16 @@ const Dashboard = () => {
             limit(50)
         );
 
-        // Subscribe to both queries
+        // Third query - Draft shipments for search functionality
+        const draftShipmentsQuery = query(
+            collection(db, 'shipments'),
+            where('companyID', '==', companyIdForAddress),
+            where('status', '==', 'draft'),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+        );
+
+        // Subscribe to all three queries
         const unsubscribeNormal = onSnapshot(normalShipmentsQuery, (normalSnapshot) => {
             console.log('Dashboard: Received normal shipments snapshot with', normalSnapshot.docs.length, 'documents');
 
@@ -2697,12 +2731,26 @@ const Dashboard = () => {
             onSnapshot(quickShipQuery, (quickShipSnapshot) => {
                 console.log('Dashboard: Received QuickShip shipments snapshot with', quickShipSnapshot.docs.length, 'documents');
 
-                // Process both sets of results
-                processShipments(normalSnapshot.docs, quickShipSnapshot.docs);
+                // Get draft shipments separately
+                onSnapshot(draftShipmentsQuery, (draftSnapshot) => {
+                    console.log('Dashboard: Received draft shipments snapshot with', draftSnapshot.docs.length, 'documents');
+
+                    // Process all three sets of results
+                    processShipments(normalSnapshot.docs, quickShipSnapshot.docs, draftSnapshot.docs);
+                }, (error) => {
+                    console.error('Error fetching draft shipments:', error);
+                    // Process without drafts if draft query fails
+                    processShipments(normalSnapshot.docs, quickShipSnapshot.docs, []);
+                });
             }, (error) => {
                 console.error('Error fetching QuickShip shipments:', error);
-                // Process just normal shipments if QuickShip query fails
-                processShipments(normalSnapshot.docs, []);
+                // Process just normal shipments and drafts if QuickShip query fails
+                onSnapshot(draftShipmentsQuery, (draftSnapshot) => {
+                    processShipments(normalSnapshot.docs, [], draftSnapshot.docs);
+                }, (error) => {
+                    console.error('Error fetching draft shipments:', error);
+                    processShipments(normalSnapshot.docs, [], []);
+                });
             });
         }, (error) => {
             console.error('Error fetching normal shipments:', error);
@@ -3103,6 +3151,48 @@ const Dashboard = () => {
         // Open Shipments modal
         setIsShipmentsModalOpen(true);
     };
+
+    // NEW: Handler for viewing/editing shipments from Dashboard search (draft-aware)
+    const handleViewShipmentFromDashboardSearch = useCallback((shipmentDocumentId) => {
+        console.log('🎯 Dashboard search: Navigating to shipment:', shipmentDocumentId);
+
+        // Find the shipment in our all shipments list (including drafts)
+        const shipment = allShipmentsIncludingDrafts.find(s => s.id === shipmentDocumentId);
+
+        if (!shipment) {
+            console.warn('Shipment not found:', shipmentDocumentId);
+            return;
+        }
+
+        // Check if this is a draft shipment and handle appropriately
+        if (shipment.status?.toLowerCase() === 'draft') {
+            console.log('📝 Draft shipment detected, determining edit mode...');
+
+            // Determine which modal to open based on creation method
+            if (shipment.creationMethod === 'quickship') {
+                console.log('🚀 Opening QuickShip draft for editing');
+                // Open QuickShip modal for editing
+                handleOpenCreateShipmentModal(null, null, shipmentDocumentId, 'quickship');
+            } else {
+                console.log('🔧 Opening CreateShipmentX draft for editing');
+                // Open CreateShipmentX modal for editing (advanced mode)
+                handleOpenCreateShipmentModal(null, shipmentDocumentId, null, 'advanced');
+            }
+        } else {
+            console.log('📦 Regular shipment, opening detail view');
+            // Regular shipment - open detail view in ShipmentsX
+            setShipmentsDeepLinkParams({
+                directToDetail: true,
+                selectedShipmentId: shipmentDocumentId
+            });
+            setIsShipmentsModalOpen(true);
+        }
+
+        // Clear search
+        setUnifiedSearch('');
+        setShowLiveResults(false);
+        setSelectedResultIndex(-1);
+    }, [allShipmentsIncludingDrafts, handleOpenCreateShipmentModal]);
 
     // Handler for clearing deep link parameters when navigating back from shipment detail
     const handleClearDeepLinkParams = useCallback(() => {
@@ -3602,24 +3692,8 @@ const Dashboard = () => {
         setSelectedResultIndex(-1);
     }, []); // Removed unifiedSearch from dependencies to prevent infinite loop
 
-    // Handle shipment selection from autocomplete
-    const handleViewShipmentDetail = useCallback((shipmentDocumentId) => {
-        console.log('🎯 Navigating to shipment detail:', shipmentDocumentId);
-
-        // Set deep link params to go directly to shipment detail
-        setShipmentsDeepLinkParams({
-            directToDetail: true,
-            selectedShipmentId: shipmentDocumentId
-        });
-
-        // Open ShipmentsX modal
-        setIsShipmentsModalOpen(true);
-
-        // Clear search
-        setUnifiedSearch('');
-        setShowLiveResults(false);
-        setSelectedResultIndex(-1);
-    }, []);
+    // Handle shipment selection from autocomplete (replaced with draft-aware handler)
+    const handleViewShipmentDetail = handleViewShipmentFromDashboardSearch;
 
     // Handler for navigating from Customers to Shipments with deep linking
     const handleNavigateToShipments = useCallback((deepLinkParams = {}) => {
@@ -3739,10 +3813,10 @@ const Dashboard = () => {
                             // Use trimmed value for search logic but keep original for display
                             const trimmedValue = value.trim();
 
-                            // Generate live results for autocomplete
+                            // Generate live results for autocomplete (including drafts)
                             if (trimmedValue.length >= 2) {
                                 setSelectedResultIndex(-1);
-                                const results = generateLiveShipmentResults(trimmedValue, shipments, customers);
+                                const results = generateLiveShipmentResults(trimmedValue, allShipmentsIncludingDrafts, customers);
                                 setLiveResults(results);
                                 setShowLiveResults(results.length > 0);
                             } else {

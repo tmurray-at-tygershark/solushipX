@@ -95,6 +95,834 @@ import useModalNavigation from '../../hooks/useModalNavigation';
 // Import ShipmentDetailX for the sliding view
 const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
 
+// Custom ModalHeader with Enterprise Search
+const EnterpriseModalHeader = ({
+    navigation,
+    onBack,
+    showBackButton,
+    onClose,
+    showCloseButton,
+    unifiedSearch,
+    setUnifiedSearch,
+    liveResults,
+    setLiveResults,
+    showLiveResults,
+    setShowLiveResults,
+    selectedResultIndex,
+    setSelectedResultIndex,
+    handleViewShipmentDetail,
+    allShipments,
+    customers,
+    generateLiveShipmentResults,
+    loadShipments,
+    handleEditDraftShipment,
+    reloadShipments,
+    performSemanticSearch,
+    isSemanticMode,
+    setIsSemanticMode,
+    semanticSearchResults,
+    setSemanticSearchResults,
+    searchConfidence,
+    setSearchConfidence,
+    setSearchFields,
+    setSelectedCustomer,
+    showSnackbar,
+    adminViewMode,
+    isShipmentDetailView
+}) => {
+    // Hide search bar when viewing shipment detail in admin mode
+    const shouldHideSearch = adminViewMode !== null && isShipmentDetailView;
+
+    return (
+        <Box
+            sx={{
+                position: 'sticky',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1000,
+                backgroundColor: 'white',
+                borderBottom: '1px solid #e2e8f0',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                px: 3,
+                py: 2
+            }}
+        >
+            <Box
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%'
+                }}
+            >
+                {/* Left Side - Back Button + Title */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: '0 0 auto', minWidth: 'fit-content' }}>
+                    {/* Back Button */}
+                    {showBackButton && (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
+                            onClick={onBack}
+                            sx={{
+                                color: '#64748b',
+                                borderColor: '#e2e8f0',
+                                fontSize: '0.875rem',
+                                py: 0.5,
+                                px: 1.5,
+                                minWidth: 'auto',
+                                '&:hover': {
+                                    borderColor: '#cbd5e1',
+                                    backgroundColor: '#f8fafc'
+                                }
+                            }}
+                        >
+                            {navigation?.backText || 'Back'}
+                        </Button>
+                    )}
+
+                    {/* Page Title - Make clickable when navigation back is possible */}
+                    {(navigation?.canGoBack) ? (
+                        <Button
+                            variant="text"
+                            onClick={onBack}
+                            sx={{
+                                fontWeight: 600,
+                                color: '#1e293b',
+                                fontSize: '1.125rem',
+                                lineHeight: 1.2,
+                                textTransform: 'none',
+                                padding: 0,
+                                minWidth: 'auto',
+                                '&:hover': {
+                                    backgroundColor: 'transparent',
+                                    color: '#2563eb',
+                                    textDecoration: 'underline'
+                                }
+                            }}
+                        >
+                            {navigation?.title?.includes('Detail') ? 'Shipments' : navigation?.title || 'Shipments'}
+                        </Button>
+                    ) : (
+                        <Typography
+                            variant="h6"
+                            component="h1"
+                            sx={{
+                                fontWeight: 600,
+                                color: '#1e293b',
+                                fontSize: '1.125rem',
+                                lineHeight: 1.2
+                            }}
+                        >
+                            {navigation?.title || 'Shipments'}
+                        </Typography>
+                    )}
+                </Box>
+
+                {/* Center - Search (EXACT COPY FROM MAIN SEARCH) - Hide when viewing shipment detail in admin mode */}
+                {!shouldHideSearch && (
+                    <Box sx={{ position: 'relative', flex: 3, px: '30px', maxWidth: 'none' }}>
+                        <TextField
+                            fullWidth
+                            placeholder="Search"
+                            value={unifiedSearch}
+                            onChange={(e) => {
+                                const value = e.target.value; // Keep spaces during typing
+                                console.log('🔍 Search input changed:', value);
+                                setUnifiedSearch(value);
+
+                                // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
+                                const isNaturalLanguage = (query) => {
+                                    const naturalPatterns = [
+                                        /show me.*shipment/i,
+                                        /find.*from/i,
+                                        /all.*delivered/i,
+                                        /delayed.*shipment/i,
+                                        /shipment.*to/i,
+                                        /tracking.*number/i,
+                                        /(today|yesterday|last week|this month)/i,
+                                        /carrier.*fedex|ups|dhl|canpar/i,
+                                        /(heavy|large|small).*package/i,
+                                        /status.*(pending|delivered|delayed)/i,
+                                        /reference.*number/i,
+                                        /(ontario|quebec|california|texas)/i,
+                                        /(toronto|montreal|vancouver|new york)/i,
+                                        /\b(lbs|kg|pounds|kilograms)\b/i,
+                                        /\b(urgent|priority|express|ground)\b/i
+                                    ];
+                                    return naturalPatterns.some(pattern => pattern.test(query));
+                                };
+
+                                // 🔍 CRITICAL FIX: Reset search state for completely new searches
+                                const trimmedValue = value.trim(); // Only trim for search logic, not for the input value
+                                if (trimmedValue.length < 2) {
+                                    // Clear everything when search is too short
+                                    setLiveResults([]);
+                                    setShowLiveResults(false);
+                                    setSelectedResultIndex(-1);
+                                    setIsSemanticMode(false);
+                                    setSemanticSearchResults(null);
+                                    setSearchConfidence(0);
+                                }
+
+                                // ALWAYS generate live shipment results from ALL shipments including drafts (existing powerful search)
+                                if (trimmedValue.length >= 2) {
+                                    // 🔍 Reset selection index for new search
+                                    setSelectedResultIndex(-1);
+
+                                    const results = generateLiveShipmentResults(trimmedValue, allShipments, customers);
+                                    setLiveResults(results);
+                                    setShowLiveResults(results.length > 0);
+
+                                    // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language including drafts
+                                    if (trimmedValue.length >= 5 && isNaturalLanguage(trimmedValue)) {
+                                        console.log('🧠 Natural language detected, triggering semantic search on ALL shipments including drafts');
+                                        // Trigger semantic search which will be used in the main filtering
+                                        performSemanticSearch(trimmedValue, allShipments).then(semanticResults => {
+                                            if (semanticResults && semanticResults.results && semanticResults.results.length > 0) {
+                                                // Create live results from semantic search results
+                                                const semanticLiveResults = semanticResults.results.slice(0, 6).map(shipment => ({
+                                                    type: 'live_shipment',
+                                                    shipmentId: shipment.shipmentID || shipment.id,
+                                                    documentId: shipment.id,
+                                                    shipment: shipment,
+                                                    route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                                                    status: shipment.status ? shipment.status.replace('_', ' ').split(' ').map(word =>
+                                                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                                                    ).join(' ') : 'Unknown',
+                                                    date: (() => {
+                                                        const dateFields = [
+                                                            shipment.createdAt,
+                                                            shipment.bookedAt,
+                                                            shipment.shipmentDate,
+                                                            shipment.scheduledDate,
+                                                            shipment.shipmentInfo?.deliveredAt,
+                                                            shipment.deliveredAt
+                                                        ];
+                                                        for (const field of dateFields) {
+                                                            if (field) {
+                                                                try {
+                                                                    let date;
+                                                                    if (field.toDate) date = field.toDate();
+                                                                    else if (field.seconds) date = new Date(field.seconds * 1000);
+                                                                    else date = new Date(field);
+                                                                    if (!isNaN(date.getTime()) && typeof date.toLocaleDateString === 'function') {
+                                                                        return date.toLocaleDateString();
+                                                                    }
+                                                                } catch (e) {
+                                                                    continue;
+                                                                }
+                                                            }
+                                                        }
+                                                        return 'N/A';
+                                                    })(),
+                                                    referenceNumber: shipment.referenceNumber || shipment.shipperReferenceNumber || 'N/A',
+                                                    trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber || 'N/A',
+                                                    carrier: shipment.carrier || 'N/A',
+                                                    companyName: shipment.shipFrom?.companyName || shipment.shipTo?.companyName || 'N/A',
+                                                    score: 10 // High priority for semantic results
+                                                }));
+
+                                                // Use semantic results directly
+                                                setLiveResults(semanticLiveResults);
+                                                setShowLiveResults(semanticLiveResults.length > 0);
+                                                console.log('✨ Enhanced live results with semantic shipments:', semanticLiveResults.length);
+
+                                                // CRITICAL: Trigger main table reload to apply semantic filtering
+                                                setTimeout(() => reloadShipments(), 100);
+                                            } else {
+                                                // No semantic results, show basic results
+                                                setLiveResults(results);
+                                                setShowLiveResults(results.length > 0);
+                                            }
+                                        });
+                                    } else {
+                                        // Reset semantic mode for non-natural queries
+                                        setIsSemanticMode(false);
+                                        setSemanticSearchResults(null);
+                                    }
+                                } else {
+                                    // Clear all search results
+                                    setLiveResults([]);
+                                    setShowLiveResults(false);
+                                    setIsSemanticMode(false);
+                                    setSemanticSearchResults(null);
+                                }
+                                setSelectedResultIndex(-1);
+
+                                // Clear legacy search fields when using unified search
+                                if (trimmedValue) {
+                                    setSearchFields({
+                                        shipmentId: '',
+                                        referenceNumber: '',
+                                        trackingNumber: '',
+                                        customerName: '',
+                                        origin: '',
+                                        destination: ''
+                                    });
+                                    setSelectedCustomer('');
+                                }
+
+                                // NOTE: Removed automatic search trigger to prevent infinite loops
+                                // Search is now only triggered by explicit user actions (Enter key, etc.)
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    setSelectedResultIndex(prev =>
+                                        prev < liveResults.length - 1 ? prev + 1 : prev
+                                    );
+                                } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    setSelectedResultIndex(prev => prev > 0 ? prev - 1 : -1);
+                                } else if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    if (selectedResultIndex >= 0 && liveResults[selectedResultIndex]) {
+                                        const selectedResult = liveResults[selectedResultIndex];
+
+                                        if (selectedResult.type === 'live_shipment') {
+                                            console.log('🎯 ENTER - Navigating to shipment:', selectedResult.shipmentId);
+                                            console.log('🎯 ENTER - Current navigation state:', navigation);
+
+                                            // Check if this is a draft shipment and handle appropriately
+                                            if (selectedResult.shipment?.status === 'draft') {
+                                                console.log('📝 ENTER - Direct navigation to edit draft:', selectedResult.shipmentId);
+                                                handleEditDraftShipment(selectedResult.documentId);
+                                            } else {
+                                                console.log('📋 Non-draft shipment detected, opening detail view:', selectedResult.documentId);
+
+                                                // Direct navigation - replace current shipment with new one
+                                                console.log('🎯 ENTER - Direct navigation to new shipment:', selectedResult.shipmentId);
+                                                handleViewShipmentDetail(selectedResult.documentId);
+                                            }
+                                        } else if (selectedResult.type === 'status_filter') {
+                                            // Apply status filter
+                                            setUnifiedSearch(selectedResult.value);
+                                        } else if (selectedResult.type === 'date_filter') {
+                                            // Apply date filter
+                                            setUnifiedSearch(selectedResult.value);
+                                        }
+
+                                        setShowLiveResults(false);
+                                        setSelectedResultIndex(-1);
+                                    } else {
+                                        console.log('🔍 ENTER pressed - triggering search');
+
+                                        // Check if we're in a shipment detail view (navigation.canGoBack indicates we're in detail view)
+                                        // If so, go back to table view first, then search
+                                        if (navigation && navigation.canGoBack) {
+                                            console.log('🔙 In detail view - going back to table view first');
+                                            onBack(); // Go back to table view
+                                            // Search will be applied automatically when we return to table view
+                                        } else {
+                                            // We're in table view, just reload with search
+                                            reloadShipments();
+                                        }
+                                    }
+
+                                    // Always hide all dropdowns when Enter is pressed
+                                    setShowLiveResults(false);
+                                    setSelectedResultIndex(-1);
+                                } else if (e.key === 'Escape') {
+                                    setShowLiveResults(false);
+                                    setSelectedResultIndex(-1);
+                                    console.log('👍 Escape pressed - clearing all dropdowns');
+                                }
+                            }}
+                            onBlur={(e) => {
+                                // Only hide if not clicking on dropdown results
+                                if (!e.currentTarget.contains(e.relatedTarget)) {
+                                    setTimeout(() => setShowLiveResults(false), 150);
+                                }
+                            }}
+                            onFocus={() => {
+                                if (unifiedSearch.length >= 2 && liveResults.length > 0) {
+                                    setShowLiveResults(true);
+                                }
+                            }}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                '& .MuiInputBase-root': {
+                                    fontSize: '14px',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#f8fafc',
+                                    '&:hover': {
+                                        backgroundColor: '#f1f5f9'
+                                    },
+                                    '&.Mui-focused': {
+                                        backgroundColor: '#ffffff',
+                                        '& .MuiOutlinedInput-notchedOutline': {
+                                            borderColor: '#3b82f6',
+                                            borderWidth: '2px'
+                                        }
+                                    }
+                                },
+                                '& .MuiInputBase-input': {
+                                    fontSize: '14px',
+                                    py: '10px'
+                                },
+                                '& .MuiOutlinedInput-notchedOutline': {
+                                    borderColor: '#d1d5db'
+                                }
+                            }}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: unifiedSearch && (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                                setUnifiedSearch('');
+                                                loadShipments(null, '');
+                                            }}
+                                            sx={{
+                                                color: '#6b7280',
+                                                '&:hover': {
+                                                    color: '#374151',
+                                                    backgroundColor: '#f3f4f6'
+                                                }
+                                            }}
+                                        >
+                                            <ClearIcon sx={{ fontSize: '18px' }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+
+                        {/* Live Results Dropdown (EXACT COPY FROM MAIN SEARCH) */}
+                        {showLiveResults && liveResults.length > 0 && (
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 1300,
+                                    bgcolor: 'white',
+                                    border: '1px solid #e0e0e0',
+                                    borderTop: 'none',
+                                    borderRadius: '0 0 8px 8px',
+                                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+                                    maxHeight: '280px',
+                                    overflow: 'auto'
+                                }}
+                                onMouseDown={(e) => {
+                                    // Prevent blur from firing when clicking on dropdown
+                                    e.preventDefault();
+                                }}
+                            >
+                                {/* Compact Header */}
+                                <Box sx={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    px: 2,
+                                    py: 1,
+                                    borderBottom: '1px solid #f0f0f0',
+                                    bgcolor: '#fafafa'
+                                }}>
+                                    <Typography sx={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: '#6b7280'
+                                    }}>
+                                        {liveResults.length} result{liveResults.length !== 1 ? 's' : ''}
+                                    </Typography>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                            setShowLiveResults(false);
+                                            setSelectedResultIndex(-1);
+                                        }}
+                                        sx={{
+                                            p: 0.25,
+                                            color: '#9ca3af',
+                                            '&:hover': {
+                                                color: '#374151',
+                                                bgcolor: '#f3f4f6'
+                                            }
+                                        }}
+                                    >
+                                        <CloseIcon sx={{ fontSize: '14px' }} />
+                                    </IconButton>
+                                </Box>
+
+                                {/* Compact Results Grid */}
+                                <Box sx={{ p: 1 }}>
+                                    {liveResults.map((result, index) => (
+                                        <Box
+                                            key={result.type === 'live_shipment' ? result.documentId : `${result.type}-${result.value}`}
+                                            sx={{
+                                                display: 'grid',
+                                                gridTemplateColumns: '1fr',
+                                                gap: '8px',
+                                                alignItems: 'flex-start',
+                                                padding: '6px 8px',
+                                                marginBottom: index < liveResults.length - 1 ? '2px' : '0',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                backgroundColor: index === selectedResultIndex ? '#f0f4ff' : 'transparent',
+                                                border: index === selectedResultIndex ? '1px solid #d1d5db' : '1px solid transparent',
+                                                '&:hover': {
+                                                    backgroundColor: '#f8faff',
+                                                    border: '1px solid #e5e7eb'
+                                                },
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            onClick={() => {
+                                                if (result.type === 'live_shipment') {
+                                                    console.log('🎯 MODAL HEADER: Autocomplete click - Navigating to shipment:', result.shipmentId);
+                                                    console.log('🎯 MODAL HEADER: Current navigation state:', navigation);
+
+                                                    // Clear search state first
+                                                    setShowLiveResults(false);
+                                                    setSelectedResultIndex(-1);
+
+                                                    // Navigate to shipment with direct navigation
+                                                    if (result.shipment?.status === 'draft') {
+                                                        console.log('📝 CLICK - Direct navigation to edit draft:', result.shipmentId);
+                                                        handleEditDraftShipment(result.documentId);
+                                                    } else {
+                                                        console.log('📋 Non-draft shipment detected, opening detail view:', result.documentId);
+
+                                                        // Direct navigation - replace current shipment with new one
+                                                        console.log('🎯 CLICK - Direct navigation to new shipment:', result.shipmentId);
+                                                        handleViewShipmentDetail(result.documentId);
+                                                    }
+                                                } else if (result.type === 'status_filter' || result.type === 'date_filter') {
+                                                    setUnifiedSearch(result.value);
+
+                                                    // Check if we're in a shipment detail view - if so, go back to table first
+                                                    if (navigation && navigation.canGoBack) {
+                                                        onBack(); // Go back to table view
+                                                    } else {
+                                                        reloadShipments();
+                                                    }
+
+                                                    setShowLiveResults(false);
+                                                    setSelectedResultIndex(-1);
+                                                }
+                                            }}
+                                        >
+                                            {result.type === 'live_shipment' ? (
+                                                <>
+                                                    {/* Enhanced shipment info with FROM/TO addresses */}
+                                                    <Box sx={{
+                                                        gridColumn: 'span 4',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '0px',
+                                                        minWidth: 0
+                                                    }}>
+                                                        {/* Header Row: Icon, Shipment ID, Status, Date */}
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            justifyContent: 'space-between'
+                                                        }}>
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                                                {/* Icon */}
+                                                                <Box sx={{
+                                                                    width: '20px',
+                                                                    height: '20px',
+                                                                    backgroundColor: '#f3f4f6',
+                                                                    borderRadius: '3px',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    fontSize: '10px',
+                                                                    flexShrink: 0
+                                                                }}>
+                                                                    📦
+                                                                </Box>
+
+                                                                {/* Shipment ID */}
+                                                                <Typography variant="body2" sx={{
+                                                                    fontWeight: 600,
+                                                                    fontSize: '12px',
+                                                                    lineHeight: 1.2,
+                                                                    whiteSpace: 'nowrap',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    flex: 1,
+                                                                    minWidth: 0
+                                                                }}>
+                                                                    {result.shipmentId}
+                                                                </Typography>
+                                                            </Box>
+
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                {/* Date - only show if not N/A */}
+                                                                {result.date && result.date !== 'N/A' && (
+                                                                    <Typography variant="body2" sx={{
+                                                                        fontSize: '10px',
+                                                                        color: '#9ca3af',
+                                                                        fontWeight: 500,
+                                                                        whiteSpace: 'nowrap'
+                                                                    }}>
+                                                                        {result.date}
+                                                                    </Typography>
+                                                                )}
+
+                                                                {/* Carrier Name */}
+                                                                {result.shipment?.carrier && result.shipment.carrier !== 'N/A' && (
+                                                                    <Typography variant="body2" sx={{
+                                                                        fontSize: '9px',
+                                                                        fontWeight: 600,
+                                                                        color: '#374151',
+                                                                        lineHeight: 1.2,
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                        maxWidth: '100px'
+                                                                    }}>
+                                                                        {(() => {
+                                                                            const carrier = result.shipment.carrier;
+                                                                            if (typeof carrier === 'object' && carrier.name) {
+                                                                                return carrier.name;
+                                                                            }
+                                                                            return carrier;
+                                                                        })()}
+                                                                    </Typography>
+                                                                )}
+
+                                                                {/* Tracking Number */}
+                                                                {(() => {
+                                                                    const trackingNumber = result.shipment?.trackingNumber ||
+                                                                        result.shipment?.carrierTrackingNumber ||
+                                                                        result.shipment?.carrierBookingConfirmation?.proNumber ||
+                                                                        result.shipment?.proNumber;
+
+                                                                    if (trackingNumber && trackingNumber !== 'N/A') {
+                                                                        return (
+                                                                            <Typography variant="body2" sx={{
+                                                                                fontSize: '8px',
+                                                                                color: '#6b7280',
+                                                                                lineHeight: 1.2,
+                                                                                whiteSpace: 'nowrap',
+                                                                                overflow: 'hidden',
+                                                                                textOverflow: 'ellipsis',
+                                                                                maxWidth: '100px',
+                                                                                fontFamily: 'monospace'
+                                                                            }}>
+                                                                                {trackingNumber}
+                                                                            </Typography>
+                                                                        );
+                                                                    }
+                                                                    return null;
+                                                                })()}
+
+                                                                {/* Status - moved to last position */}
+                                                                <EnhancedStatusChip
+                                                                    status={result.shipment.status}
+                                                                    size="small"
+                                                                    compact={true}
+                                                                    displayMode="auto"
+                                                                    showTooltip={false}
+                                                                    sx={{
+                                                                        fontSize: '9px',
+                                                                        height: '18px',
+                                                                        '& .MuiChip-label': {
+                                                                            fontSize: '9px',
+                                                                            fontWeight: 500,
+                                                                            textTransform: 'uppercase',
+                                                                            letterSpacing: '0.5px',
+                                                                            px: 1
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            </Box>
+                                                        </Box>
+
+                                                        {/* FROM/TO Address Row - Single Line */}
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            pl: '28px', // Align with shipment ID
+                                                            minWidth: 0
+                                                        }}>
+                                                            {/* FROM Company and Address */}
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: '10px',
+                                                                color: '#374151',
+                                                                lineHeight: 1.2,
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                flex: '0 1 auto',
+                                                                minWidth: 0
+                                                            }}>
+                                                                <Box component="span" sx={{ fontWeight: 600 }}>
+                                                                    {result.shipment?.shipFrom?.companyName || result.shipment?.shipFrom?.company || 'Unknown Shipper'}
+                                                                </Box>
+                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
+                                                                    {(() => {
+                                                                        const from = result.shipment?.shipFrom;
+                                                                        if (!from) return '';
+                                                                        const parts = [
+                                                                            from.street || from.addressLine1,
+                                                                            from.city,
+                                                                            from.state || from.province,
+                                                                            (from.postalCode || from.zipCode)?.toUpperCase?.() || (from.postalCode || from.zipCode)
+                                                                        ].filter(Boolean);
+                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
+                                                                    })()}
+                                                                </Box>
+                                                            </Typography>
+
+                                                            {/* Arrow */}
+                                                            <Box sx={{
+                                                                color: '#9ca3af',
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                                flexShrink: 0,
+                                                                mx: 0.5
+                                                            }}>
+                                                                →
+                                                            </Box>
+
+                                                            {/* TO Company and Address */}
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: '10px',
+                                                                color: '#374151',
+                                                                lineHeight: 1.2,
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                flex: '0 1 auto',
+                                                                minWidth: 0
+                                                            }}>
+                                                                <Box component="span" sx={{ fontWeight: 600 }}>
+                                                                    {result.shipment?.shipTo?.companyName || result.shipment?.shipTo?.company || 'Unknown Consignee'}
+                                                                </Box>
+                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
+                                                                    {(() => {
+                                                                        const to = result.shipment?.shipTo;
+                                                                        if (!to) return '';
+                                                                        const parts = [
+                                                                            to.street || to.addressLine1,
+                                                                            to.city,
+                                                                            to.state || to.province,
+                                                                            (to.postalCode || to.zipCode)?.toUpperCase?.() || (to.postalCode || to.zipCode)
+                                                                        ].filter(Boolean);
+                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
+                                                                    })()}
+                                                                </Box>
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {/* Quick Action Row */}
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        width: '100%'
+                                                    }}>
+                                                        {/* Quick Action Icon */}
+                                                        <Box sx={{
+                                                            width: '20px',
+                                                            height: '20px',
+                                                            backgroundColor: result.type === 'status_filter' ? '#e3f2fd' : '#fff3e0',
+                                                            borderRadius: '3px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontSize: '10px',
+                                                            flexShrink: 0
+                                                        }}>
+                                                            {result.type === 'status_filter' ? '📊' : '📅'}
+                                                        </Box>
+
+                                                        {/* Quick Action Label */}
+                                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: '11px',
+                                                                color: '#374151',
+                                                                fontWeight: 500,
+                                                                lineHeight: 1.2
+                                                            }}>
+                                                                {result.label}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                </>
+                                            )}
+                                        </Box>
+                                    ))}
+                                </Box>
+
+                                {/* Compact Footer */}
+                                <Box sx={{
+                                    px: 2,
+                                    py: 1,
+                                    bgcolor: isSemanticMode ? '#faf7ff' : '#f9fafb',
+                                    borderTop: '1px solid #f0f0f0',
+                                    borderBottomLeftRadius: '8px',
+                                    borderBottomRightRadius: '8px'
+                                }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Typography sx={{
+                                            fontSize: '10px',
+                                            color: '#9ca3af',
+                                            fontStyle: 'italic'
+                                        }}>
+                                            ↑↓ Navigate • Enter Select • Esc Close
+                                        </Typography>
+                                        {isSemanticMode && searchConfidence > 0 && (
+                                            <Typography sx={{
+                                                fontSize: '9px',
+                                                color: '#8b5cf6',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 0.5
+                                            }}>
+                                                �� {Math.round(searchConfidence * 100)}%
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Box>
+                        )}
+                    </Box>
+                )}
+
+                {/* Right Side - Close Button */}
+                <Box sx={{ display: 'flex', alignItems: 'center', flex: '0 0 auto' }}>
+                    {showCloseButton && onClose && (
+                        <IconButton
+                            onClick={onClose}
+                            sx={{
+                                color: 'white',
+                                backgroundColor: '#1c277d',
+                                '&:hover': {
+                                    backgroundColor: '#1a237e',
+                                },
+                                p: 1
+                            }}
+                            aria-label="Close"
+                        >
+                            <CloseIcon sx={{ fontSize: 20 }} />
+                        </IconButton>
+                    )}
+                </Box>
+            </Box>
+        </Box>
+    );
+};
+
 const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null, hideSearch = false }) => {
     console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment, adminViewMode, adminCompanyIds });
 
@@ -970,6 +1798,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     return true;
                 }
 
+                // CRITICAL FIX: Also allow contains matching for shipment IDs to match autocomplete behavior
+                const shipmentContainsMatch = shipmentIdFields.some(field => field.includes(normalizedSearchTerm));
+                if (shipmentContainsMatch) {
+                    console.log('✅ Shipment ID contains match found');
+                    return true;
+                }
+
                 console.log('❌ No company/shipment ID match for short term');
                 return false; // No other matches for short terms
             }
@@ -1597,7 +2432,55 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             }
         }
 
-        // Create the shipment detail view and push it to navigation stack
+        // 🔄 CRITICAL FIX: Check if we're already in a detail view and replace it instead of pushing
+        if (navigationStack.length > 1) {
+            const currentShipmentView = navigationStack.find(view => view.component === 'shipment-detail');
+            const currentShipmentId = currentShipmentView?.props?.shipmentId;
+
+            if (currentShipmentId && currentShipmentId !== shipmentId) {
+                console.log('🔄 REPLACING: Switching from shipment', currentShipmentId, 'to', shipmentId);
+
+                // Create the new detail view
+                const newDetailView = {
+                    key: `shipment-detail-${shipmentId}`,
+                    component: 'shipment-detail',
+                    props: {
+                        shipmentId,
+                        isAdmin: adminViewMode !== null
+                    }
+                };
+
+                // Replace the current detail view directly in the navigation stack
+                setNavigationStack(prev => {
+                    const tableView = prev[0]; // Keep the table view
+                    return [tableView, newDetailView]; // Replace detail view
+                });
+
+                // Update mounted views to include the new detail view
+                setMountedViews(prev => {
+                    const withoutOldDetail = prev.filter(view => !view.startsWith('shipment-detail-'));
+                    return [...withoutOldDetail, newDetailView.key];
+                });
+
+                console.log('🚀 REPLACED: Directly replaced detail view without animation');
+
+                // Update modal navigation for proper back button handling
+                modalNavigation.navigateTo({
+                    title: `${shipment.shipmentID || shipmentId}`,
+                    shortTitle: shipment.shipmentID || shipmentId,
+                    component: 'shipment-detail',
+                    data: { shipmentId }
+                });
+
+                return; // Exit early, don't push a new view
+            } else if (currentShipmentId === shipmentId) {
+                console.log('🚫 Already viewing shipment:', shipmentId);
+                return; // Exit early, no need to navigate
+            }
+        }
+
+        // Standard behavior: Create the shipment detail view and push it to navigation stack
+        console.log('📋 PUSHING: New shipment detail view for:', shipmentId);
         pushView({
             key: `shipment-detail-${shipmentId}`,
             component: 'shipment-detail',
@@ -1614,7 +2497,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             component: 'shipment-detail',
             data: { shipmentId }
         });
-    }, [shipments, pushView, modalNavigation, adminViewMode, userRole, companyIdForAddress, setCompanyContext, showSnackbar]);
+    }, [shipments, pushView, modalNavigation, adminViewMode, userRole, companyIdForAddress, setCompanyContext, showSnackbar, navigationStack, setNavigationStack, setMountedViews]);
 
     // Auto-open shipment detail if specified in deep link params
     const [hasAutoOpenedShipment, setHasAutoOpenedShipment] = useState(false);
@@ -3161,680 +4044,6 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                     </Box>
                                 </Toolbar>
 
-                                {/* ENTERPRISE SEARCH BAR - Prominent placement above filters */}
-                                {!hideSearch && (
-                                    <Box sx={{
-                                        p: 2,
-                                        bgcolor: '#ffffff',
-                                        borderBottom: '1px solid #e2e8f0',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 2,
-                                        position: 'relative' // NEW: Enable absolute positioning for suggestions
-                                    }}>
-                                        <Box sx={{ position: 'relative', flex: 1 }}>
-                                            <TextField
-                                                fullWidth
-                                                placeholder="Search"
-                                                value={unifiedSearch}
-                                                onChange={(e) => {
-                                                    const value = e.target.value; // Keep spaces during typing
-                                                    console.log('🔍 Search input changed:', value);
-                                                    setUnifiedSearch(value);
-
-                                                    // 🧠 SEMANTIC SEARCH ENHANCEMENT - Layer AI on top of existing search
-                                                    const isNaturalLanguage = (query) => {
-                                                        const naturalPatterns = [
-                                                            /show me.*shipment/i,
-                                                            /find.*from/i,
-                                                            /all.*delivered/i,
-                                                            /delayed.*shipment/i,
-                                                            /shipment.*to/i,
-                                                            /tracking.*number/i,
-                                                            /(today|yesterday|last week|this month)/i,
-                                                            /carrier.*fedex|ups|dhl|canpar/i,
-                                                            /(heavy|large|small).*package/i,
-                                                            /status.*(pending|delivered|delayed)/i,
-                                                            /reference.*number/i,
-                                                            /(ontario|quebec|california|texas)/i,
-                                                            /(toronto|montreal|vancouver|new york)/i,
-                                                            /\b(lbs|kg|pounds|kilograms)\b/i,
-                                                            /\b(urgent|priority|express|ground)\b/i
-                                                        ];
-                                                        return naturalPatterns.some(pattern => pattern.test(query));
-                                                    };
-
-                                                    // 🔍 CRITICAL FIX: Reset search state for completely new searches
-                                                    const trimmedValue = value.trim(); // Only trim for search logic, not for the input value
-                                                    if (trimmedValue.length < 2) {
-                                                        // Clear everything when search is too short
-                                                        setLiveResults([]);
-                                                        setShowLiveResults(false);
-                                                        setSelectedResultIndex(-1);
-                                                        setIsSemanticMode(false);
-                                                        setSemanticSearchResults(null);
-                                                        setSearchConfidence(0);
-                                                    }
-
-                                                    // ALWAYS generate live shipment results from ALL shipments including drafts (existing powerful search)
-                                                    if (trimmedValue.length >= 2) {
-                                                        // 🔍 Reset selection index for new search
-                                                        setSelectedResultIndex(-1);
-
-                                                        const results = generateLiveShipmentResults(trimmedValue, allShipments, customers);
-                                                        setLiveResults(results);
-                                                        setShowLiveResults(results.length > 0);
-
-                                                        // 🧠 ENHANCED SEMANTIC LAYER - Add AI intelligence for natural language including drafts
-                                                        if (trimmedValue.length >= 5 && isNaturalLanguage(trimmedValue)) {
-                                                            console.log('🧠 Natural language detected, triggering semantic search on ALL shipments including drafts');
-                                                            // Trigger semantic search which will be used in the main filtering
-                                                            performSemanticSearch(trimmedValue, allShipments).then(semanticResults => {
-                                                                if (semanticResults && semanticResults.results && semanticResults.results.length > 0) {
-                                                                    // Create live results from semantic search results
-                                                                    const semanticLiveResults = semanticResults.results.slice(0, 6).map(shipment => ({
-                                                                        type: 'live_shipment',
-                                                                        shipmentId: shipment.shipmentID || shipment.id,
-                                                                        documentId: shipment.id,
-                                                                        shipment: shipment,
-                                                                        route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
-                                                                        status: shipment.status ? shipment.status.replace('_', ' ').split(' ').map(word =>
-                                                                            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                                                                        ).join(' ') : 'Unknown',
-                                                                        date: (() => {
-                                                                            const dateFields = [
-                                                                                shipment.createdAt,
-                                                                                shipment.bookedAt,
-                                                                                shipment.shipmentDate,
-                                                                                shipment.scheduledDate,
-                                                                                shipment.shipmentInfo?.deliveredAt,
-                                                                                shipment.deliveredAt
-                                                                            ];
-                                                                            for (const field of dateFields) {
-                                                                                if (field) {
-                                                                                    try {
-                                                                                        let date;
-                                                                                        if (field.toDate) date = field.toDate();
-                                                                                        else if (field.seconds) date = new Date(field.seconds * 1000);
-                                                                                        else date = new Date(field);
-                                                                                        if (!isNaN(date.getTime()) && typeof date.toLocaleDateString === 'function') {
-                                                                                            return date.toLocaleDateString();
-                                                                                        }
-                                                                                    } catch (e) {
-                                                                                        continue;
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                            return 'N/A';
-                                                                        })(),
-                                                                        referenceNumber: shipment.referenceNumber || shipment.shipperReferenceNumber || 'N/A',
-                                                                        trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber || 'N/A',
-                                                                        carrier: shipment.carrier || 'N/A',
-                                                                        companyName: shipment.shipFrom?.companyName || shipment.shipTo?.companyName || 'N/A',
-                                                                        score: 10 // High priority for semantic results
-                                                                    }));
-
-                                                                    // Use semantic results directly
-                                                                    setLiveResults(semanticLiveResults);
-                                                                    setShowLiveResults(semanticLiveResults.length > 0);
-                                                                    console.log('✨ Enhanced live results with semantic shipments:', semanticLiveResults.length);
-
-                                                                    // CRITICAL: Trigger main table reload to apply semantic filtering
-                                                                    setTimeout(() => reloadShipments(), 100);
-                                                                } else {
-                                                                    // No semantic results, show basic results
-                                                                    setLiveResults(results);
-                                                                    setShowLiveResults(results.length > 0);
-                                                                }
-                                                            });
-                                                        } else {
-                                                            // Reset semantic mode for non-natural queries
-                                                            setIsSemanticMode(false);
-                                                            setSemanticSearchResults(null);
-                                                        }
-                                                    } else {
-                                                        // Clear all search results
-                                                        setLiveResults([]);
-                                                        setShowLiveResults(false);
-                                                        setIsSemanticMode(false);
-                                                        setSemanticSearchResults(null);
-                                                    }
-                                                    setSelectedResultIndex(-1);
-
-                                                    // Clear legacy search fields when using unified search
-                                                    if (trimmedValue) {
-                                                        setSearchFields({
-                                                            shipmentId: '',
-                                                            referenceNumber: '',
-                                                            trackingNumber: '',
-                                                            customerName: '',
-                                                            origin: '',
-                                                            destination: ''
-                                                        });
-                                                        setSelectedCustomer('');
-                                                    }
-
-                                                    // NOTE: Removed automatic search trigger to prevent infinite loops
-                                                    // Search is now only triggered by explicit user actions (Enter key, etc.)
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'ArrowDown') {
-                                                        e.preventDefault();
-                                                        setSelectedResultIndex(prev =>
-                                                            prev < liveResults.length - 1 ? prev + 1 : prev
-                                                        );
-                                                    } else if (e.key === 'ArrowUp') {
-                                                        e.preventDefault();
-                                                        setSelectedResultIndex(prev => prev > 0 ? prev - 1 : -1);
-                                                    } else if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        if (selectedResultIndex >= 0 && liveResults[selectedResultIndex]) {
-                                                            const selectedResult = liveResults[selectedResultIndex];
-
-                                                            if (selectedResult.type === 'live_shipment') {
-                                                                // Navigate directly to shipment detail
-                                                                console.log('🎯 Navigating to shipment:', selectedResult.shipmentId);
-                                                                handleViewShipmentDetail(selectedResult.documentId);
-                                                            } else if (selectedResult.type === 'status_filter') {
-                                                                // Apply status filter
-                                                                setUnifiedSearch(selectedResult.value);
-                                                            } else if (selectedResult.type === 'date_filter') {
-                                                                // Apply date filter
-                                                                setUnifiedSearch(selectedResult.value);
-                                                            }
-
-                                                            setShowLiveResults(false);
-                                                            setSelectedResultIndex(-1);
-                                                        } else {
-                                                            console.log('🔍 ENTER pressed - triggering search');
-                                                            loadShipments(null, unifiedSearch);
-                                                        }
-
-                                                        // Always hide all dropdowns when Enter is pressed
-                                                        setShowLiveResults(false);
-                                                        setSelectedResultIndex(-1);
-                                                    } else if (e.key === 'Escape') {
-                                                        setShowLiveResults(false);
-                                                        setSelectedResultIndex(-1);
-                                                        console.log('👍 Escape pressed - clearing all dropdowns');
-                                                    }
-                                                }}
-                                                onBlur={() => {
-                                                    // Hide results after a delay to allow clicking on them
-                                                    setTimeout(() => setShowLiveResults(false), 300);
-                                                }}
-                                                onFocus={() => {
-                                                    if (unifiedSearch.length >= 2 && liveResults.length > 0) {
-                                                        setShowLiveResults(true);
-                                                    }
-                                                }}
-                                                size="small"
-                                                variant="outlined"
-                                                sx={{
-                                                    '& .MuiInputBase-root': {
-                                                        fontSize: '14px',
-                                                        borderRadius: '8px',
-                                                        backgroundColor: '#f8fafc',
-                                                        '&:hover': {
-                                                            backgroundColor: '#f1f5f9'
-                                                        },
-                                                        '&.Mui-focused': {
-                                                            backgroundColor: '#ffffff',
-                                                            '& .MuiOutlinedInput-notchedOutline': {
-                                                                borderColor: '#3b82f6',
-                                                                borderWidth: '2px'
-                                                            }
-                                                        }
-                                                    },
-                                                    '& .MuiInputBase-input': {
-                                                        fontSize: '14px',
-                                                        py: '10px'
-                                                    },
-                                                    '& .MuiOutlinedInput-notchedOutline': {
-                                                        borderColor: '#d1d5db'
-                                                    }
-                                                }}
-                                                InputProps={{
-                                                    startAdornment: (
-                                                        <InputAdornment position="start">
-                                                            <SearchIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
-                                                        </InputAdornment>
-                                                    ),
-                                                    endAdornment: unifiedSearch && (
-                                                        <InputAdornment position="end">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => {
-                                                                    setUnifiedSearch('');
-                                                                    loadShipments(null, '');
-                                                                }}
-                                                                sx={{
-                                                                    color: '#6b7280',
-                                                                    '&:hover': {
-                                                                        color: '#374151',
-                                                                        backgroundColor: '#f3f4f6'
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <ClearIcon sx={{ fontSize: '18px' }} />
-                                                            </IconButton>
-                                                        </InputAdornment>
-                                                    )
-                                                }}
-                                            />
-                                        </Box>
-
-
-
-                                        {/* NEW: Shipment Table Overlay */}
-                                        {showLiveResults && liveResults.length > 0 && (
-                                            <Box
-                                                sx={{
-                                                    position: 'absolute',
-                                                    top: '100%',
-                                                    left: '-24px', // Extend beyond search area to cover full table
-                                                    right: '-24px',
-                                                    bottom: '-100vh', // Extend down to cover table
-                                                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                                                    zIndex: 1299,
-                                                    backdropFilter: 'blur(2px)'
-                                                }}
-                                                onClick={() => {
-                                                    setShowLiveResults(false);
-                                                    setSelectedResultIndex(-1);
-                                                }}
-                                            />
-                                        )}
-
-                                        {/* NEW: Compact Grid Layout Live Results Dropdown */}
-                                        {showLiveResults && liveResults.length > 0 && (
-                                            <Box sx={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: 0,
-                                                right: 0,
-                                                zIndex: 1300,
-                                                bgcolor: 'white',
-                                                border: '1px solid #e0e0e0',
-                                                borderTop: 'none',
-                                                borderRadius: '0 0 8px 8px',
-                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-                                                maxHeight: '280px',
-                                                overflow: 'auto'
-                                            }}>
-                                                {/* Compact Header */}
-                                                <Box sx={{
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    px: 2,
-                                                    py: 1,
-                                                    borderBottom: '1px solid #f0f0f0',
-                                                    bgcolor: '#fafafa'
-                                                }}>
-                                                    <Typography sx={{
-                                                        fontSize: '11px',
-                                                        fontWeight: 600,
-                                                        color: '#6b7280'
-                                                    }}>
-                                                        {liveResults.length} result{liveResults.length !== 1 ? 's' : ''}
-                                                    </Typography>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => {
-                                                            setShowLiveResults(false);
-                                                            setSelectedResultIndex(-1);
-                                                        }}
-                                                        sx={{
-                                                            p: 0.25,
-                                                            color: '#9ca3af',
-                                                            '&:hover': {
-                                                                color: '#374151',
-                                                                bgcolor: '#f3f4f6'
-                                                            }
-                                                        }}
-                                                    >
-                                                        <CloseIcon sx={{ fontSize: '14px' }} />
-                                                    </IconButton>
-                                                </Box>
-
-                                                {/* Compact Results Grid */}
-                                                <Box sx={{ p: 1 }}>
-                                                    {liveResults.map((result, index) => (
-                                                        <Box
-                                                            key={result.type === 'live_shipment' ? result.documentId : `${result.type}-${result.value}`}
-                                                            sx={{
-                                                                display: 'grid',
-                                                                gridTemplateColumns: '1fr',
-                                                                gap: '8px',
-                                                                alignItems: 'flex-start',
-                                                                padding: '6px 8px',
-                                                                marginBottom: index < liveResults.length - 1 ? '2px' : '0',
-                                                                borderRadius: '4px',
-                                                                cursor: 'pointer',
-                                                                backgroundColor: index === selectedResultIndex ? '#f0f4ff' : 'transparent',
-                                                                border: index === selectedResultIndex ? '1px solid #d1d5db' : '1px solid transparent',
-                                                                '&:hover': {
-                                                                    backgroundColor: '#f8faff',
-                                                                    border: '1px solid #e5e7eb'
-                                                                },
-                                                                transition: 'all 0.15s ease'
-                                                            }}
-                                                            onClick={() => {
-                                                                if (result.type === 'live_shipment') {
-                                                                    console.log('🎯 Navigating to shipment:', result.shipmentId);
-
-                                                                    // 🔍 CRITICAL FIX: Clear search state BEFORE navigation to prevent sticking
-                                                                    console.log('🔍 Clearing search state before shipment navigation');
-                                                                    setShowLiveResults(false);
-                                                                    setSelectedResultIndex(-1);
-                                                                    // Keep the search term but clear the dropdown state
-
-                                                                    // Check if this is a draft shipment and handle appropriately
-                                                                    if (result.shipment?.status === 'draft') {
-                                                                        console.log('📝 Draft shipment detected, opening for editing:', result.documentId);
-                                                                        handleEditDraftShipment(result.documentId);
-                                                                    } else {
-                                                                        console.log('📋 Non-draft shipment detected, opening detail view:', result.documentId);
-                                                                        handleViewShipmentDetail(result.documentId);
-                                                                    }
-                                                                } else if (result.type === 'status_filter' || result.type === 'date_filter') {
-                                                                    setUnifiedSearch(result.value);
-                                                                    reloadShipments();
-                                                                    setShowLiveResults(false);
-                                                                    setSelectedResultIndex(-1);
-                                                                }
-                                                            }}
-                                                        >
-                                                            {result.type === 'live_shipment' ? (
-                                                                <>
-                                                                    {/* Enhanced shipment info with FROM/TO addresses */}
-                                                                    <Box sx={{
-                                                                        gridColumn: 'span 4',
-                                                                        display: 'flex',
-                                                                        flexDirection: 'column',
-                                                                        gap: '0px',
-                                                                        minWidth: 0
-                                                                    }}>
-                                                                        {/* Header Row: Icon, Shipment ID, Status, Date */}
-                                                                        <Box sx={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '8px',
-                                                                            justifyContent: 'space-between'
-                                                                        }}>
-                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                                                                {/* Icon */}
-                                                                                <Box sx={{
-                                                                                    width: '20px',
-                                                                                    height: '20px',
-                                                                                    backgroundColor: '#f3f4f6',
-                                                                                    borderRadius: '3px',
-                                                                                    display: 'flex',
-                                                                                    alignItems: 'center',
-                                                                                    justifyContent: 'center',
-                                                                                    fontSize: '10px',
-                                                                                    flexShrink: 0
-                                                                                }}>
-                                                                                    📦
-                                                                                </Box>
-
-                                                                                {/* Shipment ID */}
-                                                                                <Typography variant="body2" sx={{
-                                                                                    fontWeight: 600,
-                                                                                    fontSize: '12px',
-                                                                                    lineHeight: 1.2,
-                                                                                    whiteSpace: 'nowrap',
-                                                                                    overflow: 'hidden',
-                                                                                    textOverflow: 'ellipsis',
-                                                                                    flex: 1,
-                                                                                    minWidth: 0
-                                                                                }}>
-                                                                                    {result.shipmentId}
-                                                                                </Typography>
-                                                                            </Box>
-
-                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                                {/* Date - only show if not N/A */}
-                                                                                {result.date && result.date !== 'N/A' && (
-                                                                                    <Typography variant="body2" sx={{
-                                                                                        fontSize: '10px',
-                                                                                        color: '#9ca3af',
-                                                                                        fontWeight: 500,
-                                                                                        whiteSpace: 'nowrap'
-                                                                                    }}>
-                                                                                        {result.date}
-                                                                                    </Typography>
-                                                                                )}
-
-                                                                                {/* Carrier Name */}
-                                                                                {result.shipment?.carrier && result.shipment.carrier !== 'N/A' && (
-                                                                                    <Typography variant="body2" sx={{
-                                                                                        fontSize: '9px',
-                                                                                        fontWeight: 600,
-                                                                                        color: '#374151',
-                                                                                        lineHeight: 1.2,
-                                                                                        whiteSpace: 'nowrap',
-                                                                                        overflow: 'hidden',
-                                                                                        textOverflow: 'ellipsis',
-                                                                                        maxWidth: '100px'
-                                                                                    }}>
-                                                                                        {(() => {
-                                                                                            const carrier = result.shipment.carrier;
-                                                                                            if (typeof carrier === 'object' && carrier.name) {
-                                                                                                return carrier.name;
-                                                                                            }
-                                                                                            return carrier;
-                                                                                        })()}
-                                                                                    </Typography>
-                                                                                )}
-
-                                                                                {/* Tracking Number */}
-                                                                                {(() => {
-                                                                                    const trackingNumber = result.shipment?.trackingNumber ||
-                                                                                        result.shipment?.carrierTrackingNumber ||
-                                                                                        result.shipment?.carrierBookingConfirmation?.proNumber ||
-                                                                                        result.shipment?.proNumber;
-
-                                                                                    if (trackingNumber && trackingNumber !== 'N/A') {
-                                                                                        return (
-                                                                                            <Typography variant="body2" sx={{
-                                                                                                fontSize: '8px',
-                                                                                                color: '#6b7280',
-                                                                                                lineHeight: 1.2,
-                                                                                                whiteSpace: 'nowrap',
-                                                                                                overflow: 'hidden',
-                                                                                                textOverflow: 'ellipsis',
-                                                                                                maxWidth: '100px',
-                                                                                                fontFamily: 'monospace'
-                                                                                            }}>
-                                                                                                {trackingNumber}
-                                                                                            </Typography>
-                                                                                        );
-                                                                                    }
-                                                                                    return null;
-                                                                                })()}
-
-                                                                                {/* Status - moved to last position */}
-                                                                                <EnhancedStatusChip
-                                                                                    status={result.shipment.status}
-                                                                                    size="small"
-                                                                                    compact={true}
-                                                                                    displayMode="auto"
-                                                                                    showTooltip={false}
-                                                                                    sx={{
-                                                                                        fontSize: '9px',
-                                                                                        height: '18px',
-                                                                                        '& .MuiChip-label': {
-                                                                                            fontSize: '9px',
-                                                                                            fontWeight: 500,
-                                                                                            textTransform: 'uppercase',
-                                                                                            letterSpacing: '0.5px',
-                                                                                            px: 1
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                            </Box>
-                                                                        </Box>
-
-                                                                        {/* FROM/TO Address Row - Single Line */}
-                                                                        <Box sx={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '8px',
-                                                                            pl: '28px', // Align with shipment ID
-                                                                            minWidth: 0
-                                                                        }}>
-                                                                            {/* FROM Company and Address */}
-                                                                            <Typography variant="body2" sx={{
-                                                                                fontSize: '10px',
-                                                                                color: '#374151',
-                                                                                lineHeight: 1.2,
-                                                                                whiteSpace: 'nowrap',
-                                                                                overflow: 'hidden',
-                                                                                textOverflow: 'ellipsis',
-                                                                                flex: '0 1 auto',
-                                                                                minWidth: 0
-                                                                            }}>
-                                                                                <Box component="span" sx={{ fontWeight: 600 }}>
-                                                                                    {result.shipment?.shipFrom?.companyName || result.shipment?.shipFrom?.company || 'Unknown Shipper'}
-                                                                                </Box>
-                                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
-                                                                                    {(() => {
-                                                                                        const from = result.shipment?.shipFrom;
-                                                                                        if (!from) return '';
-                                                                                        const parts = [
-                                                                                            from.street || from.addressLine1,
-                                                                                            from.city,
-                                                                                            from.state || from.province,
-                                                                                            (from.postalCode || from.zipCode)?.toUpperCase?.() || (from.postalCode || from.zipCode)
-                                                                                        ].filter(Boolean);
-                                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
-                                                                                    })()}
-                                                                                </Box>
-                                                                            </Typography>
-
-                                                                            {/* Arrow */}
-                                                                            <Box sx={{
-                                                                                color: '#9ca3af',
-                                                                                fontSize: '12px',
-                                                                                fontWeight: 600,
-                                                                                flexShrink: 0,
-                                                                                mx: 0.5
-                                                                            }}>
-                                                                                →
-                                                                            </Box>
-
-                                                                            {/* TO Company and Address */}
-                                                                            <Typography variant="body2" sx={{
-                                                                                fontSize: '10px',
-                                                                                color: '#374151',
-                                                                                lineHeight: 1.2,
-                                                                                whiteSpace: 'nowrap',
-                                                                                overflow: 'hidden',
-                                                                                textOverflow: 'ellipsis',
-                                                                                flex: '0 1 auto',
-                                                                                minWidth: 0
-                                                                            }}>
-                                                                                <Box component="span" sx={{ fontWeight: 600 }}>
-                                                                                    {result.shipment?.shipTo?.companyName || result.shipment?.shipTo?.company || 'Unknown Consignee'}
-                                                                                </Box>
-                                                                                <Box component="span" sx={{ color: '#6b7280', fontWeight: 400, ml: 0.5 }}>
-                                                                                    {(() => {
-                                                                                        const to = result.shipment?.shipTo;
-                                                                                        if (!to) return '';
-                                                                                        const parts = [
-                                                                                            to.street || to.addressLine1,
-                                                                                            to.city,
-                                                                                            to.state || to.province,
-                                                                                            (to.postalCode || to.zipCode)?.toUpperCase?.() || (to.postalCode || to.zipCode)
-                                                                                        ].filter(Boolean);
-                                                                                        return parts.length > 0 ? ` - ${parts.join(', ')}` : '';
-                                                                                    })()}
-                                                                                </Box>
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    </Box>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    {/* Quick Action Row */}
-                                                                    <Box sx={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: '8px',
-                                                                        width: '100%'
-                                                                    }}>
-                                                                        {/* Quick Action Icon */}
-                                                                        <Box sx={{
-                                                                            width: '20px',
-                                                                            height: '20px',
-                                                                            backgroundColor: result.type === 'status_filter' ? '#e3f2fd' : '#fff3e0',
-                                                                            borderRadius: '3px',
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            justifyContent: 'center',
-                                                                            fontSize: '10px',
-                                                                            flexShrink: 0
-                                                                        }}>
-                                                                            {result.type === 'status_filter' ? '📊' : '📅'}
-                                                                        </Box>
-
-                                                                        {/* Quick Action Label */}
-                                                                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                                            <Typography variant="body2" sx={{
-                                                                                fontSize: '11px',
-                                                                                color: '#374151',
-                                                                                fontWeight: 500,
-                                                                                lineHeight: 1.2
-                                                                            }}>
-                                                                                {result.label}
-                                                                            </Typography>
-                                                                        </Box>
-                                                                    </Box>
-                                                                </>
-                                                            )}
-                                                        </Box>
-                                                    ))}
-                                                </Box>
-
-                                                {/* Compact Footer */}
-                                                <Box sx={{
-                                                    px: 2,
-                                                    py: 1,
-                                                    bgcolor: isSemanticMode ? '#faf7ff' : '#f9fafb',
-                                                    borderTop: '1px solid #f0f0f0',
-                                                    borderBottomLeftRadius: '8px',
-                                                    borderBottomRightRadius: '8px'
-                                                }}>
-                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <Typography sx={{
-                                                            fontSize: '10px',
-                                                            color: '#9ca3af',
-                                                            fontStyle: 'italic'
-                                                        }}>
-                                                            ↑↓ Navigate • Enter Select • Esc Close
-                                                        </Typography>
-                                                        {isSemanticMode && searchConfidence > 0 && (
-                                                            <Typography sx={{
-                                                                fontSize: '9px',
-                                                                color: '#8b5cf6',
-                                                                fontWeight: 600,
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: 0.5
-                                                            }}>
-                                                                🧠 {Math.round(searchConfidence * 100)}%
-                                                            </Typography>
-                                                        )}
-                                                    </Box>
-                                                </Box>
-                                            </Box>
-                                        )}
-                                    </Box>
-                                )
-                                }
-
                                 {/* Search and Filter Section */}
                                 <Collapse in={filtersOpen}>
                                     <Box sx={{ p: 3, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -4826,12 +5035,39 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
                 {/* Modal Header - Show for modal mode OR when in admin view with detail page */}
                 {(isModal || (adminViewMode && navigationStack.length > 1)) && (
-                    <ModalHeader
+                    <EnterpriseModalHeader
                         navigation={getNavigationObject()}
                         onBack={handleBackClick}
                         showBackButton={true}
                         onClose={showCloseButton && isModal ? handleCloseClick : null}
                         showCloseButton={showCloseButton && isModal}
+                        unifiedSearch={unifiedSearch}
+                        setUnifiedSearch={setUnifiedSearch}
+                        liveResults={liveResults}
+                        setLiveResults={setLiveResults}
+                        showLiveResults={showLiveResults}
+                        setShowLiveResults={setShowLiveResults}
+                        selectedResultIndex={selectedResultIndex}
+                        setSelectedResultIndex={setSelectedResultIndex}
+                        handleViewShipmentDetail={handleViewShipmentDetail}
+                        allShipments={allShipments}
+                        customers={customers}
+                        generateLiveShipmentResults={generateLiveShipmentResults}
+                        loadShipments={loadShipments}
+                        handleEditDraftShipment={handleEditDraftShipment}
+                        reloadShipments={reloadShipments}
+                        performSemanticSearch={performSemanticSearch}
+                        isSemanticMode={isSemanticMode}
+                        setIsSemanticMode={setIsSemanticMode}
+                        semanticSearchResults={semanticSearchResults}
+                        setSemanticSearchResults={setSemanticSearchResults}
+                        searchConfidence={searchConfidence}
+                        setSearchConfidence={setSearchConfidence}
+                        setSearchFields={setSearchFields}
+                        setSelectedCustomer={setSelectedCustomer}
+                        showSnackbar={showSnackbar}
+                        adminViewMode={adminViewMode}
+                        isShipmentDetailView={navigationStack[navigationStack.length - 1]?.component === 'shipment-detail'}
                     />
                 )}
 
