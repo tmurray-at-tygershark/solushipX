@@ -1228,10 +1228,10 @@ function drawExactSpecialInstructions(doc, bolData) {
  * Draws the exact freight table section - FIXED to use actual package data
  */
 function drawExactFreightTable(doc, bolData) {
-    const tableStartY = 380; // UPDATED positioning for special instructions changes
+    const tableStartY = 405; // Moved down to start right below Special Instructions
     const tableWidth = 562;
     const rowHeight = 16; // Slightly reduced row height
-    const tableHeight = 140; // INCREASED from 120 to 140
+    const tableHeight = 120; // Reduced by another 10px (from 130 to 120)
     
     // Column definitions with exact widths - Added declared value column
     const columns = [
