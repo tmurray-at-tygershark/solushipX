@@ -721,7 +721,7 @@ function drawExactShippingSection(doc, bolData) {
     
     // Ship To section - IMPROVED spacing and layout
     doc.lineWidth(1)
-       .rect(25, 175, 280, 85) // Increased height and adjusted position
+       .rect(25, 175, 280, 90) // Reduced height by 10px (from 100 to 90)
        .stroke();
     
     // Ship To header
@@ -809,7 +809,7 @@ function drawExactShippingSection(doc, bolData) {
     
     // References section (right column) - IMPROVED positioning
     doc.lineWidth(1)
-       .rect(305, 175, 282, 85) // Adjusted height to match ship to
+       .rect(305, 175, 282, 90) // Reduced height by 10px to match ship to
        .stroke();
     
     // References header
@@ -1043,34 +1043,34 @@ function formatPhoneNumber(phone) {
  * IMPROVED VERSION with dynamic billing address and enhanced layout
  */
 function drawExactThirdPartySection(doc, bolData) {
-    // Third party billing section - IMPROVED height for better content fit
+        // Third party billing section - IMPROVED height for better content fit
     doc.lineWidth(1)
-       .rect(25, 245, 562, 85) // Increased height from 80 to 85
+       .rect(25, 270, 562, 80) // Moved up to Y=270, increased height to 80px
        .stroke();
-    
+
     // Third party header
     doc.font('Helvetica-Bold')
        .fontSize(8)
        .fillColor('#FFFFFF')
-       .rect(25, 245, 562, 15)
+       .rect(25, 270, 562, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
-       .text('THIRD PARTY FREIGHT CHARGES BILLED TO', 30, 250);
+       .text('THIRD PARTY FREIGHT CHARGES BILLED TO', 30, 275);
     
     // ENHANCED billing address extraction - use dynamic billing data when available
     let billingAddress = getBillingAddress(bolData);
     
-    // Third party content with better spacing
+        // Third party content with better spacing
     doc.fillColor('#000000')
        .font('Helvetica-Bold')
        .fontSize(8) // Increased font size for company name
-       .text(billingAddress.company, 30, 268);
-    
+       .text(billingAddress.company, 30, 293);
+
     // Address lines with improved spacing
     doc.font('Helvetica')
        .fontSize(7);
-    
-    let yPos = 278;
+
+    let yPos = 303;
     if (billingAddress.address1 && billingAddress.address1.trim()) {
         doc.text(billingAddress.address1, 30, yPos);
         yPos += 9;
@@ -1089,46 +1089,43 @@ function drawExactThirdPartySection(doc, bolData) {
     if (billingAddress.accountNumber && billingAddress.accountNumber.trim() !== '') {
         doc.font('Helvetica-Bold')
            .fontSize(8) // Increased font size
-           .text('Account Number:', 400, 268)
+           .text('Account Number:', 400, 293)
            .font('Helvetica')
            .fontSize(8)
-           .text(billingAddress.accountNumber, 495, 268);
+           .text(billingAddress.accountNumber, 495, 293);
     }
     
-    // ENHANCED freight terms checkboxes with better positioning and logic
-    const checkBoxY = 290; // Moved down for better spacing
-    doc.font('Helvetica-Bold')
-       .fontSize(7) // Increased font size for better visibility
-       .text('Freight Charges are:', 400, checkBoxY);
+    // ENHANCED freight terms checkboxes - positioned below address, left-aligned
+    const checkBoxY = yPos + 15; // Position below the address with some spacing
     
     // STATIC SELECTION: Always select Third Party checkbox as per business requirement
     console.log('BOL Generation: Static Third Party billing selection applied');
     
-    // Prepaid checkbox (always unchecked)
-    doc.rect(400, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
+    // Prepaid checkbox (always unchecked) - left aligned
+    doc.rect(30, checkBoxY, 8, 8).stroke();
     doc.font('Helvetica')
        .fontSize(7)
-       .text('Prepaid', 412, checkBoxY + 17);
+       .text('Prepaid', 42, checkBoxY + 2);
     
-    // Collect checkbox (always unchecked)
-    doc.rect(460, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
+    // Collect checkbox (always unchecked) - next to Prepaid
+    doc.rect(100, checkBoxY, 8, 8).stroke();
     doc.font('Helvetica')
        .fontSize(7)
-       .text('Collect', 472, checkBoxY + 17);
+       .text('Collect', 112, checkBoxY + 2);
     
-    // 3rd Party checkbox (ALWAYS CHECKED)
-    doc.rect(520, checkBoxY + 15, 8, 8).stroke(); // Larger checkbox
+    // 3rd Party checkbox (ALWAYS CHECKED) - next to Collect
+    doc.rect(170, checkBoxY, 8, 8).stroke();
     // Always add X mark for 3rd party
     doc.lineWidth(1.5)
-       .moveTo(521, checkBoxY + 16)
-       .lineTo(527, checkBoxY + 22)
+       .moveTo(171, checkBoxY + 1)
+       .lineTo(177, checkBoxY + 7)
        .stroke()
-       .moveTo(527, checkBoxY + 16)
-       .lineTo(521, checkBoxY + 22)
+       .moveTo(177, checkBoxY + 1)
+       .lineTo(171, checkBoxY + 7)
        .stroke();
     doc.font('Helvetica')
        .fontSize(7)
-       .text('3rd Party', 532, checkBoxY + 17);
+       .text('3rd Party', 182, checkBoxY + 2);
     
     // Reset line width for other elements
     doc.lineWidth(1);
@@ -1168,27 +1165,27 @@ function getBillingAddress(bolData) {
  * IMPROVED VERSION with better handling of empty instructions and layout
  */
 function drawExactSpecialInstructions(doc, bolData) {
-    // Special instructions section - IMPROVED height for better content fit
+        // Special instructions section - IMPROVED height for better content fit
     doc.lineWidth(1)
-       .rect(25, 330, 562, 45) // Increased height and adjusted position
+       .rect(25, 355, 562, 45) // Properly positioned after THIRD PARTY section
        .stroke();
-    
+
     // Special instructions header
     doc.font('Helvetica-Bold')
        .fontSize(8)
        .fillColor('#FFFFFF')
-       .rect(25, 330, 562, 15)
+       .rect(25, 355, 562, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
-       .text('SPECIAL INSTRUCTIONS', 30, 335);
+       .text('SPECIAL INSTRUCTIONS', 30, 360);
     
     // Special instructions content - ENHANCED with better handling
     doc.fillColor('#000000')
        .font('Helvetica')
        .fontSize(7); // Increased font size for better readability
     
-    let textY = 350;
-    const maxY = 370; // Increased available space
+    let textY = 375;
+    const maxY = 395; // Adjusted for THIRD PARTY repositioning
     
     // Check if there are any special instructions
     if (bolData.specialInstructions && bolData.specialInstructions.length > 0) {
