@@ -185,7 +185,8 @@ const EnhancedStatusChip = ({
     };
 
     // DEBUG: Log the actual styling values
-    console.log(`[EnhancedStatusChip] Styling for "${status}":`, {
+    const statusString = typeof status === 'object' ? JSON.stringify(status) : String(status);
+    console.log(`[EnhancedStatusChip] Styling for "${statusString}":`, {
         masterStatusLabel: masterStatus.label,
         masterStatusDisplayLabel: masterStatus.displayLabel,
         backgroundColor: styling.backgroundColor,

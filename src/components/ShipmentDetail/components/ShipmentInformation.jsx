@@ -31,13 +31,17 @@ import {
     Map as MapIcon,
     Route as RouteIcon,
     LocationOn as LocationOnIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Business as BusinessIcon,
+    Person as PersonIcon,
+    OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 // Note: We don't use @react-google-maps/api components here due to provider issues
 // Instead we'll create the map directly with the Google Maps JavaScript API
 import { db } from '../../../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
+import { useAuth } from '../../../contexts/AuthContext';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import ManualStatusOverride from './ManualStatusOverride';
 
@@ -81,6 +85,10 @@ const ShipmentInformation = ({
     onOpenTrackingDrawer,
     onStatusUpdated // Add callback for status updates
 }) => {
+    // Hooks
+    const navigate = useNavigate();
+    const { user } = useAuth();
+
     // Map state
     const [openMap, setOpenMap] = useState(null);
     const [geocodedPosition, setGeocodedPosition] = useState(null);
@@ -89,6 +97,12 @@ const ShipmentInformation = ({
     const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
     const [directions, setDirections] = useState(null);
     const [mapsApiKey, setMapsApiKey] = useState(null);
+
+    // Company and Customer Data State
+    const [companyData, setCompanyData] = useState(null);
+    const [customerData, setCustomerData] = useState(null);
+    const [loadingCompanyData, setLoadingCompanyData] = useState(false);
+    const [loadingCustomerData, setLoadingCustomerData] = useState(false);
 
     // Check if Google Maps is loaded and get API key
     useEffect(() => {
@@ -198,6 +212,158 @@ const ShipmentInformation = ({
 
         initializeMaps();
     }, []);
+
+    // Load company data
+    useEffect(() => {
+        const loadCompanyData = async () => {
+            // Check multiple possible company ID fields
+            const companyId = shipment?.companyID || shipment?.companyId || shipment?.company?.id || shipment?.company;
+
+            console.log('🏢 Loading company data for ID:', companyId);
+            console.log('🏢 Shipment object:', {
+                companyID: shipment?.companyID,
+                companyId: shipment?.companyId,
+                company: shipment?.company
+            });
+
+            if (!companyId) {
+                console.warn('🏢 No company ID found in shipment');
+                setCompanyData(null);
+                setLoadingCompanyData(false);
+                return;
+            }
+
+            setLoadingCompanyData(true);
+            try {
+                // Query companies by companyID field (not document ID)
+                const companiesQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', companyId),
+                    limit(1)
+                );
+
+                const companiesSnapshot = await getDocs(companiesQuery);
+
+                if (!companiesSnapshot.empty) {
+                    const companyDoc = companiesSnapshot.docs[0];
+                    const data = {
+                        id: companyDoc.id,
+                        ...companyDoc.data()
+                    };
+                    console.log('✅ Company data loaded:', data);
+                    setCompanyData(data);
+                } else {
+                    // Fallback: try as document ID (for backward compatibility)
+                    console.log('🔄 Trying as document ID fallback...');
+                    const companyDoc = await getDoc(doc(db, 'companies', companyId));
+
+                    if (companyDoc.exists()) {
+                        const data = { id: companyDoc.id, ...companyDoc.data() };
+                        console.log('✅ Company data loaded (fallback):', data);
+                        setCompanyData(data);
+                    } else {
+                        console.warn('❌ Company not found in Firestore:', companyId);
+                        setCompanyData(null);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Error loading company data:', error);
+                setCompanyData(null);
+            } finally {
+                setLoadingCompanyData(false);
+            }
+        };
+
+        loadCompanyData();
+    }, [shipment?.companyID, shipment?.companyId, shipment?.company]);
+
+    // Load customer data
+    useEffect(() => {
+        const loadCustomerData = async () => {
+            // Get the customer ID from the shipment
+            const customerId = shipment?.customerId || shipment?.customerID;
+
+            if (!customerId) {
+                setCustomerData(null);
+                setLoadingCustomerData(false);
+                return;
+            }
+
+            setLoadingCustomerData(true);
+
+            try {
+                // FIRST: Try to get customer by document ID (direct lookup)
+                const customerDocRef = doc(db, 'customers', customerId);
+                const customerDocSnapshot = await getDoc(customerDocRef);
+
+                if (customerDocSnapshot.exists()) {
+                    const data = { id: customerDocSnapshot.id, ...customerDocSnapshot.data() };
+                    setCustomerData(data);
+                    setLoadingCustomerData(false);
+                    return;
+                }
+
+                // SECOND: Try to query by customerID field
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', customerId),
+                    limit(1)
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (!customerSnapshot.empty) {
+                    const customerDoc = customerSnapshot.docs[0];
+                    const data = { id: customerDoc.id, ...customerDoc.data() };
+                    setCustomerData(data);
+                } else {
+                    setCustomerData(null);
+                }
+            } catch (error) {
+                console.error('❌ Error loading customer:', error);
+                setCustomerData(null);
+            }
+
+            setLoadingCustomerData(false);
+        };
+
+        loadCustomerData();
+    }, [shipment?.customerId, shipment?.customerID]);
+
+    // Company and Customer navigation handlers
+    const handleNavigateToCompany = () => {
+        if (!companyData) return;
+
+        console.log('🏢 Navigating to company detail for:', companyData);
+
+        // Check if user is admin to determine route
+        const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
+        if (isAdmin && companyData.id) {
+            // Navigate to admin company detail page using Firestore document ID
+            navigate(`/admin/companies/${companyData.id}`);
+        } else {
+            console.warn('🏢 Cannot navigate - insufficient permissions or missing company ID');
+        }
+    };
+
+    const handleNavigateToCustomer = () => {
+        if (!customerData || customerData.id === 'ship-to-data') return;
+
+        console.log('👤 Navigating to customer detail for:', customerData);
+
+        // Check if user is admin to determine route
+        const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
+        if (isAdmin && customerData.id) {
+            // Navigate to admin customer detail page using Firestore document ID
+            navigate(`/admin/customers/${customerData.id}`);
+        } else if (customerData.id) {
+            // Navigate to regular customer detail page
+            navigate(`/customers/${customerData.id}`);
+        } else {
+            console.warn('👤 Cannot navigate - missing customer ID');
+        }
+    };
 
     // Map options - normal styling with street view enabled
     const mapOptions = {
@@ -1224,9 +1390,195 @@ const ShipmentInformation = ({
                             Basic Information
                         </Typography>
                         <Stack spacing={2}>
+                            {/* Company Information */}
                             <Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Company ID</Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px' }}>{shipment?.companyID || 'N/A'}</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Company</Typography>
+                                {loadingCompanyData ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                        <CircularProgress size={16} />
+                                        <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : companyData ? (
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1,
+                                            cursor: 'pointer',
+                                            p: 0.5,
+                                            borderRadius: 1,
+                                            mt: 0.5,
+                                            '&:hover': {
+                                                backgroundColor: 'action.hover'
+                                            }
+                                        }}
+                                        onClick={handleNavigateToCompany}
+                                    >
+                                        <Avatar
+                                            src={companyData.logo || companyData.logoUrl || companyData.logoURL}
+                                            sx={{
+                                                width: 24,
+                                                height: 24,
+                                                bgcolor: 'primary.main'
+                                            }}
+                                            onError={(e) => {
+                                                console.log('🖼️ Company logo failed to load:', {
+                                                    src: e.target.src,
+                                                    companyData: {
+                                                        logo: companyData.logo,
+                                                        logoUrl: companyData.logoUrl,
+                                                        logoURL: companyData.logoURL
+                                                    }
+                                                });
+                                                e.target.style.display = 'none';
+                                            }}
+                                        >
+                                            <BusinessIcon sx={{ fontSize: 12 }} />
+                                        </Avatar>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: 'text.primary',
+                                                lineHeight: 1.2,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {companyData.companyName || companyData.name || 'Unknown Company'}
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '10px',
+                                                color: 'text.secondary',
+                                                lineHeight: 1.2
+                                            }}>
+                                                ID: {shipment?.companyID || shipment?.companyId}
+                                            </Typography>
+                                        </Box>
+                                        <OpenInNewIcon sx={{
+                                            fontSize: 12,
+                                            color: 'text.secondary',
+                                            opacity: 0.7
+                                        }} />
+                                    </Box>
+                                ) : (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                        <Avatar sx={{
+                                            width: 24,
+                                            height: 24,
+                                            bgcolor: 'grey.400'
+                                        }}>
+                                            <BusinessIcon sx={{ fontSize: 12 }} />
+                                        </Avatar>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: '12px',
+                                                color: 'text.secondary'
+                                            }}>
+                                                Company not found
+                                            </Typography>
+                                            <Typography sx={{
+                                                fontSize: '10px',
+                                                color: 'text.secondary'
+                                            }}>
+                                                ID: {shipment?.companyID || shipment?.companyId || 'N/A'}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                )}
+                            </Box>
+
+                            {/* Customer Information */}
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Customer</Typography>
+                                {loadingCustomerData ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                        <CircularProgress size={16} />
+                                        <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
+                                            Loading...
+                                        </Typography>
+                                    </Box>
+                                ) : customerData ? (
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1,
+                                            cursor: (customerData.id !== 'ship-to-data' && (user?.role === 'admin' || user?.role === 'superadmin')) ? 'pointer' : 'default',
+                                            p: 0.5,
+                                            borderRadius: 1,
+                                            mt: 0.5,
+                                            '&:hover': (customerData.id !== 'ship-to-data' && (user?.role === 'admin' || user?.role === 'superadmin')) ? {
+                                                backgroundColor: 'action.hover'
+                                            } : {}
+                                        }}
+                                        onClick={(customerData.id !== 'ship-to-data' && (user?.role === 'admin' || user?.role === 'superadmin')) ? handleNavigateToCustomer : undefined}
+                                    >
+                                        <Avatar
+                                            src={customerData.logo || customerData.logoUrl || customerData.logoURL}
+                                            sx={{
+                                                width: 24,
+                                                height: 24,
+                                                bgcolor: 'success.main'
+                                            }}
+                                            onError={(e) => {
+                                                console.log('🖼️ Customer logo failed to load:', {
+                                                    src: e.target.src,
+                                                    customerData: {
+                                                        logo: customerData.logo,
+                                                        logoUrl: customerData.logoUrl,
+                                                        logoURL: customerData.logoURL
+                                                    }
+                                                });
+                                                e.target.style.display = 'none';
+                                            }}
+                                        >
+                                            <PersonIcon sx={{ fontSize: 12 }} />
+                                        </Avatar>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: 'text.primary',
+                                                lineHeight: 1.2,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {customerData.companyName || customerData.name || 'Unknown Customer'}
+                                            </Typography>
+
+                                        </Box>
+                                        {(customerData.id !== 'ship-to-data' && (user?.role === 'admin' || user?.role === 'superadmin')) && (
+                                            <OpenInNewIcon sx={{
+                                                fontSize: 12,
+                                                color: 'text.secondary',
+                                                opacity: 0.7
+                                            }} />
+                                        )}
+                                    </Box>
+                                ) : (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                        <Avatar sx={{
+                                            width: 24,
+                                            height: 24,
+                                            bgcolor: 'grey.400'
+                                        }}>
+                                            <PersonIcon sx={{ fontSize: 12 }} />
+                                        </Avatar>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: '12px',
+                                                color: 'text.secondary'
+                                            }}>
+                                                Customer not available
+                                            </Typography>
+                                            {/* REMOVED: Never show ship-to company as customer fallback */}
+                                        </Box>
+                                    </Box>
+                                )}
                             </Box>
 
                             <Box>
@@ -1854,6 +2206,7 @@ const ShipmentInformation = ({
                     {renderMap()}
                 </DialogContent>
             </Dialog>
+
         </Grid >
     );
 };

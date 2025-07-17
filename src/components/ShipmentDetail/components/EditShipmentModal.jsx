@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useCompany } from '../../../contexts/CompanyContext';
 import {
     Dialog,
     DialogTitle,
@@ -34,15 +35,106 @@ const EditShipmentModal = ({
     onClose,
     shipment,
     onShipmentUpdated,
-    showNotification
+    showNotification,
+    companyIdForAddress,
+    isAdmin,
+    userRole
 }) => {
     const [loading, setLoading] = useState(false);
     const [formMode, setFormMode] = useState(null); // 'quickship' or 'advanced'
+    const [prePopulatedData, setPrePopulatedData] = useState(null);
 
     // Determine which form to use based on shipment creation method
     useEffect(() => {
         if (shipment && open) {
             const creationMethod = shipment.creationMethod;
+
+            // Extract customer ID from various possible locations in shipment data
+            let customerId = shipment.customerId || shipment.customerID || shipment.customer?.id || shipment.shipTo?.customerID;
+
+            console.log('🔍 Initial customer ID extraction:', {
+                customerId,
+                from_customerId: shipment.customerId,
+                from_customerID: shipment.customerID,
+                from_customer_id: shipment.customer?.id,
+                from_shipTo_customerID: shipment.shipTo?.customerID
+            });
+
+            // REVERSE ENGINEERING APPROACH: Extract customer ID from address records if not found directly
+            if (!customerId && shipment.shipTo) {
+                console.log('🔍 Checking shipTo address for customer ID:', {
+                    addressClass: shipment.shipTo.addressClass,
+                    addressClassID: shipment.shipTo.addressClassID,
+                    customerID: shipment.shipTo.customerID,
+                    addressId: shipment.shipTo.addressId
+                });
+
+                // Check if shipTo address has customer relationship data
+                if (shipment.shipTo.addressClass === 'customer' && shipment.shipTo.addressClassID) {
+                    customerId = shipment.shipTo.addressClassID;
+                    console.log('🔍 Reverse engineered customer ID from shipTo addressClassID:', customerId);
+                }
+                // Also check for customerID in shipTo address data
+                else if (shipment.shipTo.customerID) {
+                    customerId = shipment.shipTo.customerID;
+                    console.log('🔍 Found customer ID in shipTo.customerID:', customerId);
+                }
+            }
+
+            // Also check shipFrom address as backup
+            if (!customerId && shipment.shipFrom) {
+                console.log('🔍 Checking shipFrom address for customer ID:', {
+                    addressClass: shipment.shipFrom.addressClass,
+                    addressClassID: shipment.shipFrom.addressClassID,
+                    customerID: shipment.shipFrom.customerID
+                });
+
+                if (shipment.shipFrom.addressClass === 'customer' && shipment.shipFrom.addressClassID) {
+                    customerId = shipment.shipFrom.addressClassID;
+                    console.log('🔍 Reverse engineered customer ID from shipFrom addressClassID:', customerId);
+                }
+            }
+
+            console.log('🔧 EditShipmentModal: Opening for shipment:', {
+                shipmentID: shipment.shipmentID,
+                creationMethod,
+                companyID: shipment.companyID || shipment.companyId,
+                extractedCustomerID: customerId,
+                shipToAddressClass: shipment.shipTo?.addressClass,
+                shipToAddressClassID: shipment.shipTo?.addressClassID,
+                companyIdForAddress,
+                isAdmin,
+                userRole
+            });
+
+            // Create prePopulated data with customer selection
+            const prepopulatedInfo = {
+                selectedCustomerId: customerId,
+                companyId: shipment.companyID || shipment.companyId,
+                // Flag to indicate this is edit mode to handle timing properly
+                isEditMode: true,
+                // Add timing flag to help with race conditions
+                requiresCustomerSelection: !!customerId
+            };
+
+            console.log('📋 Setting prePopulatedData for edit:', prepopulatedInfo);
+
+            // CRITICAL DEBUG: Log exactly what we're trying to match
+            console.log('🎯 CRITICAL: Customer ID to select in QuickShip dropdown:', {
+                extractedCustomerId: customerId,
+                shipmentCompanyID: shipment.companyID || shipment.companyId,
+                currentCompanyContext: companyIdForAddress,
+                shipmentData: {
+                    customerId: shipment.customerId,
+                    customerID: shipment.customerID,
+                    shipTo_customerID: shipment.shipTo?.customerID,
+                    shipTo_addressClass: shipment.shipTo?.addressClass,
+                    shipTo_addressClassID: shipment.shipTo?.addressClassID,
+                    shipTo_companyName: shipment.shipTo?.companyName,
+                    shipTo_company: shipment.shipTo?.company
+                }
+            });
+            setPrePopulatedData(prepopulatedInfo);
 
             if (creationMethod === 'quickship') {
                 setFormMode('quickship');
@@ -51,7 +143,7 @@ const EditShipmentModal = ({
                 setFormMode('advanced');
             }
         }
-    }, [shipment, open]);
+    }, [shipment, open, companyIdForAddress, isAdmin, userRole]);
 
     // Handle successful shipment update
     const handleShipmentUpdated = useCallback((updatedShipment) => {
@@ -141,6 +233,8 @@ const EditShipmentModal = ({
                                 editShipment={shipment}
                                 onShipmentUpdated={onShipmentUpdated}
                                 showNotification={showNotification}
+                                // Pass customer information for proper dropdown population
+                                prePopulatedData={prePopulatedData}
                             />
                         </ShipmentFormProvider>
                     ) : (
@@ -151,6 +245,8 @@ const EditShipmentModal = ({
                             onShipmentCreated={handleShipmentUpdated}
                             editMode={true}
                             editShipment={shipment}
+                            // Pass customer information for proper dropdown population
+                            prePopulatedData={prePopulatedData}
                         />
                     )}
                 </Box>

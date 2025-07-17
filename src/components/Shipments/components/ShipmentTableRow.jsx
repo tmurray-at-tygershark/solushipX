@@ -21,7 +21,8 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
-    Alert
+    Alert,
+    Avatar
 } from '@mui/material';
 import {
     MoreVert as MoreVertIcon,
@@ -39,14 +40,20 @@ import {
     Visibility as ViewIcon,
     Assignment as FollowUpIcon,
     Warning as WarningIcon,
-    PriorityHigh as UrgentIcon
+    PriorityHigh as UrgentIcon,
+    Business as BusinessIcon,
+    Person as PersonIcon,
+    OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../../firebase/firebase';
+import { functions, db } from '../../../firebase/firebase';
+import { collection, getDocs, doc, getDoc, query, where, limit } from 'firebase/firestore';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import { formatDateTime, formatRoute, capitalizeShipmentType } from '../utils/shipmentHelpers';
 import { fixShipmentEncoding } from '../../../utils/textUtils';
+import { useAuth } from '../../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 
 const ShipmentTableRow = ({
     shipment: rawShipment,
@@ -69,9 +76,19 @@ const ShipmentTableRow = ({
     const [expanded, setExpanded] = useState(false);
     const [documentsExpanded, setDocumentsExpanded] = useState(false);
 
+    // Get user role for permission checking
+    const { userRole } = useAuth();
+    const navigate = useNavigate();
+
     // Follow-up state
     const [followUpSummary, setFollowUpSummary] = useState(null);
     const [followUpLoading, setFollowUpLoading] = useState(false);
+
+    // Company and Customer Data State
+    const [expandedCompanyData, setExpandedCompanyData] = useState(null);
+    const [expandedCustomerData, setExpandedCustomerData] = useState(null);
+    const [loadingExpandedCompanyData, setLoadingExpandedCompanyData] = useState(false);
+    const [loadingExpandedCustomerData, setLoadingExpandedCustomerData] = useState(false);
 
     // Memoize shipment to prevent unnecessary re-renders
     const shipment = useMemo(() => {
@@ -110,10 +127,119 @@ const ShipmentTableRow = ({
         loadFollowUpSummary();
     }, [shipment?.id]);
 
+    // Load company data when expanded
+    useEffect(() => {
+        const loadCompanyData = async () => {
+            if (!expanded || !shipment?.companyID || loadingExpandedCompanyData || expandedCompanyData) return;
+
+            setLoadingExpandedCompanyData(true);
+            try {
+                const companyQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', shipment.companyID),
+                    limit(1)
+                );
+                const companySnapshot = await getDocs(companyQuery);
+
+                if (!companySnapshot.empty) {
+                    const companyDoc = companySnapshot.docs[0];
+                    setExpandedCompanyData({ id: companyDoc.id, ...companyDoc.data() });
+                } else {
+                    console.warn('Company not found for expanded view:', shipment.companyID);
+                    setExpandedCompanyData(null);
+                }
+            } catch (error) {
+                console.error('Error loading company data for expanded view:', error);
+                setExpandedCompanyData(null);
+            } finally {
+                setLoadingExpandedCompanyData(false);
+            }
+        };
+
+        loadCompanyData();
+    }, [expanded, shipment?.companyID, loadingExpandedCompanyData, expandedCompanyData]);
+
+    // Load customer data when expanded
+    useEffect(() => {
+        const loadCustomerData = async () => {
+            if (!expanded || loadingExpandedCustomerData || expandedCustomerData) return;
+
+            // FIXED: Use customer ID that's already stored in shipment (highest priority)
+            const customerId = shipment?.customerId ||
+                shipment?.customerID ||
+                shipment?.customer?.id;
+
+            if (!customerId) {
+                setExpandedCustomerData(null);
+                return;
+            }
+
+            setLoadingExpandedCustomerData(true);
+            try {
+                console.log('🔍 Loading customer data for expanded view:', customerId);
+
+                // Try to find customer by document ID first
+                const customerDocRef = doc(db, 'customers', customerId);
+                const customerDoc = await getDoc(customerDocRef);
+
+                if (customerDoc.exists()) {
+                    const customerData = { id: customerDoc.id, ...customerDoc.data() };
+                    console.log('✅ Found customer by document ID:', customerData);
+                    setExpandedCustomerData(customerData);
+                } else {
+                    // Try to find by customerID field
+                    const customerQuery = query(
+                        collection(db, 'customers'),
+                        where('customerID', '==', customerId),
+                        limit(1)
+                    );
+                    const customerSnapshot = await getDocs(customerQuery);
+
+                    if (!customerSnapshot.empty) {
+                        const customerDocFromQuery = customerSnapshot.docs[0];
+                        const customerData = { id: customerDocFromQuery.id, ...customerDocFromQuery.data() };
+                        console.log('✅ Found customer by customerID field:', customerData);
+                        setExpandedCustomerData(customerData);
+                    } else {
+                        console.warn('❌ Customer not found for expanded view:', customerId);
+                        // Create fallback data that clearly shows it's delivery address, not customer
+                        const shipToData = shipment.shipTo;
+                        if (shipToData?.companyName || shipToData?.company) {
+                            setExpandedCustomerData({
+                                id: 'ship-to-data',
+                                companyName: `${shipToData.companyName || shipToData.company} (Delivery Address)`,
+                                name: `${shipToData.companyName || shipToData.company} (Delivery Address)`,
+                                contactName: `${shipToData.firstName || ''} ${shipToData.lastName || ''}`.trim() || shipToData.contactName,
+                                phone: shipToData.phone || shipToData.contactPhone,
+                                email: shipToData.email || shipToData.contactEmail,
+                                address: `${shipToData.street || ''}, ${shipToData.city || ''}, ${shipToData.state || ''} ${shipToData.postalCode || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, ''),
+                                source: 'shipTo',
+                                isFallback: true,
+                                actualCustomerId: customerId
+                            });
+                        } else {
+                            setExpandedCustomerData(null);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading customer data for expanded view:', error);
+                setExpandedCustomerData(null);
+            } finally {
+                setLoadingExpandedCustomerData(false);
+            }
+        };
+
+        loadCustomerData();
+    }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipTo?.addressClassID, shipment?.shipTo?.customerID, shipment?.shipTo, loadingExpandedCustomerData, expandedCustomerData]);
+
     const isSelected = selected.indexOf(shipment?.id) !== -1;
 
     // Check if we're in admin view mode
     const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
+
+    // Check if user can view cost information
+    const canViewCosts = hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS);
 
     // Calculate charges for admin view
     const getCharges = () => {
@@ -371,6 +497,41 @@ const ShipmentTableRow = ({
         } catch (error) {
             console.error(`Failed to copy ${label}:`, error);
             showSnackbar(`Failed to copy ${label}`, 'error');
+        }
+    };
+
+    // Company and Customer navigation handlers - only enabled in admin mode
+    const handleNavigateToCompany = () => {
+        // Only allow navigation if we're in admin mode
+        if (!adminViewMode || !expandedCompanyData) return;
+
+        console.log('🏢 Admin view - Navigating to company detail for:', expandedCompanyData);
+
+        // Check if user is admin to determine route
+        const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+        if (isAdmin && expandedCompanyData.id) {
+            // Navigate to admin company detail page using Firestore document ID
+            navigate(`/admin/companies/${expandedCompanyData.id}`);
+        } else {
+            console.warn('🏢 Cannot navigate - insufficient permissions or missing company ID');
+        }
+    };
+
+    const handleNavigateToCustomer = () => {
+        // Only allow navigation if we're in admin mode and customer is not ship-to-data
+        if (!adminViewMode || !expandedCustomerData || expandedCustomerData.id === 'ship-to-data') return;
+
+        console.log('👤 Admin view - Navigating to customer detail for:', expandedCustomerData);
+
+        // Check if user is admin to determine route
+        const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+        if (isAdmin && expandedCustomerData.id) {
+            // Navigate to admin customer detail page using Firestore document ID
+            navigate(`/admin/customers/${expandedCustomerData.id}`);
+        } else {
+            console.warn('👤 Cannot navigate - insufficient permissions or missing customer ID');
         }
     };
 
@@ -919,10 +1080,25 @@ const ShipmentTableRow = ({
                             }}>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {highlightSearchTerm(
-                                        shipment?.shipTo?.companyName ||
-                                        shipment?.shipTo?.company ||
-                                        customers[shipment?.shipTo?.customerID] ||
-                                        'N/A',
+                                        (() => {
+                                            // FIXED: Use the customer ID that's already stored in the shipment
+                                            const customerId = shipment?.customerId || shipment?.customerID;
+
+                                            // If we have a customer ID and it's in our loaded customers, show that
+                                            if (customerId && customers[customerId]) {
+                                                return customers[customerId];
+                                            }
+
+                                            // If we have a customer ID but not loaded, show ID
+                                            if (customerId) {
+                                                return `Customer: ${customerId}`;
+                                            }
+
+                                            // Last resort: show delivery company (but this shouldn't be the customer)
+                                            return shipment?.shipTo?.companyName ||
+                                                shipment?.shipTo?.company ||
+                                                'N/A';
+                                        })(),
                                         searchFields.customerName
                                     )}
                                 </Typography>
@@ -1498,38 +1674,40 @@ const ShipmentTableRow = ({
                             </Box>
                         </TableCell>
 
-                        {/* Charges - Admin View Only */}
-                        <TableCell sx={{
-                            verticalAlign: 'top',
-                            textAlign: 'left',
-                            ...getColumnWidth('charges'),
-                            padding: '8px 12px'
-                        }}>
-                            {(() => {
-                                const charges = getCharges();
+                        {/* Charges - Admin View Only AND User must have cost viewing permission */}
+                        {canViewCosts && (
+                            <TableCell sx={{
+                                verticalAlign: 'top',
+                                textAlign: 'left',
+                                ...getColumnWidth('charges'),
+                                padding: '8px 12px'
+                            }}>
+                                {(() => {
+                                    const charges = getCharges();
 
-                                const formatCurrency = (amount, currency) => {
-                                    // Ensure currency is valid, fallback to USD if invalid
-                                    const validCurrency = currency && currency.length === 3 ? currency : 'USD';
+                                    const formatCurrency = (amount, currency) => {
+                                        // Ensure currency is valid, fallback to USD if invalid
+                                        const validCurrency = currency && currency.length === 3 ? currency : 'USD';
 
-                                    // Format the amount
-                                    const numAmount = parseFloat(amount) || 0;
+                                        // Format the amount
+                                        const numAmount = parseFloat(amount) || 0;
 
-                                    return `$${numAmount.toFixed(2)} ${validCurrency}`;
-                                };
+                                        return `$${numAmount.toFixed(2)} ${validCurrency}`;
+                                    };
 
-                                return (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#374151' }}>
-                                            {formatCurrency(charges.cost, charges.currency)}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#059669' }}>
-                                            {formatCurrency(charges.companyCharge, charges.currency)}
-                                        </Typography>
-                                    </Box>
-                                );
-                            })()}
-                        </TableCell>
+                                    return (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#374151' }}>
+                                                {formatCurrency(charges.cost, charges.currency)}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#059669' }}>
+                                                {formatCurrency(charges.companyCharge, charges.currency)}
+                                            </Typography>
+                                        </Box>
+                                    );
+                                })()}
+                            </TableCell>
+                        )}
                     </>
                 )}
 
@@ -1602,7 +1780,18 @@ const ShipmentTableRow = ({
                 >
                     <IconButton
                         size="small"
-                        onClick={() => setExpanded(!expanded)}
+                        onClick={() => {
+                            const newExpanded = !expanded;
+                            setExpanded(newExpanded);
+
+                            // Clear loaded data when collapsing
+                            if (!newExpanded) {
+                                setExpandedCompanyData(null);
+                                setExpandedCustomerData(null);
+                                setLoadingExpandedCompanyData(false);
+                                setLoadingExpandedCustomerData(false);
+                            }
+                        }}
                         sx={{
                             color: '#6b7280',
                             '&:hover': {
@@ -1635,7 +1824,7 @@ const ShipmentTableRow = ({
             {/* Expanded Row Content */}
             <TableRow>
                 <TableCell
-                    colSpan={adminViewMode ? 12 : 11}
+                    colSpan={adminViewMode ? (canViewCosts ? 12 : 11) : 11}
                     sx={{
                         paddingBottom: 0,
                         paddingTop: 0,
@@ -1646,6 +1835,144 @@ const ShipmentTableRow = ({
                         <Box sx={{ margin: 2 }}>
 
                             <Grid container spacing={3}>
+                                {/* Company & Customer Information - Full Width Row */}
+                                <Grid item xs={12}>
+                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                        <Grid container spacing={3}>
+                                            {/* Company Information */}
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                    COMPANY
+                                                </Typography>
+
+
+                                                {loadingExpandedCompanyData ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <CircularProgress size={20} />
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            Loading company...
+                                                        </Typography>
+                                                    </Box>
+                                                ) : expandedCompanyData ? (
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1,
+                                                        cursor: adminViewMode ? 'pointer' : 'default',
+                                                        p: 1,
+                                                        borderRadius: 1,
+                                                        ...(adminViewMode && {
+                                                            '&:hover': {
+                                                                backgroundColor: 'rgba(59, 130, 246, 0.05)'
+                                                            }
+                                                        })
+                                                    }}
+                                                        onClick={adminViewMode ? handleNavigateToCompany : undefined}>
+                                                        <Avatar
+                                                            src={expandedCompanyData.logoUrl || expandedCompanyData.logo || expandedCompanyData.logoURL}
+                                                            sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                bgcolor: 'primary.main'
+                                                            }}
+                                                            onError={(e) => {
+                                                                console.log('Company logo failed to load:', expandedCompanyData.logoUrl || expandedCompanyData.logo || expandedCompanyData.logoURL);
+                                                            }}
+                                                        >
+                                                            <BusinessIcon sx={{ fontSize: 12 }} />
+                                                        </Avatar>
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
+                                                            }}>
+                                                                {expandedCompanyData.name || expandedCompanyData.companyName || 'Unknown Company'}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                ID: {expandedCompanyData.companyID || shipment?.companyID || 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                        {adminViewMode && (
+                                                            <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                        )}
+                                                    </Box>
+                                                ) : (
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                        Company not found
+                                                    </Typography>
+                                                )}
+                                            </Grid>
+
+                                            {/* Customer Information */}
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                    CUSTOMER
+                                                </Typography>
+
+                                                {loadingExpandedCustomerData ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <CircularProgress size={20} />
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            Loading customer...
+                                                        </Typography>
+                                                    </Box>
+                                                ) : expandedCustomerData ? (
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1,
+                                                        cursor: (adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? 'pointer' : 'default',
+                                                        p: 1,
+                                                        borderRadius: 1,
+                                                        ...(adminViewMode && expandedCustomerData.id !== 'ship-to-data' && {
+                                                            '&:hover': {
+                                                                backgroundColor: 'rgba(34, 197, 94, 0.05)'
+                                                            }
+                                                        })
+                                                    }}
+                                                        onClick={(adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? handleNavigateToCustomer : undefined}>
+                                                        <Avatar
+                                                            src={expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL}
+                                                            sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                bgcolor: 'success.main'
+                                                            }}
+                                                            onError={(e) => {
+                                                                console.log('Customer logo failed to load:', expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL);
+                                                            }}
+                                                        >
+                                                            <PersonIcon sx={{ fontSize: 12 }} />
+                                                        </Avatar>
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography variant="body2" sx={{
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
+                                                            }}>
+                                                                {expandedCustomerData.name || expandedCustomerData.companyName || 'Unknown Customer'}
+                                                            </Typography>
+
+                                                        </Box>
+                                                        {(adminViewMode && expandedCustomerData.id !== 'ship-to-data') && (
+                                                            <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                        )}
+                                                    </Box>
+                                                ) : (
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                        Customer not available
+                                                    </Typography>
+                                                )}
+                                            </Grid>
+                                        </Grid>
+                                    </Box>
+                                </Grid>
+
                                 {/* Route Information */}
                                 <Grid item xs={12} md={6}>
                                     <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
@@ -1755,8 +2082,8 @@ const ShipmentTableRow = ({
                                     </Box>
                                 </Grid>
 
-                                {/* Charges Information */}
-                                {adminViewMode && (
+                                {/* Charges Information - Only show if user has financial viewing permission */}
+                                {adminViewMode && canViewCosts && hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) && (
                                     <Grid item xs={12} md={6}>
                                         <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
                                             <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
@@ -1778,8 +2105,8 @@ const ShipmentTableRow = ({
                                                     markupRates.currency ||
                                                     shipment?.currency || 'USD';
 
-                                                // Check if user is admin/super admin (adminViewMode indicates admin access)
-                                                const showCosts = adminViewMode;
+                                                // Check if user has permission to view costs (for admin view and financial permissions)
+                                                const showCosts = adminViewMode && canViewCosts;
 
                                                 // Get all available charge components from multiple data sources
                                                 const chargeComponents = [];
@@ -2042,7 +2369,7 @@ const ShipmentTableRow = ({
                                             DOCUMENTS
                                         </Typography>
 
-                                        <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} />
+                                        <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} userRole={userRole} />
                                     </Box>
                                 </Grid>
                             </Grid>
@@ -2055,7 +2382,7 @@ const ShipmentTableRow = ({
 };
 
 // Documents Section Component
-const DocumentsSection = ({ shipment, showSnackbar, expanded }) => {
+const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
     const [documentData, setDocumentData] = useState(null);
     const [loadingDocs, setLoadingDocs] = useState(false);
     const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
@@ -2181,52 +2508,57 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded }) => {
     }
 
     // Enhanced Carrier Confirmation detection - check multiple sources
-    let carrierConfirmationDocs = [];
+    // Only show carrier confirmations if user has permission
+    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS);
 
-    // First check the dedicated carrierConfirmations array
-    if (documentData.carrierConfirmations && documentData.carrierConfirmations.length > 0) {
-        carrierConfirmationDocs = [...documentData.carrierConfirmations];
-    }
+    if (canViewCarrierConfirmations) {
+        let carrierConfirmationDocs = [];
 
-    // Also check all other document collections for carrier confirmations
-    const allOtherDocs = [
-        ...(documentData.documents || []),
-        ...(documentData.other || []),
-        ...(documentData.bol || []), // Sometimes confirmations are misclassified
-        ...(documentData.labels || []) // Sometimes confirmations are misclassified
-    ];
+        // First check the dedicated carrierConfirmations array
+        if (documentData.carrierConfirmations && documentData.carrierConfirmations.length > 0) {
+            carrierConfirmationDocs = [...documentData.carrierConfirmations];
+        }
 
-    // Look for carrier confirmation documents in other collections
-    const additionalConfirmations = allOtherDocs.filter(doc => {
-        const filename = (doc.filename || '').toLowerCase();
-        const documentType = (doc.documentType || '').toLowerCase();
+        // Also check all other document collections for carrier confirmations
+        const allOtherDocs = [
+            ...(documentData.documents || []),
+            ...(documentData.other || []),
+            ...(documentData.bol || []), // Sometimes confirmations are misclassified
+            ...(documentData.labels || []) // Sometimes confirmations are misclassified
+        ];
 
-        return doc.docType === 7 || // Carrier confirmation type
-            documentType === 'carrier_confirmation' ||
-            filename.includes('carrier_confirmation') ||
-            filename.includes('carrier-confirmation') ||
-            (filename.includes('carrier') && filename.includes('confirmation')) ||
-            filename.includes('pickup_confirmation') ||
-            filename.includes('pickup-confirmation');
-    });
+        // Look for carrier confirmation documents in other collections
+        const additionalConfirmations = allOtherDocs.filter(doc => {
+            const filename = (doc.filename || '').toLowerCase();
+            const documentType = (doc.documentType || '').toLowerCase();
 
-    // Combine all carrier confirmation documents
-    if (additionalConfirmations.length > 0) {
-        carrierConfirmationDocs = [...carrierConfirmationDocs, ...additionalConfirmations];
-    }
-
-    // Remove duplicates based on document ID
-    carrierConfirmationDocs = carrierConfirmationDocs.filter((doc, index, self) =>
-        index === self.findIndex(d => d.id === doc.id)
-    );
-
-    if (carrierConfirmationDocs.length > 0) {
-        availableDocuments.push({
-            type: 'CONFIRMATION',
-            name: 'Carrier Confirmation',
-            documents: carrierConfirmationDocs,
-            count: carrierConfirmationDocs.length
+            return doc.docType === 7 || // Carrier confirmation type
+                documentType === 'carrier_confirmation' ||
+                filename.includes('carrier_confirmation') ||
+                filename.includes('carrier-confirmation') ||
+                (filename.includes('carrier') && filename.includes('confirmation')) ||
+                filename.includes('pickup_confirmation') ||
+                filename.includes('pickup-confirmation');
         });
+
+        // Combine all carrier confirmation documents
+        if (additionalConfirmations.length > 0) {
+            carrierConfirmationDocs = [...carrierConfirmationDocs, ...additionalConfirmations];
+        }
+
+        // Remove duplicates based on document ID
+        carrierConfirmationDocs = carrierConfirmationDocs.filter((doc, index, self) =>
+            index === self.findIndex(d => d.id === doc.id)
+        );
+
+        if (carrierConfirmationDocs.length > 0) {
+            availableDocuments.push({
+                type: 'CONFIRMATION',
+                name: 'Carrier Confirmation',
+                documents: carrierConfirmationDocs,
+                count: carrierConfirmationDocs.length
+            });
+        }
     }
 
     if (availableDocuments.length === 0) {

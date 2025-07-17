@@ -145,7 +145,7 @@ const QuickShipCarrierDialog = ({
                 enabled: true
             });
         }
-    }, [editingCarrier]);
+    }, [editingCarrier, editingCarrier?.updatedAt, editingCarrier?.emailContacts]);
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -305,9 +305,8 @@ const QuickShipCarrierDialog = ({
                 } catch (uploadError) {
                     console.error('❌ Logo upload failed:', uploadError);
                     setErrors(prev => ({ ...prev, logo: 'Failed to upload logo. Please try again.' }));
-                    setUploading(false);
-                    setLoading(false);
-                    return;
+                    // Continue with save even if logo upload fails - use existing logo
+                    logoUrl = formData.logo; // Keep existing logo
                 }
             }
 

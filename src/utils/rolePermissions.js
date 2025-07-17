@@ -46,6 +46,14 @@ export const PERMISSIONS = {
   EXPORT_SHIPMENTS: 'export_shipments',
   MANAGE_DRAFT_SHIPMENTS: 'manage_draft_shipments',
   
+  // Financial Information
+  VIEW_SHIPMENT_COSTS: 'view_shipment_costs', // NEW: View cost and profit information
+  VIEW_SHIPMENT_FINANCIALS: 'view_shipment_financials', // NEW: View detailed financial breakdown
+  
+  // Carrier Confirmations
+  VIEW_CARRIER_CONFIRMATIONS: 'view_carrier_confirmations', // NEW: View carrier confirmations
+  GENERATE_CARRIER_CONFIRMATIONS: 'generate_carrier_confirmations', // NEW: Generate/regenerate carrier confirmations
+  
   // Customer Management
   VIEW_CUSTOMERS: 'view_customers',
   CREATE_CUSTOMERS: 'create_customers',
@@ -162,6 +170,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
     
+    // Financial Information - Full access for Admin
+    [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
+    [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
+    
+    // Carrier Confirmations - Full access for Admin
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
+    [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: true,
+    
     // Customer Management
     [PERMISSIONS.VIEW_CUSTOMERS]: true,
     [PERMISSIONS.CREATE_CUSTOMERS]: true,
@@ -271,6 +287,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
     
+    // Financial Information - Company admins can see costs/profits for their company
+    [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
+    [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
+    
+    // Carrier Confirmations - Can view but not generate/regenerate
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
+    [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: true, // Allow regular users to regenerate carrier confirmations
+    
     // Customer Management - Only their company's customers
     [PERMISSIONS.VIEW_CUSTOMERS]: true,
     [PERMISSIONS.CREATE_CUSTOMERS]: true,
@@ -372,6 +396,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
     
+    // Financial Information - Accounting needs to see costs for billing
+    [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
+    [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
+    
+    // Carrier Confirmations - Can view but not generate (read-only for billing context)
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
+    [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
+    
     // Customer Management - View only for billing context
     [PERMISSIONS.VIEW_CUSTOMERS]: true,
     [PERMISSIONS.CREATE_CUSTOMERS]: false,
@@ -464,7 +496,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_ORGANIZATIONS]: false,
     [PERMISSIONS.DELETE_ORGANIZATIONS]: false,
     
-    // Shipment Management - Basic operations
+    // Shipment Management - Basic operations only
     [PERMISSIONS.VIEW_SHIPMENTS]: true,
     [PERMISSIONS.CREATE_SHIPMENTS]: true,
     [PERMISSIONS.EDIT_SHIPMENTS]: false, // Cannot edit existing shipments
@@ -472,6 +504,14 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
+    
+    // Financial Information - RESTRICTED: Company staff cannot see costs/profits
+    [PERMISSIONS.VIEW_SHIPMENT_COSTS]: false,
+    [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: false,
+    
+    // Carrier Confirmations - RESTRICTED: Company staff cannot view or manage carrier confirmations
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: false,
+    [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
     
     // Customer Management - View and create only
     [PERMISSIONS.VIEW_CUSTOMERS]: true,

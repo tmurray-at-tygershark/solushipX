@@ -3,8 +3,9 @@ import { functions } from '../../../firebase';
 import { httpsCallable } from 'firebase/functions';
 import html2pdf from 'html2pdf.js';
 import { PDFDocument } from 'pdf-lib';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 
-export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { labels: [], bol: [], other: [] }, viewPdfInModal, statusUpdateFunctions = {}) => {
+export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { labels: [], bol: [], other: [] }, viewPdfInModal, statusUpdateFunctions = {}, userRole = null) => {
     // Enhanced state for action buttons with individual loading states
     const [actionStates, setActionStates] = useState({
         printLabel: { loading: false, error: null },
@@ -682,24 +683,44 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
         }
     }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar, statusUpdateFunctions]);
 
+    // Check permissions for carrier confirmations
+    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS);
+    const canGenerateCarrierConfirmations = hasPermission(userRole, PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS);
+
+    // TEMPORARY DEBUG: Log permission check for super admin
+    if (userRole === 'superadmin') {
+        console.log('🔐 SUPER ADMIN PERMISSIONS CHECK:', {
+            userRole,
+            canViewCarrierConfirmations,
+            canGenerateCarrierConfirmations,
+            shipmentId: shipment?.shipmentID,
+            hasRegenerateFunction: !!handleRegenerateCarrierConfirmation
+        });
+    }
+
     return {
         actionStates,
         snackbar,
         regenerationDialog,
         handlePrintLabel,
         handlePrintBOL,
-        handlePrintConfirmation,
+        // Only provide carrier confirmation functions if user has permissions
+        handlePrintConfirmation: canViewCarrierConfirmations ? handlePrintConfirmation : null,
         handlePrintShipment,
         handleRefreshStatus,
         handleCancelShipment,
         handleRegenerateBOL,
-        handleRegenerateCarrierConfirmation,
+        // Only provide regeneration function if user can generate confirmations
+        handleRegenerateCarrierConfirmation: canGenerateCarrierConfirmations ? handleRegenerateCarrierConfirmation : null,
         handleEditShipment,
         handleArchiveShipment,
         showSnackbar,
         setSnackbar,
         setActionLoading,
         showRegenerationDialog,
-        closeRegenerationDialog
+        closeRegenerationDialog,
+        // Add permission flags for UI components to check
+        canViewCarrierConfirmations,
+        canGenerateCarrierConfirmations
     };
 };

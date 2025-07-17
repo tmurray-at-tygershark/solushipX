@@ -115,6 +115,38 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
                             const data = doc.data();
                             return { id: doc.id, customerID: data.customerID || doc.id, ...data };
                         });
+
+                        // Debug: Log first few customers to understand structure
+                        console.log('🔍 QuickShipTo: Loaded customers for company:', companyId);
+                        console.log('📋 Total customers:', customersData.length);
+                        if (customersData.length > 0) {
+                            console.log('🔍 Sample customer structures:');
+                            customersData.slice(0, 3).forEach((customer, index) => {
+                                console.log(`Customer ${index + 1}:`, {
+                                    docId: customer.id,
+                                    customerID: customer.customerID,
+                                    name: customer.name || customer.companyName || customer.company,
+                                    isSTIPower: (customer.name === 'STI Power' ||
+                                        customer.companyName === 'STI Power' ||
+                                        customer.company === 'STI Power')
+                                });
+                            });
+
+                            // Check if STI Power exists
+                            const stiPower = customersData.find(c =>
+                                c.name === 'STI Power' ||
+                                c.companyName === 'STI Power' ||
+                                c.company === 'STI Power'
+                            );
+                            if (stiPower) {
+                                console.log('✅ Found STI Power:', {
+                                    docId: stiPower.id,
+                                    customerID: stiPower.customerID,
+                                    name: stiPower.name || stiPower.companyName || stiPower.company
+                                });
+                            }
+                        }
+
                         break;
                     }
                 } catch (queryError) {

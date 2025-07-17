@@ -515,6 +515,7 @@ const QuickShip = ({
     const [availableCustomers, setAvailableCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+    const [customerManuallyCleared, setCustomerManuallyCleared] = useState(false);
 
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
@@ -590,6 +591,28 @@ const QuickShip = ({
 
             // Sort customers by name
             customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            console.log('🎯 CRITICAL: Loaded customers for company:', companyId, {
+                customerCount: customers.length,
+                customers: customers.slice(0, 5).map(c => ({
+                    docId: c.id,
+                    customerID: c.customerID,
+                    name: c.name,
+                    companyID: c.companyID
+                })),
+                message: 'Showing first 5 customers only. Looking for ID: 26cn6rKYoQe3h6E0AuHu'
+            });
+
+            // Check if the specific customer we're looking for exists
+            const targetCustomer = customers.find(c =>
+                c.id === '26cn6rKYoQe3h6E0AuHu' ||
+                c.customerID === '26cn6rKYoQe3h6E0AuHu'
+            );
+            if (targetCustomer) {
+                console.log('✅ Found target customer in loaded list:', targetCustomer);
+            } else {
+                console.log('❌ Target customer NOT in loaded list for company:', companyId);
+            }
 
             setAvailableCustomers(customers);
             // Don't reset customer selection - keep current selection if valid
@@ -680,9 +703,14 @@ const QuickShip = ({
                     setActiveDraftId(prePopulatedData.activeDraftId);
                 }
 
-                // Set selected customer for super admins
-                if (prePopulatedData.selectedCustomerId && userRole === 'superadmin') {
-                    console.log('🔄 Setting selected customer from conversion:', prePopulatedData.selectedCustomerId);
+                // Store selected customer for later application (after customers are loaded)
+                if (prePopulatedData.selectedCustomerId && prePopulatedData.isEditMode) {
+                    console.log('🔄 Edit mode: Storing selected customer for later application:', prePopulatedData.selectedCustomerId);
+                    // Don't set immediately - wait for customers to load
+                }
+                // Set selected customer immediately for conversion mode (not edit mode)
+                else if (prePopulatedData.selectedCustomerId && !prePopulatedData.isEditMode) {
+                    console.log('🔄 Conversion mode: Setting selected customer immediately:', prePopulatedData.selectedCustomerId);
                     setSelectedCustomerId(prePopulatedData.selectedCustomerId);
                 }
 
@@ -695,6 +723,153 @@ const QuickShip = ({
             }
         }
     }, [prePopulatedData, draftId, editMode, userRole]);
+
+    // Handle customer selection from prePopulatedData after customers are loaded (Edit Mode)
+    useEffect(() => {
+        // Only handle edit mode with customer selection requirement
+        if (prePopulatedData?.isEditMode && prePopulatedData?.requiresCustomerSelection &&
+            prePopulatedData.selectedCustomerId && availableCustomers.length > 0 &&
+            !loadingCustomers && selectedCustomerId !== prePopulatedData.selectedCustomerId) {
+
+            console.log('🎯 CRITICAL: Attempting to select customer in QuickShip:', {
+                targetCustomerId: prePopulatedData.selectedCustomerId,
+                currentSelectedCustomerId: selectedCustomerId,
+                availableCustomersCount: availableCustomers.length,
+                availableCustomers: availableCustomers.map(c => ({
+                    docId: c.id,
+                    customerID: c.customerID,
+                    name: c.name
+                }))
+            });
+
+            // Check if the customer exists in the available customers - check both ID fields
+            let matchedCustomer = null;
+            const customerExists = availableCustomers.some(customer => {
+                // Check if the extracted ID matches either the document ID or customerID field
+                const matchByDocId = customer.id === prePopulatedData.selectedCustomerId;
+                const matchByCustomerId = customer.customerID === prePopulatedData.selectedCustomerId;
+                const matches = matchByDocId || matchByCustomerId;
+
+                if (matches) {
+                    matchedCustomer = customer;
+                    console.log('✅ PrePopulated: Customer found in available customers:', {
+                        customerName: customer.name,
+                        customerId: customer.id,
+                        customerID: customer.customerID,
+                        searchingFor: prePopulatedData.selectedCustomerId,
+                        matchedBy: matchByDocId ? 'document ID' : 'customerID field'
+                    });
+                }
+                return matches;
+            });
+
+            if (customerExists && matchedCustomer) {
+                // CRITICAL: Use the document ID for selection, not the customerID field
+                const idToSelect = matchedCustomer.id;
+                console.log('✅ CRITICAL: Customer found, applying selection:', {
+                    extractedCustomerId: prePopulatedData.selectedCustomerId,
+                    willSelectId: idToSelect,
+                    customerName: matchedCustomer.name,
+                    customerID: matchedCustomer.customerID
+                });
+                const previousValue = selectedCustomerId;
+                setSelectedCustomerId(idToSelect);
+                console.log('✅ CRITICAL: Called setSelectedCustomerId:', {
+                    previousValue,
+                    newValue: idToSelect,
+                    willTriggerRerender: previousValue !== idToSelect
+                });
+            } else {
+                console.warn('⚠️ CRITICAL: Customer NOT FOUND in available customers:', {
+                    targetCustomerId: prePopulatedData.selectedCustomerId,
+                    availableCustomers: availableCustomers.map(c => ({
+                        docId: c.id,
+                        customerID: c.customerID,
+                        name: c.name
+                    }))
+                });
+                // Keep 'all' selection if customer not found
+            }
+        }
+    }, [prePopulatedData, availableCustomers, loadingCustomers]);
+
+    // Handle edit shipment data loading with customer extraction
+    useEffect(() => {
+        if (editMode && editShipment && availableCustomers.length > 0 && !loadingCustomers) {
+            console.log('🔧 Edit mode: Checking for customer ID in edit shipment data');
+
+            // Extract customer ID from shipment data
+            let extractedCustomerId = editShipment.customerId || editShipment.customerID;
+
+            // Fallback to shipTo address customer data
+            if (!extractedCustomerId && editShipment.shipTo) {
+                if (editShipment.shipTo.customerID) {
+                    extractedCustomerId = editShipment.shipTo.customerID;
+                    console.log('🔍 Extracted customer ID from shipTo.customerID:', extractedCustomerId);
+                } else if (editShipment.shipTo.addressClass === 'customer' && editShipment.shipTo.addressClassID) {
+                    extractedCustomerId = editShipment.shipTo.addressClassID;
+                    console.log('🔍 Extracted customer ID from shipTo.addressClassID:', extractedCustomerId);
+                }
+            }
+
+            if (extractedCustomerId && extractedCustomerId !== selectedCustomerId) {
+                // Check if customer exists
+                const customerExists = availableCustomers.some(customer =>
+                    customer.id === extractedCustomerId ||
+                    customer.customerID === extractedCustomerId
+                );
+
+                if (customerExists) {
+                    console.log('✅ Edit shipment: Setting customer ID:', extractedCustomerId);
+                    setSelectedCustomerId(extractedCustomerId);
+                } else {
+                    console.warn('⚠️ Edit shipment: Customer not found:', extractedCustomerId);
+
+                    // CRITICAL: For admin users, try to load the customer directly
+                    if ((userRole === 'admin' || userRole === 'superadmin') && extractedCustomerId) {
+                        console.log('🔍 Admin mode: Attempting direct customer lookup for:', extractedCustomerId);
+
+                        // Try to find the customer by document ID first
+                        getDoc(doc(db, 'customers', extractedCustomerId))
+                            .then(customerDoc => {
+                                if (customerDoc.exists()) {
+                                    const customerData = { id: customerDoc.id, ...customerDoc.data() };
+                                    console.log('✅ Found customer by document ID:', customerData);
+
+                                    // Add to available customers and select
+                                    setAvailableCustomers(prev => [...prev, customerData]);
+                                    setSelectedCustomerId(extractedCustomerId);
+                                } else {
+                                    // Try to find by customerID field
+                                    const customerQuery = query(
+                                        collection(db, 'customers'),
+                                        where('customerID', '==', extractedCustomerId),
+                                        limit(1)
+                                    );
+
+                                    getDocs(customerQuery).then(snapshot => {
+                                        if (!snapshot.empty) {
+                                            const customerDoc = snapshot.docs[0];
+                                            const customerData = { id: customerDoc.id, ...customerDoc.data() };
+                                            console.log('✅ Found customer by customerID field:', customerData);
+
+                                            // Add to available customers and select
+                                            setAvailableCustomers(prev => [...prev, customerData]);
+                                            setSelectedCustomerId(customerDoc.id);
+                                        } else {
+                                            console.error('❌ Customer not found in database:', extractedCustomerId);
+                                        }
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('❌ Error loading customer:', error);
+                            });
+                    }
+                }
+            }
+        }
+    }, [editMode, editShipment, availableCustomers, loadingCustomers, userRole]);
 
     // Success message handler
     const showSuccess = (message) => {
@@ -1105,8 +1280,19 @@ const QuickShip = ({
             ));
             setCarrierSuccessMessage(`Carrier "${savedCarrier.name}" has been updated successfully.`);
 
-            // Reset email contact selection to force refresh of EmailSelectorDropdown
-            setSelectedCarrierContactId('');
+            // If the updated carrier is currently selected, refresh the terminal selection
+            if (selectedCarrier === savedCarrier.name) {
+                // Reset and re-establish terminal selection to trigger EmailSelectorDropdown refresh
+                setSelectedCarrierContactId('');
+
+                // Set default terminal after a brief delay to ensure state updates
+                setTimeout(() => {
+                    if (savedCarrier.emailContacts && Array.isArray(savedCarrier.emailContacts) && savedCarrier.emailContacts.length > 0) {
+                        const defaultTerminal = savedCarrier.emailContacts.find(t => t.isDefault) || savedCarrier.emailContacts[0];
+                        setSelectedCarrierContactId(defaultTerminal.id);
+                    }
+                }, 100);
+            }
         } else {
             // Add new carrier to local state
             setQuickShipCarriers(prev => [...prev, savedCarrier]);
@@ -1938,6 +2124,10 @@ const QuickShip = ({
                     referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
 
+                // Customer selection for proper recall
+                customerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+                customerID: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+
                 // Addresses - properly structured from address book with validation
                 shipFrom: {
                     ...shipFromAddress,
@@ -1954,7 +2144,19 @@ const QuickShip = ({
                 shipTo: {
                     ...shipToAddress,
                     addressId: shipToAddress.id,
-                    customerID: shipToAddress.id, // Use address ID as customer reference
+                    customerID: (() => {
+                        // Find the selected customer and use their customerID field, not document ID
+                        if (selectedCustomerId && selectedCustomerId !== 'all') {
+                            const selectedCustomer = availableCustomers.find(c =>
+                                c.id === selectedCustomerId || c.customerID === selectedCustomerId
+                            );
+                            if (selectedCustomer) {
+                                console.log('🎯 Saving customerID field to shipTo:', selectedCustomer.customerID);
+                                return selectedCustomer.customerID; // Use the customerID field, not document ID
+                            }
+                        }
+                        return shipToAddress.id; // Fallback to address ID
+                    })(),
                     type: 'destination',
                     // Ensure all required fields are present
                     companyName: shipToAddress.companyName || shipToAddress.company || 'Unknown Company',
@@ -2003,9 +2205,23 @@ const QuickShip = ({
                 carrierDetails: carrierDetails,
                 selectedCarrierContactId: selectedCarrierContactId, // Include selected terminal for new email system
 
-                // Broker information
+                // Broker information - Enhanced to preserve broker name even without full details
                 selectedBroker: selectedBroker,
-                brokerDetails: selectedBroker ? companyBrokers.find(b => b.name === selectedBroker) : null,
+                brokerDetails: selectedBroker ? (() => {
+                    const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
+                    if (foundBroker) {
+                        return foundBroker;
+                    } else {
+                        // If broker not found in companyBrokers, create minimal broker object to preserve name
+                        console.log('🏢 QUICKSHIP: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
+                        return {
+                            name: selectedBroker,
+                            phone: '',
+                            email: '',
+                            brokerName: selectedBroker // Additional fallback field
+                        };
+                    }
+                })() : null,
                 brokerPort: brokerPort || '', // Add shipment-level broker port
                 brokerReference: brokerReference || '', // Add shipment-level broker reference
                 manualRates: manualRates.map(rate => ({
@@ -2410,8 +2626,8 @@ const QuickShip = ({
                                 setSelectedCarrier(draftData.selectedCarrier);
                             }
 
-                            // Load selected customer ID for super admins
-                            if (draftData.selectedCustomerId && userRole === 'superadmin') {
+                            // Load selected customer ID (for all admin users)
+                            if (draftData.selectedCustomerId) {
                                 console.log('🎯 Loading selected customer from draft:', draftData.selectedCustomerId);
                                 setSelectedCustomerId(draftData.selectedCustomerId);
                             }
@@ -2610,6 +2826,13 @@ const QuickShip = ({
                     setSelectedCarrier(editShipment.carrier);
                 }
 
+                // Load customer selection
+                if (editShipment.customerId || editShipment.customerID) {
+                    const customerId = editShipment.customerId || editShipment.customerID;
+                    console.log('🎯 Loading customer from edit shipment:', customerId);
+                    setSelectedCustomerId(customerId);
+                }
+
                 // Load additional services and create corresponding rate line items
                 if (editShipment.additionalServices && Array.isArray(editShipment.additionalServices)) {
                     setAdditionalServices(editShipment.additionalServices);
@@ -2688,6 +2911,77 @@ const QuickShip = ({
 
         loadEditShipmentData();
     }, [isEditingExistingShipment, editShipment, updateFormSection, showNotification]);
+
+    // Handle customer selection from editShipment after customers are loaded (similar to prePopulatedData handling)
+    useEffect(() => {
+        if (!isEditingExistingShipment || !editShipment) return;
+
+        // Extract customer ID from shipment data
+        let extractedCustomerId = editShipment.customerId || editShipment.customerID;
+
+        // Fallback to shipTo address customer data
+        if (!extractedCustomerId && editShipment.shipTo) {
+            if (editShipment.shipTo.customerID) {
+                extractedCustomerId = editShipment.shipTo.customerID;
+                console.log('🔍 Extracted customer ID from shipTo.customerID:', extractedCustomerId);
+            } else if (editShipment.shipTo.addressClass === 'customer' && editShipment.shipTo.addressClassID) {
+                extractedCustomerId = editShipment.shipTo.addressClassID;
+                console.log('🔍 Extracted customer ID from shipTo.addressClassID:', extractedCustomerId);
+            }
+        }
+
+        // Only apply if we have customers loaded and a customer ID to set, and user hasn't manually cleared
+        if (extractedCustomerId && availableCustomers.length > 0 && !loadingCustomers && !customerManuallyCleared) {
+            console.log('🎯 Applying customer selection from editShipment:', {
+                extractedCustomerId,
+                availableCustomersCount: availableCustomers.length,
+                currentSelectedCustomerId: selectedCustomerId
+            });
+
+            // Check if customer exists in available customers - check both ID fields
+            let matchedCustomer = null;
+            const customerExists = availableCustomers.some(customer => {
+                // Check if the extracted ID matches either the document ID or customerID field
+                const matchByDocId = customer.id === extractedCustomerId;
+                const matchByCustomerId = customer.customerID === extractedCustomerId;
+                const matches = matchByDocId || matchByCustomerId;
+
+                if (matches) {
+                    matchedCustomer = customer;
+                    console.log('✅ Customer found in available customers:', {
+                        customerName: customer.name,
+                        customerId: customer.id,
+                        customerID: customer.customerID,
+                        searchingFor: extractedCustomerId,
+                        matchedBy: matchByDocId ? 'document ID' : 'customerID field'
+                    });
+                }
+                return matches;
+            });
+
+            if (customerExists && matchedCustomer) {
+                // CRITICAL: Use the document ID for selection, not the customerID field
+                const idToSelect = matchedCustomer.id;
+                if (selectedCustomerId !== idToSelect) {
+                    console.log('✅ Setting customer from edit shipment:', {
+                        extractedCustomerId,
+                        willSelectId: idToSelect,
+                        customerName: matchedCustomer.name
+                    });
+                    setSelectedCustomerId(idToSelect);
+                }
+            } else {
+                console.warn('⚠️ Customer not found in available customers:', extractedCustomerId);
+            }
+        }
+    }, [editShipment, isEditingExistingShipment, availableCustomers, loadingCustomers]);
+
+    // Reset manual clearing flag when starting to edit a different shipment
+    useEffect(() => {
+        if (editMode && editShipment) {
+            setCustomerManuallyCleared(false);
+        }
+    }, [editMode, editShipment?.id]); // Reset when editing different shipment
 
     // Additional effect to ensure components are properly updated when draft editing begins
     // Removed - no longer needed since we're using final shipment IDs from the start
@@ -2779,7 +3073,21 @@ const QuickShip = ({
                 selectedCarrier: selectedCarrier || '', // Save empty string if not selected
                 selectedCarrierContactId: selectedCarrierContactId || '', // Save selected email contact
                 selectedBroker: selectedBroker || '', // Save selected broker
-                brokerDetails: selectedBroker ? companyBrokers.find(b => b.name === selectedBroker) : null,
+                brokerDetails: selectedBroker ? (() => {
+                    const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
+                    if (foundBroker) {
+                        return foundBroker;
+                    } else {
+                        // If broker not found in companyBrokers, create minimal broker object to preserve name
+                        console.log('🏢 QUICKSHIP DRAFT: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
+                        return {
+                            name: selectedBroker,
+                            phone: '',
+                            email: '',
+                            brokerName: selectedBroker // Additional fallback field
+                        };
+                    }
+                })() : null,
                 brokerPort: brokerPort || '', // Save shipment-level broker port
                 brokerReference: brokerReference || '', // Save shipment-level broker reference
                 manualRates: manualRates,
@@ -2791,6 +3099,9 @@ const QuickShip = ({
 
                 // Email notification preference
                 sendEmailNotifications: sendEmailNotifications,
+
+                // Customer selection (for admin users)
+                selectedCustomerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
 
                 // Draft specific fields
                 isDraft: true,
@@ -2948,7 +3259,7 @@ const QuickShip = ({
         } finally {
             setLoadingAddresses(false);
         }
-    }, [selectedCustomerId, userRole]);
+    }, [userRole]); // Remove selectedCustomerId since it's passed as parameter
 
     const loadCarriersForCompany = useCallback(async (companyId) => {
         if (!companyId) {
@@ -3178,6 +3489,15 @@ const QuickShip = ({
                 earliestDelivery: openTime,
                 latestDelivery: closeTime
             });
+
+            // FIXED: Don't automatically set customer from address selection in edit mode to prevent infinite loops
+            // If address has customer relationship, set the selected customer (only in create mode)
+            if (!isEditingDraft && !isEditingExistingShipment && address.addressClass === 'customer' && address.addressClassID) {
+                console.log('🔍 Setting customer from selected address:', address.addressClassID);
+                if (availableCustomers.some(c => c.id === address.addressClassID || c.customerID === address.addressClassID)) {
+                    setSelectedCustomerId(address.addressClassID);
+                }
+            }
         }
     };
 
@@ -3334,7 +3654,7 @@ const QuickShip = ({
         return true;
     };
 
-    // Always load addresses, customers, and carriers when company context changes (including first mount)
+    // Load company data when company context changes (not customer filter)
     useEffect(() => {
         // For super admins, prioritize selectedCompanyId over companyIdForAddress to prevent auto switchback
         const currentCompanyId = userRole === 'superadmin' && selectedCompanyId
@@ -3344,26 +3664,21 @@ const QuickShip = ({
         console.log('🟢 useEffect: company context changed, currentCompanyId:', currentCompanyId, 'userRole:', userRole, 'selectedCompanyId:', selectedCompanyId);
 
         if (currentCompanyId) {
-            // Pass the current customer selection to preserve filtering
-            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
+            // Load all company data (don't include selectedCustomerId in this effect to avoid loops)
             loadCustomersForCompany(currentCompanyId);
             loadCarriersForCompany(currentCompanyId);
             loadCompanyBrokers();
+            // Load addresses without customer filter first
+            loadAddressesForCompany(currentCompanyId, null);
         }
-    }, [companyIdForAddress, selectedCompanyId, userRole, selectedCustomerId, loadAddressesForCompany, loadCustomersForCompany, loadCarriersForCompany]);
+    }, [companyIdForAddress, selectedCompanyId, userRole]); // Don't include functions or selectedCustomerId
 
-    // Reload addresses when customer selection changes
-    useEffect(() => {
-        const currentCompanyId = userRole === 'superadmin' && selectedCompanyId
-            ? selectedCompanyId
-            : companyIdForAddress;
+    // REMOVED: Customer filter effect that was causing infinite loops
+    // The customer filter now works without needing to reload addresses from the server
+    // since filtering happens on the client-side in the components
 
-        // Only reload addresses when customer filter changes (not company changes)
-        if (currentCompanyId && userRole === 'superadmin') {
-            // console.log('🔄 Customer filter changed, reloading addresses for company:', currentCompanyId);
-            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
-        }
-    }, [selectedCustomerId, userRole, selectedCompanyId, companyIdForAddress, loadAddressesForCompany]);
+    // REMOVED DUPLICATE: The useEffect above already handles reloading addresses when selectedCustomerId changes
+    // No need for a separate effect that does the same thing
 
     // Add debug log before rendering Ship From/Ship To dropdowns (commented out for performance)
     // console.log('🚚 Rendering Ship From/To dropdowns with availableAddresses:', availableAddresses);
@@ -3430,9 +3745,23 @@ const QuickShip = ({
                 packages,
                 selectedCarrier,
                 selectedCarrierContactId,
-                // Broker information - CRITICAL: Include these fields
+                // Broker information - Enhanced to preserve broker name even without full details
                 selectedBroker: selectedBroker || '',
-                brokerDetails: selectedBroker ? companyBrokers.find(b => b.name === selectedBroker) : null,
+                brokerDetails: selectedBroker ? (() => {
+                    const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
+                    if (foundBroker) {
+                        return foundBroker;
+                    } else {
+                        // If broker not found in companyBrokers, create minimal broker object to preserve name
+                        console.log('🏢 QUICKSHIP UPDATE: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
+                        return {
+                            name: selectedBroker,
+                            phone: '',
+                            email: '',
+                            brokerName: selectedBroker // Additional fallback field
+                        };
+                    }
+                })() : null,
                 brokerPort: brokerPort || '',
                 brokerReference: brokerReference || '',
                 manualRates,
@@ -3441,6 +3770,9 @@ const QuickShip = ({
                 carrier: selectedCarrier,
                 carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
                 sendEmailNotifications,
+                // Customer selection for recall
+                customerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+                customerID: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
                 isDraft: false
             };
             // Update the existing shipment document
@@ -3742,6 +4074,32 @@ const QuickShip = ({
         }
     };
 
+    // Calculate customer autocomplete value to prevent re-renders
+    const customerAutocompleteValue = useMemo(() => {
+        // Show loading state if customers are still loading
+        if (loadingCustomers && availableCustomers.length === 0) {
+            return null; // This will show the loading state
+        }
+
+        if (selectedCustomerId === 'all') {
+            return { id: 'all', name: 'All Customers', customerID: 'all' };
+        }
+
+        // Try to find customer by customerID first, then by id
+        let foundCustomer = availableCustomers.find(customer => customer.customerID === selectedCustomerId);
+
+        if (!foundCustomer) {
+            foundCustomer = availableCustomers.find(customer => customer.id === selectedCustomerId);
+        }
+
+        if (foundCustomer) {
+            return foundCustomer;
+        }
+
+        // Fallback to "All Customers" if not found
+        return { id: 'all', name: 'All Customers', customerID: 'all' };
+    }, [selectedCustomerId, availableCustomers, loadingCustomers]);
+
     return (
         <Box sx={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Modal Header */}
@@ -3872,10 +4230,11 @@ const QuickShip = ({
                             />
                         )}
 
-                    {/* Customer Filter for Super Admins - Show when company is selected */}
+                    {/* Customer Filter for Super Admins - Show when company is selected and customers are loaded */}
                     {userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
                         <Box sx={{ mb: 3 }}>
                             <Autocomplete
+                                loading={loadingCustomers}
                                 options={[{ id: 'all', name: 'All Customers', customerID: 'all' }, ...availableCustomers]}
                                 getOptionLabel={(option) => {
                                     if (option.customerID === 'all' || option.id === 'all') {
@@ -3883,20 +4242,41 @@ const QuickShip = ({
                                     }
                                     return option.name || 'Unknown Customer';
                                 }}
-                                value={(() => {
-                                    if (selectedCustomerId === 'all') {
-                                        return { id: 'all', name: 'All Customers', customerID: 'all' };
-                                    }
-                                    return availableCustomers.find(customer =>
-                                        (customer.customerID || customer.id) === selectedCustomerId
-                                    ) || null;
-                                })()}
+                                value={customerAutocompleteValue}
                                 onChange={(event, newValue) => {
-                                    if (newValue) {
-                                        setSelectedCustomerId(newValue.customerID || newValue.id || 'all');
-                                    } else {
-                                        setSelectedCustomerId('all');
+                                    // Prefer customerID over id for consistency with how data is queried
+                                    const newCustomerId = newValue ? (newValue.customerID || newValue.id || 'all') : 'all';
+                                    setSelectedCustomerId(newCustomerId);
+
+                                    // Track if user manually cleared the customer to prevent auto-reapplication
+                                    if (newCustomerId === 'all' && selectedCustomerId !== 'all') {
+                                        console.log('🚫 Customer manually cleared by user - preventing auto-reapplication');
+                                        setCustomerManuallyCleared(true);
+                                    } else if (newCustomerId !== 'all') {
+                                        // User selected a customer - reset the manual clear flag
+                                        setCustomerManuallyCleared(false);
                                     }
+                                }}
+                                loadingText="Loading customers..."
+                                isOptionEqualToValue={(option, value) => {
+                                    // Check both possible ID fields for matching
+                                    const optionCustomerId = option.customerID;
+                                    const optionId = option.id;
+                                    const valueCustomerId = value.customerID;
+                                    const valueId = value.id;
+
+                                    // Match if either customerID matches or id matches
+                                    const isEqual = (optionCustomerId && optionCustomerId === valueCustomerId) ||
+                                        (optionId && optionId === valueId) ||
+                                        (optionCustomerId && optionCustomerId === valueId) ||
+                                        (optionId && optionId === valueCustomerId);
+
+                                    console.log('🔍 QuickShip isOptionEqualToValue:', {
+                                        option: { id: optionId, customerID: optionCustomerId, name: option.name },
+                                        value: { id: valueId, customerID: valueCustomerId, name: value.name },
+                                        isEqual
+                                    });
+                                    return isEqual;
                                 }}
                                 disabled={loadingCustomers}
                                 renderInput={(params) => {
@@ -3958,6 +4338,12 @@ const QuickShip = ({
                                                         </Box>
                                                     </Box>
                                                 ) : params.InputProps.startAdornment,
+                                                endAdornment: (
+                                                    <>
+                                                        {loadingCustomers ? <CircularProgress color="inherit" size={20} sx={{ mr: 1 }} /> : null}
+                                                        {params.InputProps.endAdornment}
+                                                    </>
+                                                ),
                                             }}
                                         />
                                     );
@@ -4014,11 +4400,6 @@ const QuickShip = ({
                                         )}
                                     </Box>
                                 )}
-                                isOptionEqualToValue={(option, value) => {
-                                    const optionId = option.customerID || option.id;
-                                    const valueId = value.customerID || value.id;
-                                    return optionId === valueId;
-                                }}
                                 filterOptions={(options, { inputValue }) => {
                                     const trimmedInput = inputValue?.trim(); // CRITICAL FIX: Strip leading/trailing spaces
                                     if (!trimmedInput) return options;
@@ -4634,7 +5015,7 @@ const QuickShip = ({
 
                                                         return (
                                                             <EmailSelectorDropdown
-                                                                key={`${selectedCarrierData.id}-${selectedCarrierData.emailContacts?.length || 0}`}
+                                                                key={`${selectedCarrierData.id}-${selectedCarrierData.emailContacts?.length || 0}-${selectedCarrierData.updatedAt || Date.now()}`}
                                                                 carrier={selectedCarrierData}
                                                                 value={selectedCarrierContactId}
                                                                 onChange={(terminalId, terminalData) => {

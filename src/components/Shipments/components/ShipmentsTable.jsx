@@ -10,6 +10,8 @@ import {
     Box
 } from '@mui/material';
 import ShipmentTableRow from './ShipmentTableRow';
+import { useAuth } from '../../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 
 const ShipmentsTable = ({
     loading,
@@ -32,13 +34,17 @@ const ShipmentsTable = ({
     const safeShipments = shipments || [];
     const safeSelected = selected || [];
 
+    // Get user role for permission checking
+    const { userRole } = useAuth();
+
     const isAllSelected = safeShipments.length > 0 && safeSelected.length === safeShipments.length;
     const isIndeterminate = safeSelected.length > 0 && safeSelected.length < safeShipments.length;
 
-    // Check if we're in admin view mode
+    // Check if we're in admin view mode and if user can view costs
     const isAdminView = adminViewMode === 'all' || adminViewMode === 'single';
+    const canViewCosts = hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS);
 
-    // Column configuration - different for admin vs regular view
+    // Column configuration - different for admin vs regular view, and adjust for permissions
     const columnConfig = isAdminView ? {
         // Admin view: Company first, no Created column, plus expand column
         checkbox: { width: 48 },
@@ -48,8 +54,8 @@ const ShipmentsTable = ({
         eta: { width: 100 },
         reference: { width: 120 },
         route: { width: 150 },
-        carrier: { width: 180 },
-        charges: { width: 100 },
+        carrier: canViewCosts ? { width: 180 } : { width: 230 }, // Wider carrier column if no charges column
+        ...(canViewCosts && { charges: { width: 100 } }), // Only include charges column if user can view costs
         status: { width: 110 },
         expand: { width: 40 },
         actions: { width: 60 }
@@ -68,8 +74,8 @@ const ShipmentsTable = ({
         actions: { width: 60 }
     };
 
-    // Calculate total width - same total, redistributed between carrier and status
-    const totalWidth = isAdminView ? 1298 : 1218;
+    // Calculate total width - adjust based on whether charges column is shown
+    const totalWidth = isAdminView ? (canViewCosts ? 1298 : 1248) : 1218;
 
     return (
         <Box sx={{
@@ -193,21 +199,23 @@ const ShipmentsTable = ({
                                     ROUTE
                                 </TableCell>
                                 <TableCell sx={{
-                                    width: 180,
-                                    minWidth: 180,
-                                    maxWidth: 180,
+                                    width: canViewCosts ? 180 : 230,
+                                    minWidth: canViewCosts ? 180 : 230,
+                                    maxWidth: canViewCosts ? 180 : 230,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
                                     CARRIER
                                 </TableCell>
-                                <TableCell sx={{
-                                    width: 100,
-                                    minWidth: 100,
-                                    maxWidth: 100,
-                                    backgroundColor: '#f8fafc !important'
-                                }}>
-                                    CHARGES
-                                </TableCell>
+                                {canViewCosts && (
+                                    <TableCell sx={{
+                                        width: 100,
+                                        minWidth: 100,
+                                        maxWidth: 100,
+                                        backgroundColor: '#f8fafc !important'
+                                    }}>
+                                        CHARGES
+                                    </TableCell>
+                                )}
                                 <TableCell sx={{
                                     width: 110,
                                     minWidth: 110,

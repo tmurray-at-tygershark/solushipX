@@ -283,6 +283,11 @@ class DynamicStatusService {
             return 'created';
         }
 
+        // Handle "Shipment Created" -> "created"  
+        if (title === 'Shipment Created' || title === 'Shipment created') {
+            return 'created';
+        }
+
         // Handle "BOL Generated" -> "booked" (BOL generation typically happens after booking)
         if (title.includes('BOL Generated') || title.includes('BOL generated')) {
             return 'booked';
@@ -348,7 +353,8 @@ class DynamicStatusService {
         const legacyMapping = {
             // Draft/Pending statuses → Pending master status
             'draft': 'pending',
-            'created': 'pending', 
+            'created': 'pending',
+            'shipment created': 'pending',
             'pending': 'pending',
             'awaiting_shipment': 'pending',
             'awaiting shipment': 'pending',
@@ -360,6 +366,8 @@ class DynamicStatusService {
             'booked': 'booked',
             'confirmed': 'booked',
             'accepted': 'booked',
+            'rate entry': 'booked',
+            'carrier selected': 'booked',
 
             // Scheduled statuses → Scheduled master status
             'scheduled': 'scheduled',

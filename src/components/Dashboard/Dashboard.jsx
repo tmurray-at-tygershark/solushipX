@@ -75,6 +75,7 @@ import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc, getD
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { ShipmentFormProvider } from '../../contexts/ShipmentFormContext';
 import { motion as framerMotion } from 'framer-motion';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -4606,9 +4607,22 @@ const Dashboard = () => {
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                 }}>
                     <img
-                        src="/images/integratedcarrriers_logo_white.png"
-                        alt="SoluShipX"
-                        style={{ height: 51 }} // Reduced by 15% from 60px
+                        src={(() => {
+                            // Use company logo if available, fallback to integrated carriers logo
+                            const companyLogoUrl = companyData?.logo || companyData?.logoURL || companyData?.logoUrl || companyData?.companyLogo;
+                            return companyLogoUrl || "/images/integratedcarrriers_logo_white.png";
+                        })()}
+                        alt={companyData?.name || "SoluShipX"}
+                        style={{
+                            height: 51, // Reduced by 15% from 60px
+                            maxWidth: '140px', // Prevent overly wide logos
+                            objectFit: 'contain' // Maintain aspect ratio
+                        }}
+                        onError={(e) => {
+                            // Fallback to integrated carriers logo if company logo fails to load
+                            e.target.src = "/images/integratedcarrriers_logo_white.png";
+                            e.target.alt = "SoluShipX";
+                        }}
                     />
 
 

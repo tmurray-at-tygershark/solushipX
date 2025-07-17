@@ -107,7 +107,15 @@ const TrackingRouteMap = ({
             const originAddress = formatAddress(shipmentData.shipFrom);
             const destinationAddress = formatAddress(shipmentData.shipTo);
 
+            console.log('🗺️ [TrackingRouteMap] Raw address data:', {
+                shipFrom: shipmentData.shipFrom,
+                shipTo: shipmentData.shipTo,
+                originFormatted: originAddress,
+                destinationFormatted: destinationAddress
+            });
+
             if (!originAddress || !destinationAddress) {
+                console.error('❌ [TrackingRouteMap] Missing addresses:', { originAddress, destinationAddress });
                 throw new Error('Missing origin or destination address');
             }
 
@@ -193,21 +201,38 @@ const TrackingRouteMap = ({
             // Calculate optimal zoom and center
             const { center, zoom } = await calculateOptimalZoomAndCenter(originAddress, destinationAddress);
 
-            // Generate static map URL with route and calculated zoom
-            let staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
+            // Check URL length before including polyline to avoid "414 URI Too Long" errors
+            const baseUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
                 `size=1600x600&` +
                 `scale=2&` +
                 `format=png&` +
                 `maptype=roadmap&` +
                 `zoom=${zoom}&` +
                 `key=${mapsApiKey}&` +
-                `path=enc:${polyline}&` +
-                `markers=size:tiny|color:green|${encodeURIComponent(originAddress)}&` +
-                `markers=size:tiny|color:red|${encodeURIComponent(destinationAddress)}`;
+                `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
+                `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
 
-            // Add center if calculated
-            if (center) {
-                staticMapUrl += `&center=${center}`;
+            const centerParam = center ? `&center=${center}` : '';
+            const pathParam = `&path=enc:${polyline}`;
+
+            // Generate static map URL with route if under URL limit (8192 chars), otherwise use markers only
+            let staticMapUrl = baseUrl + centerParam;
+            const totalLength = staticMapUrl.length + pathParam.length;
+
+            console.log('🗺️ [TrackingRouteMap] URL length check:', {
+                baseUrlLength: baseUrl.length,
+                pathParamLength: pathParam.length,
+                totalLength: totalLength,
+                originAddress: originAddress,
+                destinationAddress: destinationAddress
+            });
+
+            if (totalLength < 8000) { // Safe margin under 8192 limit
+                staticMapUrl += pathParam;
+                console.log('✅ [TrackingRouteMap] Using full route polyline');
+            } else {
+                console.log('⚠️ [TrackingRouteMap] Polyline too long, using markers only');
+                console.log(`URL would be ${totalLength} chars, limit is ~8192`);
             }
 
             console.log('✅ [TrackingRouteMap] Route calculated successfully');
@@ -224,6 +249,15 @@ const TrackingRouteMap = ({
                 const fallbackOriginAddress = formatAddress(shipmentData.shipFrom);
                 const fallbackDestinationAddress = formatAddress(shipmentData.shipTo);
 
+                console.log('🔄 [TrackingRouteMap] Fallback addresses:', {
+                    origin: fallbackOriginAddress,
+                    destination: fallbackDestinationAddress
+                });
+
+                if (!fallbackOriginAddress || !fallbackDestinationAddress) {
+                    throw new Error('Fallback addresses are also missing');
+                }
+
                 // Calculate optimal zoom for fallback too
                 const { center: fallbackCenter, zoom: fallbackZoom } = await calculateOptimalZoomAndCenter(fallbackOriginAddress, fallbackDestinationAddress);
 
@@ -234,8 +268,8 @@ const TrackingRouteMap = ({
                     `maptype=roadmap&` +
                     `zoom=${fallbackZoom}&` +
                     `key=${mapsApiKey}&` +
-                    `markers=size:tiny|color:green|${encodeURIComponent(fallbackOriginAddress)}&` +
-                    `markers=size:tiny|color:red|${encodeURIComponent(fallbackDestinationAddress)}`;
+                    `markers=size:mid|color:green|label:A|${encodeURIComponent(fallbackOriginAddress)}&` +
+                    `markers=size:mid|color:red|label:B|${encodeURIComponent(fallbackDestinationAddress)}`;
 
                 // Add center if calculated
                 if (fallbackCenter) {
@@ -243,11 +277,25 @@ const TrackingRouteMap = ({
                 }
 
                 console.log('🔄 [TrackingRouteMap] Using fallback map without route');
+                console.log('🔄 [TrackingRouteMap] Fallback URL:', fallbackUrl);
                 setMapImageUrl(fallbackUrl);
                 setIsCalculating(false);
             } catch (fallbackError) {
                 console.error('❌ [TrackingRouteMap] Fallback also failed:', fallbackError);
-                setMapError('Unable to load map');
+
+                // Last resort: simple map with just the API key
+                const lastResortUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
+                    `size=1600x600&` +
+                    `scale=2&` +
+                    `format=png&` +
+                    `maptype=roadmap&` +
+                    `zoom=6&` +
+                    `center=45.421532,-75.697189&` + // Ottawa, Canada as default center
+                    `key=${mapsApiKey}`;
+
+                console.log('🆘 [TrackingRouteMap] Using last resort map');
+                console.log('🆘 [TrackingRouteMap] Last resort URL:', lastResortUrl);
+                setMapImageUrl(lastResortUrl);
                 setIsCalculating(false);
             }
         }

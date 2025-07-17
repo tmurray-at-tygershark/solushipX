@@ -368,26 +368,28 @@ const ShipmentHeader = ({
                         />
                     </MenuItem>
 
-                    <MenuItem
-                        onClick={() => handleDocumentAction('regenerateConfirmation')}
-                        disabled={actionStates.regenerateConfirmation?.loading}
-                    >
-                        <ListItemIcon>
-                            {actionStates.regenerateConfirmation?.loading ? (
-                                <CircularProgress size={16} color="warning" />
-                            ) : (
-                                <RefreshIcon fontSize="small" color="warning" />
-                            )}
-                        </ListItemIcon>
-                        <ListItemText
-                            primary={actionStates.regenerateConfirmation?.loading ? "Regenerating Confirmation..." : "Regenerate Confirmation"}
-                            secondary={actionStates.regenerateConfirmation?.loading ? "Please wait..." : "Creates new version"}
-                            sx={{
-                                '& .MuiListItemText-primary': { fontSize: '12px' },
-                                '& .MuiListItemText-secondary': { fontSize: '11px' }
-                            }}
-                        />
-                    </MenuItem>
+                    {onRegenerateCarrierConfirmation && (
+                        <MenuItem
+                            onClick={() => handleDocumentAction('regenerateConfirmation')}
+                            disabled={actionStates.regenerateConfirmation?.loading}
+                        >
+                            <ListItemIcon>
+                                {actionStates.regenerateConfirmation?.loading ? (
+                                    <CircularProgress size={16} color="warning" />
+                                ) : (
+                                    <RefreshIcon fontSize="small" color="warning" />
+                                )}
+                            </ListItemIcon>
+                            <ListItemText
+                                primary={actionStates.regenerateConfirmation?.loading ? "Regenerating Confirmation..." : "Regenerate Confirmation"}
+                                secondary={actionStates.regenerateConfirmation?.loading ? "Please wait..." : "Creates new version"}
+                                sx={{
+                                    '& .MuiListItemText-primary': { fontSize: '12px' },
+                                    '& .MuiListItemText-secondary': { fontSize: '11px' }
+                                }}
+                            />
+                        </MenuItem>
+                    )}
                 </Menu>
 
                 {/* Actions Menu */}

@@ -32,7 +32,7 @@ import {
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../firebase';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 
@@ -72,7 +72,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     const shipmentId = propShipmentId || id;
     const authState = useAuth();
     const { currentUser: user } = authState;
-    const { companyIdForAddress } = useCompany();
+    const { companyIdForAddress, setCompanyContext } = useCompany();
     console.log('🔐 Full Auth State in ShipmentDetailX:', authState);
     console.log('👤 User from authState:', user);
 
@@ -82,6 +82,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     // Check if user is admin or super admin - use prop if provided, otherwise calculate
     const isAdmin = propIsAdmin !== undefined ? propIsAdmin : (user?.role === 'admin' || user?.role === 'superadmin');
+
+    // Get user role for permission checking
+    const userRole = user?.role || 'user';
 
     // Follow-up dialog state
     const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
@@ -243,19 +246,76 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         handleEditShipment,
         handleArchiveShipment,
         showRegenerationDialog,
-        closeRegenerationDialog
+        closeRegenerationDialog,
+        canViewCarrierConfirmations,
+        canGenerateCarrierConfirmations
     } = useShipmentActions(shipment, carrierData, shipmentDocuments, (...args) => viewPdfInModalRef.current?.(...args), {
         smartUpdateLoading,
         forceSmartRefresh,
         clearUpdateState,
         refreshShipment,
         fetchShipmentDocuments
-    });
+    }, userRole);
 
     // Custom handlers for modals
-    const handleEditShipmentClick = useCallback(() => {
+    const handleEditShipmentClick = useCallback(async () => {
+        console.log('🔧 Edit shipment clicked - checking company context');
+
+        // Ensure proper company context is set before opening edit modal
+        if (shipment && isAdmin) {
+            const shipmentCompanyId = shipment.companyID || shipment.companyId;
+            console.log('🏢 Shipment company ID:', shipmentCompanyId);
+            console.log('🏢 Current company context:', companyIdForAddress);
+
+            // If we're in admin mode and the shipment belongs to a different company,
+            // we need to switch the company context first
+            if (shipmentCompanyId && shipmentCompanyId !== companyIdForAddress) {
+                try {
+                    console.log('🔄 Admin: Switching company context for edit from', companyIdForAddress, 'to', shipmentCompanyId);
+
+                    // Find the company data
+                    const companiesQuery = query(
+                        collection(db, 'companies'),
+                        where('companyID', '==', shipmentCompanyId),
+                        limit(1)
+                    );
+
+                    const companiesSnapshot = await getDocs(companiesQuery);
+
+                    if (!companiesSnapshot.empty) {
+                        const companyDoc = companiesSnapshot.docs[0];
+                        const companyData = {
+                            id: companyDoc.id,
+                            ...companyDoc.data()
+                        };
+
+                        console.log('✅ Found company data for context switch:', companyData);
+
+                        showSnackbar(`Switching to ${companyData.name} for editing...`, 'info');
+
+                        // Set the company context - this will properly update all downstream components
+                        await setCompanyContext(companyData);
+
+                        // Wait a bit for the context to update
+                        setTimeout(() => {
+                            setEditShipmentModalOpen(true);
+                        }, 500);
+
+                        return;
+                    } else {
+                        console.warn('⚠️ Company not found for ID:', shipmentCompanyId);
+                        showSnackbar('Warning: Company information not found', 'warning');
+                    }
+                } catch (error) {
+                    console.error('❌ Error switching company context:', error);
+                    showSnackbar('Error switching company context', 'error');
+                }
+            }
+        }
+
+        // Default behavior - open modal immediately
         setEditShipmentModalOpen(true);
-    }, []);
+    }, [shipment, isAdmin, companyIdForAddress, showSnackbar, setCompanyContext]);
 
     const handleShipmentUpdated = useCallback((updatedShipment) => {
         // Refresh the shipment data after successful update
@@ -323,6 +383,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         }
     }, [shipment?.id, loadExistingFollowUps]);
 
+
+
     // Enhanced PDF viewer function - identical to working ShipmentDetail
     viewPdfInModalRef.current = async (documentId, filename, title, actionType = 'printLabel', directUrl = null) => {
         try {
@@ -378,6 +440,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
     const [currentPdfTitle, setCurrentPdfTitle] = useState('');
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+
 
     // Auto-open edit modal when editMode is true
     useEffect(() => {
@@ -1316,6 +1380,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 shipment={shipment}
                 carrierData={carrierData}
                 showNotification={showSnackbar}
+                companyIdForAddress={companyIdForAddress}
+                isAdmin={isAdmin}
+                userRole={userRole}
             />
 
             <DocumentRegenerationDialog
@@ -1925,6 +1992,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     )}
                 </DialogContent>
             </Dialog>
+
+
         </ErrorBoundary>
     );
 };

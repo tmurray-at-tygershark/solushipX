@@ -119,28 +119,41 @@ const ManualStatusOverride = ({
     };
 
     const handleMasterStatusSelect = (masterStatus) => {
+        console.log('🔄 Master status selected:', {
+            masterStatus,
+            masterStatusId: masterStatus.id,
+            masterStatusLabel: masterStatus.label,
+            allSubStatuses: subStatuses.length,
+            subStatusesForMaster: subStatuses.filter(status => status.masterStatus === masterStatus.id).length
+        });
+
         setSelectedMasterStatus(masterStatus);
         setSelectedSubStatus(null);
 
         // If there are sub-statuses available, go to step 1, otherwise finish
         const availableSubStatuses = subStatuses.filter(status => status.masterStatus === masterStatus.id);
+        console.log('📊 Available sub-statuses for master:', availableSubStatuses);
+
         if (availableSubStatuses.length > 0) {
+            console.log('➡️ Moving to step 1 (sub-statuses available)');
             setStep(1);
         } else {
+            console.log('✅ No sub-statuses, proceeding directly to confirmation');
             // No sub-statuses available, use master status only
-            handleConfirm();
+            // Pass the masterStatus directly since React state hasn't updated yet
+            handleConfirmWithStatus(masterStatus, null);
         }
     };
 
     const handleSubStatusSelect = (subStatus) => {
-        setSelectedSubStatus(subStatus);
-        handleConfirm();
+        console.log('🔄 Sub-status selected:', subStatus);
+        handleConfirmWithStatus(selectedMasterStatus, subStatus);
     };
 
     const handleSkipSubStatus = () => {
         // Use master status only
-        setSelectedSubStatus(null);
-        handleConfirm();
+        console.log('⏭️ Skipping sub-status, using master only');
+        handleConfirmWithStatus(selectedMasterStatus, null);
     };
 
     const handleBackToMasterStatus = () => {
@@ -148,22 +161,64 @@ const ManualStatusOverride = ({
         setStep(0);
     };
 
+    const handleConfirmWithStatus = (masterStatus, subStatus) => {
+        // Use sub-status if provided, otherwise use master status
+        const finalStatus = subStatus || masterStatus;
+
+        console.log('🎯 handleConfirmWithStatus called:', {
+            masterStatus: masterStatus,
+            subStatus: subStatus,
+            finalStatus: finalStatus,
+            currentStatus: currentStatus,
+            shipmentId: shipment?.id
+        });
+
+        if (finalStatus) {
+            // Temporarily set the state for the confirmation dialog
+            setSelectedMasterStatus(masterStatus);
+            setSelectedSubStatus(subStatus);
+
+            console.log('✅ Status selection confirmed:', {
+                currentStatus,
+                masterStatusLabel: masterStatus?.label,
+                subStatusLabel: subStatus?.statusLabel,
+                finalStatus: finalStatus
+            });
+
+            console.log('🔔 Opening confirmation dialog...');
+            setConfirmDialogOpen(true);
+        } else {
+            console.log('❌ No final status provided, closing editor');
+            setIsEditing(false);
+        }
+    };
+
     const handleConfirm = () => {
         // Use sub-status if selected, otherwise use master status
         const finalStatus = selectedSubStatus || selectedMasterStatus;
 
+        console.log('🎯 handleConfirm called:', {
+            selectedMasterStatus: selectedMasterStatus,
+            selectedSubStatus: selectedSubStatus,
+            finalStatus: finalStatus,
+            currentStatus: currentStatus,
+            shipmentId: shipment?.id
+        });
+
         if (finalStatus) {
             // Always show confirmation dialog when a status is selected
             // This ensures all changes (including sub-status changes within same master) are processed
-            console.log('Status selection confirmed:', {
+            console.log('✅ Status selection confirmed:', {
                 currentStatus,
                 selectedMasterStatus: selectedMasterStatus?.label,
                 selectedSubStatus: selectedSubStatus?.statusLabel,
                 finalStatus: finalStatus
             });
 
+            console.log('🔔 Opening confirmation dialog...');
             setConfirmDialogOpen(true);
         } else {
+            console.log('❌ No final status selected, closing editor');
             setIsEditing(false);
         }
     };
@@ -171,8 +226,18 @@ const ManualStatusOverride = ({
     const handleConfirmStatusOverride = async () => {
         const finalStatus = selectedSubStatus || selectedMasterStatus;
 
+        console.log('🚀 Starting status override:', {
+            finalStatus: finalStatus,
+            shipmentId: shipment?.id,
+            selectedMasterStatus: selectedMasterStatus,
+            selectedSubStatus: selectedSubStatus
+        });
+
         if (!finalStatus || !shipment?.id) {
-            console.error('Missing required data for status override');
+            console.error('❌ Missing required data for status override:', {
+                finalStatus: !!finalStatus,
+                shipmentId: !!shipment?.id
+            });
             return;
         }
 
@@ -241,21 +306,27 @@ const ManualStatusOverride = ({
                 enhancedStatus: enhancedStatusInfo
             });
 
+            console.log('📨 Cloud function result:', result.data);
+
             if (result.data.success) {
                 const statusLabel = selectedSubStatus ? selectedSubStatus.statusLabel : selectedMasterStatus.displayLabel;
+                console.log('✅ Status update successful:', statusLabel);
                 onShowSnackbar(`Status manually updated to ${statusLabel}`, 'success');
 
                 // Call the callback to refresh shipment data
                 if (onStatusUpdated) {
+                    console.log('🔄 Calling onStatusUpdated callback with:', legacyStatusCode);
                     onStatusUpdated(legacyStatusCode); // Use the legacy status code for updates
                 }
 
+                console.log('🧹 Cleaning up state and closing dialogs...');
                 setIsEditing(false);
                 setConfirmDialogOpen(false);
                 setSelectedMasterStatus(null);
                 setSelectedSubStatus(null);
                 setStep(0);
             } else {
+                console.error('❌ Cloud function returned error:', result.data.error);
                 throw new Error(result.data.error || 'Failed to update status');
             }
         } catch (error) {

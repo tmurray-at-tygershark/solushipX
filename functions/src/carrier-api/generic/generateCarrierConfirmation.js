@@ -195,14 +195,26 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
     let totalSkids = 0;
     
     packages.forEach(pkg => {
-        // Parse weight with enhanced logic
-        const rawWeight = pkg.weight || pkg.reported_weight || pkg.Weight || pkg.packageWeight || 0;
-        const weight = parseFloat(String(rawWeight).replace(/[^\d.-]/g, '')) || 0;
+        // CRITICAL FIX: Use totalWeight if available (QuickShip pre-calculates this)
+        let packageWeight = 0;
+        
+        if (pkg.totalWeight && pkg.totalWeight > 0) {
+            // QuickShip stores pre-calculated totalWeight (weight × quantity)
+            packageWeight = parseFloat(pkg.totalWeight) || 0;
+            console.log('📦 CARRIER CONFIRMATION: Using pre-calculated totalWeight:', packageWeight);
+        } else {
+            // Fallback: Calculate weight × quantity for other shipment types
+            const rawWeight = pkg.weight || pkg.reported_weight || pkg.Weight || pkg.packageWeight || 0;
+            const weight = parseFloat(String(rawWeight).replace(/[^\d.-]/g, '')) || 0;
+            const quantity = parseInt(String(pkg.quantity || pkg.packagingQuantity || pkg.pieces || 1).replace(/[^\d]/g, '')) || 1;
+            packageWeight = weight * quantity;
+            console.log('📦 CARRIER CONFIRMATION: Calculated weight × quantity:', weight, '×', quantity, '=', packageWeight);
+        }
+        
+        totalWeight += packageWeight;
         
         // Parse quantity with fallback
         const quantity = parseInt(String(pkg.quantity || pkg.packagingQuantity || pkg.pieces || 1).replace(/[^\d]/g, '')) || 1;
-        
-        totalWeight += (weight * quantity); // FIXED: Weight × Quantity like BOL
         totalPieces += quantity;
         
         // Count skids/pallets
@@ -522,29 +534,87 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         // Special instructions - combined from all sources
         specialInstructions: specialInstructions.join(' | ') || '',
         
-        // Broker information - now populated from shipment data with enhanced debugging
+        // Broker information - Enhanced logic to handle broker names without full contact details
         broker: (() => {
-            const brokerName = shipmentData.brokerDetails?.name || shipmentData.selectedBroker || '';
-            console.log('🏢 CARRIER CONFIRMATION: Broker name extracted:', {
+            // Priority order: brokerDetails.name > selectedBroker > fallback to broker object inspection
+            let brokerName = shipmentData.brokerDetails?.name || shipmentData.selectedBroker || '';
+            
+            // FALLBACK: If no name found but brokerDetails exists, try to extract name from object
+            if (!brokerName && shipmentData.brokerDetails) {
+                // Check if brokerDetails has name in other properties
+                brokerName = shipmentData.brokerDetails.brokerName || 
+                            shipmentData.brokerDetails.companyName || 
+                            shipmentData.brokerDetails.id || '';
+            }
+            
+            console.log('🏢 CARRIER CONFIRMATION: Enhanced broker name extraction:', {
                 brokerDetailsName: shipmentData.brokerDetails?.name,
                 selectedBroker: shipmentData.selectedBroker,
+                brokerDetailsObject: shipmentData.brokerDetails,
                 finalBrokerName: brokerName,
                 hasBrokerDetails: !!shipmentData.brokerDetails,
-                brokerDetailsKeys: shipmentData.brokerDetails ? Object.keys(shipmentData.brokerDetails) : []
+                brokerDetailsKeys: shipmentData.brokerDetails ? Object.keys(shipmentData.brokerDetails) : [],
+                extractionSource: brokerName ? (
+                    shipmentData.brokerDetails?.name ? 'brokerDetails.name' :
+                    shipmentData.selectedBroker ? 'selectedBroker' : 'fallback'
+                ) : 'none'
             });
             return brokerName;
         })(),
         brokerPhone: (() => {
-            const phone = shipmentData.brokerDetails?.phone || '';
-            console.log('🏢 CARRIER CONFIRMATION: Broker phone extracted:', phone);
+            // Enhanced phone extraction from multiple possible fields
+            const phone = shipmentData.brokerDetails?.phone || 
+                         shipmentData.brokerDetails?.telephone || 
+                         shipmentData.brokerDetails?.contactPhone || 
+                         shipmentData.brokerDetails?.phoneNumber || '';
+            console.log('🏢 CARRIER CONFIRMATION: Enhanced broker phone extracted:', phone);
             return phone;
         })(),
         brokerEmail: (() => {
-            const email = shipmentData.brokerDetails?.email || '';
-            console.log('🏢 CARRIER CONFIRMATION: Broker email extracted:', email);
+            // Enhanced email extraction from multiple possible fields  
+            const email = shipmentData.brokerDetails?.email || 
+                         shipmentData.brokerDetails?.contactEmail || 
+                         shipmentData.brokerDetails?.emailAddress || '';
+            console.log('🏢 CARRIER CONFIRMATION: Enhanced broker email extracted:', email);
             return email;
         })(),
-        brokerFax: '', // Keep empty as not used
+        brokerFax: (() => {
+            // Enhanced fax extraction from multiple possible fields
+            const fax = shipmentData.brokerDetails?.fax || 
+                       shipmentData.brokerDetails?.faxNumber || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker fax extracted:', fax);
+            return fax;
+        })(),
+        brokerContact: (() => {
+            // Extract contact person name from multiple possible fields
+            const contact = shipmentData.brokerDetails?.contactName || 
+                          shipmentData.brokerDetails?.contact || 
+                          shipmentData.brokerDetails?.contactPerson || 
+                          shipmentData.brokerDetails?.representative || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker contact extracted:', contact);
+            return contact;
+        })(),
+        brokerAddress: (() => {
+            // Extract broker address information
+            const address = shipmentData.brokerDetails?.address || 
+                          shipmentData.brokerDetails?.street || 
+                          shipmentData.brokerDetails?.addressLine1 || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker address extracted:', address);
+            return address;
+        })(),
+        brokerCity: (() => {
+            // Extract broker city
+            const city = shipmentData.brokerDetails?.city || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker city extracted:', city);
+            return city;
+        })(),
+        brokerState: (() => {
+            // Extract broker state/province
+            const state = shipmentData.brokerDetails?.state || 
+                         shipmentData.brokerDetails?.province || '';
+            console.log('🏢 CARRIER CONFIRMATION: Broker state/province extracted:', state);
+            return state;
+        })(),
         port: (() => {
             const port = shipmentData.brokerPort || '';
             console.log('🏢 CARRIER CONFIRMATION: Broker port extracted:', port);
@@ -1375,68 +1445,81 @@ function drawEnhancedBrokerSection(doc, data) {
     const col3LabelX = 385;   // Third column
     const col3ValueX = 435;   // Third column value
     
-    // Row 1: Broker Name, Phone, Port (3 columns)
-    // Column 1: Broker Name
-    doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .fillColor('#333333')
-       .text(upperCaseText('Broker'), col1LabelX, yPos);
+    // ENHANCED BROKER SECTION - Display all available broker information dynamically
     
-    doc.fillColor('#000000')
-       .text(':', col1ValueX - 5, yPos);
+    // Collect all available broker fields
+    const brokerFields = [
+        { label: 'Broker', value: data.broker, priority: 1 },
+        { label: 'Contact', value: data.brokerContact, priority: 2 },
+        { label: 'Phone', value: data.brokerPhone, priority: 3 },
+        { label: 'Email', value: data.brokerEmail, priority: 4, isEmail: true },
+        { label: 'Fax', value: data.brokerFax, priority: 5 },
+        { label: 'Address', value: data.brokerAddress, priority: 6 },
+        { label: 'City', value: data.brokerCity, priority: 7 },
+        { label: 'State', value: data.brokerState, priority: 8 },
+        { label: 'Port', value: data.port, priority: 9 },
+        { label: 'Reference', value: data.brokerRef, priority: 10 }
+    ].filter(field => field.value && field.value.trim() !== ''); // Only show fields with values
     
-    doc.font('Helvetica')
-       .text(data.broker || '', col1ValueX, yPos, { width: 115 });
+    console.log('🏢 CARRIER CONFIRMATION: Displaying broker fields:', brokerFields.map(f => `${f.label}: ${f.value}`));
     
-    // Column 2: Phone
-    doc.font('Helvetica-Bold')
-       .fillColor('#333333')
-       .text(upperCaseText('Phone'), col2LabelX, yPos);
+    if (brokerFields.length === 0) {
+        // If no broker information available, show "N/A"
+        doc.font('Helvetica')
+           .fontSize(9)
+           .fillColor('#666666')
+           .text('No broker information available', col1LabelX, yPos);
+        return;
+    }
     
-    doc.fillColor('#000000')
-       .text(':', col2ValueX - 5, yPos);
+    // Dynamic field layout - 3 columns, multiple rows as needed
+    let currentRow = 0;
+    let currentCol = 0;
+    const maxCols = 3;
+    const rowHeight = 16;
     
-    doc.font('Helvetica')
-       .text(data.brokerPhone || '', col2ValueX, yPos, { width: 115 });
-    
-    // Column 3: Port
-    doc.font('Helvetica-Bold')
-       .fillColor('#333333')
-       .text(upperCaseText('Port'), col3LabelX, yPos);
-    
-    doc.fillColor('#000000')
-       .text(':', col3ValueX - 5, yPos);
-    
-    doc.font('Helvetica')
-       .text(data.port || '', col3ValueX, yPos, { width: 140 });
-    
-    // Row 2: Email and Reference (2 columns spanning more space)
-    yPos += 16;
-    
-    // Email (spans first two columns)
-    doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .fillColor('#333333')
-       .text(upperCaseText('Email'), col1LabelX, yPos);
-    
-    doc.fillColor('#000000')
-       .text(':', col1ValueX - 5, yPos);
-    
-    doc.font('Helvetica')
-       .fontSize(8)
-       .text(data.brokerEmail || '', col1ValueX, yPos, { width: 240 });
-    
-    // Reference (third column area) - FIXED: Moved value 30px to the right
-    doc.font('Helvetica-Bold')
-       .fontSize(9)
-       .fillColor('#333333')
-       .text(upperCaseText('Reference'), col3LabelX, yPos);
-    
-    doc.fillColor('#000000')
-       .text(':', col3ValueX + 25, yPos);  // Moved colon 30px right
-    
-    doc.font('Helvetica')
-       .text(data.brokerRef || '', col3ValueX + 30, yPos, { width: 110 });  // Moved value 30px right
+    brokerFields.forEach((field, index) => {
+        // Calculate position
+        let labelX, valueX, colWidth;
+        
+        if (currentCol === 0) {
+            labelX = col1LabelX;
+            valueX = col1ValueX;
+            colWidth = 115;
+        } else if (currentCol === 1) {
+            labelX = col2LabelX;
+            valueX = col2ValueX;
+            colWidth = 115;
+        } else {
+            labelX = col3LabelX;
+            valueX = col3ValueX;
+            colWidth = 140;
+        }
+        
+        const currentY = yPos + (currentRow * rowHeight);
+        
+        // Draw label
+        doc.font('Helvetica-Bold')
+           .fontSize(9)
+           .fillColor('#333333')
+           .text(upperCaseText(field.label), labelX, currentY);
+        
+        // Draw colon
+        doc.fillColor('#000000')
+           .text(':', valueX - 5, currentY);
+        
+        // Draw value (smaller font for emails)
+        doc.font('Helvetica')
+           .fontSize(field.isEmail ? 8 : 9)
+           .text(field.value, valueX, currentY, { width: colWidth });
+        
+        // Move to next position
+        currentCol++;
+        if (currentCol >= maxCols) {
+            currentCol = 0;
+            currentRow++;
+        }
+    });
 }
 
 /**
