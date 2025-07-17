@@ -30,6 +30,7 @@ const TrackingRouteMap = ({
     const [isCalculating, setIsCalculating] = useState(false);
     const [routeInfo, setRouteInfo] = useState(null);
     const [mapsApiKey, setMapsApiKey] = useState(null);
+    const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
 
     // Format addresses for API
     const formatAddress = (address) => {
@@ -103,6 +104,22 @@ const TrackingRouteMap = ({
     const calculateRouteAndGenerateMap = async () => {
         setIsCalculating(true);
         setMapError(null);
+
+        // Check if Google Maps is loaded
+        if (!window.google || !window.google.maps) {
+            console.error('❌ [TrackingRouteMap] Google Maps not loaded yet');
+            setMapError('Google Maps is still loading. Please wait...');
+            setIsCalculating(false);
+            return;
+        }
+
+        // Check if API key is available
+        if (!mapsApiKey) {
+            console.error('❌ [TrackingRouteMap] Google Maps API key not available');
+            setMapError('Google Maps API key not available. Please wait...');
+            setIsCalculating(false);
+            return;
+        }
 
         // Define addresses at function scope so they're available in catch blocks
         const originAddress = formatAddress(shipmentData.shipFrom);
@@ -218,6 +235,7 @@ const TrackingRouteMap = ({
             }
 
             const routeData = await routeResponse.json();
+            console.log('🗺️ [TrackingRouteMap] Full route API response:', routeData);
 
             if (!routeData.routes || routeData.routes.length === 0) {
                 console.error('❌ [TrackingRouteMap] No routes in API response:', routeData);
@@ -270,24 +288,36 @@ const TrackingRouteMap = ({
             const centerLat = center.lat();
             const centerLng = center.lng();
 
-            // Calculate zoom based on distance (like ShipmentDetailX)
+            // Calculate zoom based on distance (more conservative for long routes)
             const latDiff = Math.abs(originResult.geometry.location.lat() - destinationResult.geometry.location.lat());
             const lngDiff = Math.abs(originResult.geometry.location.lng() - destinationResult.geometry.location.lng());
             const maxDiff = Math.max(latDiff, lngDiff);
 
             let zoom;
-            if (maxDiff > 50) zoom = 3;
-            else if (maxDiff > 20) zoom = 4;
-            else if (maxDiff > 10) zoom = 5;
-            else if (maxDiff > 5) zoom = 6;
-            else if (maxDiff > 2) zoom = 7;
-            else if (maxDiff > 1) zoom = 8;
-            else if (maxDiff > 0.5) zoom = 9;
-            else zoom = 10;
+            if (maxDiff > 50) zoom = 2;      // Trans-continental routes
+            else if (maxDiff > 25) zoom = 3; // Very long routes like Toronto-Orlando  
+            else if (maxDiff > 15) zoom = 4; // Long cross-country
+            else if (maxDiff > 10) zoom = 5; // Regional long distance
+            else if (maxDiff > 5) zoom = 6;  // State-to-state
+            else if (maxDiff > 2) zoom = 7;  // Regional
+            else if (maxDiff > 1) zoom = 8;  // City-to-city
+            else if (maxDiff > 0.5) zoom = 9; // Local
+            else zoom = 10;                   // Very local
 
-            // Step 4: Generate static map URL with advanced polyline (like ShipmentDetailX)
+            console.log('🗺️ [TrackingRouteMap] Route bounds calculation:', {
+                originLat: originResult.geometry.location.lat(),
+                originLng: originResult.geometry.location.lng(),
+                destinationLat: destinationResult.geometry.location.lat(),
+                destinationLng: destinationResult.geometry.location.lng(),
+                latDiff,
+                lngDiff,
+                maxDiff,
+                calculatedZoom: zoom
+            });
+
+            // Step 4: Generate static map URL with advanced polyline (square format for better height)
             const baseUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
-                `size=1600x600&` +
+                `size=800x800&` +
                 `scale=2&` +
                 `format=png&` +
                 `maptype=roadmap&` +
@@ -297,19 +327,65 @@ const TrackingRouteMap = ({
                 `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
                 `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
 
-            // Try enhanced polyline path (like ShipmentDetailX)
-            const pathParam = `&path=color:0x0066cc|weight:4|enc:${polyline}`;
-            const totalLength = baseUrl.length + pathParam.length;
+            // Try enhanced polyline path (like ShipmentDetailX) with simplification
+            let finalPolyline = polyline;
+            let pathParam = `&path=color:0x0066cc|weight:4|enc:${finalPolyline}`;
+            let totalLength = baseUrl.length + pathParam.length;
+
+            // If the polyline is too long, try to simplify it
+            if (totalLength >= 8000) {
+                console.log('🔧 [TrackingRouteMap] Polyline too long, attempting simplification...');
+                console.log('📏 [TrackingRouteMap] Original polyline length:', polyline.length);
+
+                // Decode polyline to coordinates using Google Maps geometry library
+                if (window.google && window.google.maps && window.google.maps.geometry) {
+                    try {
+                        const path = window.google.maps.geometry.encoding.decodePath(polyline);
+                        console.log('📍 [TrackingRouteMap] Original path points:', path.length);
+
+                        // Simplify by taking every Nth point (more aggressive simplification for longer routes)
+                        const simplificationFactor = Math.max(2, Math.ceil(path.length / 100));
+                        const simplifiedPath = path.filter((point, index) =>
+                            index === 0 || index === path.length - 1 || index % simplificationFactor === 0
+                        );
+
+                        console.log('📍 [TrackingRouteMap] Simplified path points:', simplifiedPath.length, 'using factor:', simplificationFactor);
+
+                        // Re-encode the simplified path
+                        const simplifiedPolyline = window.google.maps.geometry.encoding.encodePath(simplifiedPath);
+                        console.log('📏 [TrackingRouteMap] Simplified polyline length:', simplifiedPolyline.length);
+
+                        pathParam = `&path=color:0x0066cc|weight:4|enc:${simplifiedPolyline}`;
+                        totalLength = baseUrl.length + pathParam.length;
+
+                        console.log('📏 [TrackingRouteMap] Simplified URL length:', totalLength);
+
+                        if (totalLength < 8000) {
+                            finalPolyline = simplifiedPolyline;
+                            console.log('✅ [TrackingRouteMap] Using simplified polyline');
+                        } else {
+                            console.log('⚠️ [TrackingRouteMap] Even simplified polyline too long, using markers only');
+                        }
+                    } catch (simplifyError) {
+                        console.error('❌ [TrackingRouteMap] Error simplifying polyline:', simplifyError);
+                    }
+                } else {
+                    console.log('⚠️ [TrackingRouteMap] Google Maps geometry library not available for simplification');
+                }
+            }
 
             let staticMapUrl = baseUrl;
             if (totalLength < 8000) {
                 staticMapUrl += pathParam;
-                console.log('✅ [TrackingRouteMap] Using advanced route polyline with color and weight');
+                console.log('✅ [TrackingRouteMap] Using route polyline with color and weight');
+                console.log('🛣️ [TrackingRouteMap] Polyline data:', finalPolyline.substring(0, 100) + '...');
+                console.log('🔢 [TrackingRouteMap] Final URL length:', totalLength);
             } else {
                 console.log('⚠️ [TrackingRouteMap] Polyline too long, using markers only');
+                console.log('🔢 [TrackingRouteMap] URL would be:', totalLength, 'characters');
             }
 
-            console.log('🖼️ Advanced static map URL generated:', staticMapUrl);
+            console.log('🖼️ [TrackingRouteMap] Final static map URL:', staticMapUrl.substring(0, 200) + '...');
 
             setMapImageUrl(staticMapUrl);
             setIsCalculating(false);
@@ -454,19 +530,78 @@ const TrackingRouteMap = ({
                     onLine: navigator.onLine
                 });
 
-                const keysSnapshot = await getDocs(collection(db, 'keys'));
+                const keysRef = collection(db, 'keys');
+                console.log('🗺️ [TrackingRouteMap] About to query keys collection...');
+                console.log('🗺️ [TrackingRouteMap] Keys collection reference:', keysRef);
+
+                // Add timeout to detect hanging queries
+                const queryPromise = getDocs(keysRef);
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Firestore query timeout after 10 seconds')), 10000)
+                );
+
+                console.log('🗺️ [TrackingRouteMap] Starting Firestore query with 10s timeout...');
+                const keysSnapshot = await Promise.race([queryPromise, timeoutPromise]);
                 console.log('🗺️ [TrackingRouteMap] Keys query completed. Empty?:', keysSnapshot.empty, 'Size:', keysSnapshot.size);
 
                 if (!keysSnapshot.empty) {
                     const firstDoc = keysSnapshot.docs[0];
                     const keyData = firstDoc.data();
-                    console.log('🗺️ [TrackingRouteMap] Key document data keys:', Object.keys(keyData));
-
                     const key = keyData.googleAPI;
                     if (key) {
-                        console.log('✅ [TrackingRouteMap] Maps API key found:', key.substring(0, 10) + '...');
+                        console.log('✅ [TrackingRouteMap] Maps API key found and loaded successfully');
 
                         setMapsApiKey(key);
+
+                        // Load Google Maps script if not already loaded
+                        if (!window.google || !window.google.maps) {
+                            console.log('🔄 [TrackingRouteMap] Loading Google Maps script...');
+                            const script = document.createElement('script');
+                            script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,places`;
+                            script.async = true;
+                            script.defer = true;
+
+                            script.onload = () => {
+                                console.log('✅ [TrackingRouteMap] Google Maps script loaded successfully');
+                                setIsGoogleMapsLoaded(true);
+                                // Don't trigger route calculation here - let the second useEffect handle it
+                                // when both mapsApiKey state and Google Maps are ready
+                            };
+
+                            script.onerror = (error) => {
+                                console.error('❌ [TrackingRouteMap] Failed to load Google Maps script:', error);
+                                setMapError('Failed to load Google Maps script');
+                            };
+
+                            // Check if script already exists
+                            const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
+                            if (!existingScript) {
+                                document.head.appendChild(script);
+                            } else {
+                                console.log('🔄 [TrackingRouteMap] Google Maps script already exists, waiting for load...');
+                                // Wait for existing script to load
+                                const checkMaps = setInterval(() => {
+                                    if (window.google && window.google.maps) {
+                                        console.log('✅ [TrackingRouteMap] Google Maps loaded from existing script');
+                                        setIsGoogleMapsLoaded(true);
+                                        clearInterval(checkMaps);
+                                        // Don't trigger route calculation here - let the second useEffect handle it
+                                        // when both mapsApiKey state and Google Maps are ready
+                                    }
+                                }, 500);
+
+                                // Clean up after 15 seconds if not loaded
+                                setTimeout(() => {
+                                    clearInterval(checkMaps);
+                                    if (!window.google || !window.google.maps) {
+                                        console.log('⚠️ [TrackingRouteMap] Google Maps failed to load within 15 seconds');
+                                        setMapError('Failed to load Google Maps within timeout');
+                                    }
+                                }, 15000);
+                            }
+                        } else {
+                            console.log('✅ [TrackingRouteMap] Google Maps already loaded');
+                        }
                     } else {
                         console.warn('❌ [TrackingRouteMap] Google Maps API key not found in keys collection');
 
@@ -492,10 +627,23 @@ const TrackingRouteMap = ({
     }, []);
 
     useEffect(() => {
-        if (mapsApiKey && shipmentData && shipmentData.shipFrom && shipmentData.shipTo) {
+        if (mapsApiKey && shipmentData && shipmentData.shipFrom && shipmentData.shipTo && isGoogleMapsLoaded) {
+            console.log('🗺️ [TrackingRouteMap] All conditions met, calculating route...', {
+                hasMapsApiKey: !!mapsApiKey,
+                hasShipmentData: !!shipmentData,
+                hasAddresses: !!(shipmentData?.shipFrom && shipmentData?.shipTo),
+                isGoogleMapsLoaded: !!isGoogleMapsLoaded
+            });
             calculateRouteAndGenerateMap();
+        } else {
+            console.log('🗺️ [TrackingRouteMap] Waiting for dependencies...', {
+                hasMapsApiKey: !!mapsApiKey,
+                hasShipmentData: !!shipmentData,
+                hasAddresses: !!(shipmentData?.shipFrom && shipmentData?.shipTo),
+                isGoogleMapsLoaded: !!isGoogleMapsLoaded
+            });
         }
-    }, [mapsApiKey, shipmentData]);
+    }, [mapsApiKey, shipmentData, isGoogleMapsLoaded]);
 
     if (loading || isCalculating) {
         return (
@@ -567,12 +715,15 @@ const TrackingRouteMap = ({
                 </Box>
             )}
 
-            {/* Clean Map Container */}
+            {/* Clean Map Container - Square format for better route visibility */}
             <Box sx={{
                 position: 'relative',
-                height: height,
+                width: '100%',
+                aspectRatio: '1', // Makes it square regardless of container width
                 overflow: 'hidden',
-                borderRadius: 1
+                borderRadius: 1,
+                maxWidth: 800, // Limit maximum size
+                mx: 'auto' // Center the map
             }}>
                 {mapImageUrl && (
                     <img

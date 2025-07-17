@@ -671,7 +671,7 @@ function drawExactShippingSection(doc, bolData) {
         doc.font('Helvetica')
            .fontSize(6)
            .text(bolData.shipFrom.specialInstructions, 85, yPos, { 
-               width: 115, // Reduced width to prevent overlap
+               width: 210, // Increased width to use more available space
                height: 20
            });
     }
@@ -783,7 +783,7 @@ function drawExactShippingSection(doc, bolData) {
         doc.font('Helvetica')
            .fontSize(6)
            .text(bolData.shipTo.specialInstructions, 85, shipToYPos, { 
-               width: 115, // Reduced width to make room for open/close times
+               width: 210, // Increased width to use more available space
                height: 20
            });
     }

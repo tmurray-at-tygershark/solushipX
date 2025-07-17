@@ -1142,7 +1142,6 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         Tracking History
                                     </Typography>
                                     <Box sx={{
-                                        maxHeight: '600px',
                                         overflowY: 'auto',
                                         pr: 1,
                                         '&::-webkit-scrollbar': { width: '4px' },
