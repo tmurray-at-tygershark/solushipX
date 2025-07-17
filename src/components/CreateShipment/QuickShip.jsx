@@ -3003,8 +3003,11 @@ const QuickShip = ({
         setError(null);
 
         try {
-            // Remove validation - Ship Later should save whatever is currently entered
-            // This allows users to save incomplete work and come back later
+            // Use lenient draft validation - allows saving without carrier
+            if (!validateQuickShipDraft()) {
+                setIsSavingDraft(false);
+                return;
+            }
 
             console.log('Saving QuickShip draft:', {
                 shipmentID,
@@ -3613,11 +3616,12 @@ const QuickShip = ({
         return { valid: true };
     };
 
+    // Validation for booking - requires all fields
     const validateQuickShipForm = () => {
         // Clear any existing errors
         setError(null);
 
-        // Validate carrier
+        // Validate carrier (required for booking)
         if (!selectedCarrier) {
             setError(ERROR_MESSAGES.MISSING_CARRIER);
             return false;
@@ -3650,6 +3654,55 @@ const QuickShip = ({
             return false;
         }
 
+        // All validations passed
+        return true;
+    };
+
+    // Validation for drafts - more lenient, allows saving with missing carrier
+    const validateQuickShipDraft = () => {
+        // Clear any existing errors
+        setError(null);
+
+        console.log('📝 Draft validation started:', {
+            selectedCarrier,
+            hasShipFrom: !!shipFromAddress,
+            hasShipTo: !!shipToAddress,
+            packageCount: packages.length
+        });
+
+        // For drafts, we don't require carrier selection
+        // Only validate addresses if they are provided
+        if (shipFromAddress) {
+            const fromValidation = validateAddress(shipFromAddress, 'shipFrom');
+            if (!fromValidation.valid) {
+                console.log('❌ Ship From validation failed:', fromValidation.message);
+                setError(fromValidation.message);
+                return false;
+            }
+        }
+
+        if (shipToAddress) {
+            const toValidation = validateAddress(shipToAddress, 'shipTo');
+            if (!toValidation.valid) {
+                console.log('❌ Ship To validation failed:', toValidation.message);
+                setError(toValidation.message);
+                return false;
+            }
+        }
+
+        // Validate packages if they exist
+        if (packages.length > 0) {
+            const packageValidation = validatePackages();
+            if (!packageValidation.valid) {
+                console.log('❌ Package validation failed:', packageValidation.message);
+                setError(packageValidation.message);
+                return false;
+            }
+        }
+
+        // For drafts, we don't require rates - user can save empty rate table
+
+        console.log('✅ Draft validation passed - no carrier required');
         // All validations passed
         return true;
     };
@@ -3722,62 +3775,189 @@ const QuickShip = ({
         setIsSavingDraft(true);
         setError(null);
         try {
-            // Validate form
-            if (!validateQuickShipForm()) {
-                setIsSavingDraft(false);
-                return;
+            // Use appropriate validation based on shipment status
+            const isBookedShipment = editShipment?.status !== 'draft';
+
+            console.log('🔄 Edit validation debug:', {
+                editShipmentStatus: editShipment?.status,
+                isBookedShipment,
+                selectedCarrier,
+                hasCarrier: !!selectedCarrier,
+                shipmentId: editShipment?.id
+            });
+
+            if (isBookedShipment) {
+                // For booked shipments, require all fields
+                console.log('📋 Using strict validation for booked shipment');
+                if (!validateQuickShipForm()) {
+                    setIsSavingDraft(false);
+                    return;
+                }
+            } else {
+                // For draft shipments, use lenient validation
+                console.log('📝 Using lenient validation for draft shipment');
+                if (!validateQuickShipDraft()) {
+                    setIsSavingDraft(false);
+                    return;
+                }
             }
-            // Prepare updated shipment data (similar to draftData)
+
+            // Calculate totals for proper display
+            const draftTotalWeight = packages.reduce((total, pkg) => {
+                const weight = parseFloat(pkg.weight || 0);
+                const quantity = parseInt(pkg.packagingQuantity || 1);
+                return total + (weight * quantity);
+            }, 0);
+
+            const draftTotalPieces = packages.reduce((total, pkg) => {
+                return total + parseInt(pkg.packagingQuantity || 1);
+            }, 0);
+
+            const draftTotalPackageCount = packages.length;
+
+            // Prepare updated shipment data (comprehensive to ensure all fields are saved)
             const updatedData = {
                 shipmentID,
                 status: editShipment.status || 'booked',
                 creationMethod: 'quickship',
                 companyID: companyIdForAddress,
                 updatedAt: new Date(),
+
+                // COMPREHENSIVE SHIPMENT INFO with all special services
                 shipmentInfo: {
                     ...shipmentInfo,
                     unitSystem,
-                    // Include reference numbers
+                    totalWeight: draftTotalWeight,
+                    totalPieces: draftTotalPieces,
+                    totalPackageCount: draftTotalPackageCount,
+                    // Special services that might not be saved
+                    serviceLevel: shipmentInfo.serviceLevel || 'any',
+                    dangerousGoodsType: shipmentInfo.dangerousGoodsType || 'none',
+                    signatureServiceType: shipmentInfo.signatureServiceType || 'none',
+                    notes: shipmentInfo.notes || '',
+                    shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
+                    bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO',
+                    billType: shipmentInfo.billType || 'third_party',
+                    carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
+                    // Include reference numbers array
                     referenceNumbers: shipmentInfo.referenceNumbers || []
                 },
+
+                // ADDRESSES with full data preservation
                 shipFrom: shipFromAddress,
                 shipTo: shipToAddress,
-                packages,
+
+                // ENHANCED PACKAGES with all details
+                packages: packages.map((pkg, index) => ({
+                    ...pkg,
+                    id: pkg.id || (index + 1),
+                    packageNumber: index + 1,
+                    itemDescription: pkg.itemDescription || '',
+                    weight: parseFloat(pkg.weight || 0),
+                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
+                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    packagingType: pkg.packagingType || 262,
+                    packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
+                    length: parseFloat(pkg.length || 48),
+                    width: parseFloat(pkg.width || 40),
+                    height: parseFloat(pkg.height || 48),
+                    freightClass: pkg.freightClass || '',
+                    unitSystem: pkg.unitSystem || unitSystem,
+                    declaredValue: pkg.declaredValue || '',
+                    declaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
+                    volume: parseFloat(pkg.length || 48) * parseFloat(pkg.width || 40) * parseFloat(pkg.height || 48),
+                    dimensionsDisplay: `${pkg.length || 48} x ${pkg.width || 40} x ${pkg.height || 48} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
+                })),
+
+                // CARRIER INFORMATION
                 selectedCarrier,
                 selectedCarrierContactId,
-                // Broker information - Enhanced to preserve broker name even without full details
+                carrier: selectedCarrier, // Both fields for compatibility
+
+                // COMPREHENSIVE BROKER INFORMATION - Enhanced to preserve broker name even without full details
                 selectedBroker: selectedBroker || '',
-                brokerDetails: selectedBroker ? (() => {
-                    const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
-                    if (foundBroker) {
-                        return foundBroker;
-                    } else {
-                        // If broker not found in companyBrokers, create minimal broker object to preserve name
-                        console.log('🏢 QUICKSHIP UPDATE: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
-                        return {
-                            name: selectedBroker,
-                            phone: '',
-                            email: '',
-                            brokerName: selectedBroker // Additional fallback field
-                        };
-                    }
-                })() : null,
+                ...(selectedBroker && {
+                    brokerDetails: (() => {
+                        const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
+                        if (foundBroker) {
+                            return foundBroker;
+                        } else {
+                            // If broker not found in companyBrokers, create minimal broker object to preserve name
+                            console.log('🏢 QUICKSHIP UPDATE: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
+                            return {
+                                name: selectedBroker,
+                                phone: '',
+                                email: '',
+                                brokerName: selectedBroker, // Additional fallback field
+                                companyName: selectedBroker,
+                                contactPerson: '',
+                                address: '',
+                                city: '',
+                                state: '',
+                                postalCode: '',
+                                country: 'CA',
+                                fax: ''
+                            };
+                        }
+                    })()
+                }),
                 brokerPort: brokerPort || '',
                 brokerReference: brokerReference || '',
-                manualRates,
+
+                // MANUAL RATES with proper formatting
+                manualRates: manualRates.map(rate => ({
+                    ...rate,
+                    cost: parseFloat(rate.cost || 0).toFixed(2),
+                    charge: parseFloat(rate.charge || 0).toFixed(2)
+                })),
+
+                // ADDITIONAL SERVICES (this was missing in the original!)
+                additionalServices: (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') ? additionalServices : [],
+
+                // UNIT SYSTEM AND TOTALS
                 unitSystem,
-                totalCost,
-                carrier: selectedCarrier,
-                carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
+                totalCost: totalCost || 0,
+
+                // EMAIL NOTIFICATIONS
                 sendEmailNotifications,
-                // Customer selection for recall
+
+                // CUSTOMER SELECTION for recall
                 customerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
                 customerID: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
-                isDraft: false
+
+                // PRESERVE EXISTING SHIPMENT DATA
+                isDraft: false,
+
+                // TRACKING INFO
+                trackingNumber: shipmentInfo.carrierTrackingNumber || editShipment?.trackingNumber || shipmentID,
+
+                // PRESERVE OTHER FIELDS THAT MIGHT EXIST
+                bookedAt: editShipment.bookedAt || new Date(),
+                ...(editShipment.shipmentDocuments && { shipmentDocuments: editShipment.shipmentDocuments }),
+                ...(editShipment.statusHistory && { statusHistory: editShipment.statusHistory }),
+                ...(editShipment.carrierBookingConfirmation && { carrierBookingConfirmation: editShipment.carrierBookingConfirmation })
             };
+
+            console.log('🔄 Updating shipment with comprehensive data:', {
+                shipmentID,
+                packagesCount: packages.length,
+                manualRatesCount: manualRates.length,
+                additionalServicesCount: additionalServices.length,
+                brokerSelected: !!selectedBroker,
+                carrierSelected: !!selectedCarrier,
+                hasServiceLevel: !!shipmentInfo.serviceLevel,
+                hasDangerousGoodsType: !!shipmentInfo.dangerousGoodsType,
+                hasSignatureServiceType: !!shipmentInfo.signatureServiceType,
+                totalWeight: draftTotalWeight,
+                totalPieces: draftTotalPieces
+            });
+
             // Update the existing shipment document
             const docRef = doc(db, 'shipments', editShipment.id);
             await updateDoc(docRef, updatedData);
+
+            console.log('✅ Shipment updated successfully with all data');
 
             // Call both callbacks for shipment updates
             if (onShipmentUpdated) {
@@ -3793,6 +3973,7 @@ const QuickShip = ({
                 if (onReturnToShipments) onReturnToShipments();
             }, 1500);
         } catch (error) {
+            console.error('❌ Error updating shipment:', error);
             setError(`Failed to update shipment: ${error.message}`);
         } finally {
             setIsSavingDraft(false);
@@ -4794,6 +4975,15 @@ const QuickShip = ({
                                                     sx={{ ml: 2, height: '20px', fontSize: '10px' }}
                                                 />
                                             )}
+                                            {!selectedCarrier && (
+                                                <Chip
+                                                    label="Optional for drafts"
+                                                    size="small"
+                                                    color="default"
+                                                    variant="outlined"
+                                                    sx={{ ml: 2, height: '20px', fontSize: '10px' }}
+                                                />
+                                            )}
                                         </Box>
 
                                         {/* Step 1: Carrier Selection */}
@@ -4823,7 +5013,7 @@ const QuickShip = ({
                                                     {selectedCarrier ? '✓' : '1'}
                                                 </Box>
                                                 <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
-                                                    Select Carrier
+                                                    Select Carrier <span style={{ fontSize: '11px', fontWeight: 400, color: '#6b7280' }}>(Optional for drafts)</span>
                                                 </Typography>
                                                 {selectedCarrier && (
                                                     <IconButton
@@ -4851,7 +5041,7 @@ const QuickShip = ({
                                                 renderInput={(params) => (
                                                     <TextField
                                                         {...params}
-                                                        placeholder={selectedCarrier ? "Change carrier..." : "Choose a carrier..."}
+                                                        placeholder={selectedCarrier ? "Change carrier..." : "Choose a carrier (optional for drafts)..."}
                                                         size="small"
                                                         sx={{
                                                             '& .MuiInputBase-input': { fontSize: '12px' },
@@ -6731,7 +6921,18 @@ const QuickShip = ({
                                                                         variant="contained"
                                                                         color="primary"
                                                                         onClick={handleUpdateShipment}
-                                                                        disabled={isLoading || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                                        disabled={(() => {
+                                                                            // Check if we're editing a draft or booked shipment
+                                                                            const isEditingDraftShipment = editShipment?.status === 'draft';
+
+                                                                            if (isEditingDraftShipment) {
+                                                                                // For drafts, only require basic fields (carrier is optional)
+                                                                                return isLoading;
+                                                                            } else {
+                                                                                // For booked shipments, require all fields including carrier
+                                                                                return isLoading || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0;
+                                                                            }
+                                                                        })()}
                                                                         sx={{
                                                                             fontSize: '12px',
                                                                             textTransform: 'none',

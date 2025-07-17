@@ -249,6 +249,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     const [carrier, setCarrier] = useState('');
     const [hasAutoSearched, setHasAutoSearched] = useState(false);
     const [statusService, setStatusService] = useState(null);
+    // Check if mobile device for responsive design
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     // Use smart status update hook
     const { updateShipmentStatus } = useSmartStatusUpdate();
@@ -380,6 +382,24 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
     const searchShipment = useCallback(async (identifier) => {
         console.log('🔍 [Tracking] searchShipment called with identifier:', identifier);
+
+        // Mobile debugging information
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const screenWidth = window.screen.width;
+        const viewportWidth = window.innerWidth;
+
+        const deviceInfo = {
+            isMobile,
+            userAgent: navigator.userAgent,
+            screenWidth,
+            viewportWidth,
+            platform: navigator.platform,
+            cookieEnabled: navigator.cookieEnabled,
+            onLine: navigator.onLine
+        };
+
+        console.log('📱 [Tracking] Device Info:', deviceInfo);
+
         setLoading(true);
         setError('');
         setDisplayError('');
@@ -387,14 +407,25 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         setMergedEvents([]);
 
         try {
+            console.log('🔍 [Tracking] Starting Firebase query for identifier:', identifier);
+
+
             // First, try to find by shipmentID
             const shipmentsRef = collection(db, 'shipments');
+            console.log('🔍 [Tracking] Created shipmentsRef:', !!shipmentsRef);
+
             const shipmentQuery = query(shipmentsRef, where('shipmentID', '==', identifier));
+            console.log('🔍 [Tracking] Created shipmentQuery:', !!shipmentQuery);
+
+            console.log('🔍 [Tracking] Executing getDocs...');
             const shipmentSnapshot = await getDocs(shipmentQuery);
+            console.log('🔍 [Tracking] Query completed. Empty?:', shipmentSnapshot.empty, 'Size:', shipmentSnapshot.size);
+
 
             let shipmentDoc = null;
             if (!shipmentSnapshot.empty) {
                 shipmentDoc = shipmentSnapshot.docs[0];
+                console.log('✅ [Tracking] Found shipment by shipmentID:', shipmentDoc.id);
             } else {
                 // If not found by shipmentID, try to find by trackingNumber
                 const trackingQuery = query(shipmentsRef, where('trackingNumber', '==', identifier));
@@ -422,15 +453,23 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
             }
 
             if (!shipmentDoc) {
+                console.log('❌ [Tracking] No shipment found for identifier:', identifier);
+
                 setDisplayError('Shipment not found. Please check your tracking number and try again.');
                 setLoading(false);
                 return;
             }
 
+            console.log('📋 [Tracking] Found shipment document:', shipmentDoc.id);
             const shipmentData = shipmentDoc.data();
+            console.log('📋 [Tracking] Raw shipment data keys:', Object.keys(shipmentData));
+            console.log('📋 [Tracking] Shipment status:', shipmentData.status);
+            console.log('📋 [Tracking] Shipment carrier:', shipmentData.carrier || shipmentData.selectedCarrier);
+
 
             // Apply encoding fixes
             const fixedShipmentData = fixShipmentEncoding(shipmentData);
+            console.log('📋 [Tracking] Fixed shipment data status:', fixedShipmentData.status);
 
             setShipmentData(fixedShipmentData);
 
@@ -751,8 +790,26 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
             }
 
         } catch (error) {
-            console.error('Error searching shipment:', error);
-            setDisplayError('An error occurred while searching for your shipment. Please try again.');
+            console.error('❌ [Tracking] Error searching for shipment:', error);
+
+            console.error('❌ [Tracking] Error details:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack,
+                name: error.name
+            });
+
+            // Provide more specific error messages for mobile debugging
+            let errorMessage = 'An error occurred while searching for your shipment. Please try again.';
+            if (error.code === 'permission-denied') {
+                errorMessage = 'Access denied. Please check your internet connection and try again.';
+            } else if (error.code === 'unavailable') {
+                errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+            } else if (error.message.includes('network')) {
+                errorMessage = 'Network error. Please check your internet connection and try again.';
+            }
+
+            setDisplayError(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -775,6 +832,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         if (!hasAutoSearched && (trackingId || propTrackingIdentifier)) {
             const identifier = trackingId || propTrackingIdentifier;
             console.log('🔍 [Tracking] Auto-searching from URL/prop:', identifier);
+
             setTrackingNumberInput(identifier);
             setHasAutoSearched(true);
             searchShipment(identifier);
@@ -854,8 +912,12 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                             {loading ? <CircularProgress size={16} color="inherit" /> : 'Track'}
                         </Button>
                     </Box>
+
+
                 </Paper>
             </Container>
+
+
 
             {/* Loading State */}
             {loading && (
@@ -979,6 +1041,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                             carrier={carrier}
                                             height={200}
                                             loading={loading}
+
                                         />
                                     </Paper>
                                 </Box>

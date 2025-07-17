@@ -318,8 +318,17 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     }, [shipment, isAdmin, companyIdForAddress, showSnackbar, setCompanyContext]);
 
     const handleShipmentUpdated = useCallback((updatedShipment) => {
+        console.log('🔄 ShipmentDetailX: Handling shipment update, refreshing all data...');
+
         // Refresh the shipment data after successful update
         refreshShipment();
+
+        // Also refresh documents in case any documents were affected
+        if (fetchShipmentDocuments) {
+            console.log('🔄 Refreshing shipment documents...');
+            fetchShipmentDocuments();
+        }
+
         showSnackbar('Shipment updated successfully! Refreshing data...', 'success');
         setEditShipmentModalOpen(false);
 
@@ -328,7 +337,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
             console.log('🔄 Calling parent callback to refresh shipments table');
             parentOnShipmentUpdated(shipmentId, 'Shipment updated successfully');
         }
-    }, [refreshShipment, showSnackbar, parentOnShipmentUpdated, shipmentId]);
+    }, [refreshShipment, fetchShipmentDocuments, showSnackbar, parentOnShipmentUpdated, shipmentId]);
 
     const handleShipmentCancelled = useCallback((cancelledShipment) => {
         // Refresh the shipment data after successful cancellation

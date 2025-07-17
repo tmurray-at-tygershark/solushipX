@@ -22,7 +22,8 @@ const TrackingRouteMap = ({
     shipmentData,
     carrier,
     height = 600,
-    loading = false
+    loading = false,
+    onDebugInfo = () => { } // Callback to send debug info to parent
 }) => {
     const [mapImageUrl, setMapImageUrl] = useState(null);
     const [mapError, setMapError] = useState(null);
@@ -103,10 +104,11 @@ const TrackingRouteMap = ({
         setIsCalculating(true);
         setMapError(null);
 
-        try {
-            const originAddress = formatAddress(shipmentData.shipFrom);
-            const destinationAddress = formatAddress(shipmentData.shipTo);
+        // Define addresses at function scope so they're available in catch blocks
+        const originAddress = formatAddress(shipmentData.shipFrom);
+        const destinationAddress = formatAddress(shipmentData.shipTo);
 
+        try {
             console.log('🗺️ [TrackingRouteMap] Raw address data:', {
                 shipFrom: shipmentData.shipFrom,
                 shipTo: shipmentData.shipTo,
@@ -119,124 +121,195 @@ const TrackingRouteMap = ({
                 throw new Error('Missing origin or destination address');
             }
 
-            console.log('🗺️ [TrackingRouteMap] Calculating route...');
-            console.log('📍 Origin:', originAddress);
-            console.log('📍 Destination:', destinationAddress);
+            console.log('🗺️ [TrackingRouteMap] Using advanced routing logic from ShipmentDetailX...');
 
-            // Calculate route using Google Routes API v2
+            // Step 1: Geocode both addresses first (like ShipmentDetailX)
+            const geocodeAddress = async (address, type) => {
+                return new Promise((resolve, reject) => {
+                    const geocoder = new window.google.maps.Geocoder();
+
+                    console.log(`Attempting to geocode ${type} address:`, address);
+
+                    geocoder.geocode({
+                        address: address,
+                        region: shipmentData.shipFrom?.country?.toLowerCase() || 'us'
+                    }, (results, status) => {
+                        if (status === 'OK' && results && results.length > 0) {
+                            console.log(`${type} geocoding successful:`, {
+                                address: results[0].formatted_address,
+                                location: results[0].geometry.location.toJSON(),
+                                placeId: results[0].place_id
+                            });
+                            resolve(results[0]);
+                        } else {
+                            console.error(`${type} geocoding failed:`, status);
+                            reject(new Error(`Geocoding failed for ${type}: ${status}`));
+                        }
+                    });
+                });
+            };
+
+            // Check if Google Maps is loaded
+            if (!window.google || !window.google.maps) {
+                throw new Error('Google Maps not loaded - falling back to simple routing');
+            }
+
+            // Geocode both addresses
+            const [originResult, destinationResult] = await Promise.all([
+                geocodeAddress(originAddress, 'origin'),
+                geocodeAddress(destinationAddress, 'destination')
+            ]);
+
+            // Step 2: Use Google Routes API v2 with geocoded coordinates (like ShipmentDetailX)
+            const routeRequestBody = {
+                origin: originResult.place_id ?
+                    { placeId: originResult.place_id } :
+                    {
+                        location: {
+                            latLng: {
+                                latitude: originResult.geometry.location.lat(),
+                                longitude: originResult.geometry.location.lng()
+                            }
+                        }
+                    },
+                destination: destinationResult.place_id ?
+                    { placeId: destinationResult.place_id } :
+                    {
+                        location: {
+                            latLng: {
+                                latitude: destinationResult.geometry.location.lat(),
+                                longitude: destinationResult.geometry.location.lng()
+                            }
+                        }
+                    },
+                travelMode: "DRIVE",
+                routingPreference: "TRAFFIC_UNAWARE",
+                computeAlternativeRoutes: false,
+                languageCode: "en-US",
+                units: "IMPERIAL"
+            };
+
+            // Add region code if available
+            if (shipmentData.shipFrom?.country) {
+                const countryCode = shipmentData.shipFrom.country.toLowerCase();
+                if (countryCode.length === 2) {
+                    routeRequestBody.regionCode = countryCode;
+                }
+            }
+
+            console.log('🗺️ [TrackingRouteMap] Advanced route request:', routeRequestBody);
+
             const routeResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Goog-Api-Key': mapsApiKey,
-                    'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+                    'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs'
                 },
-                body: JSON.stringify({
-                    origin: {
-                        address: originAddress
-                    },
-                    destination: {
-                        address: destinationAddress
-                    },
-                    travelMode: 'DRIVE',
-                    routingPreference: 'TRAFFIC_AWARE',
-                    computeAlternativeRoutes: false,
-                    routeModifiers: {
-                        avoidTolls: false,
-                        avoidHighways: false,
-                        avoidFerries: false
-                    }
-                })
+                body: JSON.stringify(routeRequestBody)
             });
 
+            console.log('🗺️ [TrackingRouteMap] Route response status:', routeResponse.status);
+
             if (!routeResponse.ok) {
-                throw new Error(`Routes API failed: ${routeResponse.status}`);
+                const errorData = await routeResponse.json();
+                console.error('❌ [TrackingRouteMap] Routes API error response:', errorData);
+                throw new Error(`Route calculation failed: ${errorData.error?.message || routeResponse.statusText}`);
             }
 
             const routeData = await routeResponse.json();
 
             if (!routeData.routes || routeData.routes.length === 0) {
-                throw new Error('No route found');
+                console.error('❌ [TrackingRouteMap] No routes in API response:', routeData);
+                throw new Error('No routes found in the response');
             }
 
             const route = routeData.routes[0];
+
+            if (!route.polyline || !route.polyline.encodedPolyline) {
+                console.error('❌ [TrackingRouteMap] Route polyline data is missing');
+                throw new Error('Route polyline data is missing');
+            }
+
             const polyline = route.polyline.encodedPolyline;
             const distanceMeters = route.distanceMeters;
-            const durationSeconds = parseInt(route.duration.replace('s', ''));
+            const durationInSeconds = parseInt(route.duration);
+            const durationInMinutes = Math.round(durationInSeconds / 60);
 
-            // Determine if route is Canada > Canada or cross-border
+            // Determine distance display format (like ShipmentDetailX)
             const originCountry = shipmentData.shipFrom?.country?.toUpperCase() || 'US';
             const destinationCountry = shipmentData.shipTo?.country?.toUpperCase() || 'US';
             const isCanadaToCanada = originCountry === 'CA' && destinationCountry === 'CA';
-            const isCrossBorder = originCountry !== destinationCountry;
 
-            // Convert to display format based on route type
             let distanceDisplay;
             if (isCanadaToCanada) {
-                // Canada > Canada: Use kilometers
                 const distanceKm = Math.round(distanceMeters / 1000);
                 distanceDisplay = `${distanceKm} km`;
             } else {
-                // Cross-border or US routes: Use miles
                 const distanceMiles = Math.round(distanceMeters * 0.000621371);
                 distanceDisplay = `${distanceMiles} mi`;
             }
 
-            const durationMinutes = Math.round(durationSeconds / 60);
-
-            console.log('🗺️ [TrackingRouteMap] Route type detection:', {
-                originCountry,
-                destinationCountry,
-                isCanadaToCanada,
-                isCrossBorder,
-                distanceDisplay,
-                distanceMeters
+            console.log('🗺️ [TrackingRouteMap] Advanced route calculated successfully:', {
+                distance: distanceDisplay,
+                duration: `${durationInMinutes} mins`,
+                polylineLength: polyline.length
             });
 
             setRouteInfo({
                 distance: distanceDisplay,
-                duration: `${durationMinutes} mins`
+                duration: `${durationInMinutes} mins`
             });
 
-            // Calculate optimal zoom and center
-            const { center, zoom } = await calculateOptimalZoomAndCenter(originAddress, destinationAddress);
+            // Step 3: Calculate optimal zoom and center using geocoded results (like ShipmentDetailX)
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(originResult.geometry.location);
+            bounds.extend(destinationResult.geometry.location);
 
-            // Check URL length before including polyline to avoid "414 URI Too Long" errors
+            const center = bounds.getCenter();
+            const centerLat = center.lat();
+            const centerLng = center.lng();
+
+            // Calculate zoom based on distance (like ShipmentDetailX)
+            const latDiff = Math.abs(originResult.geometry.location.lat() - destinationResult.geometry.location.lat());
+            const lngDiff = Math.abs(originResult.geometry.location.lng() - destinationResult.geometry.location.lng());
+            const maxDiff = Math.max(latDiff, lngDiff);
+
+            let zoom;
+            if (maxDiff > 50) zoom = 3;
+            else if (maxDiff > 20) zoom = 4;
+            else if (maxDiff > 10) zoom = 5;
+            else if (maxDiff > 5) zoom = 6;
+            else if (maxDiff > 2) zoom = 7;
+            else if (maxDiff > 1) zoom = 8;
+            else if (maxDiff > 0.5) zoom = 9;
+            else zoom = 10;
+
+            // Step 4: Generate static map URL with advanced polyline (like ShipmentDetailX)
             const baseUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
                 `size=1600x600&` +
                 `scale=2&` +
                 `format=png&` +
                 `maptype=roadmap&` +
                 `zoom=${zoom}&` +
+                `center=${centerLat},${centerLng}&` +
                 `key=${mapsApiKey}&` +
                 `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
                 `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
 
-            const centerParam = center ? `&center=${center}` : '';
-            const pathParam = `&path=enc:${polyline}`;
+            // Try enhanced polyline path (like ShipmentDetailX)
+            const pathParam = `&path=color:0x0066cc|weight:4|enc:${polyline}`;
+            const totalLength = baseUrl.length + pathParam.length;
 
-            // Generate static map URL with route if under URL limit (8192 chars), otherwise use markers only
-            let staticMapUrl = baseUrl + centerParam;
-            const totalLength = staticMapUrl.length + pathParam.length;
-
-            console.log('🗺️ [TrackingRouteMap] URL length check:', {
-                baseUrlLength: baseUrl.length,
-                pathParamLength: pathParam.length,
-                totalLength: totalLength,
-                originAddress: originAddress,
-                destinationAddress: destinationAddress
-            });
-
-            if (totalLength < 8000) { // Safe margin under 8192 limit
+            let staticMapUrl = baseUrl;
+            if (totalLength < 8000) {
                 staticMapUrl += pathParam;
-                console.log('✅ [TrackingRouteMap] Using full route polyline');
+                console.log('✅ [TrackingRouteMap] Using advanced route polyline with color and weight');
             } else {
                 console.log('⚠️ [TrackingRouteMap] Polyline too long, using markers only');
-                console.log(`URL would be ${totalLength} chars, limit is ~8192`);
             }
 
-            console.log('✅ [TrackingRouteMap] Route calculated successfully');
-            console.log('🖼️ Static map URL generated:', staticMapUrl);
+            console.log('🖼️ Advanced static map URL generated:', staticMapUrl);
 
             setMapImageUrl(staticMapUrl);
             setIsCalculating(false);
@@ -244,7 +317,61 @@ const TrackingRouteMap = ({
         } catch (error) {
             console.error('❌ [TrackingRouteMap] Error calculating route:', error);
 
-            // Fallback to simple markers without route
+            // Try fallback with older Directions API
+            try {
+                console.log('🔄 [TrackingRouteMap] Trying fallback with Directions API...');
+
+                const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?` +
+                    `origin=${encodeURIComponent(originAddress)}&` +
+                    `destination=${encodeURIComponent(destinationAddress)}&` +
+                    `key=${mapsApiKey}`;
+
+                const directionsResponse = await fetch(directionsUrl);
+
+                if (directionsResponse.ok) {
+                    const directionsData = await directionsResponse.json();
+
+                    if (directionsData.routes && directionsData.routes.length > 0) {
+                        const route = directionsData.routes[0];
+                        const overviewPolyline = route.overview_polyline?.points;
+
+                        if (overviewPolyline) {
+                            console.log('✅ [TrackingRouteMap] Got polyline from Directions API');
+
+                            // Calculate optimal zoom and center
+                            const { center, zoom } = await calculateOptimalZoomAndCenter(originAddress, destinationAddress);
+
+                            const baseUrl = `https://maps.googleapis.com/maps/api/staticmap?` +
+                                `size=1600x600&` +
+                                `scale=2&` +
+                                `format=png&` +
+                                `maptype=roadmap&` +
+                                `zoom=${zoom}&` +
+                                `key=${mapsApiKey}&` +
+                                `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
+                                `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
+
+                            const centerParam = center ? `&center=${center}` : '';
+                            const pathParam = `&path=color:0x0066cc|weight:4|enc:${overviewPolyline}`;
+
+                            let staticMapUrl = baseUrl + centerParam;
+                            const totalLength = staticMapUrl.length + pathParam.length;
+
+                            if (totalLength < 8000) {
+                                staticMapUrl += pathParam;
+                                console.log('✅ [TrackingRouteMap] Using Directions API polyline');
+                                setMapImageUrl(staticMapUrl);
+                                setIsCalculating(false);
+                                return; // Success - exit here
+                            }
+                        }
+                    }
+                }
+            } catch (directionsError) {
+                console.error('❌ [TrackingRouteMap] Directions API fallback also failed:', directionsError);
+            }
+
+            // Final fallback to simple markers without route
             try {
                 const fallbackOriginAddress = formatAddress(shipmentData.shipFrom);
                 const fallbackDestinationAddress = formatAddress(shipmentData.shipTo);
@@ -276,8 +403,21 @@ const TrackingRouteMap = ({
                     fallbackUrl += `&center=${fallbackCenter}`;
                 }
 
+                // Try to add a simple straight line path between the two points
+                try {
+                    const straightLinePath = `&path=color:0x0066cc|weight:2|${encodeURIComponent(fallbackOriginAddress)}|${encodeURIComponent(fallbackDestinationAddress)}`;
+                    if ((fallbackUrl.length + straightLinePath.length) < 7500) { // Leave room for safety
+                        fallbackUrl += straightLinePath;
+                        console.log('🔄 [TrackingRouteMap] Added straight line path to fallback');
+
+                    }
+                } catch (pathError) {
+                    console.log('⚠️ [TrackingRouteMap] Could not add straight line path:', pathError);
+                }
+
                 console.log('🔄 [TrackingRouteMap] Using fallback map without route');
                 console.log('🔄 [TrackingRouteMap] Fallback URL:', fallbackUrl);
+
                 setMapImageUrl(fallbackUrl);
                 setIsCalculating(false);
             } catch (fallbackError) {
@@ -304,23 +444,46 @@ const TrackingRouteMap = ({
     useEffect(() => {
         const fetchMapsApiKey = async () => {
             try {
+                console.log('🗺️ [TrackingRouteMap] Fetching Maps API key...');
+
+                // Mobile debugging information
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                console.log('🗺️ [TrackingRouteMap] Device Info:', {
+                    isMobile,
+                    userAgent: navigator.userAgent,
+                    onLine: navigator.onLine
+                });
+
                 const keysSnapshot = await getDocs(collection(db, 'keys'));
+                console.log('🗺️ [TrackingRouteMap] Keys query completed. Empty?:', keysSnapshot.empty, 'Size:', keysSnapshot.size);
 
                 if (!keysSnapshot.empty) {
                     const firstDoc = keysSnapshot.docs[0];
-                    const key = firstDoc.data().googleAPI;
+                    const keyData = firstDoc.data();
+                    console.log('🗺️ [TrackingRouteMap] Key document data keys:', Object.keys(keyData));
+
+                    const key = keyData.googleAPI;
                     if (key) {
+                        console.log('✅ [TrackingRouteMap] Maps API key found:', key.substring(0, 10) + '...');
+
                         setMapsApiKey(key);
                     } else {
-                        console.warn('Google Maps API key not found in keys collection');
+                        console.warn('❌ [TrackingRouteMap] Google Maps API key not found in keys collection');
+
                         setMapError('Maps configuration not available');
                     }
                 } else {
-                    console.warn('Keys collection is empty');
+                    console.warn('❌ [TrackingRouteMap] Keys collection is empty');
                     setMapError('Maps configuration not available');
                 }
             } catch (error) {
-                console.error('Error fetching Maps API key:', error);
+                console.error('❌ [TrackingRouteMap] Error fetching Maps API key:', error);
+
+                console.error('❌ [TrackingRouteMap] Error details:', {
+                    message: error.message,
+                    code: error.code,
+                    stack: error.stack
+                });
                 setMapError('Failed to load maps configuration');
             }
         };
