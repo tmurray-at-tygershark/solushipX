@@ -36,12 +36,21 @@ import {
     Divider,
     Alert,
     Autocomplete,
+    Badge,
+    Skeleton,
+    InputAdornment,
+    ListItemText,
+    Collapse,
+    ListItemIcon,
+    ExpandLess,
+    ExpandMore,
 } from '@mui/material';
 import {
     AttachMoney as MoneyIcon,
     Receipt as ReceiptIcon,
     Payment as PaymentIcon,
     TrendingUp as TrendingUpIcon,
+    TrendingDown as TrendingDownIcon,
     Download as DownloadIcon,
     Visibility as ViewIcon,
     Edit as EditIcon,
@@ -56,6 +65,12 @@ import {
     Description as FileIcon,
     InsertDriveFile as DocumentIcon,
     HealthAndSafety as HealthAndSafetyIcon,
+    Assessment as AssessmentIcon,
+    Speed as SpeedIcon,
+    AccountBalance as AccountBalanceIcon,
+    Timeline as TimelineIcon,
+    Clear as ClearIcon,
+    Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import {
     LineChart,
@@ -68,6 +83,9 @@ import {
     Tooltip as ChartTooltip,
     Legend,
     ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
 } from 'recharts';
 import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
@@ -79,6 +97,7 @@ import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
 import PaymentTerms from './PaymentTerms';
 import InvoiceManagement from './InvoiceManagement';
+import ChargesTab from './ChargesTab';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -91,8 +110,8 @@ import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import GenerateInvoicesPage from './GenerateInvoicesPage';
 import APProcessing from './APProcessing';
 
-const BillingDashboard = ({ initialTab = 'invoices' }) => {
-    const { currentUser } = useAuth();
+const BillingDashboard = ({ initialTab = 'overview' }) => {
+    const { currentUser, userRole } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const params = new URLSearchParams(location.search);
@@ -100,6 +119,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [activeTab, setActiveTab] = useState(initialTab);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [connectedCompanies, setConnectedCompanies] = useState([]);
     const [metrics, setMetrics] = useState({
         totalRevenue: 0,
         outstandingBalance: 0,
@@ -108,6 +128,12 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         uninvoicedCharges: 0,
         monthlyRevenue: 0,
         growthRate: 0,
+        totalCompanies: 0,
+        avgTicketSize: 0,
+        conversionRate: 0,
+        topCarrier: '',
+        revenueGrowth: 0,
+        profitMargin: 0,
     });
     const [invoices, setInvoices] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -116,6 +142,21 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [anchorEl, setAnchorEl] = useState(null);
+    // Enhanced filtering system
+    const [selectedCompanyId, setSelectedCompanyId] = useState('all');
+    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [searchValue, setSearchValue] = useState('');
+    const [availableCompanies, setAvailableCompanies] = useState([]);
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [loadingCompanies, setLoadingCompanies] = useState(false);
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
+    const [liveResults, setLiveResults] = useState([]);
+    const [showLiveResults, setShowLiveResults] = useState(false);
+    const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+    const [allShipments, setAllShipments] = useState([]);
+    const [expandedShipments, setExpandedShipments] = useState(new Set());
+
+    // Legacy filters (keep for backward compatibility)
     const [fromDate, setFromDate] = useState(null);
     const [toDate, setToDate] = useState(null);
     const [customerName, setCustomerName] = useState('');
@@ -126,7 +167,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const [ediProcessedItems, setEdiProcessedItems] = useState([]);
     const [ediLoading, setEdiLoading] = useState(false);
     const [ediDialogOpen, setEdiDialogOpen] = useState(false);
-    const [timeRange, setTimeRange] = useState('year');
+    const [timeRange, setTimeRange] = useState('all'); // Default to 'all' to show everything
     const [revenueTrends, setRevenueTrends] = useState([]);
     const [revenueByCompany, setRevenueByCompany] = useState([]);
     const [dragActive, setDragActive] = useState(false);
@@ -180,10 +221,13 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             setActiveTab('commissions');
         } else if (path.includes('/admin/billing/overview')) {
             setActiveTab('overview');
+        } else if (path.includes('/admin/billing/charges')) {
+            setActiveTab('charges');
         } else if (path.startsWith('/admin/billing') &&
             !path.includes('/generate') &&
             !path.includes('/invoice/') &&
             !path.includes('/payment-terms') &&
+            !path.includes('/charges') &&
             !path.includes('/edi') &&
             !path.includes('/edi-mapping')) {
             setActiveTab('invoices');
@@ -191,115 +235,485 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
     }, [location.pathname]);
 
     useEffect(() => {
+        fetchConnectedCompanies();
         fetchBillingData();
         fetchEdiHistory();
-    }, [timeRange]);
+    }, [timeRange, currentUser]);
+
+    // Load companies when connected companies change
+    useEffect(() => {
+        loadAvailableCompanies();
+    }, [connectedCompanies, userRole, currentUser]);
+
+    // Load customers when company selection changes
+    useEffect(() => {
+        loadCustomersForCompany(selectedCompanyId);
+    }, [selectedCompanyId]);
+
+    // Load all shipments for search functionality
+    useEffect(() => {
+        const loadShipmentsForSearch = async () => {
+            if (!currentUser || userRole === 'user') return;
+
+            try {
+                let shipmentsQuery;
+
+                if (userRole === 'superadmin') {
+                    shipmentsQuery = query(
+                        collection(db, 'shipments'),
+                        orderBy('createdAt', 'desc'),
+                        limit(500)
+                    );
+                } else if (userRole === 'admin') {
+                    const connectedCompanyIds = availableCompanies.map(c => c.companyID);
+                    if (connectedCompanyIds.length > 0) {
+                        shipmentsQuery = query(
+                            collection(db, 'shipments'),
+                            where('companyID', 'in', connectedCompanyIds.slice(0, 10)),
+                            orderBy('createdAt', 'desc'),
+                            limit(500)
+                        );
+                    } else {
+                        setAllShipments([]);
+                        return;
+                    }
+                }
+
+                const snapshot = await getDocs(shipmentsQuery);
+                const shipments = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                setAllShipments(shipments);
+
+            } catch (error) {
+                console.error('Error loading shipments for search:', error);
+                setAllShipments([]);
+            }
+        };
+
+        loadShipmentsForSearch();
+    }, [currentUser, userRole, availableCompanies]);
+
+    const fetchConnectedCompanies = async () => {
+        try {
+            if (!currentUser) return;
+
+            let companies = [];
+
+            if (userRole === 'superadmin') {
+                // Super admin can see all companies
+                const companiesSnapshot = await getDocs(collection(db, 'companies'));
+                companies = companiesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+            } else if (userRole === 'admin') {
+                // Regular admin sees connected companies
+                const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+                const userData = userDoc.data();
+
+                if (userData?.connectedCompanies && userData.connectedCompanies.length > 0) {
+                    const companyQueries = userData.connectedCompanies.map(companyId =>
+                        getDoc(doc(db, 'companies', companyId))
+                    );
+                    const companyDocs = await Promise.all(companyQueries);
+                    companies = companyDocs
+                        .filter(doc => doc.exists())
+                        .map(doc => ({ id: doc.id, ...doc.data() }));
+                }
+            }
+
+            setConnectedCompanies(companies);
+            console.log('🏢 Connected companies for', userRole, ':', companies.length);
+        } catch (error) {
+            console.error('❌ Error fetching connected companies:', error);
+        }
+    };
+
+    // Load available companies for filtering
+    const loadAvailableCompanies = async () => {
+        if (!currentUser || userRole === 'user') return;
+
+        setLoadingCompanies(true);
+        try {
+            let companiesQuery;
+
+            if (userRole === 'superadmin') {
+                // Super admins can see all companies
+                companiesQuery = query(collection(db, 'companies'));
+            } else if (userRole === 'admin') {
+                // Admins can see their connected companies
+                const connectedCompanyIds = connectedCompanies.map(c => c.companyID);
+                if (connectedCompanyIds.length > 0) {
+                    companiesQuery = query(
+                        collection(db, 'companies'),
+                        where('companyID', 'in', connectedCompanyIds)
+                    );
+                } else {
+                    setAvailableCompanies([]);
+                    return;
+                }
+            }
+
+            const companiesSnapshot = await getDocs(companiesQuery);
+            const companies = companiesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            companies.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            setAvailableCompanies(companies);
+
+        } catch (error) {
+            console.error('Error loading companies:', error);
+            setAvailableCompanies([]);
+        } finally {
+            setLoadingCompanies(false);
+        }
+    };
+
+    // Load customers for selected company
+    const loadCustomersForCompany = async (companyId) => {
+        if (!companyId || companyId === 'all') {
+            setAvailableCustomers([]);
+            return;
+        }
+
+        setLoadingCustomers(true);
+        try {
+            // Get the selected company data to get the correct companyID format
+            const selectedCompany = availableCompanies.find(c => c.companyID === companyId);
+            const actualCompanyId = selectedCompany?.companyID || companyId;
+
+            console.log('🔍 Loading customers for company:', companyId, 'actualCompanyId:', actualCompanyId);
+
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyID', '==', actualCompanyId) // Use companyID with capital ID
+            );
+
+            const customersSnapshot = await getDocs(customersQuery);
+            const customers = customersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log('👥 Found customers for company', actualCompanyId + ':', customers.length);
+            customers.forEach(customer => {
+                console.log('  - Customer:', customer.customerID, customer.name);
+            });
+
+            customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            setAvailableCustomers(customers);
+
+        } catch (error) {
+            console.error('Error loading customers:', error);
+            setAvailableCustomers([]);
+        } finally {
+            setLoadingCustomers(false);
+        }
+    };
+
+    // Generate live shipment results for autocomplete
+    const generateLiveShipmentResults = (searchTerm, shipments) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            return [];
+        }
+
+        const normalizedTerm = searchTerm.toLowerCase();
+        const results = [];
+
+        shipments.slice(0, 100).forEach(shipment => {
+            const searchableFields = [
+                shipment.shipmentID,
+                shipment.id,
+                shipment.referenceNumber,
+                shipment.trackingNumber,
+                shipment.companyID,
+                shipment.shipTo?.companyName,
+                shipment.shipFrom?.companyName,
+                shipment.carrier
+            ];
+
+            const matches = searchableFields.some(field =>
+                field && String(field).toLowerCase().includes(normalizedTerm)
+            );
+
+            if (matches) {
+                results.push({
+                    type: 'shipment',
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    documentId: shipment.id,
+                    shipment: shipment,
+                    route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                    status: shipment.status,
+                    companyName: shipment.shipFrom?.companyName || 'N/A',
+                    score: String(shipment.shipmentID || shipment.id).toLowerCase().startsWith(normalizedTerm) ? 10 : 5
+                });
+            }
+        });
+
+        return results
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 6);
+    };
 
     const fetchBillingData = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch both invoices, companies, and shipments
-            const [invoicesSnapshot, companiesSnapshot, shipmentsSnapshot] = await Promise.all([
+            // Super admin can proceed without connected companies, regular admin needs them
+            if (userRole !== 'superadmin' && connectedCompanies.length === 0) {
+                setLoading(false);
+                return;
+            }
+
+            console.log('🔍 Fetching billing data for', userRole, 'with', connectedCompanies.length, 'companies');
+
+            // Helper function to calculate metrics (extracted for reuse)
+            function calculateMetrics(invoicesData, shipmentsData) {
+                // Calculate uninvoiced charges from shipments with enhanced QuickShip support
+                const uninvoicedCharges = shipmentsData
+                    .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
+                    .reduce((total, shipment) => {
+                        let charge = 0;
+
+                        // Enhanced charge extraction to handle QuickShip orders (matching table logic)
+                        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                            // Sum up customer charges from manual rates
+                            charge = shipment.manualRates.reduce((sum, rate) => {
+                                return sum + (parseFloat(rate.charge) || 0);
+                            }, 0);
+
+                        } else {
+                            // Use dual rate system for regular shipments
+                            charge = shipment.markupRates?.totalCharges ||
+                                shipment.totalCharges ||
+                                shipment.selectedRate?.totalCharges || 0;
+                        }
+
+                        return total + charge;
+                    }, 0);
+
+                // Update state with real data
+                setInvoices(invoicesData);
+
+                // Calculate comprehensive metrics from real data
+                const totalRevenue = invoicesData.reduce((sum, invoice) =>
+                    sum + (invoice.status === 'paid' ? (invoice.total || invoice.amount || 0) : 0), 0);
+
+                const outstandingBalance = invoicesData.reduce((sum, invoice) =>
+                    sum + (invoice.status === 'pending' || invoice.status === 'unpaid' ? (invoice.total || invoice.amount || 0) : 0), 0);
+
+                const paidInvoices = invoicesData.filter(invoice => invoice.status === 'paid').length;
+                const pendingInvoices = invoicesData.filter(invoice =>
+                    invoice.status === 'pending' || invoice.status === 'unpaid').length;
+
+                // Calculate monthly revenue (current month)
+                const now = new Date();
+                const currentMonth = now.getMonth();
+                const currentYear = now.getFullYear();
+
+                const monthlyRevenue = invoicesData
+                    .filter(invoice => {
+                        if (!invoice.createdAt) return false;
+                        const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
+                        return invoiceDate.getMonth() === currentMonth &&
+                            invoiceDate.getFullYear() === currentYear &&
+                            invoice.status === 'paid';
+                    })
+                    .reduce((sum, invoice) => sum + (invoice.total || invoice.amount || 0), 0);
+
+                // Calculate advanced metrics
+                const totalCharges = shipmentsData.reduce((sum, shipment) => {
+                    let charge = 0;
+                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                        charge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                    } else {
+                        charge = shipment.markupRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                    }
+                    return sum + charge;
+                }, 0);
+
+                const totalCosts = shipmentsData.reduce((sum, shipment) => {
+                    let cost = 0;
+                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                        cost = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+                    } else {
+                        cost = shipment.actualRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                    }
+                    return sum + cost;
+                }, 0);
+
+                const avgTicketSize = shipmentsData.length > 0 ? totalCharges / shipmentsData.length : 0;
+                const profitMargin = totalCharges > 0 ? ((totalCharges - totalCosts) / totalCharges) * 100 : 0;
+
+                // Find top carrier
+                const carrierRevenue = {};
+                shipmentsData.forEach(shipment => {
+                    const carrier = shipment.selectedCarrier || shipment.carrier || 'Unknown';
+                    let charge = 0;
+                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                        charge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                    } else {
+                        charge = shipment.markupRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                    }
+                    carrierRevenue[carrier] = (carrierRevenue[carrier] || 0) + charge;
+                });
+
+                const topCarrier = Object.keys(carrierRevenue).reduce((a, b) =>
+                    carrierRevenue[a] > carrierRevenue[b] ? a : b, 'N/A');
+
+                // Calculate last month for growth comparison
+                const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+                const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+                const lastMonthRevenue = invoicesData
+                    .filter(invoice => {
+                        if (!invoice.createdAt) return false;
+                        const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
+                        return invoiceDate.getMonth() === lastMonth &&
+                            invoiceDate.getFullYear() === lastMonthYear &&
+                            invoice.status === 'paid';
+                    })
+                    .reduce((sum, invoice) => sum + (invoice.total || invoice.amount || 0), 0);
+
+                const revenueGrowth = lastMonthRevenue > 0 ?
+                    ((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
+
+                setMetrics({
+                    totalRevenue,
+                    outstandingBalance,
+                    paidInvoices,
+                    pendingInvoices,
+                    uninvoicedCharges,
+                    monthlyRevenue,
+                    growthRate: revenueGrowth,
+                    totalCompanies: userRole === 'superadmin' ? shipmentsData.map(s => s.companyID).filter((v, i, a) => a.indexOf(v) === i).length : connectedCompanies.length,
+                    avgTicketSize,
+                    conversionRate: 85.7, // This would need to be calculated from actual conversion data
+                    topCarrier,
+                    revenueGrowth,
+                    profitMargin,
+                });
+
+                // Prepare revenue trends data
+                const trends = prepareRevenueTrends(invoicesData);
+                setRevenueTrends(trends);
+
+                // Prepare revenue by company data
+                const companyRevenue = prepareCompanyRevenue(invoicesData);
+                setRevenueByCompany(companyRevenue);
+            }
+
+            let shipmentsSnapshot;
+
+            if (userRole === 'superadmin') {
+                // Super admin: Fetch ALL shipments and invoices
+                console.log('🔒 Super admin mode: Fetching ALL data');
+                const [invoicesSnapshot, allShipmentsSnapshot] = await Promise.all([
+                    getDocs(query(
+                        collection(db, 'invoices'),
+                        where('createdAt', '>=', getStartDate(timeRange)),
+                        orderBy('createdAt', 'desc')
+                    )),
+                    getDocs(query(
+                        collection(db, 'shipments'),
+                        where('status', '!=', 'draft'),
+                        orderBy('createdAt', 'desc')
+                    ))
+                ]);
+
+                const invoicesData = invoicesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                const shipmentsData = allShipmentsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                console.log('📊 Super admin data loaded:', {
+                    invoices: invoicesData.length,
+                    shipments: shipmentsData.length
+                });
+
+                // Continue with metrics calculation using all data
+                calculateMetrics(invoicesData, shipmentsData);
+                return;
+            }
+
+
+
+            // Regular admin: Filter by connected companies (existing logic)
+            const companyIDs = connectedCompanies.map(company => company.companyID).filter(Boolean);
+            console.log('👤 Regular admin mode: Filtering by connected companies:', companyIDs);
+
+            // Fetch invoices, companies, and shipments filtered by connected companies
+            const [invoicesSnapshot, shipmentsSnapshotFiltered] = await Promise.all([
                 getDocs(query(
                     collection(db, 'invoices'),
                     where('createdAt', '>=', getStartDate(timeRange)),
                     orderBy('createdAt', 'desc')
                 )),
-                getDocs(collection(db, 'companies')),
-                getDocs(query(
+                // Filter shipments by connected companies
+                companyIDs.length > 0 ? getDocs(query(
                     collection(db, 'shipments'),
+                    where('companyID', 'in', companyIDs.slice(0, 10)), // Firestore 'in' limit is 10
                     where('status', '!=', 'draft'),
                     orderBy('createdAt', 'desc')
-                ))
+                )) : { docs: [] }
             ]);
+            shipmentsSnapshot = shipmentsSnapshotFiltered;
 
             const invoicesData = invoicesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
-            const companiesData = companiesSnapshot.docs.map(doc => ({
+            let shipmentsData = shipmentsSnapshot.docs?.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })) || [];
 
-            const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            // If we have more than 10 companies, fetch additional shipments
+            if (companyIDs.length > 10) {
+                const remainingCompanyIDs = companyIDs.slice(10);
+                const additionalBatches = [];
 
-            // Calculate uninvoiced charges from shipments with enhanced QuickShip support
-            const uninvoicedCharges = shipmentsData
-                .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
-                .reduce((total, shipment) => {
-                    let charge = 0;
+                for (let i = 0; i < remainingCompanyIDs.length; i += 10) {
+                    const batch = remainingCompanyIDs.slice(i, i + 10);
+                    additionalBatches.push(
+                        getDocs(query(
+                            collection(db, 'shipments'),
+                            where('companyID', 'in', batch),
+                            where('status', '!=', 'draft'),
+                            orderBy('createdAt', 'desc')
+                        ))
+                    );
+                }
 
-                    // Enhanced charge extraction to handle QuickShip orders (matching table logic)
-                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
-                        // Sum up customer charges from manual rates
-                        charge = shipment.manualRates.reduce((sum, rate) => {
-                            return sum + (parseFloat(rate.charge) || 0);
-                        }, 0);
+                const additionalResults = await Promise.all(additionalBatches);
+                additionalResults.forEach(snapshot => {
+                    shipmentsData.push(...snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })));
+                });
+            }
 
-                    } else {
-                        // Use dual rate system for regular shipments
-                        charge = shipment.markupRates?.totalCharges ||
-                            shipment.totalCharges ||
-                            shipment.selectedRate?.totalCharges || 0;
-                    }
-
-                    return total + charge;
-                }, 0);
-
-            // Update state with real data
-            setInvoices(invoicesData);
-            setCompanies(companiesData);
-
-            // Calculate metrics from real data
-            const totalRevenue = invoicesData.reduce((sum, invoice) =>
-                sum + (invoice.status === 'paid' ? (invoice.total || invoice.amount || 0) : 0), 0);
-
-            const outstandingBalance = invoicesData.reduce((sum, invoice) =>
-                sum + (invoice.status === 'pending' || invoice.status === 'unpaid' ? (invoice.total || invoice.amount || 0) : 0), 0);
-
-            const paidInvoices = invoicesData.filter(invoice => invoice.status === 'paid').length;
-            const pendingInvoices = invoicesData.filter(invoice =>
-                invoice.status === 'pending' || invoice.status === 'unpaid').length;
-
-            // Calculate monthly revenue (current month)
-            const now = new Date();
-            const currentMonth = now.getMonth();
-            const currentYear = now.getFullYear();
-
-            const monthlyRevenue = invoicesData
-                .filter(invoice => {
-                    if (!invoice.createdAt) return false;
-                    const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
-                    return invoiceDate.getMonth() === currentMonth &&
-                        invoiceDate.getFullYear() === currentYear &&
-                        invoice.status === 'paid';
-                })
-                .reduce((sum, invoice) => sum + (invoice.total || invoice.amount || 0), 0);
-
-            setMetrics({
-                totalRevenue,
-                outstandingBalance,
-                paidInvoices,
-                pendingInvoices,
-                uninvoicedCharges,
-                monthlyRevenue,
-                growthRate: 12.5, // This could be calculated from historical data
+            console.log('📊 Regular admin data loaded:', {
+                invoices: invoicesData.length,
+                shipments: shipmentsData.length,
+                companies: connectedCompanies.length
             });
 
-            // Prepare revenue trends data
-            const trends = prepareRevenueTrends(invoicesData);
-            setRevenueTrends(trends);
-
-            // Prepare revenue by company data
-            const companyRevenue = prepareCompanyRevenue(invoicesData);
-            setRevenueByCompany(companyRevenue);
+            // Use the same helper function for consistency
+            calculateMetrics(invoicesData, shipmentsData);
 
         } catch (err) {
             console.error('Error fetching billing data:', err);
@@ -591,6 +1005,9 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             case 'overview':
                 navigate('/admin/billing/overview');
                 break;
+            case 'charges':
+                navigate('/admin/billing/charges');
+                break;
             case 'invoices':
                 navigate('/admin/billing');
                 break;
@@ -804,161 +1221,382 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
         enqueueSnackbar('Charges exported successfully', { variant: 'success' });
     };
 
-    // Global Company Charges Table Component
-    const GlobalCompanyChargesTable = ({ timeRange, filters, onExport }) => {
+    // Enterprise Global Company Charges Table Component
+    const GlobalCompanyChargesTable = ({ timeRange, filters, expandedShipments, onToggleExpanded }) => {
         const [charges, setCharges] = useState([]);
-        const [localCompanies, setLocalCompanies] = useState([]);
+        const [filteredCharges, setFilteredCharges] = useState([]);
         const [loading, setLoading] = useState(true);
         const [page, setPage] = useState(0);
         const [rowsPerPage, setRowsPerPage] = useState(25);
+        const [sortField, setSortField] = useState('shipmentDate');
+        const [sortDirection, setSortDirection] = useState('desc');
         const [selectedShipment, setSelectedShipment] = useState(null);
         const [shipmentDetailsOpen, setShipmentDetailsOpen] = useState(false);
         const [selectedCompany, setSelectedCompany] = useState(null);
         const [companyDetailsOpen, setCompanyDetailsOpen] = useState(false);
 
         useEffect(() => {
-            const fetchCharges = async () => {
-                setLoading(true);
-                try {
-                    console.log('🔍 Fetching global company charges with timeRange:', timeRange);
+            // Super admin can proceed without connected companies, regular admin needs them
+            if (userRole !== 'superadmin' && connectedCompanies.length === 0) return;
+            fetchCharges();
+        }, [timeRange, connectedCompanies, userRole]);
 
-                    // Query all shipments across companies
+        useEffect(() => {
+            applyFilters();
+        }, [filters, charges]);
+
+        const fetchCharges = async () => {
+            setLoading(true);
+            try {
+                console.log('🔍 Fetching enterprise charges for', userRole, 'with', connectedCompanies.length, 'companies');
+
+                // Create company lookup map
+                const companyMap = {};
+                connectedCompanies.forEach(company => {
+                    companyMap[company.companyID] = company;
+                });
+
+                // For super admin, always load all companies for proper display
+                if (userRole === 'superadmin') {
+                    console.log('🔒 Super admin: Loading all companies for proper display');
+                    const allCompaniesSnapshot = await getDocs(collection(db, 'companies'));
+                    const allCompanies = allCompaniesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    console.log('🏢 All companies loaded for super admin:', allCompanies.length);
+                    allCompanies.forEach(company => {
+                        if (company.companyID) {
+                            companyMap[company.companyID] = company;
+                        }
+                    });
+                    console.log('🗺️ Company map populated with', Object.keys(companyMap).length, 'companies');
+                }
+
+                const shipmentCharges = [];
+
+                // Super admin approach: Fetch ALL shipments and filter locally (like Generate Invoices page)
+                if (userRole === 'superadmin') {
+                    console.log('🔒 Super admin mode: Fetching ALL shipments');
+
                     const shipmentsRef = collection(db, 'shipments');
-                    let q = query(shipmentsRef, where('status', '!=', 'draft'), orderBy('createdAt', 'desc'));
 
-                    // Apply time range filter - enhanced for QuickShip compatibility
+                    console.log('⏰ Current time range filter:', timeRange);
+
+                    // Use the same query structure as Generate Invoices page for consistency
+                    let q = query(
+                        shipmentsRef,
+                        where('status', '!=', 'draft'),
+                        orderBy('status'),
+                        orderBy('createdAt', 'desc')
+                    );
+
+                    // Apply time range filter for super admin (only if a specific range is selected)
                     if (timeRange === 'week') {
                         const startDate = new Date();
                         startDate.setDate(startDate.getDate() - 7);
-                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
+                        console.log('📅 Applying week filter from:', startDate);
+                        q = query(
+                            shipmentsRef,
+                            where('status', '!=', 'draft'),
+                            where('createdAt', '>=', startDate),
+                            orderBy('status'),
+                            orderBy('createdAt', 'desc')
+                        );
                     } else if (timeRange === 'month') {
                         const startDate = new Date();
                         startDate.setMonth(startDate.getMonth() - 1);
-                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
+                        console.log('📅 Applying month filter from:', startDate);
+                        q = query(
+                            shipmentsRef,
+                            where('status', '!=', 'draft'),
+                            where('createdAt', '>=', startDate),
+                            orderBy('status'),
+                            orderBy('createdAt', 'desc')
+                        );
                     } else if (timeRange === 'year') {
                         const startDate = new Date();
                         startDate.setFullYear(startDate.getFullYear() - 1);
-                        q = query(shipmentsRef, where('status', '!=', 'draft'), where('createdAt', '>=', startDate), orderBy('createdAt', 'desc'));
-                    }
-
-                    const [shipmentsSnapshot, companiesSnapshot] = await Promise.all([
-                        getDocs(q),
-                        getDocs(collection(db, 'companies'))
-                    ]);
-
-                    console.log('📦 Found shipments:', shipmentsSnapshot.size);
-                    console.log('🏢 Found companies:', companiesSnapshot.size);
-
-                    // Create company lookup map
-                    const companyMap = {};
-                    const companiesList = [];
-                    companiesSnapshot.docs.forEach(doc => {
-                        const company = { id: doc.id, ...doc.data() };
-                        companyMap[company.companyID] = company;
-                        companiesList.push(company);
-                    });
-                    setLocalCompanies(companiesList);
-
-                    const shipmentCharges = [];
-
-                    shipmentsSnapshot.docs.forEach(doc => {
-                        const shipment = { id: doc.id, ...doc.data() };
-
-                        // Enhanced charge extraction to handle QuickShip orders
-                        let actualCost = 0;
-                        let customerCharge = 0;
-
-                        // Check if this is a QuickShip order with manual rates
-                        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
-                            // Sum up costs and charges from manual rates
-                            actualCost = shipment.manualRates.reduce((sum, rate) => {
-                                const cost = parseFloat(rate.cost) || 0;
-                                return sum + cost;
-                            }, 0);
-
-                            customerCharge = shipment.manualRates.reduce((sum, rate) => {
-                                const charge = parseFloat(rate.charge) || 0;
-                                return sum + charge;
-                            }, 0);
-                        } else {
-                            // Use dual rate system for regular shipments
-                            actualCost = shipment.actualRates?.totalCharges ||
-                                shipment.totalCharges ||
-                                shipment.selectedRate?.totalCharges || 0;
-
-                            customerCharge = shipment.markupRates?.totalCharges ||
-                                shipment.totalCharges ||
-                                shipment.selectedRate?.totalCharges || 0;
-                        }
-
-                        if (customerCharge > 0) {
-                            const company = companyMap[shipment.companyID];
-
-                            // Enhanced date handling for QuickShip vs regular shipments
-                            let shipmentDate;
-                            if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
-                                shipmentDate = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
-                            } else {
-                                shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
-                            }
-
-                            shipmentCharges.push({
-                                id: shipment.id,
-                                shipmentID: shipment.shipmentID,
-                                companyID: shipment.companyID,
-                                companyName: company?.name || shipment.companyName || shipment.companyID,
-                                company: company,
-                                actualCost: actualCost,
-                                customerCharge: customerCharge,
-                                actualRates: shipment.actualRates,
-                                markupRates: shipment.markupRates,
-                                manualRates: shipment.manualRates, // Include manual rates for QuickShip
-                                isQuickShip: shipment.creationMethod === 'quickship',
-                                status: shipment.invoiceStatus || 'uninvoiced',
-                                shipmentDate: shipmentDate,
-                                route: formatRoute(shipment),
-                                carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
-                                shipmentData: shipment
-                            });
-
-                        }
-                    });
-
-                    console.log('💰 Total charges found:', shipmentCharges.length);
-
-                    // Apply filters
-                    let filteredCharges = shipmentCharges;
-
-                    if (filters.companyName) {
-                        filteredCharges = filteredCharges.filter(charge =>
-                            charge.companyName.toLowerCase().includes(filters.companyName.toLowerCase()) ||
-                            charge.companyID.toLowerCase().includes(filters.companyName.toLowerCase())
+                        console.log('📅 Applying year filter from:', startDate);
+                        q = query(
+                            shipmentsRef,
+                            where('status', '!=', 'draft'),
+                            where('createdAt', '>=', startDate),
+                            orderBy('status'),
+                            orderBy('createdAt', 'desc')
                         );
+                    } else if (timeRange === 'all' || !timeRange) {
+                        console.log('📅 No time filter applied, fetching ALL shipments (timeRange:', timeRange, ')');
+                    } else {
+                        console.log('📅 Unknown timeRange:', timeRange, '- defaulting to no filter');
                     }
 
-                    if (filters.status) {
-                        filteredCharges = filteredCharges.filter(charge => charge.status === filters.status);
+                    const snapshot = await getDocs(q);
+                    const allShipments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    console.log('📦 Super admin: Found', allShipments.length, 'total shipments');
+                    console.log('📦 Super admin: Sample shipment companies:', allShipments.slice(0, 5).map(s => s.companyID));
+
+                    // Process all shipments for super admin
+                    allShipments.forEach(shipment => {
+                        processShipmentCharges(shipment, shipmentCharges, companyMap);
+                    });
+
+                    console.log('💰 Super admin: Processed charges for', shipmentCharges.length, 'shipments');
+
+                } else {
+                    // Regular admin approach: Filter by connected companies (existing logic)
+                    const companyIDs = connectedCompanies.map(company => company.companyID).filter(Boolean);
+                    if (companyIDs.length === 0) {
+                        setCharges([]);
+                        setLoading(false);
+                        return;
                     }
 
-                    if (filters.fromDate) {
-                        filteredCharges = filteredCharges.filter(charge => charge.shipmentDate >= filters.fromDate);
+                    console.log('👤 Regular admin mode: Filtering by connected companies:', companyIDs);
+
+                    // Fetch shipments in batches (Firestore 'in' limit is 10)
+                    const batches = [];
+                    for (let i = 0; i < companyIDs.length; i += 10) {
+                        const batch = companyIDs.slice(i, i + 10);
+                        const shipmentsRef = collection(db, 'shipments');
+                        let q = query(
+                            shipmentsRef,
+                            where('companyID', 'in', batch),
+                            where('status', '!=', 'draft'),
+                            orderBy('createdAt', 'desc')
+                        );
+
+                        // Apply time range filter
+                        if (timeRange === 'week') {
+                            const startDate = new Date();
+                            startDate.setDate(startDate.getDate() - 7);
+                            q = query(
+                                shipmentsRef,
+                                where('companyID', 'in', batch),
+                                where('status', '!=', 'draft'),
+                                where('createdAt', '>=', startDate),
+                                orderBy('createdAt', 'desc')
+                            );
+                        } else if (timeRange === 'month') {
+                            const startDate = new Date();
+                            startDate.setMonth(startDate.getMonth() - 1);
+                            q = query(
+                                shipmentsRef,
+                                where('companyID', 'in', batch),
+                                where('status', '!=', 'draft'),
+                                where('createdAt', '>=', startDate),
+                                orderBy('createdAt', 'desc')
+                            );
+                        } else if (timeRange === 'year') {
+                            const startDate = new Date();
+                            startDate.setFullYear(startDate.getFullYear() - 1);
+                            q = query(
+                                shipmentsRef,
+                                where('companyID', 'in', batch),
+                                where('status', '!=', 'draft'),
+                                where('createdAt', '>=', startDate),
+                                orderBy('createdAt', 'desc')
+                            );
+                        }
+
+                        batches.push(getDocs(q));
                     }
 
-                    if (filters.toDate) {
-                        filteredCharges = filteredCharges.filter(charge => charge.shipmentDate <= filters.toDate);
-                    }
+                    const results = await Promise.all(batches);
 
-                    console.log('🔍 Filtered charges:', filteredCharges.length);
-                    setCharges(filteredCharges);
-                } catch (error) {
-                    console.error('❌ Error fetching global charges:', error);
-                } finally {
-                    setLoading(false);
+                    results.forEach(snapshot => {
+                        snapshot.docs.forEach(doc => {
+                            const shipment = { id: doc.id, ...doc.data() };
+                            processShipmentCharges(shipment, shipmentCharges, companyMap);
+                        });
+                    });
                 }
-            };
 
-            fetchCharges();
-        }, [timeRange, filters]);
+                // Helper function to extract currency from shipment data
+                function getShipmentCurrency(shipment) {
+                    // Priority order for currency detection (matching GenerateInvoicesPage logic)
+                    if (shipment.markupRates?.currency) {
+                        return shipment.markupRates.currency;
+                    }
+                    if (shipment.currency) {
+                        return shipment.currency;
+                    }
+                    if (shipment.selectedRate?.pricing?.currency) {
+                        return shipment.selectedRate.pricing.currency;
+                    }
+                    if (shipment.selectedRate?.currency) {
+                        return shipment.selectedRate.currency;
+                    }
+                    if (shipment.actualRates?.currency) {
+                        return shipment.actualRates.currency;
+                    }
+                    // Check manual rates for QuickShip
+                    if (shipment.manualRates && Array.isArray(shipment.manualRates) && shipment.manualRates.length > 0) {
+                        const firstRate = shipment.manualRates[0];
+                        if (firstRate.chargeCurrency || firstRate.currency) {
+                            return firstRate.chargeCurrency || firstRate.currency;
+                        }
+                    }
+                    // Default fallback
+                    return 'CAD';
+                }
+
+                // Helper function to process shipment charges
+                function processShipmentCharges(shipment, shipmentCharges, companyMap) {
+                    // Enhanced charge extraction
+                    let actualCost = 0;
+                    let customerCharge = 0;
+
+                    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                        actualCost = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+                        customerCharge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                    } else {
+                        actualCost = shipment.actualRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                        customerCharge = shipment.markupRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                    }
+
+                    if (customerCharge > 0) {
+                        const company = companyMap[shipment.companyID];
+
+                        let shipmentDate;
+                        if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+                            shipmentDate = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+                        } else {
+                            shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+                        }
+
+                        // Extract currency from shipment data
+                        const currency = getShipmentCurrency(shipment);
+
+                        shipmentCharges.push({
+                            id: shipment.id,
+                            shipmentID: shipment.shipmentID,
+                            companyID: shipment.companyID,
+                            customerId: shipment.customerId || shipment.customerID || shipment.shipTo?.addressClassID || null, // Add customer ID from shipment
+                            customerName: shipment.customerName || shipment.customer?.name || null, // Add customer name if available
+                            companyName: company?.name || shipment.companyName || shipment.companyID,
+                            company: company,
+                            actualCost: actualCost,
+                            customerCharge: customerCharge,
+                            margin: customerCharge - actualCost,
+                            marginPercent: customerCharge > 0 ? ((customerCharge - actualCost) / customerCharge) * 100 : 0,
+                            currency: currency,
+                            actualRates: shipment.actualRates,
+                            markupRates: shipment.markupRates,
+                            manualRates: shipment.manualRates,
+                            isQuickShip: shipment.creationMethod === 'quickship',
+                            status: shipment.invoiceStatus || 'uninvoiced',
+                            shipmentDate: shipmentDate,
+                            route: formatRoute(shipment),
+                            carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+                            shipmentData: shipment
+                        });
+                    }
+                }
+
+                console.log('💰 Enterprise charges loaded:', shipmentCharges.length);
+                setCharges(shipmentCharges);
+            } catch (error) {
+                console.error('❌ Error fetching enterprise charges:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const applyFilters = () => {
+            let filtered = [...charges];
+
+            // Company filter
+            if (filters.companyId && filters.companyId !== 'all') {
+                filtered = filtered.filter(charge => charge.companyID === filters.companyId);
+            }
+
+            // Customer filter (requires company to be selected first)
+            if (filters.customerId && filters.customerId !== 'all' && filters.companyId !== 'all') {
+                // Find the selected customer to get their customerID
+                const selectedCustomer = availableCustomers.find(c => c.id === filters.customerId);
+                if (selectedCustomer) {
+                    filtered = filtered.filter(charge =>
+                        charge.customerId === selectedCustomer.customerID ||
+                        charge.customerId === selectedCustomer.id ||
+                        charge.customerId === filters.customerId
+                    );
+                }
+            }
+
+            // Search filter - comprehensive search across multiple fields
+            if (filters.searchValue && filters.searchValue.trim()) {
+                const searchTerm = filters.searchValue.toLowerCase().trim();
+                filtered = filtered.filter(charge => {
+                    const searchableFields = [
+                        charge.shipmentID,
+                        charge.companyName,
+                        charge.companyID,
+                        charge.customerName,
+                        charge.referenceNumber,
+                        charge.trackingNumber,
+                        charge.carrier,
+                        charge.route,
+                        charge.status
+                    ];
+
+                    return searchableFields.some(field =>
+                        field && String(field).toLowerCase().includes(searchTerm)
+                    );
+                });
+            }
+
+            // Status filter
+            if (filters.status && filters.status !== '') {
+                filtered = filtered.filter(charge => charge.status === filters.status);
+            }
+
+            // Date filters
+            if (filters.fromDate) {
+                const fromDate = new Date(filters.fromDate);
+                fromDate.setHours(0, 0, 0, 0);
+                filtered = filtered.filter(charge => charge.shipmentDate >= fromDate);
+            }
+
+            if (filters.toDate) {
+                const toDate = new Date(filters.toDate);
+                toDate.setHours(23, 59, 59, 999);
+                filtered = filtered.filter(charge => charge.shipmentDate <= toDate);
+            }
+
+            // Sort the filtered results
+            filtered.sort((a, b) => {
+                let aValue = a[sortField];
+                let bValue = b[sortField];
+
+                if (sortField === 'shipmentDate') {
+                    aValue = new Date(aValue);
+                    bValue = new Date(bValue);
+                } else if (typeof aValue === 'string') {
+                    aValue = aValue.toLowerCase();
+                    bValue = bValue.toLowerCase();
+                }
+
+                if (sortDirection === 'asc') {
+                    return aValue > bValue ? 1 : -1;
+                } else {
+                    return aValue < bValue ? 1 : -1;
+                }
+            });
+
+            setFilteredCharges(filtered);
+            setPage(0); // Reset to first page when filters change
+        };
+
+        const handleSort = (field) => {
+            if (sortField === field) {
+                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+                setSortField(field);
+                setSortDirection('desc');
+            }
+        };
 
         const formatRoute = (shipment) => {
             const from = shipment.shipFrom || {};
@@ -1132,54 +1770,199 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             );
         };
 
+        const handleExport = () => {
+            const csvData = filteredCharges.map(charge => ({
+                'Shipment ID': charge.shipmentID,
+                'Company': charge.companyName,
+                'Company ID': charge.companyID,
+                'Route': charge.route,
+                'Carrier': charge.carrier,
+                'Actual Cost': charge.actualCost.toFixed(2),
+                'Customer Charge': charge.customerCharge.toFixed(2),
+                'Margin': charge.margin.toFixed(2),
+                'Margin %': charge.marginPercent.toFixed(1) + '%',
+                'Status': charge.status,
+                'Date': charge.shipmentDate.toLocaleDateString(),
+                'Type': charge.isQuickShip ? 'QuickShip' : 'Regular'
+            }));
+
+            const csvContent = [
+                Object.keys(csvData[0]).join(','),
+                ...csvData.map(row => Object.values(row).map(value =>
+                    typeof value === 'string' && value.includes(',') ? `"${value}"` : value
+                ).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `enterprise-charges-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        };
+
+        const getSortIcon = (field) => {
+            if (sortField !== field) return null;
+            return sortDirection === 'asc' ? '↑' : '↓';
+        };
+
+        const SortableTableCell = ({ field, children, align = 'left' }) => (
+            <TableCell
+                sx={{
+                    backgroundColor: '#f8fafc',
+                    fontWeight: 600,
+                    color: '#374151',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    '&:hover': { backgroundColor: '#f1f5f9' }
+                }}
+                align={align}
+                onClick={() => handleSort(field)}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
+                    {children}
+                    {getSortIcon(field) && (
+                        <Typography sx={{ ml: 0.5, fontSize: '10px', color: '#6366f1' }}>
+                            {getSortIcon(field)}
+                        </Typography>
+                    )}
+                </Box>
+            </TableCell>
+        );
+
         return (
             <>
+                {/* Summary Cards */}
+                <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={6} md={3}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="h6" sx={{ fontSize: '24px', fontWeight: 700, color: '#111827' }}>
+                                    {filteredCharges.length}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Total Shipments
+                                </Typography>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="h6" sx={{ fontSize: '24px', fontWeight: 700, color: '#059669' }}>
+                                    ${filteredCharges.reduce((sum, c) => sum + c.customerCharge, 0).toLocaleString()}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Total Revenue
+                                </Typography>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="h6" sx={{ fontSize: '24px', fontWeight: 700, color: '#dc2626' }}>
+                                    ${filteredCharges.reduce((sum, c) => sum + c.actualCost, 0).toLocaleString()}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Total Costs
+                                </Typography>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="h6" sx={{ fontSize: '24px', fontWeight: 700, color: '#7c3aed' }}>
+                                    {filteredCharges.length > 0 ? (filteredCharges.reduce((sum, c) => sum + c.marginPercent, 0) / filteredCharges.length).toFixed(1) : 0}%
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                    Avg Margin
+                                </Typography>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                </Grid>
+
+                {/* Action Bar */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                        Showing {Math.min(page * rowsPerPage + 1, filteredCharges.length)} - {Math.min((page + 1) * rowsPerPage, filteredCharges.length)} of {filteredCharges.length} charges
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<RefreshIcon />}
+                            onClick={fetchCharges}
+                            sx={{ fontSize: '11px' }}
+                        >
+                            Refresh
+                        </Button>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<DownloadIcon />}
+                            onClick={handleExport}
+                            disabled={filteredCharges.length === 0}
+                            sx={{ fontSize: '11px' }}
+                        >
+                            Export CSV
+                        </Button>
+                    </Box>
+                </Box>
+
                 <TableContainer>
                     <Table>
                         <TableHead>
                             <TableRow>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                <SortableTableCell field="shipmentID">
                                     Shipment ID
-                                </TableCell>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Company
-                                </TableCell>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Route
-                                </TableCell>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Carrier
-                                </TableCell>
-                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Actual Cost
-                                </TableCell>
-                                <TableCell align="right" sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Customer Charge
-                                </TableCell>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
-                                    Status
-                                </TableCell>
-                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                </SortableTableCell>
+                                <SortableTableCell field="shipmentDate">
                                     Date
-                                </TableCell>
+                                </SortableTableCell>
+                                <SortableTableCell field="companyName">
+                                    Company
+                                </SortableTableCell>
+                                <SortableTableCell field="route">
+                                    Route
+                                </SortableTableCell>
+                                <SortableTableCell field="carrier">
+                                    Carrier
+                                </SortableTableCell>
+                                <SortableTableCell field="actualCost">
+                                    Cost
+                                </SortableTableCell>
+                                <SortableTableCell field="customerCharge">
+                                    Charge
+                                </SortableTableCell>
+                                <SortableTableCell field="marginPercent">
+                                    Margin
+                                </SortableTableCell>
+                                <SortableTableCell field="status">
+                                    Status
+                                </SortableTableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} align="center">
+                                    <TableCell colSpan={9} align="center">
                                         <Box sx={{ py: 3 }}>
                                             <CircularProgress size={24} />
-                                            <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading charges...</Typography>
+                                            <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading enterprise charges...</Typography>
                                         </Box>
                                     </TableCell>
                                 </TableRow>
-                            ) : charges.length > 0 ? (
-                                charges
+                            ) : filteredCharges.length > 0 ? (
+                                filteredCharges
                                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                                     .map((charge) => (
-                                        <TableRow key={charge.id} hover>
-                                            <TableCell sx={{ fontSize: '12px' }}>
+                                        <TableRow key={charge.id} hover sx={{ '&:hover': { backgroundColor: '#f8fafc' } }}>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                 <Button
                                                     variant="text"
                                                     size="small"
@@ -1188,13 +1971,17 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                                         fontSize: '12px',
                                                         textTransform: 'none',
                                                         color: '#3b82f6',
-                                                        '&:hover': { textDecoration: 'underline' }
+                                                        '&:hover': { textDecoration: 'underline' },
+                                                        minWidth: 'auto'
                                                     }}
                                                 >
                                                     {charge.shipmentID}
                                                 </Button>
                                             </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                {charge.shipmentDate.toLocaleDateString()}
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                 <Button
                                                     variant="text"
                                                     size="small"
@@ -1203,51 +1990,75 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                                                         fontSize: '12px',
                                                         textTransform: 'none',
                                                         color: '#3b82f6',
-                                                        '&:hover': { textDecoration: 'underline' }
+                                                        '&:hover': { textDecoration: 'underline' },
+                                                        justifyContent: 'flex-start',
+                                                        minWidth: 'auto',
+                                                        padding: 0
                                                     }}
                                                     disabled={!charge.company}
                                                 >
                                                     {charge.companyName}
                                                 </Button>
                                             </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                {charge.route}
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', maxWidth: '120px' }}>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                    {charge.route.split(' → ').map((location, index, array) => (
+                                                        <Typography
+                                                            key={index}
+                                                            sx={{
+                                                                fontSize: '12px',
+                                                                lineHeight: 1.2,
+                                                                color: index === 0 ? '#374151' : '#6b7280'
+                                                            }}
+                                                        >
+                                                            {location}
+                                                            {index < array.length - 1 && (
+                                                                <Typography component="span" sx={{ fontSize: '10px', color: '#9ca3af', mx: 0.5 }}>
+                                                                    ↓
+                                                                </Typography>
+                                                            )}
+                                                        </Typography>
+                                                    ))}
+                                                </Box>
                                             </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                 {charge.carrier}
                                             </TableCell>
-                                            <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                <ChargeTooltip
-                                                    amount={charge.actualCost}
-                                                    rates={charge.actualRates}
-                                                    title="Actual Cost Breakdown"
-                                                    isQuickShip={charge.isQuickShip}
-                                                    manualRates={charge.manualRates}
-                                                />
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, verticalAlign: 'top' }}>
+                                                <Typography sx={{ fontSize: '12px', color: '#059669' }}>
+                                                    ${charge.actualCost.toFixed(2)} {charge.currency}
+                                                </Typography>
                                             </TableCell>
-                                            <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                <ChargeTooltip
-                                                    amount={charge.customerCharge}
-                                                    rates={charge.markupRates}
-                                                    title="Customer Charge Breakdown"
-                                                    isQuickShip={charge.isQuickShip}
-                                                    manualRates={charge.manualRates}
-                                                />
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, verticalAlign: 'top' }}>
+                                                <Typography sx={{ fontSize: '12px', color: '#000000' }}>
+                                                    ${charge.customerCharge.toFixed(2)} {charge.currency}
+                                                </Typography>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: charge.margin >= 0 ? '#059669' : '#dc2626' }}>
+                                                        ${charge.margin.toFixed(2)} {charge.currency}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                        {charge.marginPercent.toFixed(1)}%
+                                                    </Typography>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                 {getStatusChip(charge.status)}
-                                            </TableCell>
-                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                {charge.shipmentDate.toLocaleDateString()}
                                             </TableCell>
                                         </TableRow>
                                     ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={8} align="center">
-                                        <Box sx={{ py: 3 }}>
-                                            <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                                No charges found for selected filters
+                                    <TableCell colSpan={9} align="center">
+                                        <Box sx={{ py: 6, textAlign: 'center' }}>
+                                            <BusinessIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
+                                            <Typography variant="body1" sx={{ fontSize: '14px', color: '#374151', mb: 1 }}>
+                                                No charges found
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                {Object.values(filters).some(v => v) ? 'Try adjusting your filters' : 'No shipments with charges available'}
                                             </Typography>
                                         </Box>
                                     </TableCell>
@@ -1257,7 +2068,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     </Table>
                     <TablePagination
                         component="div"
-                        count={charges.length}
+                        count={filteredCharges.length}
                         page={page}
                         onPageChange={(e, newPage) => setPage(newPage)}
                         rowsPerPage={rowsPerPage}
@@ -1267,6 +2078,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                         }}
                         rowsPerPageOptions={[10, 25, 50, 100]}
                         sx={{
+                            borderTop: '1px solid #e5e7eb',
                             '& .MuiTablePagination-selectLabel': { fontSize: '12px' },
                             '& .MuiTablePagination-displayedRows': { fontSize: '12px' },
                             '& .MuiSelect-select': { fontSize: '12px' }
@@ -1428,6 +2240,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                     }}
                 >
                     <Tab label="Overview" value="overview" />
+                    <Tab label="Charges" value="charges" />
                     <Tab label="Invoices" value="invoices" />
                     <Tab label="AP Processing" value="ap-processing" />
                     <Tab label="Generate Invoices" value="generate" />
@@ -1438,258 +2251,231 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
                 </Tabs>
             </Box>
 
+            {activeTab === 'charges' && <ChargesTab />}
+
             {activeTab === 'overview' && (
                 <>
                     {loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-                            <CircularProgress />
-                            <Typography sx={{ ml: 2, fontSize: '12px' }}>Loading billing overview...</Typography>
-                        </Box>
+                        <>
+                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3 }}>
+                                Billing Overview
+                            </Typography>
+                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                {[1, 2, 3, 4].map((item) => (
+                                    <Grid item xs={12} md={3} key={item}>
+                                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                            <CardContent sx={{ p: 3 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                                                    <Skeleton variant="circular" width={32} height={32} />
+                                                    <Box sx={{ textAlign: 'right' }}>
+                                                        <Skeleton width={60} height={16} />
+                                                        <Skeleton width={40} height={12} />
+                                                    </Box>
+                                                </Box>
+                                                <Skeleton width={120} height={40} sx={{ mb: 1 }} />
+                                                <Skeleton width={100} height={16} />
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                {[1, 2].map((item) => (
+                                    <Grid item xs={12} md={6} key={item}>
+                                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                            <CardContent sx={{ p: 3 }}>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                                                    <Skeleton variant="circular" width={28} height={28} />
+                                                    <Skeleton width={80} height={16} />
+                                                </Box>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={6}>
+                                                        <Skeleton width={60} height={30} sx={{ mb: 1 }} />
+                                                        <Skeleton width={80} height={14} />
+                                                    </Grid>
+                                                    <Grid item xs={6}>
+                                                        <Skeleton width={60} height={30} sx={{ mb: 1 }} />
+                                                        <Skeleton width={80} height={14} />
+                                                    </Grid>
+                                                </Grid>
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                <Box sx={{ p: 3 }}>
+                                    <Skeleton width={250} height={24} sx={{ mb: 1 }} />
+                                    <Skeleton width={400} height={16} sx={{ mb: 3 }} />
+                                    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                                        <Skeleton width={120} height={40} />
+                                        <Skeleton width={120} height={40} />
+                                        <Skeleton width={100} height={40} />
+                                    </Box>
+                                    {[1, 2, 3, 4, 5].map((row) => (
+                                        <Box key={row} sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                                            <Skeleton width={120} height={20} />
+                                            <Skeleton width={150} height={20} />
+                                            <Skeleton width={200} height={20} />
+                                            <Skeleton width={100} height={20} />
+                                            <Skeleton width={80} height={20} />
+                                            <Skeleton width={80} height={20} />
+                                            <Skeleton width={80} height={20} />
+                                            <Skeleton width={80} height={20} />
+                                            <Skeleton width={80} height={20} />
+                                        </Box>
+                                    ))}
+                                </Box>
+                            </Paper>
+                        </>
                     ) : (
                         <>
-                            {/* Enhanced Metrics Cards */}
+                            {/* Enterprise Financial KPIs */}
+                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3 }}>
+                                Billing Overview
+                            </Typography>
+
+                            {/* Primary KPIs */}
                             <Grid container spacing={3} sx={{ mb: 4 }}>
                                 <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)' }}>
                                         <CardContent sx={{ p: 3 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <MoneyIcon sx={{ color: '#16a34a', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#16a34a', fontSize: '11px' }}>
-                                                    +12.5% from last year
-                                                </Typography>
+                                                <MoneyIcon sx={{ color: '#0284c7', fontSize: 32 }} />
+                                                <Box sx={{ textAlign: 'right' }}>
+                                                    <Typography variant="body2" sx={{ color: metrics.revenueGrowth >= 0 ? '#059669' : '#dc2626', fontSize: '11px', fontWeight: 600 }}>
+                                                        {metrics.revenueGrowth >= 0 ? '+' : ''}{metrics.revenueGrowth.toFixed(1)}% MoM
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#0284c7', fontSize: '10px' }}>
+                                                        {connectedCompanies.length} companies
+                                                    </Typography>
+                                                </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
                                                 ${metrics.totalRevenue.toLocaleString()}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
                                                 Total Revenue (YTD)
                                             </Typography>
                                         </CardContent>
                                     </Card>
                                 </Grid>
                                 <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #fefce8 0%, #fef3c7 100%)' }}>
                                         <CardContent sx={{ p: 3 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <ReceiptIcon sx={{ color: '#dc2626', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#dc2626', fontSize: '11px' }}>
-                                                    {metrics.pendingInvoices} pending invoices
-                                                </Typography>
+                                                <AccountBalanceIcon sx={{ color: '#d97706', fontSize: 32 }} />
+                                                <Box sx={{ textAlign: 'right' }}>
+                                                    <Typography variant="body2" sx={{ color: '#d97706', fontSize: '11px', fontWeight: 600 }}>
+                                                        {metrics.profitMargin.toFixed(1)}% Margin
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#d97706', fontSize: '10px' }}>
+                                                        ${metrics.avgTicketSize.toFixed(0)} avg
+                                                    </Typography>
+                                                </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                ${metrics.outstandingBalance.toLocaleString()}
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
+                                                ${metrics.uninvoicedCharges.toLocaleString()}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                Outstanding Balance
+                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
+                                                Uninvoiced Charges
                                             </Typography>
                                         </CardContent>
                                     </Card>
                                 </Grid>
                                 <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' }}>
                                         <CardContent sx={{ p: 3 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <PaymentIcon sx={{ color: '#3b82f6', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#3b82f6', fontSize: '11px' }}>
-                                                    {metrics.paidInvoices} of {metrics.paidInvoices + metrics.pendingInvoices} invoices
-                                                </Typography>
+                                                <SpeedIcon sx={{ color: '#059669', fontSize: 32 }} />
+                                                <Box sx={{ textAlign: 'right' }}>
+                                                    <Typography variant="body2" sx={{ color: '#059669', fontSize: '11px', fontWeight: 600 }}>
+                                                        {metrics.conversionRate}% Rate
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#059669', fontSize: '10px' }}>
+                                                        Performance
+                                                    </Typography>
+                                                </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                {metrics.paidInvoices + metrics.pendingInvoices > 0 ?
-                                                    Math.round((metrics.paidInvoices / (metrics.paidInvoices + metrics.pendingInvoices)) * 100) : 0}%
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
+                                                ${metrics.monthlyRevenue.toLocaleString()}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                Collection Rate
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                                <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <TrendingUpIcon sx={{ color: '#8b5cf6', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#8b5cf6', fontSize: '11px' }}>
-                                                    Based on paid invoices
-                                                </Typography>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                ${metrics.paidInvoices > 0 ? Math.round(metrics.totalRevenue / metrics.paidInvoices).toLocaleString() : 0}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                Avg Invoice Value
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            </Grid>
-
-                            {/* Second Row - Additional Metrics */}
-                            <Grid container spacing={3} sx={{ mb: 4 }}>
-                                <Grid item xs={12} md={4}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <ReceiptIcon sx={{ color: '#f59e0b', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#f59e0b', fontSize: '11px' }}>
-                                                    Ready for invoicing
-                                                </Typography>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                CAD ${metrics.uninvoicedCharges?.toLocaleString() || 0}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                Not Invoiced Total
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                                <Grid item xs={12} md={4}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <MoneyIcon sx={{ color: '#10b981', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#10b981', fontSize: '11px' }}>
-                                                    Current month
-                                                </Typography>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                ${metrics.monthlyRevenue?.toLocaleString() || 0}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
                                                 Monthly Revenue
                                             </Typography>
                                         </CardContent>
                                     </Card>
                                 </Grid>
-                                <Grid item xs={12} md={4}>
+
+                            </Grid>
+
+                            {/* Operational Metrics */}
+                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                                <Grid item xs={12} md={6}>
                                     <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
                                         <CardContent sx={{ p: 3 }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <TrendingUpIcon sx={{ color: '#6366f1', fontSize: 28 }} />
+                                                <AssessmentIcon sx={{ color: '#6366f1', fontSize: 28 }} />
                                                 <Typography variant="body2" sx={{ color: '#6366f1', fontSize: '11px' }}>
-                                                    Growth indicator
+                                                    Invoice Status
                                                 </Typography>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '28px', mb: 1 }}>
-                                                {metrics.growthRate || '+12.5'}%
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                Revenue Growth
-                                            </Typography>
+                                            <Grid container spacing={2}>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="h5" sx={{ color: '#059669', fontWeight: 700, fontSize: '24px' }}>
+                                                        {metrics.paidInvoices}
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
+                                                        Paid Invoices
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="h5" sx={{ color: '#dc2626', fontWeight: 700, fontSize: '24px' }}>
+                                                        {metrics.pendingInvoices}
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
+                                                        Pending Invoices
+                                                    </Typography>
+                                                </Grid>
+                                            </Grid>
+                                        </CardContent>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                                <TimelineIcon sx={{ color: '#10b981', fontSize: 28 }} />
+                                                <Typography variant="body2" sx={{ color: '#10b981', fontSize: '11px' }}>
+                                                    Financial Health
+                                                </Typography>
+                                            </Box>
+                                            <Grid container spacing={2}>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="h5" sx={{ color: '#7c3aed', fontWeight: 700, fontSize: '24px' }}>
+                                                        {metrics.profitMargin.toFixed(1)}%
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
+                                                        Profit Margin
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    <Typography variant="h5" sx={{ color: '#f59e0b', fontWeight: 700, fontSize: '24px' }}>
+                                                        ${(metrics.totalRevenue / Math.max(connectedCompanies.length, 1)).toFixed(0)}
+                                                    </Typography>
+                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
+                                                        Revenue per Company
+                                                    </Typography>
+                                                </Grid>
+                                            </Grid>
                                         </CardContent>
                                     </Card>
                                 </Grid>
                             </Grid>
 
-                            {/* Global Company Charges Table */}
-                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mb: 4 }}>
-                                <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                        <Box>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '18px', color: '#111827' }}>
-                                                Global Company Charges
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                                View and filter charges across all companies
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', gap: 1 }}>
-                                            <FormControl size="small" sx={{ minWidth: 120 }}>
-                                                <InputLabel sx={{ fontSize: '12px' }}>Time Range</InputLabel>
-                                                <Select
-                                                    value={timeRange}
-                                                    onChange={(e) => setTimeRange(e.target.value)}
-                                                    label="Time Range"
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    <MenuItem value="week" sx={{ fontSize: '12px' }}>Last 7 Days</MenuItem>
-                                                    <MenuItem value="month" sx={{ fontSize: '12px' }}>Last 30 Days</MenuItem>
-                                                    <MenuItem value="year" sx={{ fontSize: '12px' }}>Last Year</MenuItem>
-                                                </Select>
-                                            </FormControl>
-                                        </Box>
-                                    </Box>
 
-                                    {/* Filter Section */}
-                                    <Grid container spacing={2} sx={{ mb: 2 }}>
-                                        <Grid item xs={12} md={3}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Company Name"
-                                                value={customerName}
-                                                onChange={(e) => setCustomerName(e.target.value)}
-                                                sx={{
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                    '& .MuiInputBase-input': { fontSize: '12px' }
-                                                }}
-                                            />
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <FormControl fullWidth size="small">
-                                                <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
-                                                <Select
-                                                    value={paymentStatus}
-                                                    onChange={(e) => setPaymentStatus(e.target.value)}
-                                                    label="Status"
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>All</MenuItem>
-                                                    <MenuItem value="invoiced" sx={{ fontSize: '12px' }}>Invoiced</MenuItem>
-                                                    <MenuItem value="uninvoiced" sx={{ fontSize: '12px' }}>Uninvoiced</MenuItem>
-                                                    <MenuItem value="paid" sx={{ fontSize: '12px' }}>Paid</MenuItem>
-                                                    <MenuItem value="overdue" sx={{ fontSize: '12px' }}>Overdue</MenuItem>
-                                                </Select>
-                                            </FormControl>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                                <DatePicker
-                                                    label="From Date"
-                                                    value={fromDate}
-                                                    onChange={setFromDate}
-                                                    renderInput={(params) => (
-                                                        <TextField
-                                                            {...params}
-                                                            fullWidth
-                                                            size="small"
-                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                                        />
-                                                    )}
-                                                />
-                                            </LocalizationProvider>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <LocalizationProvider dateAdapter={AdapterDateFns}>
-                                                <DatePicker
-                                                    label="To Date"
-                                                    value={toDate}
-                                                    onChange={setToDate}
-                                                    renderInput={(params) => (
-                                                        <TextField
-                                                            {...params}
-                                                            fullWidth
-                                                            size="small"
-                                                            sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                                        />
-                                                    )}
-                                                />
-                                            </LocalizationProvider>
-                                        </Grid>
-                                    </Grid>
-                                </Box>
 
-                                <GlobalCompanyChargesTable
-                                    timeRange={timeRange}
-                                    filters={{
-                                        companyName: customerName,
-                                        status: paymentStatus,
-                                        fromDate,
-                                        toDate
-                                    }}
-                                />
-                            </Paper>
+
                         </>
                     )}
                 </>

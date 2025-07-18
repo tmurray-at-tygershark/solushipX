@@ -2,7 +2,7 @@ const logger = require("firebase-functions/logger");
 const admin = require('firebase-admin');
 const { sendEmail, sendNotificationEmail } = require('../../email/sendgridService');
 const { getFirestore } = require('firebase-admin/firestore');
-const { areNotificationsEnabled } = require('../functions/src/admin-system-settings');
+const { areNotificationsEnabled } = require('../../admin-system-settings');
 
 const db = admin.firestore();
 

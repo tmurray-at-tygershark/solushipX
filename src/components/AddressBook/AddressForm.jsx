@@ -205,11 +205,12 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                     email: data.email || '',
                     phone: data.phone || '',
                     phoneExt: data.phoneExt || '',
-                    street: data.street || '',
-                    street2: data.street2 || '',
+                    // CRITICAL FIX: Map database fields to form fields correctly
+                    street: data.address1 || data.street || '',
+                    street2: data.address2 || data.street2 || '',
                     city: data.city || '',
-                    state: data.state || '',
-                    postalCode: data.postalCode || '',
+                    state: data.stateProv || data.state || '',
+                    postalCode: data.zipPostal || data.postalCode || '',
                     country: data.country || 'US',
                     specialInstructions: data.specialInstructions || '',
                     status: data.status || 'active',
@@ -476,17 +477,22 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 email: formData.email,
                 phone: formData.phone,
                 phoneExt: formData.phoneExt,
-                street: formData.street,
-                street2: formData.street2,
+                // CRITICAL FIX: Save to correct database field names
+                address1: formData.street,
+                address2: formData.street2,
                 city: formData.city,
-                state: formData.state,
-                postalCode: formData.postalCode,
+                stateProv: formData.state,
+                zipPostal: formData.postalCode,
                 country: formData.country,
                 specialInstructions: formData.specialInstructions,
                 status: formData.status,
                 isResidential: formData.isResidential,
                 businessHours: businessHours,
-                // Keep legacy fields for backward compatibility
+                // Keep legacy fields for backward compatibility AND form fields for backward compatibility
+                street: formData.street,
+                street2: formData.street2,
+                state: formData.state,
+                postalCode: formData.postalCode,
                 openHours: formData.defaultHours.open,
                 closeHours: formData.defaultHours.close,
                 companyID: companyId || companyIdForAddress,
@@ -505,26 +511,41 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 ...(isEditing ? {} : { createdAt: Timestamp.now() })
             };
 
-            console.log('[AddressForm] Creating address with data:', {
+            console.log('[AddressForm] Saving address with data:', {
+                isEditing,
+                addressId,
                 isCustomerAddress,
                 companyId,
                 customerId,
                 addressClass: addressData.addressClass,
                 addressClassID: addressData.addressClassID,
                 addressType: addressData.addressType,
-                companyID: addressData.companyID
+                companyID: addressData.companyID,
+                // CRITICAL: Log special instructions handling
+                formSpecialInstructions: formData.specialInstructions,
+                savedSpecialInstructions: addressData.specialInstructions,
+                hasSpecialInstructions: !!addressData.specialInstructions,
+                specialInstructionsLength: addressData.specialInstructions ? addressData.specialInstructions.length : 0
             });
 
             let docRef;
             if (isEditing) {
                 docRef = doc(db, 'addressBook', addressId);
                 await setDoc(docRef, addressData, { merge: true });
+                console.log(`✅ Address updated successfully:`, {
+                    addressId,
+                    specialInstructionsInSavedData: addressData.specialInstructions,
+                    mergeUsed: true
+                });
             } else {
                 // For new addresses, use addDoc to auto-generate ID
                 docRef = await addDoc(collection(db, 'addressBook'), addressData);
+                console.log(`✅ Address created successfully:`, {
+                    newAddressId: docRef.id,
+                    specialInstructionsInSavedData: addressData.specialInstructions
+                });
             }
 
-            console.log(`Address ${isEditing ? 'updated' : 'created'} successfully`);
             onSuccess(isEditing ? addressId : docRef.id);
         } catch (error) {
             console.error('Error saving address:', error);

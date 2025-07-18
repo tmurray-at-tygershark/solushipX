@@ -175,6 +175,10 @@ async function bookQuickShipmentInternal(data, auth = null) {
         // 1. Generate Generic BOL
         try {
             const { generateBOLCore } = require('./generateGenericBOL');
+            
+            // Add a small delay to ensure Firestore write is complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
             const bolResult = await generateBOLCore(shipmentData.shipmentID, firestoreDocId);
             documentResults.push(bolResult);
             
@@ -236,6 +240,10 @@ async function bookQuickShipmentInternal(data, auth = null) {
         if (shouldGenerateCarrierConfirmation) {
             try {
                 const { generateCarrierConfirmationCore } = require('./generateCarrierConfirmation');
+                
+                // Small delay for carrier confirmation as well
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
                 const confirmationResult = await generateCarrierConfirmationCore(shipmentData.shipmentID, firestoreDocId, carrierDetails);
                 documentResults.push(confirmationResult);
                 

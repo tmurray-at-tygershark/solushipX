@@ -1782,30 +1782,107 @@ const QuickShip = ({
     // Handle address update from dialog
     const handleAddressUpdated = async (addressId) => {
         try {
+            console.log('🔄 QuickShip handleAddressUpdated called for addressId:', addressId);
+
+            // Add a small delay to ensure database write has completed
+            await new Promise(resolve => setTimeout(resolve, 500));
+
             // Fetch the updated address data from the database
             const addressDoc = await getDoc(doc(db, 'addressBook', addressId));
             if (addressDoc.exists()) {
-                const updatedAddress = { id: addressDoc.id, ...addressDoc.data() };
+                const rawAddress = { id: addressDoc.id, ...addressDoc.data() };
+
+                // CRITICAL FIX: Map database fields to QuickShip expected format
+                const mappedAddress = {
+                    id: rawAddress.id,
+                    // Basic identification
+                    addressId: rawAddress.id,
+                    name: rawAddress.nickname || '',
+                    // Company and contact info
+                    company: rawAddress.companyName || '',
+                    companyName: rawAddress.companyName || '',
+                    firstName: rawAddress.firstName || '',
+                    lastName: rawAddress.lastName || '',
+                    contactName: (rawAddress.firstName && rawAddress.lastName)
+                        ? `${rawAddress.firstName} ${rawAddress.lastName}`.trim()
+                        : rawAddress.nickname || '',
+                    // Address fields - Map database format to QuickShip format
+                    street: rawAddress.address1 || rawAddress.street || '',
+                    street2: rawAddress.address2 || rawAddress.street2 || '',
+                    city: rawAddress.city || '',
+                    state: rawAddress.stateProv || rawAddress.state || '',
+                    postalCode: rawAddress.zipPostal || rawAddress.postalCode || '',
+                    country: rawAddress.country || 'US',
+                    // Contact details
+                    contactPhone: rawAddress.phone || '',
+                    contactEmail: rawAddress.email || '',
+                    phone: rawAddress.phone || '',
+                    email: rawAddress.email || '',
+                    phoneExt: rawAddress.phoneExt || '',
+                    // CRITICAL: Preserve special instructions from database
+                    specialInstructions: rawAddress.specialInstructions || '',
+                    // Business hours
+                    openTime: rawAddress.openHours || rawAddress.businessHours?.defaultHours?.open || '',
+                    closeTime: rawAddress.closeHours || rawAddress.businessHours?.defaultHours?.close || '',
+                    openHours: rawAddress.openHours || rawAddress.businessHours?.defaultHours?.open || '',
+                    closeHours: rawAddress.closeHours || rawAddress.businessHours?.defaultHours?.close || '',
+                    // Additional fields
+                    isResidential: rawAddress.isResidential || false,
+                    status: rawAddress.status || 'active',
+                    // Preserve database metadata
+                    addressClass: rawAddress.addressClass,
+                    addressClassID: rawAddress.addressClassID,
+                    addressType: rawAddress.addressType,
+                    // Keep raw data for reference
+                    _rawData: rawAddress
+                };
+
+                console.log('🔄 QuickShip Address Updated - Before/After:', {
+                    rawAddress: rawAddress,
+                    mappedAddress: mappedAddress,
+                    specialInstructionsMapped: mappedAddress.specialInstructions,
+                    editingType: editingAddressType,
+                    // Enhanced debugging for special instructions
+                    rawSpecialInstructions: rawAddress.specialInstructions,
+                    mappedSpecialInstructions: mappedAddress.specialInstructions,
+                    hasSpecialInstructions: !!mappedAddress.specialInstructions,
+                    specialInstructionsLength: mappedAddress.specialInstructions ? mappedAddress.specialInstructions.length : 0
+                });
 
                 if (editingAddressType === 'from') {
-                    setShipFromAddress(updatedAddress);
+                    setShipFromAddress(mappedAddress);
                     updateFormSection('shipFrom', {
-                        ...updatedAddress,
-                        addressId: updatedAddress.id,
+                        ...mappedAddress,
                         type: 'origin'
                     });
                 } else {
-                    setShipToAddress(updatedAddress);
+                    setShipToAddress(mappedAddress);
                     updateFormSection('shipTo', {
-                        ...updatedAddress,
-                        addressId: updatedAddress.id,
-                        customerID: updatedAddress.id,
+                        ...mappedAddress,
+                        customerID: mappedAddress.id,
                         type: 'destination'
                     });
                 }
 
-                // Reload addresses to get latest data
-                loadAddresses();
+                // Reload addresses to get latest data and force cache refresh
+                console.log('🔄 Reloading addresses to refresh cache...');
+                await loadAddresses();
+
+                // Also update the availableAddresses cache immediately
+                setAvailableAddresses(prev => {
+                    const updatedAddresses = prev.map(addr =>
+                        addr.id === addressId ? mappedAddress : addr
+                    );
+                    console.log('📋 Updated availableAddresses cache with new address data');
+                    return updatedAddresses;
+                });
+
+                console.log('✅ QuickShip Address Update Complete:', {
+                    editingType: editingAddressType,
+                    specialInstructions: mappedAddress.specialInstructions,
+                    currentShipFromSpecialInstructions: editingAddressType === 'from' ? mappedAddress.specialInstructions : shipFromAddress?.specialInstructions,
+                    currentShipToSpecialInstructions: editingAddressType === 'to' ? mappedAddress.specialInstructions : shipToAddress?.specialInstructions
+                });
             } else {
                 console.error('Updated address not found');
                 showError('Failed to load updated address data');

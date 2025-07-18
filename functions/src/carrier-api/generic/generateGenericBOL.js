@@ -154,6 +154,15 @@ const generateGenericBOL = onCall({
 function extractBOLData(shipmentData, shipmentId) {
     console.log('extractBOLData: Processing QuickShip data for Generic BOL');
     
+    try {
+        if (!shipmentData) {
+            throw new Error('shipmentData is required for BOL generation');
+        }
+        
+        if (!shipmentId) {
+            throw new Error('shipmentId is required for BOL generation');
+        }
+    
     // Extract addresses from QuickShip format
     const shipFrom = shipmentData.shipFrom || {};
     const shipTo = shipmentData.shipTo || {};
@@ -539,6 +548,11 @@ function extractBOLData(shipmentData, shipmentId) {
         // Store complete shipment data for reference
         shipmentData: shipmentData
     };
+    
+    } catch (error) {
+        console.error('Error in extractBOLData:', error);
+        throw new Error(`BOL data extraction failed: ${error.message}`);
+    }
 }
 
 /**
