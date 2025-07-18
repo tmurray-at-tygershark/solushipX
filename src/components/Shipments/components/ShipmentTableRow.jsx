@@ -2571,281 +2571,225 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
 
     // Display documents table
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {availableDocuments.map((docGroup, index) => (
-                <Box key={index} sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    p: 1.5,
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 1,
-                    backgroundColor: '#f8fafc'
-                }}>
-                    <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
-                            {docGroup.name}
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                            {docGroup.count} document{docGroup.count > 1 ? 's' : ''} available
-                        </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={(() => {
-                                // Enhanced document selection logic for latest documents
-                                let selectedDoc = null;
-
-                                if (docGroup.type === 'BOL') {
-                                    // Use same algorithm as useShipmentActions.js for BOL selection
-                                    const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                        // Priority 1: Documents marked as latest
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-
-                                        // Priority 2: Higher version numbers (more recent regenerations)
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-
-                                        // Priority 3: Most recently regenerated documents
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) {
-                                            return bRegenTime - aRegenTime;
-                                        }
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-
-                                        // Priority 4: SOLUSHIP naming convention (our standard format)
-                                        const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        if (aIsSoluship && !bIsSoluship) return -1;
-                                        if (!aIsSoluship && bIsSoluship) return 1;
-
-                                        // Priority 5: Generated BOL flags
-                                        const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                        const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                        if (aIsGenerated && !bIsGenerated) return -1;
-                                        if (!aIsGenerated && bIsGenerated) return 1;
-
-                                        // Priority 6: Newest creation date
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedBOLs[0];
-                                } else if (docGroup.type === 'CONFIRMATION') {
-                                    // Use same algorithm as useShipmentActions.js for Carrier Confirmation selection
-                                    const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                        // Priority 1: Documents marked as latest
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-
-                                        // Priority 2: Higher version numbers (more recent regenerations)
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-
-                                        // Priority 3: Most recently regenerated documents
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) {
-                                            return bRegenTime - aRegenTime;
-                                        }
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-
-                                        // Priority 4: Carrier confirmation specific document types
-                                        if (a.docType === 7 && b.docType !== 7) return -1;
-                                        if (a.docType !== 7 && b.docType === 7) return 1;
-
-                                        // Priority 5: Newest creation date
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedConfirmations[0];
-                                } else {
-                                    // For other document types, use first document (existing behavior)
-                                    selectedDoc = docGroup.documents[0];
-                                }
-
-                                const isLoading = downloadingDoc === selectedDoc?.id;
-                                return isLoading ? <CircularProgress size={12} /> : <FileDownloadIcon />;
-                            })()}
-                            onClick={() => {
-                                // Enhanced document selection logic for download
-                                let selectedDoc = null;
-
-                                if (docGroup.type === 'BOL') {
-                                    // Use same algorithm as useShipmentActions.js for BOL selection
-                                    const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                        // Priority 1: Documents marked as latest
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-
-                                        // Priority 2: Higher version numbers (more recent regenerations)
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-
-                                        // Priority 3: Most recently regenerated documents
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) {
-                                            return bRegenTime - aRegenTime;
-                                        }
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-
-                                        // Priority 4: SOLUSHIP naming convention (our standard format)
-                                        const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        if (aIsSoluship && !bIsSoluship) return -1;
-                                        if (!aIsSoluship && bIsSoluship) return 1;
-
-                                        // Priority 5: Generated BOL flags
-                                        const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                        const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                        if (aIsGenerated && !bIsGenerated) return -1;
-                                        if (!aIsGenerated && bIsGenerated) return 1;
-
-                                        // Priority 6: Newest creation date
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedBOLs[0];
-
-                                    console.log('✅ ShipmentTableRow - Selected LATEST BOL document:', {
-                                        id: selectedDoc.id,
-                                        filename: selectedDoc.filename,
-                                        isLatest: selectedDoc.isLatest,
-                                        version: selectedDoc.version,
-                                        regeneratedAt: selectedDoc.regeneratedAt,
-                                        selectionReason: selectedDoc.isLatest ? 'marked as latest' :
-                                            selectedDoc.version > 0 ? `version ${selectedDoc.version}` :
-                                                selectedDoc.regeneratedAt ? 'recently regenerated' :
-                                                    (selectedDoc.filename || '').toUpperCase().startsWith('SOLUSHIP-') ? 'SOLUSHIP format' : 'fallback'
-                                    });
-                                } else if (docGroup.type === 'CONFIRMATION') {
-                                    // Use same algorithm as useShipmentActions.js for Carrier Confirmation selection
-                                    const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                        // Priority 1: Documents marked as latest
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-
-                                        // Priority 2: Higher version numbers (more recent regenerations)
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-
-                                        // Priority 3: Most recently regenerated documents
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) {
-                                            return bRegenTime - aRegenTime;
-                                        }
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-
-                                        // Priority 4: Carrier confirmation specific document types
-                                        if (a.docType === 7 && b.docType !== 7) return -1;
-                                        if (a.docType !== 7 && b.docType === 7) return 1;
-
-                                        // Priority 5: Newest creation date
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedConfirmations[0];
-
-                                    console.log('✅ ShipmentTableRow - Selected LATEST Carrier Confirmation document:', {
-                                        id: selectedDoc.id,
-                                        filename: selectedDoc.filename,
-                                        isLatest: selectedDoc.isLatest,
-                                        version: selectedDoc.version,
-                                        regeneratedAt: selectedDoc.regeneratedAt,
-                                        selectionReason: selectedDoc.isLatest ? 'marked as latest' :
-                                            selectedDoc.version > 0 ? `version ${selectedDoc.version}` :
-                                                selectedDoc.regeneratedAt ? 'recently regenerated' :
-                                                    selectedDoc.docType === 7 ? 'carrier confirmation type' : 'fallback'
-                                    });
-                                } else {
-                                    // For other document types, use first document (existing behavior)
-                                    selectedDoc = docGroup.documents[0];
-                                }
-
-                                if (selectedDoc && selectedDoc.id) {
-                                    viewPdfInModal(selectedDoc.id, selectedDoc.filename, docGroup.name);
-                                } else {
-                                    showSnackbar('Document not available', 'warning');
-                                }
-                            }}
-                            disabled={(() => {
-                                // Enhanced document selection logic for loading state
-                                let selectedDoc = null;
-
-                                if (docGroup.type === 'BOL') {
-                                    const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-                                        const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        if (aIsSoluship && !bIsSoluship) return -1;
-                                        if (!aIsSoluship && bIsSoluship) return 1;
-                                        const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                        const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                        if (aIsGenerated && !bIsGenerated) return -1;
-                                        if (!aIsGenerated && bIsGenerated) return 1;
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedBOLs[0];
-                                } else if (docGroup.type === 'CONFIRMATION') {
-                                    const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-                                        if (a.docType === 7 && b.docType !== 7) return -1;
-                                        if (a.docType !== 7 && b.docType === 7) return 1;
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedConfirmations[0];
-                                } else {
-                                    selectedDoc = docGroup.documents[0];
-                                }
-
-                                return downloadingDoc === selectedDoc?.id;
-                            })()}
-                            sx={{
-                                fontSize: '11px',
-                                minWidth: 'auto',
-                                px: 1.5,
-                                py: 0.5,
-                                borderColor: (() => {
+        <>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {availableDocuments.map((docGroup, index) => (
+                    <Box key={index} sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        p: 1.5,
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 1,
+                        backgroundColor: '#f8fafc'
+                    }}>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                                {docGroup.name}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                {docGroup.count} document{docGroup.count > 1 ? 's' : ''} available
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={(() => {
+                                    // Enhanced document selection logic for latest documents
                                     let selectedDoc = null;
+
+                                    if (docGroup.type === 'BOL') {
+                                        // Use same algorithm as useShipmentActions.js for BOL selection
+                                        const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                            // Priority 1: Documents marked as latest
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+
+                                            // Priority 2: Higher version numbers (more recent regenerations)
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+
+                                            // Priority 3: Most recently regenerated documents
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) {
+                                                return bRegenTime - aRegenTime;
+                                            }
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+
+                                            // Priority 4: SOLUSHIP naming convention (our standard format)
+                                            const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            if (aIsSoluship && !bIsSoluship) return -1;
+                                            if (!aIsSoluship && bIsSoluship) return 1;
+
+                                            // Priority 5: Generated BOL flags
+                                            const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                            const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                            if (aIsGenerated && !bIsGenerated) return -1;
+                                            if (!aIsGenerated && bIsGenerated) return 1;
+
+                                            // Priority 6: Newest creation date
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedBOLs[0];
+                                    } else if (docGroup.type === 'CONFIRMATION') {
+                                        // Use same algorithm as useShipmentActions.js for Carrier Confirmation selection
+                                        const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                            // Priority 1: Documents marked as latest
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+
+                                            // Priority 2: Higher version numbers (more recent regenerations)
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+
+                                            // Priority 3: Most recently regenerated documents
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) {
+                                                return bRegenTime - aRegenTime;
+                                            }
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+
+                                            // Priority 4: Carrier confirmation specific document types
+                                            if (a.docType === 7 && b.docType !== 7) return -1;
+                                            if (a.docType !== 7 && b.docType === 7) return 1;
+
+                                            // Priority 5: Newest creation date
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedConfirmations[0];
+                                    } else {
+                                        // For other document types, use first document (existing behavior)
+                                        selectedDoc = docGroup.documents[0];
+                                    }
+
+                                    const isLoading = downloadingDoc === selectedDoc?.id;
+                                    return isLoading ? <CircularProgress size={12} /> : <FileDownloadIcon />;
+                                })()}
+                                onClick={() => {
+                                    // Enhanced document selection logic for download
+                                    let selectedDoc = null;
+
+                                    if (docGroup.type === 'BOL') {
+                                        // Use same algorithm as useShipmentActions.js for BOL selection
+                                        const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                            // Priority 1: Documents marked as latest
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+
+                                            // Priority 2: Higher version numbers (more recent regenerations)
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+
+                                            // Priority 3: Most recently regenerated documents
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) {
+                                                return bRegenTime - aRegenTime;
+                                            }
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+
+                                            // Priority 4: SOLUSHIP naming convention (our standard format)
+                                            const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            if (aIsSoluship && !bIsSoluship) return -1;
+                                            if (!aIsSoluship && bIsSoluship) return 1;
+
+                                            // Priority 5: Generated BOL flags
+                                            const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                            const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                            if (aIsGenerated && !bIsGenerated) return -1;
+                                            if (!aIsGenerated && bIsGenerated) return 1;
+
+                                            // Priority 6: Newest creation date
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedBOLs[0];
+
+                                        console.log('✅ ShipmentTableRow - Selected LATEST BOL document:', {
+                                            id: selectedDoc.id,
+                                            filename: selectedDoc.filename,
+                                            isLatest: selectedDoc.isLatest,
+                                            version: selectedDoc.version,
+                                            regeneratedAt: selectedDoc.regeneratedAt,
+                                            selectionReason: selectedDoc.isLatest ? 'marked as latest' :
+                                                selectedDoc.version > 0 ? `version ${selectedDoc.version}` :
+                                                    selectedDoc.regeneratedAt ? 'recently regenerated' :
+                                                        (selectedDoc.filename || '').toUpperCase().startsWith('SOLUSHIP-') ? 'SOLUSHIP format' : 'fallback'
+                                        });
+                                    } else if (docGroup.type === 'CONFIRMATION') {
+                                        // Use same algorithm as useShipmentActions.js for Carrier Confirmation selection
+                                        const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                            // Priority 1: Documents marked as latest
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+
+                                            // Priority 2: Higher version numbers (more recent regenerations)
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+
+                                            // Priority 3: Most recently regenerated documents
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) {
+                                                return bRegenTime - aRegenTime;
+                                            }
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+
+                                            // Priority 4: Carrier confirmation specific document types
+                                            if (a.docType === 7 && b.docType !== 7) return -1;
+                                            if (a.docType !== 7 && b.docType === 7) return 1;
+
+                                            // Priority 5: Newest creation date
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedConfirmations[0];
+
+                                        console.log('✅ ShipmentTableRow - Selected LATEST Carrier Confirmation document:', {
+                                            id: selectedDoc.id,
+                                            filename: selectedDoc.filename,
+                                            isLatest: selectedDoc.isLatest,
+                                            version: selectedDoc.version,
+                                            regeneratedAt: selectedDoc.regeneratedAt,
+                                            selectionReason: selectedDoc.isLatest ? 'marked as latest' :
+                                                selectedDoc.version > 0 ? `version ${selectedDoc.version}` :
+                                                    selectedDoc.regeneratedAt ? 'recently regenerated' :
+                                                        selectedDoc.docType === 7 ? 'carrier confirmation type' : 'fallback'
+                                        });
+                                    } else {
+                                        // For other document types, use first document (existing behavior)
+                                        selectedDoc = docGroup.documents[0];
+                                    }
+
+                                    if (selectedDoc && selectedDoc.id) {
+                                        viewPdfInModal(selectedDoc.id, selectedDoc.filename, docGroup.name);
+                                    } else {
+                                        showSnackbar('Document not available', 'warning');
+                                    }
+                                }}
+                                disabled={(() => {
+                                    // Enhanced document selection logic for loading state
+                                    let selectedDoc = null;
+
                                     if (docGroup.type === 'BOL') {
                                         const sortedBOLs = [...docGroup.documents].sort((a, b) => {
                                             if (a.isLatest && !b.isLatest) return -1;
@@ -2893,62 +2837,14 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
                                     } else {
                                         selectedDoc = docGroup.documents[0];
                                     }
-                                    const isLoading = downloadingDoc === selectedDoc?.id;
-                                    return isLoading ? '#d1d5db' : '#e5e7eb';
-                                })(),
-                                color: (() => {
-                                    let selectedDoc = null;
-                                    if (docGroup.type === 'BOL') {
-                                        const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                            if (a.isLatest && !b.isLatest) return -1;
-                                            if (!a.isLatest && b.isLatest) return 1;
-                                            const aVersion = a.version || 0;
-                                            const bVersion = b.version || 0;
-                                            if (aVersion !== bVersion) return bVersion - aVersion;
-                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                            if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                            if (aRegenTime && !bRegenTime) return -1;
-                                            if (!aRegenTime && bRegenTime) return 1;
-                                            const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                            const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                            if (aIsSoluship && !bIsSoluship) return -1;
-                                            if (!aIsSoluship && bIsSoluship) return 1;
-                                            const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                            const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                            if (aIsGenerated && !bIsGenerated) return -1;
-                                            if (!aIsGenerated && bIsGenerated) return 1;
-                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                            return bCreatedTime - aCreatedTime;
-                                        });
-                                        selectedDoc = sortedBOLs[0];
-                                    } else if (docGroup.type === 'CONFIRMATION') {
-                                        const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                            if (a.isLatest && !b.isLatest) return -1;
-                                            if (!a.isLatest && b.isLatest) return 1;
-                                            const aVersion = a.version || 0;
-                                            const bVersion = b.version || 0;
-                                            if (aVersion !== bVersion) return bVersion - aVersion;
-                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                            if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                            if (aRegenTime && !bRegenTime) return -1;
-                                            if (!aRegenTime && bRegenTime) return 1;
-                                            if (a.docType === 7 && b.docType !== 7) return -1;
-                                            if (a.docType !== 7 && b.docType === 7) return 1;
-                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                            return bCreatedTime - aCreatedTime;
-                                        });
-                                        selectedDoc = sortedConfirmations[0];
-                                    } else {
-                                        selectedDoc = docGroup.documents[0];
-                                    }
-                                    const isLoading = downloadingDoc === selectedDoc?.id;
-                                    return isLoading ? '#9ca3af' : '#374151';
-                                })(),
-                                '&:hover': {
+
+                                    return downloadingDoc === selectedDoc?.id;
+                                })()}
+                                sx={{
+                                    fontSize: '11px',
+                                    minWidth: 'auto',
+                                    px: 1.5,
+                                    py: 0.5,
                                     borderColor: (() => {
                                         let selectedDoc = null;
                                         if (docGroup.type === 'BOL') {
@@ -2999,7 +2895,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
                                             selectedDoc = docGroup.documents[0];
                                         }
                                         const isLoading = downloadingDoc === selectedDoc?.id;
-                                        return isLoading ? '#d1d5db' : '#1d4ed8';
+                                        return isLoading ? '#d1d5db' : '#e5e7eb';
                                     })(),
                                     color: (() => {
                                         let selectedDoc = null;
@@ -3051,120 +2947,277 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
                                             selectedDoc = docGroup.documents[0];
                                         }
                                         const isLoading = downloadingDoc === selectedDoc?.id;
-                                        return isLoading ? '#9ca3af' : '#1d4ed8';
+                                        return isLoading ? '#9ca3af' : '#374151';
                                     })(),
-                                    backgroundColor: (() => {
-                                        let selectedDoc = null;
-                                        if (docGroup.type === 'BOL') {
-                                            const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                                if (a.isLatest && !b.isLatest) return -1;
-                                                if (!a.isLatest && b.isLatest) return 1;
-                                                const aVersion = a.version || 0;
-                                                const bVersion = b.version || 0;
-                                                if (aVersion !== bVersion) return bVersion - aVersion;
-                                                const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                                const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                                if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                                if (aRegenTime && !bRegenTime) return -1;
-                                                if (!aRegenTime && bRegenTime) return 1;
-                                                const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                                const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                                if (aIsSoluship && !bIsSoluship) return -1;
-                                                if (!aIsSoluship && bIsSoluship) return 1;
-                                                const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                                const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                                if (aIsGenerated && !bIsGenerated) return -1;
-                                                if (!aIsGenerated && bIsGenerated) return 1;
-                                                const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                                const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                                return bCreatedTime - aCreatedTime;
-                                            });
-                                            selectedDoc = sortedBOLs[0];
-                                        } else if (docGroup.type === 'CONFIRMATION') {
-                                            const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                                if (a.isLatest && !b.isLatest) return -1;
-                                                if (!a.isLatest && b.isLatest) return 1;
-                                                const aVersion = a.version || 0;
-                                                const bVersion = b.version || 0;
-                                                if (aVersion !== bVersion) return bVersion - aVersion;
-                                                const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                                const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                                if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                                if (aRegenTime && !bRegenTime) return -1;
-                                                if (!aRegenTime && bRegenTime) return 1;
-                                                if (a.docType === 7 && b.docType !== 7) return -1;
-                                                if (a.docType !== 7 && b.docType === 7) return 1;
-                                                const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                                const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                                return bCreatedTime - aCreatedTime;
-                                            });
-                                            selectedDoc = sortedConfirmations[0];
-                                        } else {
-                                            selectedDoc = docGroup.documents[0];
-                                        }
-                                        const isLoading = downloadingDoc === selectedDoc?.id;
-                                        return isLoading ? 'transparent' : '#eff6ff';
-                                    })()
-                                }
-                            }}
-                        >
-                            {(() => {
-                                let selectedDoc = null;
-                                if (docGroup.type === 'BOL') {
-                                    const sortedBOLs = [...docGroup.documents].sort((a, b) => {
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-                                        const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
-                                        if (aIsSoluship && !bIsSoluship) return -1;
-                                        if (!aIsSoluship && bIsSoluship) return 1;
-                                        const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
-                                        const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
-                                        if (aIsGenerated && !bIsGenerated) return -1;
-                                        if (!aIsGenerated && bIsGenerated) return 1;
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedBOLs[0];
-                                } else if (docGroup.type === 'CONFIRMATION') {
-                                    const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
-                                        if (a.isLatest && !b.isLatest) return -1;
-                                        if (!a.isLatest && b.isLatest) return 1;
-                                        const aVersion = a.version || 0;
-                                        const bVersion = b.version || 0;
-                                        if (aVersion !== bVersion) return bVersion - aVersion;
-                                        const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
-                                        const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
-                                        if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
-                                        if (aRegenTime && !bRegenTime) return -1;
-                                        if (!aRegenTime && bRegenTime) return 1;
-                                        if (a.docType === 7 && b.docType !== 7) return -1;
-                                        if (a.docType !== 7 && b.docType === 7) return 1;
-                                        const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
-                                        const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
-                                        return bCreatedTime - aCreatedTime;
-                                    });
-                                    selectedDoc = sortedConfirmations[0];
-                                } else {
-                                    selectedDoc = docGroup.documents[0];
-                                }
-                                const isLoading = downloadingDoc === selectedDoc?.id;
-                                return isLoading ? 'Loading...' : 'Download';
-                            })()}
-                        </Button>
+                                    '&:hover': {
+                                        borderColor: (() => {
+                                            let selectedDoc = null;
+                                            if (docGroup.type === 'BOL') {
+                                                const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    if (aIsSoluship && !bIsSoluship) return -1;
+                                                    if (!aIsSoluship && bIsSoluship) return 1;
+                                                    const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                                    const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                                    if (aIsGenerated && !bIsGenerated) return -1;
+                                                    if (!aIsGenerated && bIsGenerated) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedBOLs[0];
+                                            } else if (docGroup.type === 'CONFIRMATION') {
+                                                const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    if (a.docType === 7 && b.docType !== 7) return -1;
+                                                    if (a.docType !== 7 && b.docType === 7) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedConfirmations[0];
+                                            } else {
+                                                selectedDoc = docGroup.documents[0];
+                                            }
+                                            const isLoading = downloadingDoc === selectedDoc?.id;
+                                            return isLoading ? '#d1d5db' : '#1d4ed8';
+                                        })(),
+                                        color: (() => {
+                                            let selectedDoc = null;
+                                            if (docGroup.type === 'BOL') {
+                                                const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    if (aIsSoluship && !bIsSoluship) return -1;
+                                                    if (!aIsSoluship && bIsSoluship) return 1;
+                                                    const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                                    const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                                    if (aIsGenerated && !bIsGenerated) return -1;
+                                                    if (!aIsGenerated && bIsGenerated) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedBOLs[0];
+                                            } else if (docGroup.type === 'CONFIRMATION') {
+                                                const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    if (a.docType === 7 && b.docType !== 7) return -1;
+                                                    if (a.docType !== 7 && b.docType === 7) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedConfirmations[0];
+                                            } else {
+                                                selectedDoc = docGroup.documents[0];
+                                            }
+                                            const isLoading = downloadingDoc === selectedDoc?.id;
+                                            return isLoading ? '#9ca3af' : '#1d4ed8';
+                                        })(),
+                                        backgroundColor: (() => {
+                                            let selectedDoc = null;
+                                            if (docGroup.type === 'BOL') {
+                                                const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                                    if (aIsSoluship && !bIsSoluship) return -1;
+                                                    if (!aIsSoluship && bIsSoluship) return 1;
+                                                    const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                                    const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                                    if (aIsGenerated && !bIsGenerated) return -1;
+                                                    if (!aIsGenerated && bIsGenerated) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedBOLs[0];
+                                            } else if (docGroup.type === 'CONFIRMATION') {
+                                                const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                                    if (a.isLatest && !b.isLatest) return -1;
+                                                    if (!a.isLatest && b.isLatest) return 1;
+                                                    const aVersion = a.version || 0;
+                                                    const bVersion = b.version || 0;
+                                                    if (aVersion !== bVersion) return bVersion - aVersion;
+                                                    const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                                    const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                                    if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                                    if (aRegenTime && !bRegenTime) return -1;
+                                                    if (!aRegenTime && bRegenTime) return 1;
+                                                    if (a.docType === 7 && b.docType !== 7) return -1;
+                                                    if (a.docType !== 7 && b.docType === 7) return 1;
+                                                    const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                                    const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                                    return bCreatedTime - aCreatedTime;
+                                                });
+                                                selectedDoc = sortedConfirmations[0];
+                                            } else {
+                                                selectedDoc = docGroup.documents[0];
+                                            }
+                                            const isLoading = downloadingDoc === selectedDoc?.id;
+                                            return isLoading ? 'transparent' : '#eff6ff';
+                                        })()
+                                    }
+                                }}
+                            >
+                                {(() => {
+                                    let selectedDoc = null;
+                                    if (docGroup.type === 'BOL') {
+                                        const sortedBOLs = [...docGroup.documents].sort((a, b) => {
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+                                            const aIsSoluship = (a.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            const bIsSoluship = (b.filename || '').toUpperCase().startsWith('SOLUSHIP-');
+                                            if (aIsSoluship && !bIsSoluship) return -1;
+                                            if (!aIsSoluship && bIsSoluship) return 1;
+                                            const aIsGenerated = a.isGeneratedBOL === true || a.metadata?.generated === true;
+                                            const bIsGenerated = b.isGeneratedBOL === true || b.metadata?.generated === true;
+                                            if (aIsGenerated && !bIsGenerated) return -1;
+                                            if (!aIsGenerated && bIsGenerated) return 1;
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedBOLs[0];
+                                    } else if (docGroup.type === 'CONFIRMATION') {
+                                        const sortedConfirmations = [...docGroup.documents].sort((a, b) => {
+                                            if (a.isLatest && !b.isLatest) return -1;
+                                            if (!a.isLatest && b.isLatest) return 1;
+                                            const aVersion = a.version || 0;
+                                            const bVersion = b.version || 0;
+                                            if (aVersion !== bVersion) return bVersion - aVersion;
+                                            const aRegenTime = a.regeneratedAt?.toDate?.() || a.regeneratedAt || null;
+                                            const bRegenTime = b.regeneratedAt?.toDate?.() || b.regeneratedAt || null;
+                                            if (aRegenTime && bRegenTime) return bRegenTime - aRegenTime;
+                                            if (aRegenTime && !bRegenTime) return -1;
+                                            if (!aRegenTime && bRegenTime) return 1;
+                                            if (a.docType === 7 && b.docType !== 7) return -1;
+                                            if (a.docType !== 7 && b.docType === 7) return 1;
+                                            const aCreatedTime = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+                                            const bCreatedTime = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+                                            return bCreatedTime - aCreatedTime;
+                                        });
+                                        selectedDoc = sortedConfirmations[0];
+                                    } else {
+                                        selectedDoc = docGroup.documents[0];
+                                    }
+                                    const isLoading = downloadingDoc === selectedDoc?.id;
+                                    return isLoading ? 'Loading...' : 'Download';
+                                })()}
+                            </Button>
+                        </Box>
                     </Box>
-                </Box>
-            ))}
-        </Box>
+                ))}
+            </Box>
+
+            {/* PDF Viewer Modal */}
+            <Dialog
+                open={pdfViewerOpen}
+                onClose={() => setPdfViewerOpen(false)}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        height: '90vh',
+                        maxHeight: '90vh'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    pb: 1
+                }}>
+                    <Typography variant="h6">
+                        {currentPdfTitle || 'Document Viewer'}
+                    </Typography>
+                    <IconButton
+                        onClick={() => setPdfViewerOpen(false)}
+                        size="small"
+                    >
+                        <CloseIcon />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, height: '100%' }}>
+                    {currentPdfUrl ? (
+                        <iframe
+                            src={currentPdfUrl}
+                            width="100%"
+                            height="100%"
+                            style={{ border: 'none' }}
+                            title={currentPdfTitle || 'PDF Document'}
+                        />
+                    ) : (
+                        <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            height: '100%'
+                        }}>
+                            <Typography>Loading document...</Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
+        </>
     );
 };
 
