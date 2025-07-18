@@ -70,6 +70,25 @@ async function generateBOLCore(shipmentId, firebaseDocId) {
         // Extract data for BOL generation
         const bolData = extractBOLData(shipmentData, shipmentId);
         
+        // DEBUG: Log final broker object AFTER bolData is created
+        if (bolData && bolData.broker) {
+            console.log('🎯 BOL Generation - Final Broker Object:', {
+                name: bolData.broker.name,
+                phone: bolData.broker.phone,
+                email: bolData.broker.email,
+                port: bolData.broker.port,
+                reference: bolData.broker.reference
+            });
+            console.log('🔥 PORT AND REFERENCE VALUES:', {
+                portValue: bolData.broker.port,
+                portType: typeof bolData.broker.port,
+                referenceValue: bolData.broker.reference,
+                referenceType: typeof bolData.broker.reference,
+                portTrimmed: typeof bolData.broker.port === 'string' ? bolData.broker.port.trim() : 'NOT_STRING',
+                referenceTrimmed: typeof bolData.broker.reference === 'string' ? bolData.broker.reference.trim() : 'NOT_STRING'
+            });
+        }
+        
         // Generate the PDF BOL
         const pdfBuffer = await generateBOLPDF(bolData);
         
@@ -343,6 +362,125 @@ function extractBOLData(shipmentData, shipmentId) {
             zip: 'L9W 5B6',
             accountNumber: '' // Will be populated dynamically in the future
         },
+
+        // Customs Broker Information - SAFE extraction with comprehensive null checks
+        broker: (() => {
+            try {
+                // Safely check if broker data exists
+                const brokerDetails = (shipmentData && typeof shipmentData === 'object') ? shipmentData.brokerDetails : null;
+                const selectedBroker = (shipmentData && typeof shipmentData === 'object') ? shipmentData.selectedBroker : null;
+                
+                // Check multiple possible field names for port and reference
+                const brokerPort = (shipmentData && typeof shipmentData === 'object') ? 
+                    (shipmentData.brokerPort || shipmentData.port || shipmentData.customsPort) : null;
+                const brokerReference = (shipmentData && typeof shipmentData === 'object') ? 
+                    (shipmentData.brokerReference || shipmentData.reference || shipmentData.customsReference || shipmentData.brokerRef) : null;
+
+                // DEBUG: Log broker data for troubleshooting
+                console.log('🔍 BOL Generation - Broker Data Debug:', {
+                    hasShipmentData: !!shipmentData,
+                    selectedBroker,
+                    extractedBrokerPort: brokerPort,
+                    extractedBrokerReference: brokerReference,
+                    shipmentDataBrokerFields: shipmentData ? {
+                        brokerPort: shipmentData.brokerPort,
+                        port: shipmentData.port,
+                        customsPort: shipmentData.customsPort,
+                        brokerReference: shipmentData.brokerReference,
+                        reference: shipmentData.reference,
+                        customsReference: shipmentData.customsReference,
+                        brokerRef: shipmentData.brokerRef
+                    } : null,
+                    brokerDetails: brokerDetails ? {
+                        name: brokerDetails.name,
+                        port: brokerDetails.port,
+                        reference: brokerDetails.reference,
+                        brokerPort: brokerDetails.brokerPort,
+                        brokerReference: brokerDetails.brokerReference
+                    } : null
+                });
+                
+                // ADDITIONAL DEBUG: Log what we're actually getting
+                console.log('🚀 SHIPMENT DATA RECEIVED:', JSON.stringify(shipmentData, null, 2));
+
+                return {
+                    name: (() => {
+                        try {
+                            let brokerName = '';
+                            if (brokerDetails && typeof brokerDetails === 'object') {
+                                brokerName = brokerDetails.name || brokerDetails.brokerName || 
+                                           brokerDetails.companyName || brokerDetails.id || '';
+                            }
+                            if (!brokerName && selectedBroker) {
+                                brokerName = String(selectedBroker);
+                            }
+                            return String(brokerName || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })(),
+                    phone: (() => {
+                        try {
+                            if (!brokerDetails || typeof brokerDetails !== 'object') return '';
+                            return String(brokerDetails.phone || brokerDetails.telephone || 
+                                   brokerDetails.contactPhone || brokerDetails.phoneNumber || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })(),
+                    email: (() => {
+                        try {
+                            if (!brokerDetails || typeof brokerDetails !== 'object') return '';
+                            return String(brokerDetails.email || brokerDetails.contactEmail || 
+                                   brokerDetails.emailAddress || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })(),
+                    fax: (() => {
+                        try {
+                            if (!brokerDetails || typeof brokerDetails !== 'object') return '';
+                            return String(brokerDetails.fax || brokerDetails.faxNumber || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })(),
+
+                    port: (() => {
+                        try {
+                            // Check multiple possible sources for port data
+                            let port = brokerPort || '';
+                            if (!port && brokerDetails && typeof brokerDetails === 'object') {
+                                port = brokerDetails.port || brokerDetails.brokerPort || '';
+                            }
+                            return String(port || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })(),
+                    reference: (() => {
+                        try {
+                            // Check multiple possible sources for reference data
+                            let reference = brokerReference || '';
+                            if (!reference && brokerDetails && typeof brokerDetails === 'object') {
+                                reference = brokerDetails.reference || brokerDetails.brokerReference || brokerDetails.referenceNumber || '';
+                            }
+                            return String(reference || '');
+                        } catch (e) {
+                            return '';
+                        }
+                    })()
+                };
+            } catch (e) {
+                // Ultimate fallback - return empty broker object
+                console.warn('BOL Generation: Error extracting broker data, using empty fallback:', e);
+                return {
+                    name: '', phone: '', email: '', port: '', reference: ''
+                };
+            }
+        })(),
+        
+        
         
         // Package Information - Enhanced mapping for QuickShip with quantity and units
         packages: packages.map((pkg, index) => {
@@ -1043,19 +1181,134 @@ function formatPhoneNumber(phone) {
  * IMPROVED VERSION with dynamic billing address and enhanced layout
  */
 function drawExactThirdPartySection(doc, bolData) {
-        // Third party billing section - IMPROVED height for better content fit
+    // Third party billing section (left column) - Split into two columns like SHIP TO/REFERENCES
     doc.lineWidth(1)
-       .rect(25, 270, 562, 80) // Moved up to Y=270, increased height to 80px
+       .rect(25, 270, 280, 80) // Left column: same width as SHIP TO
        .stroke();
 
-    // Third party header
+    // Third party header (left column)
     doc.font('Helvetica-Bold')
        .fontSize(8)
        .fillColor('#FFFFFF')
-       .rect(25, 270, 562, 15)
+       .rect(25, 270, 280, 15)
        .fill('#000000')
        .fillColor('#FFFFFF')
        .text('THIRD PARTY FREIGHT CHARGES BILLED TO', 30, 275);
+
+    // Customs Broker section (right column)
+    doc.lineWidth(1)
+       .rect(305, 270, 282, 80) // Right column: same width as REFERENCES
+       .stroke();
+
+    // Customs Broker header (right column)
+    doc.font('Helvetica-Bold')
+       .fontSize(8)
+       .fillColor('#FFFFFF')
+       .rect(305, 270, 282, 15)
+       .fill('#000000')
+       .fillColor('#FFFFFF')
+       .text('CUSTOMS BROKER', 310, 275);
+
+    // Customs Broker content (right column) - ORGANIZED label:value format
+    try {
+        doc.fillColor('#000000')
+           .font('Helvetica')
+           .fontSize(7);
+
+        let brokerYPos = 293;
+
+        // Check if we have any broker data at all
+        const hasBrokerData = bolData && bolData.broker && (
+            (bolData.broker.name && String(bolData.broker.name).trim()) ||
+            (bolData.broker.phone && String(bolData.broker.phone).trim()) ||
+            (bolData.broker.email && String(bolData.broker.email).trim()) ||
+            (bolData.broker.port && String(bolData.broker.port).trim()) ||
+            (bolData.broker.reference && String(bolData.broker.reference).trim())
+        );
+
+        if (!hasBrokerData) {
+            // Display "No broker assigned" if no broker data exists
+            doc.text('No broker assigned', 310, brokerYPos);
+        } else {
+            // Display broker information in label:value format
+
+            // Broker Name: [value]
+            if (bolData.broker.name) {
+                try {
+                    const nameValue = String(bolData.broker.name).trim();
+                    if (nameValue && nameValue !== 'null' && nameValue !== 'undefined') {
+                        doc.text(`Broker Name: ${nameValue}`, 310, brokerYPos);
+                        brokerYPos += 9;
+                    }
+                } catch (e) {
+                    console.warn('BOL: Error displaying broker name:', e);
+                }
+            }
+
+            // Phone: [value]
+            if (bolData.broker.phone) {
+                try {
+                    const phoneValue = String(bolData.broker.phone).trim();
+                    if (phoneValue && phoneValue !== 'null' && phoneValue !== 'undefined') {
+                        doc.text(`Phone: ${phoneValue}`, 310, brokerYPos);
+                        brokerYPos += 9;
+                    }
+                } catch (e) {
+                    console.warn('BOL: Error displaying broker phone:', e);
+                }
+            }
+            
+            // Email: [value]
+            if (bolData.broker.email) {
+                try {
+                    const emailValue = String(bolData.broker.email).trim();
+                    if (emailValue && emailValue !== 'null' && emailValue !== 'undefined') {
+                        doc.text(`Email: ${emailValue}`, 310, brokerYPos);
+                        brokerYPos += 9;
+                    }
+                } catch (e) {
+                    console.warn('BOL: Error displaying broker email:', e);
+                }
+            }
+
+            // Port: [value]
+            if (bolData.broker.port) {
+                try {
+                    const portValue = String(bolData.broker.port).trim();
+                    if (portValue && portValue !== 'null' && portValue !== 'undefined') {
+                        doc.text(`Port: ${portValue}`, 310, brokerYPos);
+                        brokerYPos += 9;
+                    }
+                } catch (e) {
+                    console.warn('BOL: Error displaying broker port:', e);
+                }
+            }
+            
+            // Reference: [value]
+            if (bolData.broker.reference) {
+                try {
+                    const referenceValue = String(bolData.broker.reference).trim();
+                    if (referenceValue && referenceValue !== 'null' && referenceValue !== 'undefined') {
+                        doc.text(`Reference: ${referenceValue}`, 310, brokerYPos);
+                        brokerYPos += 9;
+                    }
+                } catch (e) {
+                    console.warn('BOL: Error displaying broker reference:', e);
+                }
+            }
+        }
+    } catch (e) {
+        // Ultimate fallback - display minimal safe content
+        console.warn('BOL: Error in broker section display, using fallback:', e);
+        try {
+            doc.fillColor('#000000')
+               .font('Helvetica-Bold')
+               .fontSize(8)
+               .text('No broker assigned', 310, 293);
+        } catch (fallbackError) {
+            console.error('BOL: Critical error in broker section fallback:', fallbackError);
+        }
+    }
     
     // ENHANCED billing address extraction - use dynamic billing data when available
     let billingAddress = getBillingAddress(bolData);

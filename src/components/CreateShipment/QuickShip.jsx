@@ -2881,19 +2881,22 @@ const QuickShip = ({
                 // Load email notification preference (default to true if not specified)
                 setSendEmailNotifications(editShipment.sendEmailNotifications !== false);
 
-                // Load broker information
-                if (editShipment.selectedBroker) {
+                // Load broker information - only load if data is valid and not null/empty
+                if (editShipment.selectedBroker && editShipment.selectedBroker !== null && editShipment.selectedBroker !== '') {
                     setSelectedBroker(editShipment.selectedBroker);
                 }
-                if (editShipment.brokerPort) {
+                if (editShipment.brokerPort && editShipment.brokerPort !== null && editShipment.brokerPort !== '') {
                     setBrokerPort(editShipment.brokerPort);
                 }
-                if (editShipment.brokerReference) {
+                if (editShipment.brokerReference && editShipment.brokerReference !== null && editShipment.brokerReference !== '') {
                     setBrokerReference(editShipment.brokerReference);
                 }
 
-                // Auto-expand broker section if broker data exists
-                if (editShipment.selectedBroker || editShipment.brokerPort || editShipment.brokerReference) {
+                // Auto-expand broker section if broker data exists and is valid
+                const hasValidBrokerData = (editShipment.selectedBroker && editShipment.selectedBroker !== null && editShipment.selectedBroker !== '') ||
+                    (editShipment.brokerPort && editShipment.brokerPort !== null && editShipment.brokerPort !== '') ||
+                    (editShipment.brokerReference && editShipment.brokerReference !== null && editShipment.brokerReference !== '');
+                if (hasValidBrokerData) {
                     setBrokerExpanded(true);
                 }
 
@@ -3875,35 +3878,39 @@ const QuickShip = ({
                 selectedCarrierContactId,
                 carrier: selectedCarrier, // Both fields for compatibility
 
-                // COMPREHENSIVE BROKER INFORMATION - Enhanced to preserve broker name even without full details
-                selectedBroker: selectedBroker || '',
-                ...(selectedBroker && {
-                    brokerDetails: (() => {
-                        const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
-                        if (foundBroker) {
-                            return foundBroker;
-                        } else {
-                            // If broker not found in companyBrokers, create minimal broker object to preserve name
-                            console.log('🏢 QUICKSHIP UPDATE: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
-                            return {
-                                name: selectedBroker,
-                                phone: '',
-                                email: '',
-                                brokerName: selectedBroker, // Additional fallback field
-                                companyName: selectedBroker,
-                                contactPerson: '',
-                                address: '',
-                                city: '',
-                                state: '',
-                                postalCode: '',
-                                country: 'CA',
-                                fax: ''
-                            };
-                        }
-                    })()
-                }),
-                brokerPort: brokerPort || '',
-                brokerReference: brokerReference || '',
+                // COMPREHENSIVE BROKER INFORMATION - Enhanced to handle broker removal properly
+                selectedBroker: selectedBroker || null,
+                brokerDetails: (() => {
+                    if (!selectedBroker) {
+                        // EXPLICIT BROKER REMOVAL - clear all broker data
+                        console.log('🏢 QUICKSHIP UPDATE: Broker removed, clearing all broker data');
+                        return null;
+                    }
+
+                    const foundBroker = companyBrokers.find(b => b.name === selectedBroker);
+                    if (foundBroker) {
+                        return foundBroker;
+                    } else {
+                        // If broker not found in companyBrokers, create minimal broker object to preserve name
+                        console.log('🏢 QUICKSHIP UPDATE: Broker not found in companyBrokers, creating minimal broker object:', selectedBroker);
+                        return {
+                            name: selectedBroker,
+                            phone: '',
+                            email: '',
+                            brokerName: selectedBroker, // Additional fallback field
+                            companyName: selectedBroker,
+                            contactPerson: '',
+                            address: '',
+                            city: '',
+                            state: '',
+                            postalCode: '',
+                            country: 'CA',
+                            fax: ''
+                        };
+                    }
+                })(),
+                brokerPort: selectedBroker ? (brokerPort || '') : null,
+                brokerReference: selectedBroker ? (brokerReference || '') : null,
 
                 // MANUAL RATES with proper formatting
                 manualRates: manualRates.map(rate => ({
