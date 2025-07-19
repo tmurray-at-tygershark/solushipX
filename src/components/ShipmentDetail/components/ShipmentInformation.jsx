@@ -730,6 +730,12 @@ const ShipmentInformation = ({
                     const durationInSeconds = parseInt(route.duration);
                     const durationInMinutes = Math.round(durationInSeconds / 60);
 
+                    // Create proper bounds that include the entire route path
+                    const routeBounds = new window.google.maps.LatLngBounds();
+                    decodedPath.forEach(point => {
+                        routeBounds.extend(point);
+                    });
+
                     // Create a properly structured directions object that matches what DirectionsRenderer expects
                     const directionsResult = {
                         routes: [{
@@ -760,7 +766,7 @@ const ShipmentInformation = ({
                                 }]
                             }],
                             overview_path: decodedPath,
-                            bounds: new window.google.maps.LatLngBounds(originResult.geometry.location, destinationResult.geometry.location),
+                            bounds: routeBounds,
                             copyrights: "© Google Maps",
                             warnings: [],
                             waypoint_order: [],
@@ -864,7 +870,7 @@ const ShipmentInformation = ({
 
             // Handle route view
             if (openMap === 'route' && directions) {
-                console.log('🛣️ [ShipmentInformation] Rendering route on map...');
+                // Rendering route on map
 
                 // Create and render directions
                 const directionsRenderer = new window.google.maps.DirectionsRenderer({
@@ -917,14 +923,26 @@ const ShipmentInformation = ({
                     title: "End Location"
                 });
 
-                // Fit bounds to show the entire route
-                map.fitBounds(directions.routes[0].bounds, {
-                    top: 50,
-                    right: 50,
-                    bottom: 50,
-                    left: 50
-                });
+                // Fit route bounds with proper timing and padding
+                const routeBounds = directions.routes[0].bounds;
+                if (routeBounds && !routeBounds.isEmpty()) {
+                    // Small delay to ensure map is fully rendered
+                    setTimeout(() => {
+                        map.fitBounds(routeBounds, {
+                            top: 40,
+                            right: 40,
+                            bottom: 40,
+                            left: 40
+                        });
 
+                        // Ensure zoom level is reasonable for route viewing
+                        const listener = window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+                            if (map.getZoom() > 16) {
+                                map.setZoom(16);
+                            }
+                        });
+                    }, 100);
+                }
             } else if (geocodedPosition) {
                 console.log('📍 [ShipmentInformation] Rendering single location on map...');
 

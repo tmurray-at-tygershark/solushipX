@@ -239,6 +239,19 @@ const AdminHeader = () => {
         window.location.href = path;
     };
 
+    // Handle main button clicks for navigation
+    const handleMainButtonClick = (categoryKey, category) => {
+        // For shipments, navigate to main shipments page
+        if (categoryKey === 'shipments') {
+            setMegaMenuOpen(null); // Close any open menus
+            hardRedirect('/admin/shipments');
+            return;
+        }
+
+        // For other categories, just toggle the dropdown
+        setMegaMenuOpen(megaMenuOpen === categoryKey ? null : categoryKey);
+    };
+
     // Handle outside clicks to close mobile menu and window resize
     useEffect(() => {
         const handleOutsideClick = (event) => {
@@ -739,7 +752,7 @@ const AdminHeader = () => {
                                 }}
                             >
                                 <Button
-                                    onClick={() => setMegaMenuOpen(megaMenuOpen === key ? null : key)}
+                                    onClick={() => handleMainButtonClick(key, category)}
                                     endIcon={<ExpandMoreIcon />}
                                     sx={{
                                         color: '#ffffff',
