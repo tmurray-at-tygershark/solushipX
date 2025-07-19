@@ -20,7 +20,8 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    Tooltip
+    Tooltip,
+    Popover
 } from '@mui/material';
 import {
     LocalShipping as LocalShippingIcon,
@@ -34,16 +35,18 @@ import {
     Close as CloseIcon,
     Business as BusinessIcon,
     Person as PersonIcon,
-    OpenInNew as OpenInNewIcon
+    OpenInNew as OpenInNewIcon,
+    KeyboardArrowDown as ArrowDownIcon
 } from '@mui/icons-material';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 // Note: We don't use @react-google-maps/api components here due to provider issues
 // Instead we'll create the map directly with the Google Maps JavaScript API
 import { db } from '../../../firebase';
-import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../../contexts/AuthContext';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import ManualStatusOverride from './ManualStatusOverride';
+import invoiceStatusService from '../../../services/invoiceStatusService';
 
 // CarrierDisplay component to show carrier logo and name
 const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
@@ -83,11 +86,12 @@ const ShipmentInformation = ({
     onRefreshStatus,
     onShowSnackbar,
     onOpenTrackingDrawer,
-    onStatusUpdated // Add callback for status updates
+    onStatusUpdated, // Add callback for status updates
+    isAdmin // Add admin context
 }) => {
     // Hooks
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, currentUser } = useAuth();
 
     // Map state
     const [openMap, setOpenMap] = useState(null);
@@ -103,6 +107,12 @@ const ShipmentInformation = ({
     const [customerData, setCustomerData] = useState(null);
     const [loadingCompanyData, setLoadingCompanyData] = useState(false);
     const [loadingCustomerData, setLoadingCustomerData] = useState(false);
+
+    // Invoice status editing state
+    const [invoiceStatuses, setInvoiceStatuses] = useState([]);
+    const [statusPopoverAnchor, setStatusPopoverAnchor] = useState(null);
+    const [editingStatusValue, setEditingStatusValue] = useState('');
+    const [savingInvoiceStatus, setSavingInvoiceStatus] = useState(false);
 
     // Check if Google Maps is loaded and get API key
     useEffect(() => {
@@ -280,10 +290,26 @@ const ShipmentInformation = ({
     // Load customer data
     useEffect(() => {
         const loadCustomerData = async () => {
-            // Get the customer ID from the shipment
-            const customerId = shipment?.customerId || shipment?.customerID;
+            // Get the customer ID from multiple possible sources
+            const customerId = shipment?.customerId ||
+                shipment?.customerID ||
+                shipment?.shipFrom?.customerID ||
+                shipment?.origin?.customerID ||
+                shipment?.shipTo?.customerID ||
+                shipment?.destination?.customerID;
+
+            console.log('🔍 [ShipmentInformation] Customer ID lookup:', {
+                shipmentCustomerId: shipment?.customerId,
+                shipmentCustomerID: shipment?.customerID,
+                shipFromCustomerID: shipment?.shipFrom?.customerID,
+                originCustomerID: shipment?.origin?.customerID,
+                shipToCustomerID: shipment?.shipTo?.customerID,
+                destinationCustomerID: shipment?.destination?.customerID,
+                resolvedCustomerId: customerId
+            });
 
             if (!customerId) {
+                console.log('❌ [ShipmentInformation] No customer ID found in any location');
                 setCustomerData(null);
                 setLoadingCustomerData(false);
                 return;
@@ -292,12 +318,15 @@ const ShipmentInformation = ({
             setLoadingCustomerData(true);
 
             try {
+                console.log('🔍 [ShipmentInformation] Loading customer data for ID:', customerId);
+
                 // FIRST: Try to get customer by document ID (direct lookup)
                 const customerDocRef = doc(db, 'customers', customerId);
                 const customerDocSnapshot = await getDoc(customerDocRef);
 
                 if (customerDocSnapshot.exists()) {
                     const data = { id: customerDocSnapshot.id, ...customerDocSnapshot.data() };
+                    console.log('✅ [ShipmentInformation] Customer found by document ID:', data);
                     setCustomerData(data);
                     setLoadingCustomerData(false);
                     return;
@@ -314,12 +343,14 @@ const ShipmentInformation = ({
                 if (!customerSnapshot.empty) {
                     const customerDoc = customerSnapshot.docs[0];
                     const data = { id: customerDoc.id, ...customerDoc.data() };
+                    console.log('✅ [ShipmentInformation] Customer found by customerID field:', data);
                     setCustomerData(data);
                 } else {
+                    console.log('❌ [ShipmentInformation] Customer not found in database for ID:', customerId);
                     setCustomerData(null);
                 }
             } catch (error) {
-                console.error('❌ Error loading customer:', error);
+                console.error('❌ [ShipmentInformation] Error loading customer:', error);
                 setCustomerData(null);
             }
 
@@ -327,7 +358,22 @@ const ShipmentInformation = ({
         };
 
         loadCustomerData();
-    }, [shipment?.customerId, shipment?.customerID]);
+    }, [shipment?.customerId, shipment?.customerID, shipment?.shipFrom?.customerID, shipment?.origin?.customerID, shipment?.shipTo?.customerID, shipment?.destination?.customerID]);
+
+    // Load invoice statuses
+    useEffect(() => {
+        const loadInvoiceStatuses = async () => {
+            try {
+                const statuses = await invoiceStatusService.loadInvoiceStatuses();
+                setInvoiceStatuses(statuses);
+            } catch (error) {
+                console.error('Error loading invoice statuses:', error);
+                setInvoiceStatuses([]);
+            }
+        };
+
+        loadInvoiceStatuses();
+    }, []);
 
     // Company and Customer navigation handlers
     const handleNavigateToCompany = () => {
@@ -362,6 +408,88 @@ const ShipmentInformation = ({
             navigate(`/customers/${customerData.id}`);
         } else {
             console.warn('👤 Cannot navigate - missing customer ID');
+        }
+    };
+
+    // Invoice status editing handlers
+    const handleStartEditInvoiceStatus = (currentInvoiceStatus, event) => {
+        setEditingStatusValue(currentInvoiceStatus);
+        setStatusPopoverAnchor(event.currentTarget);
+    };
+
+    const handleClosePopover = () => {
+        setStatusPopoverAnchor(null);
+        setEditingStatusValue('');
+    };
+
+    const handleSaveInvoiceStatus = async (newStatusValue = null) => {
+        const statusToSave = newStatusValue || editingStatusValue;
+        const currentInvoiceStatus = shipment?.invoiceStatus || 'uninvoiced';
+
+        // Compare with the shipment's current invoice status
+        if (!statusToSave || statusToSave === currentInvoiceStatus) {
+            handleClosePopover();
+            return;
+        }
+
+        setSavingInvoiceStatus(true);
+        try {
+            console.log(`Updating shipment ${shipment.shipmentID} invoice status from "${currentInvoiceStatus}" to "${statusToSave}"`);
+
+            // Find the actual Firestore document that contains this shipmentID
+            const shipmentsQuery = query(
+                collection(db, 'shipments'),
+                where('shipmentID', '==', shipment.shipmentID),
+                limit(1)
+            );
+
+            const querySnapshot = await getDocs(shipmentsQuery);
+
+            if (querySnapshot.empty) {
+                throw new Error(`No shipment document found with shipmentID: ${shipment.shipmentID}`);
+            }
+
+            // Get the actual document ID (not the shipmentID field)
+            const shipmentDoc = querySnapshot.docs[0];
+            const actualDocumentId = shipmentDoc.id;
+
+            console.log(`Found shipment document ID: ${actualDocumentId} for shipmentID: ${shipment.shipmentID}`);
+
+            // Update using the actual document ID
+            const shipmentRef = doc(db, 'shipments', actualDocumentId);
+            await updateDoc(shipmentRef, {
+                invoiceStatus: statusToSave,
+                updatedAt: new Date(),
+                updatedBy: currentUser.email
+            });
+
+            console.log(`Successfully updated shipment document ${actualDocumentId} (shipmentID: ${shipment.shipmentID}) invoiceStatus to "${statusToSave}"`);
+
+            // Verify the update by reading the document back
+            const updatedShipment = await getDoc(shipmentRef);
+            if (updatedShipment.exists()) {
+                const shipmentData = updatedShipment.data();
+                console.log(`Verified: shipment ${shipment.shipmentID} now has invoiceStatus: "${shipmentData.invoiceStatus}"`);
+            }
+
+            if (onShowSnackbar) {
+                onShowSnackbar('Invoice status updated successfully', 'success');
+            }
+
+            handleClosePopover();
+
+            // Trigger a refresh of the shipment data if callback is available
+            if (onStatusUpdated) {
+                onStatusUpdated();
+            }
+
+        } catch (error) {
+            console.error('Error updating invoice status:', error);
+            if (onShowSnackbar) {
+                onShowSnackbar('Failed to update invoice status: ' + error.message, 'error');
+            }
+        } finally {
+            setSavingInvoiceStatus(false);
         }
     };
 
@@ -1585,61 +1713,64 @@ const ShipmentInformation = ({
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Shipment Type</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                             </Box>
-                            <Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Reference Numbers</Typography>
-                                {/* Primary reference */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                        {shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}
-                                    </Typography>
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => {
-                                            const referenceNumber = shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A';
-                                            if (referenceNumber && referenceNumber !== 'N/A') {
-                                                navigator.clipboard.writeText(referenceNumber);
-                                                onShowSnackbar('Reference number copied!', 'success');
-                                            } else {
-                                                onShowSnackbar('No reference number to copy.', 'warning');
-                                            }
-                                        }}
-                                        sx={{ padding: '2px' }}
-                                        title="Copy reference number"
-                                    >
-                                        <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                    </IconButton>
-                                </Box>
-                                {/* Additional references */}
-                                {shipment?.shipmentInfo?.referenceNumbers && shipment.shipmentInfo.referenceNumbers.length > 0 && (
-                                    <>
-                                        {shipment.shipmentInfo.referenceNumbers.map((ref, index) => (
-                                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                    {ref}
-                                                </Typography>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => {
-                                                        if (ref) {
-                                                            navigator.clipboard.writeText(ref);
-                                                            onShowSnackbar('Reference number copied!', 'success');
-                                                        }
-                                                    }}
-                                                    sx={{ padding: '2px' }}
-                                                    title="Copy reference number"
-                                                >
-                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                                </IconButton>
-                                            </Box>
-                                        ))}
-                                    </>
-                                )}
-                            </Box>
+
                             <Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Bill Type</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {formatBillType(shipment?.shipmentInfo?.shipmentBillType || shipment?.shipmentInfo?.billType)}
                                 </Typography>
+                            </Box>
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Invoice Status</Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    {(() => {
+                                        const statusCode = shipment?.invoiceStatus || 'uninvoiced';
+                                        const dynamicStatus = invoiceStatuses.find(s => s.statusCode === statusCode);
+
+                                        if (dynamicStatus) {
+                                            return (
+                                                <Chip
+                                                    label={dynamicStatus.statusLabel}
+                                                    size="small"
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        height: '22px',
+                                                        fontWeight: 500,
+                                                        color: dynamicStatus.fontColor || '#ffffff',
+                                                        backgroundColor: dynamicStatus.color || '#6b7280',
+                                                        border: '1px solid rgba(0,0,0,0.1)'
+                                                    }}
+                                                />
+                                            );
+                                        }
+
+                                        // Fallback for unknown status
+                                        return (
+                                            <Chip
+                                                label={statusCode}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '11px',
+                                                    height: '22px',
+                                                    fontWeight: 500,
+                                                    color: '#ffffff',
+                                                    backgroundColor: '#6b7280',
+                                                    border: '1px solid rgba(0,0,0,0.1)'
+                                                }}
+                                            />
+                                        );
+                                    })()}
+                                    {isAdmin && (
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => handleStartEditInvoiceStatus(shipment?.invoiceStatus || 'uninvoiced', e)}
+                                            sx={{ padding: '2px' }}
+                                            title="Edit invoice status"
+                                        >
+                                            <ArrowDownIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                        </IconButton>
+                                    )}
+                                </Box>
                             </Box>
                         </Stack>
                     </Box>
@@ -1954,6 +2085,56 @@ const ShipmentInformation = ({
                                 </Box>
                             </Box>
                             <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Reference Numbers</Typography>
+                                {/* Primary reference */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                        {shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A'}
+                                    </Typography>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                            const referenceNumber = shipment?.shipmentInfo?.shipperReferenceNumber || shipment?.shipmentID || 'N/A';
+                                            if (referenceNumber && referenceNumber !== 'N/A') {
+                                                navigator.clipboard.writeText(referenceNumber);
+                                                onShowSnackbar('Reference number copied!', 'success');
+                                            } else {
+                                                onShowSnackbar('No reference number to copy.', 'warning');
+                                            }
+                                        }}
+                                        sx={{ padding: '2px' }}
+                                        title="Copy reference number"
+                                    >
+                                        <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                    </IconButton>
+                                </Box>
+                                {/* Additional references */}
+                                {shipment?.shipmentInfo?.referenceNumbers && shipment.shipmentInfo.referenceNumbers.length > 0 && (
+                                    <>
+                                        {shipment.shipmentInfo.referenceNumbers.map((ref, index) => (
+                                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                    {ref}
+                                                </Typography>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        if (ref) {
+                                                            navigator.clipboard.writeText(ref);
+                                                            onShowSnackbar('Reference number copied!', 'success');
+                                                        }
+                                                    }}
+                                                    sx={{ padding: '2px' }}
+                                                    title="Copy reference number"
+                                                >
+                                                    <ContentCopyIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                                </IconButton>
+                                            </Box>
+                                        ))}
+                                    </>
+                                )}
+                            </Box>
+                            <Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Last Updated</Typography>
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
                                     {(() => {
@@ -2206,6 +2387,116 @@ const ShipmentInformation = ({
                     {renderMap()}
                 </DialogContent>
             </Dialog>
+
+            {/* Invoice Status Popover */}
+            <Popover
+                open={Boolean(statusPopoverAnchor)}
+                anchorEl={statusPopoverAnchor}
+                onClose={handleClosePopover}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 2,
+                        minWidth: 320,
+                        maxWidth: 400,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 2,
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                    }
+                }}
+            >
+                <Box>
+                    {/* Current status header */}
+                    <Box sx={{ mb: 2 }}>
+                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                            Current Status
+                        </Typography>
+                        {(() => {
+                            const currentStatus = invoiceStatuses.find(s => s.statusCode === editingStatusValue);
+                            if (currentStatus) {
+                                return (
+                                    <Chip
+                                        label={currentStatus.statusLabel}
+                                        size="small"
+                                        sx={{
+                                            fontSize: '11px',
+                                            height: '22px',
+                                            fontWeight: 500,
+                                            color: currentStatus.fontColor || '#ffffff',
+                                            backgroundColor: currentStatus.color || '#6b7280',
+                                            border: '1px solid rgba(0,0,0,0.1)'
+                                        }}
+                                    />
+                                );
+                            }
+                            return <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Unknown Status</Typography>;
+                        })()}
+                    </Box>
+
+                    {/* Available status options */}
+                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                        Select Status
+                    </Typography>
+                    <Box sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 1,
+                        p: 2,
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 1,
+                        backgroundColor: '#f9fafb'
+                    }}>
+                        {invoiceStatuses.filter(status => status.enabled).map((status) => (
+                            <Chip
+                                key={status.statusCode}
+                                label={status.statusLabel}
+                                size="small"
+                                onClick={async () => {
+                                    // Only save if it's a different status
+                                    if (status.statusCode !== editingStatusValue) {
+                                        setEditingStatusValue(status.statusCode);
+                                        await handleSaveInvoiceStatus(status.statusCode);
+                                    }
+                                }}
+                                disabled={savingInvoiceStatus}
+                                sx={{
+                                    fontSize: '11px',
+                                    height: '24px',
+                                    fontWeight: 500,
+                                    color: status.fontColor || '#ffffff',
+                                    backgroundColor: status.color || '#6b7280',
+                                    border: '1px solid rgba(0,0,0,0.1)',
+                                    cursor: savingInvoiceStatus ? 'not-allowed' : 'pointer',
+                                    opacity: editingStatusValue === status.statusCode ? 1 : (savingInvoiceStatus ? 0.5 : 0.8),
+                                    transform: editingStatusValue === status.statusCode ? 'scale(1.05)' : 'scale(1)',
+                                    '&:hover': {
+                                        opacity: savingInvoiceStatus ? 0.5 : 1,
+                                        transform: savingInvoiceStatus ? 'scale(1)' : 'scale(1.05)',
+                                        transition: 'all 0.2s'
+                                    }
+                                }}
+                            />
+                        ))}
+                    </Box>
+
+                    {/* Loading indicator when saving */}
+                    {savingInvoiceStatus && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 1 }}>
+                            <CircularProgress size={16} />
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Saving...
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
+            </Popover>
 
         </Grid >
     );

@@ -1027,7 +1027,10 @@ const GlobalShipmentList = () => {
         <Box sx={{
             display: 'flex',
             flexDirection: 'column',
-            height: '100%'
+            height: '100%',
+            // Override the max-width constraint from AdminLayout.css for full width
+            maxWidth: '100% !important',
+            width: '100%'
         }}>
             {/* Header Section */}
             <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>

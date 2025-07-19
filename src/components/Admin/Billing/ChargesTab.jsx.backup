@@ -42,7 +42,6 @@ import {
     ExpandLess,
     ExpandMore,
     Avatar,
-    Popover,
 } from '@mui/material';
 import {
     AttachMoney as MoneyIcon,
@@ -93,7 +92,8 @@ import {
     startAt,
     endAt,
     getCountFromServer,
-    updateDoc
+    updateDoc,
+    setDoc
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -163,10 +163,6 @@ const ChargesTab = () => {
     const [editingInvoiceStatus, setEditingInvoiceStatus] = useState(null);
     const [editingStatusValue, setEditingStatusValue] = useState('');
     const [savingStatus, setSavingStatus] = useState(false);
-
-    // Popover state for status dropdown
-    const [statusPopoverAnchor, setStatusPopoverAnchor] = useState(null);
-    const [popoverChargeId, setPopoverChargeId] = useState(null);
 
     const navigate = useNavigate();
 
@@ -766,32 +762,19 @@ const ChargesTab = () => {
     };
 
     // Inline editing handlers
-    const handleStartEditInvoiceStatus = (chargeId, currentInvoiceStatus, event) => {
-        setPopoverChargeId(chargeId);
-        setEditingStatusValue(currentInvoiceStatus);
-        setStatusPopoverAnchor(event.currentTarget);
+    const handleStartEditInvoiceStatus = (chargeId, currentStatus) => {
+        setEditingInvoiceStatus(chargeId);
+        setEditingStatusValue(currentStatus);
     };
 
     const handleCancelEditInvoiceStatus = () => {
         setEditingInvoiceStatus(null);
         setEditingStatusValue('');
-        setSavingStatus(false);
-        setStatusPopoverAnchor(null);
-        setPopoverChargeId(null);
     };
 
-    const handleClosePopover = () => {
-        setStatusPopoverAnchor(null);
-        setPopoverChargeId(null);
-        setEditingStatusValue('');
-    };
-
-    const handleSaveInvoiceStatus = async (chargeId, newStatusValue = null) => {
-        const statusToSave = newStatusValue || editingStatusValue;
-        const currentCharge = charges.find(c => c.id === chargeId);
-        // Compare with the charge's current invoice status, not the shipment delivery status
-        if (!statusToSave || statusToSave === currentCharge?.status) {
-            handleClosePopover();
+    const handleSaveInvoiceStatus = async (chargeId) => {
+        if (!editingStatusValue || editingStatusValue === charges.find(c => c.id === chargeId)?.status) {
+            handleCancelEditInvoiceStatus();
             return;
         }
 
@@ -803,62 +786,42 @@ const ChargesTab = () => {
                 throw new Error('Charge not found');
             }
 
-            console.log(`Updating invoice status for shipment ${charge.shipmentID} from "${currentCharge?.status}" to "${statusToSave}"`);
+            // Update the shipment's invoice status
+            const shipmentRef = doc(db, 'shipments', charge.shipmentID);
 
-            // Find the actual Firestore document that contains this shipmentID
-            const shipmentsQuery = query(
-                collection(db, 'shipments'),
-                where('shipmentID', '==', charge.shipmentID),
-                limit(1)
-            );
-
-            const querySnapshot = await getDocs(shipmentsQuery);
-
-            if (querySnapshot.empty) {
-                throw new Error(`No shipment document found with shipmentID: ${charge.shipmentID}`);
+            // Check if the document exists before updating
+            const shipmentDoc = await getDoc(shipmentRef);
+            if (!shipmentDoc.exists()) {
+                // If document doesn't exist, create it with the status
+                await setDoc(shipmentRef, {
+                    status: editingStatusValue,
+                    updatedAt: new Date(),
+                    updatedBy: currentUser.email,
+                    shipmentID: charge.shipmentID,
+                    // Add other basic fields that might be needed
+                    createdAt: new Date(),
+                    createdBy: currentUser.email
+                });
+            } else {
+                // Document exists, update it
+                await updateDoc(shipmentRef, {
+                    status: editingStatusValue,
+                    updatedAt: new Date(),
+                    updatedBy: currentUser.email
+                });
             }
 
-            // Get the actual document ID (not the shipmentID field)
-            const shipmentDoc = querySnapshot.docs[0];
-            const actualDocumentId = shipmentDoc.id;
-
-            console.log(`Found shipment document ID: ${actualDocumentId} for shipmentID: ${charge.shipmentID}`);
-
-            // Update using the actual document ID
-            const shipmentRef = doc(db, 'shipments', actualDocumentId);
-            await updateDoc(shipmentRef, {
-                invoiceStatus: statusToSave,
-                updatedAt: new Date(),
-                updatedBy: currentUser.email
-            });
-
-            console.log(`Successfully updated shipment document ${actualDocumentId} (shipmentID: ${charge.shipmentID}) invoiceStatus to "${statusToSave}"`);
-
-            // Verify the update by reading the document back
-            const updatedShipment = await getDoc(shipmentRef);
-            if (updatedShipment.exists()) {
-                const shipmentData = updatedShipment.data();
-                console.log(`Verified: shipment ${charge.shipmentID} now has invoiceStatus: "${shipmentData.invoiceStatus}"`);
-            }
-
-            // Update local state - charge.status represents invoice status, not shipment delivery status
+            // Update local state
             setCharges(prevCharges =>
                 prevCharges.map(c =>
                     c.id === chargeId
-                        ? { ...c, status: statusToSave }
+                        ? { ...c, status: editingStatusValue }
                         : c
                 )
             );
 
             enqueueSnackbar('Invoice status updated successfully', { variant: 'success' });
-            handleClosePopover();
-
-            // Force refresh of the charges data to ensure consistency
-            setTimeout(() => {
-                console.log('Refreshing charges data after invoice status update');
-                fetchChargesPage(page, true);
-            }, 1000);
-
+            handleCancelEditInvoiceStatus();
         } catch (error) {
             console.error('Error updating invoice status:', error);
             enqueueSnackbar('Failed to update invoice status', { variant: 'error' });
@@ -1717,33 +1680,120 @@ const ChargesTab = () => {
                                                     </Box>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
-                                                    {/* Invoice Status (NOT shipment delivery status) - with dropdown arrow */}
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        {(() => {
-                                                            // charge.status = invoice status (invoiced, paid, etc.)
-                                                            // charge.shipmentStatus = delivery status (in transit, delivered, etc.)
-                                                            const statusCode = charge.status || 'uninvoiced';
-                                                            const dynamicStatus = invoiceStatuses.find(s => s.statusCode === statusCode);
+                                                    {editingInvoiceStatus === charge.id ? (
+                                                        // Inline editing mode with styled status options
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                            {/* Current selection display */}
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                {(() => {
+                                                                    const dynamicStatus = invoiceStatuses.find(s => s.statusCode === editingStatusValue);
+                                                                    return (
+                                                                        <Chip
+                                                                            label={dynamicStatus?.statusLabel || editingStatusValue}
+                                                                            size="small"
+                                                                            sx={{
+                                                                                fontSize: '11px',
+                                                                                height: '20px',
+                                                                                fontWeight: 500,
+                                                                                color: dynamicStatus?.fontColor || '#ffffff',
+                                                                                backgroundColor: dynamicStatus?.color || '#6b7280',
+                                                                                border: '1px solid rgba(0,0,0,0.1)',
+                                                                                cursor: 'default'
+                                                                            }}
+                                                                        />
+                                                                    );
+                                                                })()}
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={handleCancelEditInvoiceStatus}
+                                                                    disabled={savingStatus}
+                                                                    sx={{
+                                                                        color: '#dc2626',
+                                                                        p: 0.5,
+                                                                        '&:hover': { backgroundColor: '#fef2f2' }
+                                                                    }}
+                                                                >
+                                                                    <CancelIcon fontSize="small" />
+                                                                </IconButton>
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => handleSaveInvoiceStatus(charge.id)}
+                                                                    disabled={savingStatus}
+                                                                    sx={{
+                                                                        color: '#059669',
+                                                                        p: 0.5,
+                                                                        '&:hover': { backgroundColor: '#f0fdf4' }
+                                                                    }}
+                                                                >
+                                                                    {savingStatus ? (
+                                                                        <CircularProgress size={16} />
+                                                                    ) : (
+                                                                        <CheckIcon fontSize="small" />
+                                                                    )}
+                                                                </IconButton>
+                                                            </Box>
 
-                                                            if (dynamicStatus) {
+                                                            {/* Styled status options */}
+                                                            <Box sx={{
+                                                                display: 'flex',
+                                                                flexWrap: 'wrap',
+                                                                gap: 0.5,
+                                                                maxWidth: 300,
+                                                                p: 1,
+                                                                border: '1px solid #e5e7eb',
+                                                                borderRadius: 1,
+                                                                backgroundColor: '#f9fafb'
+                                                            }}>
+                                                                {invoiceStatuses.filter(status => status.enabled).map((status) => (
+                                                                    <Chip
+                                                                        key={status.statusCode}
+                                                                        label={status.statusLabel}
+                                                                        size="small"
+                                                                        onClick={() => setEditingStatusValue(status.statusCode)}
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            height: '18px',
+                                                                            fontWeight: 500,
+                                                                            color: status.fontColor || '#ffffff',
+                                                                            backgroundColor: status.color || '#6b7280',
+                                                                            border: '1px solid rgba(0,0,0,0.1)',
+                                                                            cursor: 'pointer',
+                                                                            opacity: editingStatusValue === status.statusCode ? 1 : 0.7,
+                                                                            '&:hover': {
+                                                                                opacity: 1,
+                                                                                transform: 'scale(1.05)',
+                                                                                transition: 'all 0.2s'
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                ))}
+                                                            </Box>
+                                                        </Box>
+                                                    ) : (
+                                                        // Display mode with status chip and dropdown arrow
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            {(() => {
+                                                                const statusCode = charge.status || 'uninvoiced';
+                                                                const dynamicStatus = invoiceStatuses.find(s => s.statusCode === statusCode);
+
                                                                 return (
                                                                     <React.Fragment>
                                                                         <Chip
-                                                                            label={dynamicStatus.statusLabel}
+                                                                            label={dynamicStatus ? dynamicStatus.statusLabel : statusCode}
                                                                             size="small"
                                                                             sx={{
                                                                                 fontSize: '11px',
                                                                                 height: '20px',
                                                                                 fontWeight: 500,
-                                                                                color: dynamicStatus.fontColor || '#ffffff',
-                                                                                backgroundColor: dynamicStatus.color || '#6b7280',
+                                                                                color: dynamicStatus ? (dynamicStatus.fontColor || '#ffffff') : '#ffffff',
+                                                                                backgroundColor: dynamicStatus ? (dynamicStatus.color || '#6b7280') : '#6b7280',
                                                                                 border: '1px solid rgba(0,0,0,0.1)',
                                                                                 cursor: 'default'
                                                                             }}
                                                                         />
                                                                         <IconButton
                                                                             size="small"
-                                                                            onClick={(e) => handleStartEditInvoiceStatus(charge.id, charge.status || 'uninvoiced', e)}
+                                                                            onClick={() => handleStartEditInvoiceStatus(charge.id, charge.status || 'uninvoiced')}
                                                                             sx={{
                                                                                 p: 0.5,
                                                                                 color: '#6b7280',
@@ -1757,42 +1807,9 @@ const ChargesTab = () => {
                                                                         </IconButton>
                                                                     </React.Fragment>
                                                                 );
-                                                            } else {
-                                                                // Fallback for unknown statuses
-                                                                return (
-                                                                    <React.Fragment>
-                                                                        <Chip
-                                                                            label={statusCode}
-                                                                            size="small"
-                                                                            sx={{
-                                                                                fontSize: '11px',
-                                                                                height: '20px',
-                                                                                fontWeight: 500,
-                                                                                color: '#ffffff',
-                                                                                backgroundColor: '#6b7280',
-                                                                                border: '1px solid rgba(0,0,0,0.1)',
-                                                                                cursor: 'default'
-                                                                            }}
-                                                                        />
-                                                                        <IconButton
-                                                                            size="small"
-                                                                            onClick={(e) => handleStartEditInvoiceStatus(charge.id, charge.status || 'uninvoiced', e)}
-                                                                            sx={{
-                                                                                p: 0.5,
-                                                                                color: '#6b7280',
-                                                                                '&:hover': {
-                                                                                    backgroundColor: '#f3f4f6',
-                                                                                    color: '#374151'
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            <ArrowDownIcon fontSize="small" />
-                                                                        </IconButton>
-                                                                    </React.Fragment>
-                                                                );
-                                                            }
-                                                        })()}
-                                                    </Box>
+                                                            })()}
+                                                        </Box>
+                                                    )
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', width: 40 }}>
                                                     <IconButton
@@ -1854,122 +1871,6 @@ const ChargesTab = () => {
                         />
                     </TableContainer>
                 </Paper>
-
-                {/* Floating Status Popover */}
-                <Popover
-                    open={Boolean(statusPopoverAnchor)}
-                    anchorEl={statusPopoverAnchor}
-                    onClose={handleClosePopover}
-                    anchorOrigin={{
-                        vertical: 'bottom',
-                        horizontal: 'left',
-                    }}
-                    transformOrigin={{
-                        vertical: 'top',
-                        horizontal: 'left',
-                    }}
-                    PaperProps={{
-                        sx: {
-                            p: 2,
-                            minWidth: 320,
-                            maxWidth: 400,
-                            border: '1px solid #e5e7eb',
-                            borderRadius: 2,
-                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
-                        }
-                    }}
-                >
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {/* Header with current status */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                Change Invoice Status
-                            </Typography>
-                            <IconButton
-                                size="small"
-                                onClick={handleClosePopover}
-                                sx={{ p: 0.5, color: '#6b7280' }}
-                            >
-                                <CancelIcon fontSize="small" />
-                            </IconButton>
-                        </Box>
-
-                        {/* Current status display */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Current:</Typography>
-                            {(() => {
-                                const currentStatus = invoiceStatuses.find(s => s.statusCode === editingStatusValue);
-                                return (
-                                    <Chip
-                                        label={currentStatus?.statusLabel || editingStatusValue}
-                                        size="small"
-                                        sx={{
-                                            fontSize: '11px',
-                                            height: '20px',
-                                            fontWeight: 500,
-                                            color: currentStatus?.fontColor || '#ffffff',
-                                            backgroundColor: currentStatus?.color || '#6b7280',
-                                            border: '1px solid rgba(0,0,0,0.1)'
-                                        }}
-                                    />
-                                );
-                            })()}
-                        </Box>
-
-                        {/* Status options grid */}
-                        <Box sx={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: 1,
-                            p: 2,
-                            border: '1px solid #e5e7eb',
-                            borderRadius: 1,
-                            backgroundColor: '#f9fafb'
-                        }}>
-                            {invoiceStatuses.filter(status => status.enabled).map((status) => (
-                                <Chip
-                                    key={status.statusCode}
-                                    label={status.statusLabel}
-                                    size="small"
-                                    onClick={async () => {
-                                        // Only save if it's a different status
-                                        if (status.statusCode !== editingStatusValue) {
-                                            setEditingStatusValue(status.statusCode);
-                                            await handleSaveInvoiceStatus(popoverChargeId, status.statusCode);
-                                        }
-                                    }}
-                                    disabled={savingStatus}
-                                    sx={{
-                                        fontSize: '11px',
-                                        height: '24px',
-                                        fontWeight: 500,
-                                        color: status.fontColor || '#ffffff',
-                                        backgroundColor: status.color || '#6b7280',
-                                        border: '1px solid rgba(0,0,0,0.1)',
-                                        cursor: savingStatus ? 'not-allowed' : 'pointer',
-                                        opacity: editingStatusValue === status.statusCode ? 1 : (savingStatus ? 0.5 : 0.8),
-                                        transform: editingStatusValue === status.statusCode ? 'scale(1.05)' : 'scale(1)',
-                                        '&:hover': {
-                                            opacity: savingStatus ? 0.5 : 1,
-                                            transform: savingStatus ? 'scale(1)' : 'scale(1.05)',
-                                            transition: 'all 0.2s'
-                                        }
-                                    }}
-                                />
-                            ))}
-                        </Box>
-
-                        {/* Loading indicator when saving */}
-                        {savingStatus && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 1 }}>
-                                <CircularProgress size={16} />
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    Saving...
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                </Popover>
             </Box>
         </LocalizationProvider>
     );

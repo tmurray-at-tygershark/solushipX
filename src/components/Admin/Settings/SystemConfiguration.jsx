@@ -55,7 +55,9 @@ import {
     ColorLens as ColorIcon,
     Notifications as NotificationsIcon,
     DragIndicator as DragIndicatorIcon,
-    MoreVert as MoreVertIcon
+    MoreVert as MoreVertIcon,
+    Receipt as ReceiptIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { useSnackbar } from 'notistack';
@@ -122,6 +124,11 @@ const SystemConfiguration = () => {
     const [editingShipmentStatus, setEditingShipmentStatus] = useState(null);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null);
+
+    // Invoice Statuses State
+    const [invoiceStatuses, setInvoiceStatuses] = useState([]);
+    const [invoiceStatusDialogOpen, setInvoiceStatusDialogOpen] = useState(false);
+    const [editingInvoiceStatus, setEditingInvoiceStatus] = useState(null);
     const [masterStatusForm, setMasterStatusForm] = useState({
         label: '',
         displayLabel: '',
@@ -136,6 +143,14 @@ const SystemConfiguration = () => {
         statusLabel: '',
         statusValue: '',
         description: '',
+        enabled: true
+    });
+    const [invoiceStatusForm, setInvoiceStatusForm] = useState({
+        statusLabel: '',
+        statusDescription: '',
+        color: '#6b7280',
+        fontColor: '#ffffff',
+        sortOrder: 0,
         enabled: true
     });
 
@@ -155,7 +170,8 @@ const SystemConfiguration = () => {
                 loadAdditionalServices(),
                 loadServiceLevels(),
                 loadMasterStatuses(),
-                loadShipmentStatuses()
+                loadShipmentStatuses(),
+                loadInvoiceStatuses()
             ]);
         } catch (error) {
             console.error('Error loading configuration:', error);
@@ -461,6 +477,22 @@ const SystemConfiguration = () => {
         }
     };
 
+    const loadInvoiceStatuses = async () => {
+        try {
+            setStatusesLoading(true);
+            const getAllInvoiceStatusesFunction = httpsCallable(functions, 'getAllInvoiceStatuses');
+            const result = await getAllInvoiceStatusesFunction();
+            if (result.data?.success) {
+                setInvoiceStatuses(result.data.invoiceStatuses || []);
+            }
+        } catch (error) {
+            console.error('Error loading invoice statuses:', error);
+            enqueueSnackbar('Failed to load invoice statuses', { variant: 'error' });
+        } finally {
+            setStatusesLoading(false);
+        }
+    };
+
     const handleMasterStatusFormChange = (field, value) => {
         setMasterStatusForm(prev => ({ ...prev, [field]: value }));
     };
@@ -608,11 +640,16 @@ const SystemConfiguration = () => {
                 await deleteFunction({ masterStatusId: item.id });
                 enqueueSnackbar('Master status deleted successfully', { variant: 'success' });
                 await loadMasterStatuses();
-            } else {
+            } else if (type === 'shipment') {
                 const deleteFunction = httpsCallable(functions, 'deleteShipmentStatus');
                 await deleteFunction({ shipmentStatusId: item.id });
                 enqueueSnackbar('Shipment status deleted successfully', { variant: 'success' });
                 await loadShipmentStatuses();
+            } else if (type === 'invoice') {
+                const deleteFunction = httpsCallable(functions, 'deleteInvoiceStatus');
+                await deleteFunction({ invoiceStatusId: item.id });
+                enqueueSnackbar('Invoice status deleted successfully', { variant: 'success' });
+                await loadInvoiceStatuses();
             }
 
             setDeleteDialogOpen(false);
@@ -710,11 +747,82 @@ const SystemConfiguration = () => {
                 handleEditMasterStatus(contextMenuData);
             } else if (contextMenuType === 'shipment') {
                 handleEditShipmentStatus(contextMenuData);
+            } else if (contextMenuType === 'invoice') {
+                handleEditInvoiceStatus(contextMenuData);
             }
         } else if (action === 'delete') {
             handleDeleteClick(contextMenuType, contextMenuData);
         }
         handleContextMenuClose();
+    };
+
+    // Invoice Status Functions
+    const handleInvoiceStatusFormChange = (field, value) => {
+        setInvoiceStatusForm(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleAddInvoiceStatus = () => {
+        setEditingInvoiceStatus(null);
+        setInvoiceStatusForm({
+            statusLabel: '',
+            statusDescription: '',
+            color: '#6b7280',
+            fontColor: '#ffffff',
+            sortOrder: 0,
+            enabled: true
+        });
+        setInvoiceStatusDialogOpen(true);
+    };
+
+    const handleEditInvoiceStatus = (status) => {
+        setEditingInvoiceStatus(status);
+        setInvoiceStatusForm({
+            statusLabel: status.statusLabel || '',
+            statusDescription: status.statusDescription || '',
+            color: status.color || '#6b7280',
+            fontColor: status.fontColor || '#ffffff',
+            sortOrder: status.sortOrder || 0,
+            enabled: status.enabled !== undefined ? status.enabled : true
+        });
+        setInvoiceStatusDialogOpen(true);
+    };
+
+    const handleSaveInvoiceStatus = async () => {
+        try {
+            setSaving(true);
+
+            if (!invoiceStatusForm.statusLabel.trim()) {
+                enqueueSnackbar('Status label is required', { variant: 'error' });
+                return;
+            }
+
+            const statusData = {
+                statusLabel: invoiceStatusForm.statusLabel.trim(),
+                statusDescription: invoiceStatusForm.statusDescription.trim(),
+                color: invoiceStatusForm.color,
+                fontColor: invoiceStatusForm.fontColor,
+                sortOrder: invoiceStatusForm.sortOrder,
+                enabled: invoiceStatusForm.enabled
+            };
+
+            if (editingInvoiceStatus) {
+                const updateFunction = httpsCallable(functions, 'updateInvoiceStatus');
+                await updateFunction({ invoiceStatusId: editingInvoiceStatus.id, updates: statusData });
+                enqueueSnackbar('Invoice status updated successfully', { variant: 'success' });
+            } else {
+                const createFunction = httpsCallable(functions, 'createInvoiceStatus');
+                await createFunction(statusData);
+                enqueueSnackbar('Invoice status created successfully', { variant: 'success' });
+            }
+
+            setInvoiceStatusDialogOpen(false);
+            await loadInvoiceStatuses();
+        } catch (error) {
+            console.error('Error saving invoice status:', error);
+            enqueueSnackbar(`Failed to save invoice status: ${error.message}`, { variant: 'error' });
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (loading) {
@@ -1332,6 +1440,138 @@ const SystemConfiguration = () => {
                                     </Box>
                                 )}
                             </Box>
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Invoice Statuses Section */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <ReceiptIcon sx={{ color: '#6b7280' }} />
+                                <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                    Invoice Statuses
+                                </Typography>
+                                <Chip
+                                    label={`${invoiceStatuses.length} statuses`}
+                                    size="small"
+                                    sx={{ fontSize: '10px', ml: 1 }}
+                                    color="primary"
+                                />
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                                Configure invoice statuses for comprehensive billing and payment tracking.
+                            </Typography>
+
+                            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                    Manage billing status labels, colors, and ordering for invoice tracking
+                                </Typography>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<AddIcon />}
+                                    onClick={() => handleAddInvoiceStatus()}
+                                    size="small"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Add Invoice Status
+                                </Button>
+                            </Box>
+
+                            {statusesLoading ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                                    <CircularProgress size={24} />
+                                </Box>
+                            ) : invoiceStatuses.length === 0 ? (
+                                <Box sx={{ textAlign: 'center', py: 4, color: '#6b7280' }}>
+                                    <ReceiptIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        No invoice statuses configured. Click "Add Invoice Status" to get started.
+                                    </Typography>
+                                </Box>
+                            ) : (
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                Status Label
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                Description
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                Color
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                Status Code
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                Enabled
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: 80 }}>
+                                                Actions
+                                            </TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {invoiceStatuses.map((status, index) => (
+                                            <TableRow key={status.id} hover>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <ReceiptIcon sx={{ fontSize: 16, color: status.color || '#6b7280' }} />
+                                                        {status.statusLabel}
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', maxWidth: 200 }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                                        {status.statusDescription || 'No description'}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Box
+                                                            sx={{
+                                                                width: 16,
+                                                                height: 16,
+                                                                borderRadius: '50%',
+                                                                backgroundColor: status.color || '#6b7280',
+                                                                border: '1px solid #e5e7eb'
+                                                            }}
+                                                        />
+                                                        <Typography sx={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                                            {status.color || '#6b7280'}
+                                                        </Typography>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b7280' }}>
+                                                        {status.statusCode}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Chip
+                                                        label={status.enabled ? 'Enabled' : 'Disabled'}
+                                                        color={status.enabled ? 'success' : 'default'}
+                                                        size="small"
+                                                        sx={{ fontSize: '11px' }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => handleContextMenuOpen(e, 'invoice', status)}
+                                                    >
+                                                        <MoreVertIcon fontSize="small" />
+                                                    </IconButton>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
                         </AccordionDetails>
                     </Accordion>
                 </Grid>
@@ -2118,7 +2358,7 @@ const SystemConfiguration = () => {
                 </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: '14px', mb: 2 }}>
-                        Are you sure you want to delete this {deleteTarget?.type === 'master' ? 'master status' : 'shipment status'}?
+                        Are you sure you want to delete this {deleteTarget?.type === 'master' ? 'master status' : deleteTarget?.type === 'invoice' ? 'invoice status' : 'shipment status'}?
                     </Typography>
                     <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
                         {deleteTarget?.item?.displayLabel || deleteTarget?.item?.statusLabel}
@@ -2198,6 +2438,192 @@ const SystemConfiguration = () => {
                     </MenuItem>
                 </MenuList>
             </Menu>
+
+            {/* Invoice Status Dialog */}
+            <Dialog
+                open={invoiceStatusDialogOpen}
+                onClose={() => setInvoiceStatusDialogOpen(false)}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: '12px',
+                        maxHeight: '90vh'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: '#374151',
+                    borderBottom: '1px solid #e5e7eb',
+                    pb: 2
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <ReceiptIcon sx={{ fontSize: 20, color: '#6366f1' }} />
+                        {editingInvoiceStatus ? 'Edit Invoice Status' : 'Add Invoice Status'}
+                    </Box>
+                    <IconButton onClick={() => setInvoiceStatusDialogOpen(false)} size="small" disabled={saving}>
+                        <CloseIcon fontSize="small" />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent sx={{ p: 3 }}>
+                    <Grid container spacing={3}>
+                        {/* Status Label */}
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Status Label"
+                                value={invoiceStatusForm.statusLabel}
+                                onChange={(e) => handleInvoiceStatusFormChange('statusLabel', e.target.value)}
+                                fullWidth
+                                size="small"
+                                required
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Enter the status label (e.g., 'Invoiced', 'Paid')"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+
+                        {/* Sort Order */}
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Sort Order"
+                                type="number"
+                                value={invoiceStatusForm.sortOrder}
+                                onChange={(e) => handleInvoiceStatusFormChange('sortOrder', parseInt(e.target.value) || 0)}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Order for display (0-999)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+
+                        {/* Description */}
+                        <Grid item xs={12}>
+                            <TextField
+                                label="Description"
+                                value={invoiceStatusForm.statusDescription}
+                                onChange={(e) => handleInvoiceStatusFormChange('statusDescription', e.target.value)}
+                                fullWidth
+                                multiline
+                                rows={3}
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Optional description of this invoice status"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+
+                        {/* Color and Font Color */}
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Background Color"
+                                value={invoiceStatusForm.color}
+                                onChange={(e) => handleInvoiceStatusFormChange('color', e.target.value)}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Hex color code (e.g., #6b7280)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Text Color"
+                                value={invoiceStatusForm.fontColor}
+                                onChange={(e) => handleInvoiceStatusFormChange('fontColor', e.target.value)}
+                                fullWidth
+                                size="small"
+                                InputLabelProps={{ sx: { fontSize: '12px' } }}
+                                InputProps={{ sx: { fontSize: '12px' } }}
+                                helperText="Hex color code (e.g., #ffffff)"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+
+                        {/* Enabled Toggle */}
+                        <Grid item xs={12}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={invoiceStatusForm.enabled}
+                                        onChange={(e) => handleInvoiceStatusFormChange('enabled', e.target.checked)}
+                                        color="primary"
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {invoiceStatusForm.enabled ? 'Enabled' : 'Disabled'}
+                                    </Typography>
+                                }
+                            />
+                        </Grid>
+
+                        {/* Preview */}
+                        <Grid item xs={12}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1, color: '#374151' }}>
+                                Preview
+                            </Typography>
+                            <Box sx={{
+                                p: 2,
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                backgroundColor: '#f8fafc'
+                            }}>
+                                <Box
+                                    sx={{
+                                        px: 2,
+                                        py: 0.5,
+                                        backgroundColor: invoiceStatusForm.color,
+                                        color: invoiceStatusForm.fontColor,
+                                        borderRadius: '12px',
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        display: 'inline-block'
+                                    }}
+                                >
+                                    {invoiceStatusForm.statusLabel || 'Status Label'}
+                                </Box>
+                                {!invoiceStatusForm.enabled && (
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic', mt: 1 }}>
+                                        (This status is disabled)
+                                    </Typography>
+                                )}
+                            </Box>
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions sx={{ p: 3, borderTop: '1px solid #e5e7eb', gap: 1 }}>
+                    <Button
+                        onClick={() => setInvoiceStatusDialogOpen(false)}
+                        disabled={saving}
+                        size="small"
+                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveInvoiceStatus}
+                        variant="contained"
+                        disabled={saving}
+                        size="small"
+                        sx={{ fontSize: '12px', textTransform: 'none' }}
+                        startIcon={saving && <CircularProgress size={16} />}
+                    >
+                        {saving ? 'Saving...' : (editingInvoiceStatus ? 'Update' : 'Create')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

@@ -1192,6 +1192,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         onShowSnackbar={showSnackbar}
                         onOpenTrackingDrawer={handleOpenTrackingDrawer}
                         onStatusUpdated={refreshShipment}
+                        isAdmin={isAdmin}
                     />
 
                     {/* Documents Section - Hidden for now */}

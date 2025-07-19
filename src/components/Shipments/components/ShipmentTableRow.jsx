@@ -54,6 +54,7 @@ import { formatDateTime, formatRoute, capitalizeShipmentType } from '../utils/sh
 import { fixShipmentEncoding } from '../../../utils/textUtils';
 import { useAuth } from '../../../contexts/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
+import invoiceStatusService from '../../../services/invoiceStatusService';
 
 const ShipmentTableRow = ({
     shipment: rawShipment,
@@ -90,6 +91,9 @@ const ShipmentTableRow = ({
     const [loadingExpandedCompanyData, setLoadingExpandedCompanyData] = useState(false);
     const [loadingExpandedCustomerData, setLoadingExpandedCustomerData] = useState(false);
 
+    // Invoice status state
+    const [invoiceStatuses, setInvoiceStatuses] = useState([]);
+
     // Memoize shipment to prevent unnecessary re-renders
     const shipment = useMemo(() => {
         if (!rawShipment) return null;
@@ -102,6 +106,21 @@ const ShipmentTableRow = ({
         processedShipment.processed = true;
         return processedShipment;
     }, [rawShipment]);
+
+    // Load invoice statuses
+    useEffect(() => {
+        const loadInvoiceStatuses = async () => {
+            try {
+                const statuses = await invoiceStatusService.loadInvoiceStatuses();
+                setInvoiceStatuses(statuses);
+            } catch (error) {
+                console.error('Error loading invoice statuses:', error);
+                setInvoiceStatuses([]);
+            }
+        };
+
+        loadInvoiceStatuses();
+    }, []);
 
     // Load follow-up summary when component mounts or shipment changes
     useEffect(() => {
@@ -164,10 +183,14 @@ const ShipmentTableRow = ({
         const loadCustomerData = async () => {
             if (!expanded || loadingExpandedCustomerData || expandedCustomerData) return;
 
-            // FIXED: Use customer ID that's already stored in shipment (highest priority)
+            // ENHANCED: Check for customer ID in all possible locations including address records
             const customerId = shipment?.customerId ||
                 shipment?.customerID ||
-                shipment?.customer?.id;
+                shipment?.customer?.id ||
+                shipment?.shipFrom?.customerID ||
+                shipment?.shipTo?.customerID ||
+                shipment?.shipFrom?.customerId ||
+                shipment?.shipTo?.customerId;
 
             if (!customerId) {
                 setExpandedCustomerData(null);
@@ -2089,6 +2112,46 @@ const ShipmentTableRow = ({
                                             <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
                                                 DETAILED CHARGES
                                             </Typography>
+
+                                            {/* Invoice Status Chip */}
+                                            <Box sx={{ mb: 2 }}>
+                                                {(() => {
+                                                    const invoiceStatus = shipment?.invoiceStatus || 'uninvoiced';
+                                                    const dynamicStatus = invoiceStatuses.find(s => s.statusCode === invoiceStatus);
+
+                                                    if (dynamicStatus) {
+                                                        return (
+                                                            <Chip
+                                                                label={dynamicStatus.statusLabel}
+                                                                size="small"
+                                                                sx={{
+                                                                    fontSize: '11px',
+                                                                    height: '22px',
+                                                                    fontWeight: 500,
+                                                                    color: dynamicStatus.fontColor || '#ffffff',
+                                                                    backgroundColor: dynamicStatus.color || '#6b7280',
+                                                                    border: '1px solid rgba(0,0,0,0.1)'
+                                                                }}
+                                                            />
+                                                        );
+                                                    } else {
+                                                        return (
+                                                            <Chip
+                                                                label={invoiceStatus}
+                                                                size="small"
+                                                                sx={{
+                                                                    fontSize: '11px',
+                                                                    height: '22px',
+                                                                    fontWeight: 500,
+                                                                    color: '#ffffff',
+                                                                    backgroundColor: '#6b7280',
+                                                                    border: '1px solid rgba(0,0,0,0.1)'
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+                                                })()}
+                                            </Box>
 
                                             {(() => {
                                                 // Get detailed charges breakdown from multiple possible sources

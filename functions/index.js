@@ -168,15 +168,24 @@ const { archiveShipment } = require('./src/archiveShipment');
 
 // Import shipment status management functions
 const {
-    createMasterStatus,
-    updateMasterStatus,
-    deleteMasterStatus,
-    getMasterStatuses,
-    createShipmentStatus,
-    updateShipmentStatus,
-    deleteShipmentStatus,
-    getShipmentStatuses
+createMasterStatus,
+updateMasterStatus,
+deleteMasterStatus,
+getMasterStatuses,
+createShipmentStatus,
+updateShipmentStatus,
+deleteShipmentStatus,
+getShipmentStatuses
 } = require('./src/admin-shipment-statuses');
+
+// Import invoice status management functions
+const {
+createInvoiceStatus,
+updateInvoiceStatus,
+deleteInvoiceStatus,
+getInvoiceStatuses,
+getAllInvoiceStatuses
+} = require('./src/admin-invoice-statuses');
 
 // Import follow-up functions
 const {
@@ -360,6 +369,13 @@ exports.createShipmentStatus = createShipmentStatus;
 exports.updateShipmentStatus = updateShipmentStatus;
 exports.deleteShipmentStatus = deleteShipmentStatus;
 exports.getShipmentStatuses = getShipmentStatuses;
+
+// Export invoice status management functions
+exports.createInvoiceStatus = createInvoiceStatus;
+exports.updateInvoiceStatus = updateInvoiceStatus;
+exports.deleteInvoiceStatus = deleteInvoiceStatus;
+exports.getInvoiceStatuses = getInvoiceStatuses;
+exports.getAllInvoiceStatuses = getAllInvoiceStatuses;
 
 // Export follow-up functions
 exports.createFollowUpRule = createFollowUpRule;
