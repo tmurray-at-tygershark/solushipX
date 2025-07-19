@@ -4,69 +4,67 @@ import {
     Typography,
     Paper,
     Grid,
-    Card,
-    CardContent,
-    TextField,
-    Button,
-    CircularProgress,
     Accordion,
     AccordionSummary,
     AccordionDetails,
-    Chip,
-    IconButton,
-    Tooltip,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel,
+    Button,
     Table,
     TableBody,
     TableCell,
     TableContainer,
     TableHead,
     TableRow,
+    IconButton,
+    Chip,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
+    TextField,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
     FormControlLabel,
     Switch,
+    CircularProgress,
     Tabs,
     Tab,
-    Divider,
-    Popover,
-    ClickAwayListener,
     Menu,
-    MenuList
+    MenuList,
+    ListItemIcon,
+    ListItemText,
+    Tooltip,
+    Popover,
+    ClickAwayListener
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
-    Settings as SettingsIcon,
-    Save as SaveIcon,
-    Refresh as RefreshIcon,
     Add as AddIcon,
     Edit as EditIcon,
     Delete as DeleteIcon,
-    LocalShipping as ShippingIcon,
-    Build as ServiceIcon,
-    Speed as SpeedIcon,
+    Save as SaveIcon,
+    DragIndicator as DragIcon,
     Category as CategoryIcon,
     List as ListIcon,
-    ColorLens as ColorIcon,
-    Notifications as NotificationsIcon,
-    DragIndicator as DragIndicatorIcon,
-    MoreVert as MoreVertIcon,
     Receipt as ReceiptIcon,
-    Close as CloseIcon
+    MoreVert as MoreVertIcon,
+    Settings as SettingsIcon,
+    LocalShipping as ShipmentIcon,
+    Close as CloseIcon,
+    Refresh as RefreshIcon,
+    Notifications as NotificationsIcon,
+    Speed as SpeedIcon,
+    Build as ServiceIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import { useSnackbar } from 'notistack';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
+    getFirestore,
     doc,
     getDoc,
     updateDoc,
     serverTimestamp,
-    getFirestore,
     collection,
     addDoc,
     query,
@@ -74,8 +72,9 @@ import {
     getDocs,
     deleteDoc
 } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../../../firebase/firebase';
+import { useSnackbar } from 'notistack';
+import InvoiceStatusDialog from '../Configuration/dialogs/InvoiceStatusDialog';
 import NotificationSettings from '../Configuration/NotificationSettings';
 
 const SystemConfiguration = () => {
@@ -143,14 +142,6 @@ const SystemConfiguration = () => {
         statusLabel: '',
         statusValue: '',
         description: '',
-        enabled: true
-    });
-    const [invoiceStatusForm, setInvoiceStatusForm] = useState({
-        statusLabel: '',
-        statusDescription: '',
-        color: '#6b7280',
-        fontColor: '#ffffff',
-        sortOrder: 0,
         enabled: true
     });
 
@@ -757,52 +748,27 @@ const SystemConfiguration = () => {
     };
 
     // Invoice Status Functions
-    const handleInvoiceStatusFormChange = (field, value) => {
-        setInvoiceStatusForm(prev => ({ ...prev, [field]: value }));
-    };
-
     const handleAddInvoiceStatus = () => {
         setEditingInvoiceStatus(null);
-        setInvoiceStatusForm({
-            statusLabel: '',
-            statusDescription: '',
-            color: '#6b7280',
-            fontColor: '#ffffff',
-            sortOrder: 0,
-            enabled: true
-        });
         setInvoiceStatusDialogOpen(true);
     };
 
     const handleEditInvoiceStatus = (status) => {
         setEditingInvoiceStatus(status);
-        setInvoiceStatusForm({
-            statusLabel: status.statusLabel || '',
-            statusDescription: status.statusDescription || '',
-            color: status.color || '#6b7280',
-            fontColor: status.fontColor || '#ffffff',
-            sortOrder: status.sortOrder || 0,
-            enabled: status.enabled !== undefined ? status.enabled : true
-        });
         setInvoiceStatusDialogOpen(true);
     };
 
-    const handleSaveInvoiceStatus = async () => {
+    const handleSaveInvoiceStatus = async (formData) => {
         try {
             setSaving(true);
 
-            if (!invoiceStatusForm.statusLabel.trim()) {
-                enqueueSnackbar('Status label is required', { variant: 'error' });
-                return;
-            }
-
             const statusData = {
-                statusLabel: invoiceStatusForm.statusLabel.trim(),
-                statusDescription: invoiceStatusForm.statusDescription.trim(),
-                color: invoiceStatusForm.color,
-                fontColor: invoiceStatusForm.fontColor,
-                sortOrder: invoiceStatusForm.sortOrder,
-                enabled: invoiceStatusForm.enabled
+                statusLabel: formData.statusLabel.trim(),
+                statusDescription: formData.statusDescription.trim(),
+                color: formData.color,
+                fontColor: formData.fontColor,
+                sortOrder: formData.sortOrder,
+                enabled: formData.enabled
             };
 
             if (editingInvoiceStatus) {
@@ -1123,7 +1089,7 @@ const SystemConfiguration = () => {
                     <Accordion>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <ShippingIcon sx={{ color: '#6b7280' }} />
+                                <ShipmentIcon sx={{ color: '#6b7280' }} />
                                 <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                                     Shipment Statuses
                                 </Typography>
@@ -1242,7 +1208,7 @@ const SystemConfiguration = () => {
                                                                                     <TableCell sx={{ fontSize: '12px' }}>
                                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                                             <Box {...provided.dragHandleProps}>
-                                                                                                <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
+                                                                                                <DragIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
                                                                                             </Box>
                                                                                             {masterStatuses.find(ms => ms.id === status.masterStatus) ? (
                                                                                                 <Chip
@@ -1383,7 +1349,7 @@ const SystemConfiguration = () => {
                                                                                     <TableCell sx={{ fontSize: '12px' }}>
                                                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                                                             <Box {...provided.dragHandleProps}>
-                                                                                                <DragIndicatorIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
+                                                                                                <DragIcon sx={{ fontSize: 16, color: '#6b7280', cursor: 'grab' }} />
                                                                                             </Box>
                                                                                             <Box
                                                                                                 sx={{
@@ -2440,190 +2406,13 @@ const SystemConfiguration = () => {
             </Menu>
 
             {/* Invoice Status Dialog */}
-            <Dialog
+            <InvoiceStatusDialog
                 open={invoiceStatusDialogOpen}
+                mode={editingInvoiceStatus ? 'edit' : 'create'}
+                data={editingInvoiceStatus}
+                onSave={handleSaveInvoiceStatus}
                 onClose={() => setInvoiceStatusDialogOpen(false)}
-                maxWidth="md"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        borderRadius: '12px',
-                        maxHeight: '90vh'
-                    }
-                }}
-            >
-                <DialogTitle sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    color: '#374151',
-                    borderBottom: '1px solid #e5e7eb',
-                    pb: 2
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <ReceiptIcon sx={{ fontSize: 20, color: '#6366f1' }} />
-                        {editingInvoiceStatus ? 'Edit Invoice Status' : 'Add Invoice Status'}
-                    </Box>
-                    <IconButton onClick={() => setInvoiceStatusDialogOpen(false)} size="small" disabled={saving}>
-                        <CloseIcon fontSize="small" />
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{ p: 3 }}>
-                    <Grid container spacing={3}>
-                        {/* Status Label */}
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                label="Status Label"
-                                value={invoiceStatusForm.statusLabel}
-                                onChange={(e) => handleInvoiceStatusFormChange('statusLabel', e.target.value)}
-                                fullWidth
-                                size="small"
-                                required
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Enter the status label (e.g., 'Invoiced', 'Paid')"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-
-                        {/* Sort Order */}
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                label="Sort Order"
-                                type="number"
-                                value={invoiceStatusForm.sortOrder}
-                                onChange={(e) => handleInvoiceStatusFormChange('sortOrder', parseInt(e.target.value) || 0)}
-                                fullWidth
-                                size="small"
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Order for display (0-999)"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-
-                        {/* Description */}
-                        <Grid item xs={12}>
-                            <TextField
-                                label="Description"
-                                value={invoiceStatusForm.statusDescription}
-                                onChange={(e) => handleInvoiceStatusFormChange('statusDescription', e.target.value)}
-                                fullWidth
-                                multiline
-                                rows={3}
-                                size="small"
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Optional description of this invoice status"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-
-                        {/* Color and Font Color */}
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                label="Background Color"
-                                value={invoiceStatusForm.color}
-                                onChange={(e) => handleInvoiceStatusFormChange('color', e.target.value)}
-                                fullWidth
-                                size="small"
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Hex color code (e.g., #6b7280)"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                label="Text Color"
-                                value={invoiceStatusForm.fontColor}
-                                onChange={(e) => handleInvoiceStatusFormChange('fontColor', e.target.value)}
-                                fullWidth
-                                size="small"
-                                InputLabelProps={{ sx: { fontSize: '12px' } }}
-                                InputProps={{ sx: { fontSize: '12px' } }}
-                                helperText="Hex color code (e.g., #ffffff)"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-
-                        {/* Enabled Toggle */}
-                        <Grid item xs={12}>
-                            <FormControlLabel
-                                control={
-                                    <Switch
-                                        checked={invoiceStatusForm.enabled}
-                                        onChange={(e) => handleInvoiceStatusFormChange('enabled', e.target.checked)}
-                                        color="primary"
-                                        size="small"
-                                    />
-                                }
-                                label={
-                                    <Typography sx={{ fontSize: '12px' }}>
-                                        {invoiceStatusForm.enabled ? 'Enabled' : 'Disabled'}
-                                    </Typography>
-                                }
-                            />
-                        </Grid>
-
-                        {/* Preview */}
-                        <Grid item xs={12}>
-                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1, color: '#374151' }}>
-                                Preview
-                            </Typography>
-                            <Box sx={{
-                                p: 2,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                                backgroundColor: '#f8fafc'
-                            }}>
-                                <Box
-                                    sx={{
-                                        px: 2,
-                                        py: 0.5,
-                                        backgroundColor: invoiceStatusForm.color,
-                                        color: invoiceStatusForm.fontColor,
-                                        borderRadius: '12px',
-                                        fontSize: '12px',
-                                        fontWeight: 500,
-                                        display: 'inline-block'
-                                    }}
-                                >
-                                    {invoiceStatusForm.statusLabel || 'Status Label'}
-                                </Box>
-                                {!invoiceStatusForm.enabled && (
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic', mt: 1 }}>
-                                        (This status is disabled)
-                                    </Typography>
-                                )}
-                            </Box>
-                        </Grid>
-                    </Grid>
-                </DialogContent>
-                <DialogActions sx={{ p: 3, borderTop: '1px solid #e5e7eb', gap: 1 }}>
-                    <Button
-                        onClick={() => setInvoiceStatusDialogOpen(false)}
-                        disabled={saving}
-                        size="small"
-                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleSaveInvoiceStatus}
-                        variant="contained"
-                        disabled={saving}
-                        size="small"
-                        sx={{ fontSize: '12px', textTransform: 'none' }}
-                        startIcon={saving && <CircularProgress size={16} />}
-                    >
-                        {saving ? 'Saving...' : (editingInvoiceStatus ? 'Update' : 'Create')}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            />
         </Box>
     );
 };

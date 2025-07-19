@@ -34,6 +34,7 @@ import {
     NotificationsActive as NotifyIcon,
     AssignmentInd as FollowUpIcon
 } from '@mui/icons-material';
+import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 
 // Add CSS for spinning animation
 const spinAnimation = `
@@ -141,18 +142,6 @@ const ShipmentHeader = ({
         }
     };
 
-    const getStatusColor = (status) => {
-        switch (status?.toLowerCase()) {
-            case 'delivered': return 'success';
-            case 'in_transit': case 'in transit': case 'picked_up': return 'primary';
-            case 'on_hold': case 'delayed': case 'exception': return 'warning';
-            case 'cancelled': case 'canceled': case 'void': return 'error';
-            case 'draft': return 'default';
-            case 'scheduled': case 'booked': return 'info';
-            default: return 'default';
-        }
-    };
-
     // Check if any regeneration is in progress
     const isRegenerating = actionStates.regenerateBOL?.loading || actionStates.regenerateConfirmation?.loading;
     const regenerationType = actionStates.regenerateBOL?.loading ? 'BOL' :
@@ -193,9 +182,8 @@ const ShipmentHeader = ({
                         </Typography>
 
                         <Stack direction="row" spacing={1} alignItems="center">
-                            <Chip
-                                label={shipment?.status === 'draft' ? 'DRAFT' : (shipment?.status || 'Unknown')}
-                                color={getStatusColor(shipment?.status)}
+                            <EnhancedStatusChip
+                                status={shipment?.status}
                                 size="small"
                                 sx={{ fontWeight: 500, fontSize: '11px' }}
                             />

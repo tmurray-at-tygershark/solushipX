@@ -98,6 +98,7 @@ const AdminHeader = () => {
             color: '#f59e0b',
             items: [
                 { title: 'Billing Overview', description: 'Financial dashboard and metrics', icon: <BillingIcon />, path: '/admin/billing/overview' },
+                { title: 'Charges', description: 'View and manage all charges', icon: <InvoiceIcon />, path: '/admin/billing/charges' },
                 { title: 'Invoices', description: 'Invoice generation and management', icon: <InvoiceIcon />, path: '/admin/billing' },
                 { title: 'Payment Terms', description: 'Payment configurations', icon: <PaymentIcon />, path: '/admin/billing/payment-terms' },
                 { title: 'EDI Processing', description: 'Electronic data interchange', icon: <EdiIcon />, path: '/admin/billing/ap-processing' }
