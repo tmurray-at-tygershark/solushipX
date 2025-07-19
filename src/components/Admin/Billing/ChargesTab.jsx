@@ -431,25 +431,36 @@ const ChargesTab = () => {
             if (uniqueCustomerIds.length > 0) {
                 try {
                     const customersRef = collection(db, 'customers');
-                    const customerQueries = [];
 
-                    // Handle customer ID batching for Firestore 'in' queries
-                    const customerBatchSize = 10;
-                    for (let i = 0; i < uniqueCustomerIds.length; i += customerBatchSize) {
-                        const batch = uniqueCustomerIds.slice(i, i + customerBatchSize);
-                        const customerQuery = query(customersRef, where('customerID', 'in', batch));
-                        customerQueries.push(customerQuery);
-                    }
+                    // Try loading customers by both document ID and customerID field
+                    for (const customerId of uniqueCustomerIds) {
+                        try {
+                            // First try direct document lookup
+                            const customerDocRef = doc(db, 'customers', customerId);
+                            const customerDoc = await getDoc(customerDocRef);
 
-                    const customerResults = await Promise.all(customerQueries.map(q => getDocs(q)));
-                    customerResults.forEach(querySnapshot => {
-                        querySnapshot.forEach(doc => {
-                            const customer = doc.data();
-                            if (customer.customerID) {
-                                customerMap[customer.customerID] = customer;
+                            if (customerDoc.exists()) {
+                                const customer = { id: customerDoc.id, ...customerDoc.data() };
+                                customerMap[customerId] = customer;
+                                console.log(`✅ Found customer by document ID: ${customerId}`);
+                            } else {
+                                // Fallback to customerID field query
+                                const customerQuery = query(customersRef, where('customerID', '==', customerId), limit(1));
+                                const querySnapshot = await getDocs(customerQuery);
+
+                                if (!querySnapshot.empty) {
+                                    const customerDoc = querySnapshot.docs[0];
+                                    const customer = { id: customerDoc.id, ...customerDoc.data() };
+                                    customerMap[customerId] = customer;
+                                    console.log(`✅ Found customer by customerID field: ${customerId}`);
+                                } else {
+                                    console.log(`❌ Customer not found: ${customerId}`);
+                                }
                             }
-                        });
-                    });
+                        } catch (error) {
+                            console.error(`Error loading customer ${customerId}:`, error);
+                        }
+                    }
 
                     console.log(`👥 Loaded ${Object.keys(customerMap).length} customers for charge display`);
                 } catch (error) {
@@ -461,7 +472,10 @@ const ChargesTab = () => {
             shipmentCharges.forEach(charge => {
                 if (charge.customerId && customerMap[charge.customerId]) {
                     charge.customerData = customerMap[charge.customerId];
-                    charge.customerName = customerMap[charge.customerId].name;
+                    // Update customer name with actual customer data
+                    charge.customerName = customerMap[charge.customerId].name ||
+                        customerMap[charge.customerId].companyName ||
+                        charge.customerName;
                 }
             });
 
@@ -557,18 +571,16 @@ const ChargesTab = () => {
 
             const currency = getShipmentCurrency(shipment);
 
-            // Enhanced customer ID extraction
+            // Strict customer ID extraction - only use actual customer fields
             const customerId = shipment.customerID ||
                 shipment.customerId ||
-                shipment.shipTo?.customerID ||
-                shipment.shipTo?.addressClassID ||
+                shipment.customer?.customerID ||
                 null;
 
-            // Enhanced customer name extraction  
+            // Strict customer name extraction - prioritize actual customer data
             const customerName = shipment.customerName ||
                 shipment.customer?.name ||
-                shipment.shipTo?.companyName ||
-                shipment.shipTo?.company ||
+                shipment.customer?.companyName ||
                 null;
 
             shipmentCharges.push({
@@ -1431,7 +1443,10 @@ const ChargesTab = () => {
                                                             })()}
                                                         </Box>
                                                         <Typography sx={{ fontSize: '12px' }}>
-                                                            {charge.customerName || 'N/A'}
+                                                            {charge.customerData?.name ||
+                                                                charge.customerData?.companyName ||
+                                                                charge.customerName ||
+                                                                (charge.customerId ? `Customer ID: ${charge.customerId}` : 'N/A')}
                                                         </Typography>
                                                     </Box>
                                                 </TableCell>
