@@ -473,13 +473,27 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
             console.log('🔍 Fetching billing data for', userRole, 'with', connectedCompanies.length, 'companies');
 
+            // Helper function to get shipment currency
+            const getShipmentCurrency = (shipment) => {
+                // Try to extract currency from multiple sources
+                return shipment.currency ||
+                    shipment.selectedRate?.currency ||
+                    shipment.markupRates?.currency ||
+                    shipment.actualRates?.currency ||
+                    (shipment.shipFrom?.country === 'CA' || shipment.shipTo?.country === 'CA' ? 'CAD' : 'USD') ||
+                    'USD'; // Default fallback
+            };
+
             // Helper function to calculate metrics (extracted for reuse)
             function calculateMetrics(invoicesData, shipmentsData) {
-                // Calculate uninvoiced charges from shipments with enhanced QuickShip support
-                const uninvoicedCharges = shipmentsData
+                // Calculate uninvoiced charges by currency from shipments with enhanced QuickShip support
+                const uninvoicedChargesByCurrency = { USD: 0, CAD: 0 };
+
+                shipmentsData
                     .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
-                    .reduce((total, shipment) => {
+                    .forEach(shipment => {
                         let charge = 0;
+                        const currency = getShipmentCurrency(shipment);
 
                         // Enhanced charge extraction to handle QuickShip orders (matching table logic)
                         if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
@@ -495,29 +509,43 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                                 shipment.selectedRate?.totalCharges || 0;
                         }
 
-                        return total + charge;
-                    }, 0);
+                        uninvoicedChargesByCurrency[currency] = (uninvoicedChargesByCurrency[currency] || 0) + charge;
+                    });
+
+                const uninvoicedCharges = uninvoicedChargesByCurrency.USD + uninvoicedChargesByCurrency.CAD;
 
                 // Update state with real data
                 setInvoices(invoicesData);
 
-                // Calculate comprehensive metrics from real data
-                const totalRevenue = invoicesData.reduce((sum, invoice) =>
-                    sum + (invoice.status === 'paid' ? (invoice.total || invoice.amount || 0) : 0), 0);
+                // Calculate comprehensive metrics from real data by currency
+                const totalRevenueByCurrency = { USD: 0, CAD: 0 };
+                const outstandingBalanceByCurrency = { USD: 0, CAD: 0 };
 
-                const outstandingBalance = invoicesData.reduce((sum, invoice) =>
-                    sum + (invoice.status === 'pending' || invoice.status === 'unpaid' ? (invoice.total || invoice.amount || 0) : 0), 0);
+                invoicesData.forEach(invoice => {
+                    const currency = invoice.currency || 'USD';
+                    const amount = invoice.total || invoice.amount || 0;
+
+                    if (invoice.status === 'paid') {
+                        totalRevenueByCurrency[currency] = (totalRevenueByCurrency[currency] || 0) + amount;
+                    } else if (invoice.status === 'pending' || invoice.status === 'unpaid') {
+                        outstandingBalanceByCurrency[currency] = (outstandingBalanceByCurrency[currency] || 0) + amount;
+                    }
+                });
+
+                const totalRevenue = totalRevenueByCurrency.USD + totalRevenueByCurrency.CAD;
+                const outstandingBalance = outstandingBalanceByCurrency.USD + outstandingBalanceByCurrency.CAD;
 
                 const paidInvoices = invoicesData.filter(invoice => invoice.status === 'paid').length;
                 const pendingInvoices = invoicesData.filter(invoice =>
                     invoice.status === 'pending' || invoice.status === 'unpaid').length;
 
-                // Calculate monthly revenue (current month)
+                // Calculate monthly revenue by currency (current month)
                 const now = new Date();
                 const currentMonth = now.getMonth();
                 const currentYear = now.getFullYear();
 
-                const monthlyRevenue = invoicesData
+                const monthlyRevenueByCurrency = { USD: 0, CAD: 0 };
+                invoicesData
                     .filter(invoice => {
                         if (!invoice.createdAt) return false;
                         const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
@@ -525,7 +553,13 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                             invoiceDate.getFullYear() === currentYear &&
                             invoice.status === 'paid';
                     })
-                    .reduce((sum, invoice) => sum + (invoice.total || invoice.amount || 0), 0);
+                    .forEach(invoice => {
+                        const currency = invoice.currency || 'USD';
+                        const amount = invoice.total || invoice.amount || 0;
+                        monthlyRevenueByCurrency[currency] = (monthlyRevenueByCurrency[currency] || 0) + amount;
+                    });
+
+                const monthlyRevenue = monthlyRevenueByCurrency.USD + monthlyRevenueByCurrency.CAD;
 
                 // Calculate advanced metrics
                 const totalCharges = shipmentsData.reduce((sum, shipment) => {
@@ -586,11 +620,15 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
                 setMetrics({
                     totalRevenue,
+                    totalRevenueByCurrency,
                     outstandingBalance,
+                    outstandingBalanceByCurrency,
                     paidInvoices,
                     pendingInvoices,
                     uninvoicedCharges,
+                    uninvoicedChargesByCurrency,
                     monthlyRevenue,
+                    monthlyRevenueByCurrency,
                     growthRate: revenueGrowth,
                     totalCompanies: userRole === 'superadmin' ? shipmentsData.map(s => s.companyID).filter((v, i, a) => a.indexOf(v) === i).length : connectedCompanies.length,
                     avgTicketSize,
@@ -2351,8 +2389,11 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
-                                                ${metrics.totalRevenue.toLocaleString()}
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
+                                                ${(metrics.totalRevenueByCurrency?.USD || 0).toLocaleString()} USD
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
+                                                ${(metrics.totalRevenueByCurrency?.CAD || 0).toLocaleString()} CAD
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
                                                 Total Revenue (YTD)
@@ -2374,8 +2415,11 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
-                                                ${metrics.uninvoicedCharges.toLocaleString()}
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
+                                                ${(metrics.uninvoicedChargesByCurrency?.USD || 0).toLocaleString()} USD
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
+                                                ${(metrics.uninvoicedChargesByCurrency?.CAD || 0).toLocaleString()} CAD
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
                                                 Uninvoiced Charges
@@ -2397,8 +2441,11 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                                                     </Typography>
                                                 </Box>
                                             </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '32px', mb: 1 }}>
-                                                ${metrics.monthlyRevenue.toLocaleString()}
+                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
+                                                ${(metrics.monthlyRevenueByCurrency?.USD || 0).toLocaleString()} USD
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
+                                                ${(metrics.monthlyRevenueByCurrency?.CAD || 0).toLocaleString()} CAD
                                             </Typography>
                                             <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
                                                 Monthly Revenue

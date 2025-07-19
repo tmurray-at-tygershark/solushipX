@@ -276,6 +276,7 @@ function AppRoutes() {
                     <Route path="shipment/:id" element={<ShipmentDetail />} />
                     <Route path="billing" element={<BillingDashboard initialTab="invoices" />} />
                     <Route path="billing/overview" element={<BillingDashboard initialTab="overview" />} />
+                    <Route path="billing/charges" element={<BillingDashboard initialTab="charges" />} />
                     <Route path="billing/invoice/new" element={<InvoiceForm />} />
                     <Route path="billing/invoice/:id" element={<InvoiceForm />} />
                     <Route path="billing/ap-processing" element={<BillingDashboard initialTab="ap-processing" />} />
