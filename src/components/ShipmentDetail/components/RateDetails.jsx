@@ -18,11 +18,12 @@ import {
     Button,
     FormControl,
     Select,
-    MenuItem
+    MenuItem,
+    Checkbox
 } from '@mui/material';
 import {
     Edit as EditIcon,
-    Save as SaveIcon,
+    Check as CheckIcon,
     Cancel as CancelIcon,
     Add as AddIcon,
     Delete as DeleteIcon
@@ -170,9 +171,14 @@ const RateDetails = ({
         setEditingIndex(index);
         setEditingValues({
             description: item.description,
-            cost: item.cost?.toString() || '0',
-            amount: item.amount?.toString() || '0',
-            code: item.code || 'FRT'
+            quotedCost: item.quotedCost?.toString() || '0',
+            quotedCharge: item.quotedCharge?.toString() || '0',
+            actualCost: item.actualCost?.toString() || '0',
+            actualCharge: item.actualCharge?.toString() || '0',
+            code: item.code || 'FRT',
+            invoiceNumber: item.invoiceNumber || '-',
+            ediNumber: item.ediNumber || '-',
+            commissionable: item.commissionable || false
         });
     }, []);
 
@@ -182,30 +188,46 @@ const RateDetails = ({
     }, []);
 
     const handleEditSave = useCallback((index) => {
+        console.log('💾 RateDetails: handleEditSave called', { index, editingValues });
+
         const updatedBreakdown = [...localRateBreakdown];
         updatedBreakdown[index] = {
             ...updatedBreakdown[index],
             description: editingValues.description,
-            cost: parseFloat(editingValues.cost) || 0,
-            amount: parseFloat(editingValues.amount) || 0,
-            code: editingValues.code
+            quotedCost: parseFloat(editingValues.quotedCost) || 0,
+            quotedCharge: parseFloat(editingValues.quotedCharge) || 0,
+            actualCost: parseFloat(editingValues.actualCost) || 0,
+            actualCharge: parseFloat(editingValues.actualCharge) || 0,
+            code: editingValues.code,
+            invoiceNumber: editingValues.invoiceNumber || '-',
+            ediNumber: editingValues.ediNumber || '-',
+            commissionable: editingValues.commissionable || false
         };
+
+        console.log('💾 RateDetails: Updated breakdown:', updatedBreakdown);
+        console.log('💾 RateDetails: onChargesUpdate function:', typeof onChargesUpdate);
 
         setLocalRateBreakdown(updatedBreakdown);
         setEditingIndex(null);
         setEditingValues({});
 
         // Notify parent component of changes
+        console.log('💾 RateDetails: Calling onChargesUpdate');
         onChargesUpdate(updatedBreakdown);
     }, [editingValues, localRateBreakdown, onChargesUpdate]);
 
     const handleAddCharge = useCallback(() => {
         const newCharge = {
             description: 'New Charge',
-            cost: 0,
-            amount: 0,
+            quotedCost: 0,
+            quotedCharge: 0,
+            actualCost: 0,
+            actualCharge: 0,
             code: 'FRT',
-            isNew: true
+            isNew: true,
+            invoiceNumber: '-',
+            ediNumber: '-',
+            commissionable: false
         };
 
         const updatedBreakdown = [...localRateBreakdown, newCharge];
@@ -213,8 +235,10 @@ const RateDetails = ({
         setEditingIndex(updatedBreakdown.length - 1);
         setEditingValues({
             description: 'New Charge',
-            cost: '0',
-            amount: '0',
+            quotedCost: '0',
+            quotedCharge: '0',
+            actualCost: '0',
+            actualCharge: '0',
             code: 'FRT'
         });
     }, [localRateBreakdown]);
@@ -234,9 +258,23 @@ const RateDetails = ({
 
     // Calculate totals from local breakdown
     const calculateLocalTotals = useCallback(() => {
-        const totalCost = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
-        const totalCharge = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-        return { totalCost, totalCharge };
+        const totalQuotedCost = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.quotedCost) || 0), 0);
+        const totalQuotedCharge = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.quotedCharge) || 0), 0);
+        const totalActualCost = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.actualCost) || 0), 0);
+        const totalActualCharge = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.actualCharge) || 0), 0);
+
+        // Legacy support - keep these for backward compatibility 
+        const totalCost = totalQuotedCost; // For now, map quoted cost to legacy total cost
+        const totalCharge = totalQuotedCharge; // For now, map quoted charge to legacy total charge
+
+        return {
+            totalCost,
+            totalCharge,
+            totalQuotedCost,
+            totalQuotedCharge,
+            totalActualCost,
+            totalActualCharge
+        };
     }, [localRateBreakdown]);
 
     // Initialize local rate breakdown when component loads or data changes - moved above early return
@@ -301,19 +339,137 @@ const RateDetails = ({
 
     const { totalCost, totalCharge } = calculateTotals();
 
+    // Extract actual charges from carrier invoices or updated charges
+    const extractActualCharges = (breakdown) => {
+        return breakdown.map(item => {
+            let quotedCost = item.quotedCost || 0;
+            let quotedCharge = item.quotedCharge || 0;
+            let actualCost = item.actualCost || 0;
+            let actualCharge = item.actualCharge || 0;
+
+            try {
+                // Priority 1: Check for saved charges from inline editing
+                if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges)) {
+                    const matchingUpdatedItem = shipment.updatedCharges.find(charge =>
+                        charge.description?.toLowerCase().includes(item.description.toLowerCase()) ||
+                        charge.code === item.code
+                    );
+                    if (matchingUpdatedItem) {
+                        quotedCost = parseFloat(matchingUpdatedItem.quotedCost || matchingUpdatedItem.cost) || quotedCost;
+                        quotedCharge = parseFloat(matchingUpdatedItem.quotedCharge || matchingUpdatedItem.amount) || quotedCharge;
+                        actualCost = parseFloat(matchingUpdatedItem.actualCost) || actualCost;
+                        actualCharge = parseFloat(matchingUpdatedItem.actualCharge || matchingUpdatedItem.actualAmount) || actualCharge;
+                    }
+                }
+                // Priority 2: Check chargesBreakdown
+                else if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown)) {
+                    const matchingBreakdownItem = shipment.chargesBreakdown.find(charge =>
+                        charge.description?.toLowerCase().includes(item.description.toLowerCase()) ||
+                        charge.code === item.code
+                    );
+                    if (matchingBreakdownItem) {
+                        quotedCost = parseFloat(matchingBreakdownItem.quotedCost || matchingBreakdownItem.cost) || quotedCost;
+                        quotedCharge = parseFloat(matchingBreakdownItem.quotedCharge || matchingBreakdownItem.amount) || quotedCharge;
+                        actualCost = parseFloat(matchingBreakdownItem.actualCost) || actualCost;
+                        actualCharge = parseFloat(matchingBreakdownItem.actualCharge || matchingBreakdownItem.actualAmount) || actualCharge;
+                    }
+                }
+                // Priority 3: Check for carrier invoice data (this becomes actualCost)
+                else if (shipment?.carrierInvoice && Array.isArray(shipment.carrierInvoice)) {
+                    const matchingInvoiceItem = shipment.carrierInvoice.find(invoice =>
+                        invoice.chargeName?.toLowerCase().includes(item.description.toLowerCase()) ||
+                        invoice.code === item.code
+                    );
+                    if (matchingInvoiceItem) {
+                        actualCost = parseFloat(matchingInvoiceItem.amount) || actualCost;
+                    }
+                }
+                // Priority 4: Check for carrier charges data (this becomes actualCharge)
+                else if (shipment?.carrierCharges && Array.isArray(shipment.carrierCharges)) {
+                    const matchingChargeItem = shipment.carrierCharges.find(charge =>
+                        charge.chargeName?.toLowerCase().includes(item.description.toLowerCase()) ||
+                        charge.code === item.code
+                    );
+                    if (matchingChargeItem) {
+                        actualCharge = parseFloat(matchingChargeItem.amount) || actualCharge;
+                    }
+                }
+                // Priority 5: Check legacy actual charges field
+                else if (shipment?.actualCharges && Array.isArray(shipment.actualCharges)) {
+                    const matchingActualItem = shipment.actualCharges.find(charge =>
+                        charge.description?.toLowerCase().includes(item.description.toLowerCase()) ||
+                        charge.code === item.code
+                    );
+                    if (matchingActualItem) {
+                        actualCharge = parseFloat(matchingActualItem.amount) || actualCharge;
+                    }
+                }
+            } catch (error) {
+                console.warn('Error extracting actual charges for item:', item.description, error);
+            }
+
+            return {
+                ...item,
+                quotedCost: quotedCost,
+                quotedCharge: quotedCharge,
+                actualCost: actualCost,
+                actualCharge: actualCharge,
+                invoiceNumber: item.invoiceNumber || '-',
+                ediNumber: item.ediNumber || '-',
+                commissionable: item.commissionable || false
+            };
+        });
+    };
+
     // Get rate breakdown data for table
     const getRateBreakdown = () => {
         const breakdown = [];
 
+        // Priority 1: Check for saved charges from database (highest priority)
+        if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
+            return shipment.updatedCharges.map(charge => ({
+                description: charge.description,
+                quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
+                quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
+                actualCost: parseFloat(charge.actualCost) || 0,
+                actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
+                code: charge.code || 'FRT',
+                invoiceNumber: charge.invoiceNumber || '-',
+                ediNumber: charge.ediNumber || '-',
+                commissionable: charge.commissionable || false
+            }));
+        }
+
+        // Priority 2: Check chargesBreakdown
+        if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown) && shipment.chargesBreakdown.length > 0) {
+            return shipment.chargesBreakdown.map(charge => ({
+                description: charge.description,
+                quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
+                quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
+                actualCost: parseFloat(charge.actualCost) || 0,
+                actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
+                code: charge.code || 'FRT',
+                invoiceNumber: charge.invoiceNumber || '-',
+                ediNumber: charge.ediNumber || '-',
+                commissionable: charge.commissionable || false
+            }));
+        }
+
+        // Priority 3: QuickShip data
         if (quickShipData && quickShipData.charges.length > 0) {
             // QuickShip manual rates - get codes from original manualRates
             quickShipData.charges.forEach((charge, index) => {
                 const originalRate = shipment?.manualRates?.[index];
                 breakdown.push({
                     description: charge.name,
-                    amount: charge.amount,
-                    cost: charge.cost,
-                    code: originalRate?.code || 'FRT'
+                    quotedCost: charge.cost || 0, // QuickShip cost becomes quoted cost
+                    quotedCharge: charge.amount || 0, // QuickShip amount becomes quoted charge
+                    actualCost: 0, // No actual cost initially
+                    actualCharge: 0, // No actual charge initially
+                    code: originalRate?.code || 'FRT',
+                    invoiceNumber: '-',
+                    ediNumber: '-',
+                    commissionable: false
                 });
             });
         } else if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
@@ -339,9 +495,14 @@ const RateDetails = ({
 
                 breakdown.push({
                     description: detail.name,
-                    amount: safeNumber(detail.amount),
-                    cost: safeNumber(detail.actualAmount || detail.amount),
-                    code: detail.code || getChargeCode(detail.name)
+                    quotedCost: safeNumber(detail.cost || detail.amount), // Use cost field or fallback to amount
+                    quotedCharge: safeNumber(detail.amount),
+                    actualCost: 0, // No actual cost initially
+                    actualCharge: 0, // No actual charge initially
+                    code: detail.code || getChargeCode(detail.name),
+                    invoiceNumber: '-',
+                    ediNumber: '-',
+                    commissionable: false
                 });
             });
         } else {
@@ -381,36 +542,56 @@ const RateDetails = ({
             // Always show freight charges, even if $0.00
             breakdown.push({
                 description: 'Freight Charges',
-                amount: freight.markup,
-                cost: freight.actual,
-                code: 'FRT'
+                quotedCost: freight.actual || 0, // Use actual as quoted cost initially
+                quotedCharge: freight.markup || 0, // Use markup as quoted charge initially
+                actualCost: 0, // No actual cost initially
+                actualCharge: 0, // No actual charge initially
+                code: 'FRT',
+                invoiceNumber: '-',
+                ediNumber: '-',
+                commissionable: false
             });
 
             const fuel = getActualVsMarkupAmount('fuel');
             // Always show fuel charges, even if $0.00
             breakdown.push({
                 description: 'Fuel Charges',
-                amount: fuel.markup,
-                cost: fuel.actual,
-                code: 'FUE'
+                quotedCost: fuel.actual || 0,
+                quotedCharge: fuel.markup || 0,
+                actualCost: 0,
+                actualCharge: 0,
+                code: 'FUE',
+                invoiceNumber: '-',
+                ediNumber: '-',
+                commissionable: false
             });
 
             const service = getActualVsMarkupAmount('service');
             // Always show service charges, even if $0.00
             breakdown.push({
                 description: 'Service Charges',
-                amount: service.markup,
-                cost: service.actual,
-                code: 'MSC'
+                quotedCost: service.actual || 0,
+                quotedCharge: service.markup || 0,
+                actualCost: 0,
+                actualCharge: 0,
+                code: 'MSC',
+                invoiceNumber: '-',
+                ediNumber: '-',
+                commissionable: false
             });
 
             const accessorial = getActualVsMarkupAmount('accessorial');
             // Always show accessorial charges, even if $0.00
             breakdown.push({
                 description: 'Accessorial Charges',
-                amount: accessorial.markup,
-                cost: accessorial.actual,
-                code: 'ACC'
+                quotedCost: accessorial.actual || 0,
+                quotedCharge: accessorial.markup || 0,
+                actualCost: 0,
+                actualCharge: 0,
+                code: 'ACC',
+                invoiceNumber: '-',
+                ediNumber: '-',
+                commissionable: false
             });
 
             if (getBestRateInfo?.guaranteed) {
@@ -418,9 +599,14 @@ const RateDetails = ({
                 // Always show guarantee charges, even if $0.00
                 breakdown.push({
                     description: 'Guarantee Charge',
-                    amount: guarantee.markup,
-                    cost: guarantee.actual,
-                    code: 'SUR'
+                    quotedCost: guarantee.actual || 0,
+                    quotedCharge: guarantee.markup || 0,
+                    actualCost: 0,
+                    actualCharge: 0,
+                    code: 'SUR',
+                    invoiceNumber: '-',
+                    ediNumber: '-',
+                    commissionable: false
                 });
             }
         }
@@ -429,17 +615,30 @@ const RateDetails = ({
         if (enhancedIsAdmin && markupSummary?.hasMarkup) {
             breakdown.push({
                 description: 'Platform Markup',
-                amount: markupSummary.markupAmount,
-                cost: 0,
+                quotedCost: 0,
+                quotedCharge: markupSummary.markupAmount || 0,
+                actualCost: 0,
+                actualCharge: 0,
                 code: 'MSC',
-                isMarkup: true
+                isMarkup: true,
+                invoiceNumber: '-',
+                ediNumber: '-',
+                commissionable: false
             });
         }
 
-        return breakdown;
+        // Apply actual charges extraction to the breakdown
+        return extractActualCharges(breakdown);
     };
 
-    const { totalCost: localTotalCost, totalCharge: localTotalCharge } = calculateLocalTotals();
+    const {
+        totalCost: localTotalCost,
+        totalCharge: localTotalCharge,
+        totalQuotedCost: localTotalQuotedCost,
+        totalQuotedCharge: localTotalQuotedCharge,
+        totalActualCost: localTotalActualCost,
+        totalActualCharge: localTotalActualCharge
+    } = calculateLocalTotals();
 
     // Get service information
     const getServiceInfo = () => {
@@ -535,16 +734,41 @@ const RateDetails = ({
                                             Description
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'right', width: '120px' }}>
-                                                Cost
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                                Quoted Cost
                                             </TableCell>
                                         )}
-                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'right', width: '120px' }}>
-                                            {enhancedIsAdmin ? 'Charge' : 'Amount'}
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                            {enhancedIsAdmin ? 'Quoted Charge' : 'Amount'}
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '120px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                                Actual Cost
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                                Actual Charge
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 Profit
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '100px' }}>
+                                                Invoice#
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '100px' }}>
+                                                EDI#
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '120px' }}>
+                                                Commissionable
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
@@ -622,49 +846,122 @@ const RateDetails = ({
                                                 )}
                                             </TableCell>
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'right', color: '#059669', fontWeight: 500, verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', color: '#374151', fontWeight: 500, verticalAlign: 'middle' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
-                                                            value={editingValues.cost}
-                                                            onChange={(e) => handleInputChange('cost', e.target.value)}
+                                                            value={editingValues.quotedCost}
+                                                            onChange={(e) => handleInputChange('quotedCost', e.target.value)}
                                                             size="small"
                                                             type="number"
                                                             inputProps={{ step: "0.01", min: "0" }}
                                                             sx={{
                                                                 width: '100px',
-                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right' },
+                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
                                                                 '& .MuiInputBase-root': { height: '32px' }
                                                             }}
                                                         />
                                                     ) : (
-                                                        !item.isMarkup ? formatCurrency(item.cost) : '-'
+                                                        !item.isMarkup ? formatCurrency(item.quotedCost) : '-'
                                                     )}
                                                 </TableCell>
                                             )}
-                                            <TableCell sx={{ fontSize: '12px', textAlign: 'right', fontWeight: 600, verticalAlign: 'middle' }}>
+                                            <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
                                                 {editingIndex === index ? (
                                                     <TextField
-                                                        value={editingValues.amount}
-                                                        onChange={(e) => handleInputChange('amount', e.target.value)}
+                                                        value={editingValues.quotedCharge}
+                                                        onChange={(e) => handleInputChange('quotedCharge', e.target.value)}
                                                         size="small"
                                                         type="number"
                                                         inputProps={{ step: "0.01", min: "0" }}
                                                         sx={{
                                                             width: '100px',
-                                                            '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right' },
+                                                            '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
                                                             '& .MuiInputBase-root': { height: '32px' }
                                                         }}
                                                     />
                                                 ) : (
-                                                    formatCurrency(item.amount)
+                                                    formatCurrency(item.quotedCharge)
                                                 )}
                                             </TableCell>
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
+                                                    {editingIndex === index ? (
+                                                        <TextField
+                                                            value={editingValues.actualCost || ''}
+                                                            onChange={(e) => handleInputChange('actualCost', e.target.value)}
+                                                            size="small"
+                                                            type="number"
+                                                            inputProps={{ step: "0.01", min: "0" }}
+                                                            sx={{
+                                                                width: '100px',
+                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
+                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        item.actualCost > 0 ? formatCurrency(item.actualCost) : (
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                TBD
+                                                            </Typography>
+                                                        )
+                                                    )}
+                                                </TableCell>
+                                            )}
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
+                                                    {editingIndex === index ? (
+                                                        <TextField
+                                                            value={editingValues.actualCharge || ''}
+                                                            onChange={(e) => handleInputChange('actualCharge', e.target.value)}
+                                                            size="small"
+                                                            type="number"
+                                                            inputProps={{ step: "0.01", min: "0" }}
+                                                            sx={{
+                                                                width: '100px',
+                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
+                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        item.actualCharge > 0 ? formatCurrency(item.actualCharge) : (
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                TBD
+                                                            </Typography>
+                                                        )
+                                                    )}
+                                                </TableCell>
+                                            )}
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
                                                     {editingIndex === index ? (
                                                         // Show calculated profit during editing
                                                         (() => {
-                                                            const profit = safeNumber(editingValues.amount || 0) - safeNumber(editingValues.cost || 0);
+                                                            // If actual values exist, use actual charge - actual cost
+                                                            // If no actual values, use quoted charge - quoted cost
+                                                            const hasActualCharge = editingValues.actualCharge && parseFloat(editingValues.actualCharge) > 0;
+                                                            const hasActualCost = editingValues.actualCost && parseFloat(editingValues.actualCost) > 0;
+
+                                                            let effectiveCharge, effectiveCost;
+
+                                                            if (hasActualCharge && hasActualCost) {
+                                                                // Both actual values exist
+                                                                effectiveCharge = parseFloat(editingValues.actualCharge);
+                                                                effectiveCost = parseFloat(editingValues.actualCost);
+                                                            } else if (hasActualCharge && !hasActualCost) {
+                                                                // Only actual charge exists, use with quoted cost
+                                                                effectiveCharge = parseFloat(editingValues.actualCharge);
+                                                                effectiveCost = parseFloat(editingValues.quotedCost || 0);
+                                                            } else if (!hasActualCharge && hasActualCost) {
+                                                                // Only actual cost exists, use with quoted charge
+                                                                effectiveCharge = parseFloat(editingValues.quotedCharge || 0);
+                                                                effectiveCost = parseFloat(editingValues.actualCost);
+                                                            } else {
+                                                                // No actual values, use quoted values
+                                                                effectiveCharge = parseFloat(editingValues.quotedCharge || 0);
+                                                                effectiveCost = parseFloat(editingValues.quotedCost || 0);
+                                                            }
+
+                                                            const profit = effectiveCharge - effectiveCost;
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -683,7 +980,31 @@ const RateDetails = ({
                                                     ) : (
                                                         // Show calculated profit for each line item
                                                         !item.isMarkup ? (() => {
-                                                            const profit = safeNumber(item.amount) - safeNumber(item.cost);
+                                                            // Use the best available data for profit calculation
+                                                            const hasActualCharge = item.actualCharge && item.actualCharge > 0;
+                                                            const hasActualCost = item.actualCost && item.actualCost > 0;
+
+                                                            let effectiveCharge, effectiveCost;
+
+                                                            if (hasActualCharge && hasActualCost) {
+                                                                // Both actual values exist
+                                                                effectiveCharge = safeNumber(item.actualCharge);
+                                                                effectiveCost = safeNumber(item.actualCost);
+                                                            } else if (hasActualCharge && !hasActualCost) {
+                                                                // Only actual charge exists, use with quoted cost
+                                                                effectiveCharge = safeNumber(item.actualCharge);
+                                                                effectiveCost = safeNumber(item.quotedCost);
+                                                            } else if (!hasActualCharge && hasActualCost) {
+                                                                // Only actual cost exists, use with quoted charge
+                                                                effectiveCharge = safeNumber(item.quotedCharge);
+                                                                effectiveCost = safeNumber(item.actualCost);
+                                                            } else {
+                                                                // No actual values, use quoted values
+                                                                effectiveCharge = safeNumber(item.quotedCharge);
+                                                                effectiveCost = safeNumber(item.quotedCost);
+                                                            }
+
+                                                            const profit = effectiveCharge - effectiveCost;
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -712,6 +1033,42 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        -
+                                                    </Typography>
+                                                </TableCell>
+                                            )}
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        -
+                                                    </Typography>
+                                                </TableCell>
+                                            )}
+                                            {enhancedIsAdmin && (
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                    <Checkbox
+                                                        checked={item.commissionable || false}
+                                                        onChange={(e) => {
+                                                            const updatedBreakdown = [...localRateBreakdown];
+                                                            updatedBreakdown[index] = {
+                                                                ...updatedBreakdown[index],
+                                                                commissionable: e.target.checked
+                                                            };
+                                                            setLocalRateBreakdown(updatedBreakdown);
+                                                            onChargesUpdate(updatedBreakdown);
+                                                        }}
+                                                        size="small"
+                                                        sx={{
+                                                            '& .MuiSvgIcon-root': {
+                                                                fontSize: '16px'
+                                                            }
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                            )}
+                                            {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
                                                     {editingIndex === index ? (
                                                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
@@ -721,7 +1078,7 @@ const RateDetails = ({
                                                                     onClick={() => handleEditSave(index)}
                                                                     sx={{ color: '#059669' }}
                                                                 >
-                                                                    <SaveIcon sx={{ fontSize: 16 }} />
+                                                                    <CheckIcon sx={{ fontSize: 16 }} />
                                                                 </IconButton>
                                                             </Tooltip>
                                                             <Tooltip title="Cancel">
@@ -770,17 +1127,57 @@ const RateDetails = ({
                                             TOTAL
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
-                                                {formatCurrency(localTotalCost)}
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
+                                                {formatCurrency(localTotalQuotedCost)}
                                             </TableCell>
                                         )}
-                                        <TableCell sx={{ fontSize: '14px', textAlign: 'right', fontWeight: 700 }}>
-                                            {formatCurrency(localTotalCharge)}
+                                        <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                            {formatCurrency(localTotalQuotedCharge)}
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700 }}>
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                                {localTotalActualCost > 0 ? formatCurrency(localTotalActualCost) : (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
+                                                        TBD
+                                                    </Typography>
+                                                )}
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                                {localTotalActualCharge > 0 ? formatCurrency(localTotalActualCharge) : (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
+                                                        TBD
+                                                    </Typography>
+                                                )}
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {(() => {
-                                                    const profit = localTotalCharge - localTotalCost;
+                                                    // Calculate profit using best available data
+                                                    let effectiveTotalCharge, effectiveTotalCost;
+
+                                                    // Use actual totals if available, otherwise use quoted totals
+                                                    if (localTotalActualCharge > 0 && localTotalActualCost > 0) {
+                                                        // Both actual totals exist
+                                                        effectiveTotalCharge = localTotalActualCharge;
+                                                        effectiveTotalCost = localTotalActualCost;
+                                                    } else if (localTotalActualCharge > 0 && localTotalActualCost === 0) {
+                                                        // Only actual charge exists, use with quoted cost
+                                                        effectiveTotalCharge = localTotalActualCharge;
+                                                        effectiveTotalCost = localTotalQuotedCost;
+                                                    } else if (localTotalActualCharge === 0 && localTotalActualCost > 0) {
+                                                        // Only actual cost exists, use with quoted charge
+                                                        effectiveTotalCharge = localTotalQuotedCharge;
+                                                        effectiveTotalCost = localTotalActualCost;
+                                                    } else {
+                                                        // No actual totals, use quoted totals
+                                                        effectiveTotalCharge = localTotalQuotedCharge;
+                                                        effectiveTotalCost = localTotalQuotedCost;
+                                                    }
+
+                                                    const profit = effectiveTotalCharge - effectiveTotalCost;
                                                     const isProfit = profit > 0;
                                                     const isLoss = profit < 0;
                                                     const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -796,6 +1193,21 @@ const RateDetails = ({
                                                         </Typography>
                                                     );
                                                 })()}
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                                {/* Empty cell for Invoice# column */}
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
+                                                {/* Empty cell for EDI# column */}
+                                            </TableCell>
+                                        )}
+                                        {enhancedIsAdmin && (
+                                            <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700 }}>
+                                                {/* Empty cell for Commissionable column */}
                                             </TableCell>
                                         )}
                                     </TableRow>

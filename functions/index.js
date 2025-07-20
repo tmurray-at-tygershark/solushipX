@@ -151,6 +151,7 @@ const { regenerateBOL, regenerateCarrierConfirmation, regenerateAllDocuments } =
 
 // Shipment management functions
 const { updateShipment } = require('./src/shipment-management/updateShipment');
+const updateShipmentCharges = require('./src/shipment-management/updateShipmentCharges');
 
 // Import general cancellation function
 const { cancelShipment } = require('./src/cancelShipment');
@@ -341,8 +342,9 @@ exports.regenerateBOL = regenerateBOL;
 exports.regenerateCarrierConfirmation = regenerateCarrierConfirmation;
 exports.regenerateAllDocuments = regenerateAllDocuments;
 
-// Export shipment management function
+// Export shipment management functions
 exports.updateShipment = updateShipment;
+exports.updateShipmentCharges = updateShipmentCharges;
 
 // Export general cancellation function
 exports.cancelShipment = cancelShipment;

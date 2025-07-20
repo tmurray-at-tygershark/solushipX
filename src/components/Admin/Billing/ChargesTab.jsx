@@ -1490,7 +1490,8 @@ const ChargesTab = () => {
                                         Carrier
                                     </TableCell>
                                     <SortableTableCell field="actualCost">Cost</SortableTableCell>
-                                    <SortableTableCell field="customerCharge">Charge</SortableTableCell>
+                                    <SortableTableCell field="customerCharge">Quoted</SortableTableCell>
+                                    <SortableTableCell field="actualCharge">Actual</SortableTableCell>
                                     <SortableTableCell field="margin">Profit</SortableTableCell>
                                     <SortableTableCell field="status">Shipment Status</SortableTableCell>
                                     <SortableTableCell field="invoiceStatus">Invoice Status</SortableTableCell>
@@ -1503,7 +1504,7 @@ const ChargesTab = () => {
                                     // Optimized skeleton loading
                                     Array.from({ length: rowsPerPage }).map((_, index) => (
                                         <TableRow key={`skeleton-${index}`}>
-                                            {Array.from({ length: 11 }).map((_, cellIndex) => (
+                                            {Array.from({ length: 12 }).map((_, cellIndex) => (
                                                 <TableCell key={cellIndex} sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                     <Skeleton variant="text" width={cellIndex === 0 ? 120 : cellIndex < 3 ? 100 : 80} height={16} />
                                                 </TableCell>
@@ -1659,6 +1660,13 @@ const ChargesTab = () => {
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#000000' }}>
                                                     {charge.customerCharge > 0 ? formatCurrency(charge.customerCharge, charge.currency) : '$0.00'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#dc2626' }}>
+                                                    {charge.actualCharge > 0 ? formatCurrency(charge.actualCharge, charge.currency) : (
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            TBD
+                                                        </Typography>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                     <Typography sx={{ fontSize: '12px', color: charge.margin > 0 ? '#228B22' : '#6b7280', fontWeight: 600 }}>

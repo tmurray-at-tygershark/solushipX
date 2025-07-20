@@ -32,7 +32,7 @@ import {
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../firebase';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 
@@ -1128,6 +1128,74 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         });
     }, []);
 
+    // Handle charges update - save to database
+    const handleChargesUpdate = useCallback(async (updatedCharges) => {
+        console.log('💰 ShipmentDetailX: handleChargesUpdate called', {
+            shipmentId: shipment?.id,
+            shipmentExists: !!shipment,
+            chargesCount: updatedCharges?.length,
+            updatedCharges
+        });
+
+        if (!shipment?.id || !updatedCharges) {
+            console.error('❌ Missing shipment ID or charges:', { shipmentId: shipment?.id, chargesLength: updatedCharges?.length });
+            return;
+        }
+
+        try {
+            console.log('💰 Saving updated charges to database:', updatedCharges);
+
+            // Call Firebase function to update charges
+            const updateShipmentCharges = httpsCallable(functions, 'updateShipmentCharges');
+
+            const chargesData = {
+                shipmentId: shipment.id,
+                charges: updatedCharges.map(charge => ({
+                    code: charge.code || 'FRT',
+                    description: charge.description || '',
+                    quotedCost: parseFloat(charge.quotedCost) || 0,
+                    quotedCharge: parseFloat(charge.quotedCharge) || 0,
+                    actualCost: parseFloat(charge.actualCost) || 0,
+                    actualCharge: parseFloat(charge.actualCharge) || 0,
+                    invoiceNumber: charge.invoiceNumber || '-',
+                    ediNumber: charge.ediNumber || '-',
+                    commissionable: charge.commissionable || false
+                }))
+            };
+
+            console.log('💰 Calling Cloud Function with:', chargesData);
+            const result = await updateShipmentCharges(chargesData);
+            console.log('💰 Cloud Function result:', result);
+
+            if (result.data && result.data.success) {
+                console.log('✅ Charges updated successfully');
+                showSnackbar('Charges updated successfully', 'success');
+
+                // Refresh shipment data to show updated charges
+                console.log('🔄 Refreshing shipment data...');
+
+                // Option 1: Force reload the entire page to get fresh data
+                window.location.reload();
+
+                // Option 2: Alternative - try refreshShipment with error handling
+                // setTimeout(() => {
+                //     try {
+                //         refreshShipment();
+                //     } catch (refreshError) {
+                //         console.error('❌ Error during refresh:', refreshError);
+                //         // Fallback to page reload
+                //         window.location.reload();
+                //     }
+                // }, 500);
+            } else {
+                throw new Error(result.data?.error || 'Failed to update charges');
+            }
+        } catch (error) {
+            console.error('❌ Error updating charges:', error);
+            showSnackbar(`Failed to update charges: ${error.message}`, 'error');
+        }
+    }, [shipment?.id, showSnackbar, refreshShipment]);
+
     if (loading) {
         return <LoadingSkeleton />;
     }
@@ -1227,6 +1295,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                             carrierData={carrierData}
                             shipment={shipment}
                             isAdmin={isAdmin}
+                            onChargesUpdate={handleChargesUpdate}
                         />
 
                         {/* Package Details */}
