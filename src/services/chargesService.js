@@ -451,6 +451,41 @@ export const generateInvoiceEdiReport = async (companyId, startDate, endDate) =>
     }
 };
 
+/**
+ * Fetch connected companies for a user
+ * @param {string} userId - The user ID
+ * @param {string} userRole - The user role ('superadmin', 'admin', 'user')
+ * @returns {Promise<Array>} - Array of company IDs
+ */
+export const fetchConnectedCompanies = async (userId, userRole) => {
+    try {
+        if (!userId) {
+            return [];
+        }
+
+        let companyIds = [];
+
+        if (userRole === 'superadmin') {
+            // Super admin can see all companies
+            const companiesSnapshot = await getDocs(collection(db, 'companies'));
+            companyIds = companiesSnapshot.docs.map(doc => doc.data().companyID || doc.id);
+        } else if (userRole === 'admin') {
+            // Regular admin sees connected companies
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userData = userDoc.data();
+
+            if (userData?.connectedCompanies && userData.connectedCompanies.length > 0) {
+                companyIds = userData.connectedCompanies;
+            }
+        }
+
+        return companyIds;
+    } catch (error) {
+        console.error('Error fetching connected companies:', error);
+        return [];
+    }
+};
+
 const chargesService = {
     updateChargeInvoiceNumber,
     updateChargeEdiNumber,
@@ -459,7 +494,8 @@ const chargesService = {
     bulkUpdateEdiNumbers,
     getShipmentsWithMissingInvoiceNumbers,
     getShipmentsWithMissingEdiNumbers,
-    generateInvoiceEdiReport
+    generateInvoiceEdiReport,
+    fetchConnectedCompanies
 };
 
 export default chargesService; 
