@@ -44,7 +44,7 @@ const updateShipmentCharges = onCall({
         if (shipmentsSnapshot.empty) {
             // Fallback: try to get by document ID
             const shipmentDoc = await db.collection('shipments').doc(shipmentId).get();
-            if (!shipmentDoc.exists()) {
+            if (!shipmentDoc.exists) {
                 throw new Error(`Shipment ${shipmentId} not found`);
             }
             
