@@ -819,8 +819,8 @@ const RateDetails = ({
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '120px' }}>
-                                                Commissionable
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '60px' }}>
+                                                CMN
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
