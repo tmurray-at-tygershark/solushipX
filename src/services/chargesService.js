@@ -452,6 +452,123 @@ export const generateInvoiceEdiReport = async (companyId, startDate, endDate) =>
 };
 
 /**
+ * Calculate billing metrics from shipment data
+ * @param {Object} params - Parameters object
+ * @param {Object} params.filters - Filter parameters (startDate, endDate, companyId, etc)
+ * @param {string} params.userRole - User role ('superadmin', 'admin', 'user')
+ * @param {Array} params.connectedCompanies - Array of connected company IDs for admins
+ * @returns {Promise<Object>} - Metrics object with totals by currency
+ */
+export const calculateMetrics = async ({ filters, userRole, connectedCompanies }) => {
+    try {
+        // Build Firestore query based on user role and filters
+        let shipmentsQuery = collection(db, 'shipments');
+        const queryConstraints = [where('status', '!=', 'draft')];
+
+        // Apply date filters
+        if (filters.startDate) {
+            queryConstraints.push(where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))));
+        }
+        if (filters.endDate) {
+            queryConstraints.push(where('createdAt', '<=', Timestamp.fromDate(new Date(filters.endDate))));
+        }
+
+        // Apply company filtering based on user role
+        if (userRole !== 'superadmin' && connectedCompanies && connectedCompanies.length > 0) {
+            // Regular admin: filter by connected companies
+            const companyBatches = [];
+            for (let i = 0; i < connectedCompanies.length; i += 10) {
+                const batch = connectedCompanies.slice(i, i + 10);
+                companyBatches.push(batch);
+            }
+            
+            // For simplicity, take first batch (can be enhanced for multiple batches)
+            if (companyBatches.length > 0) {
+                queryConstraints.push(where('companyID', 'in', companyBatches[0]));
+            }
+        }
+
+        // Apply specific company filter if selected
+        if (filters.companyId) {
+            queryConstraints.push(where('companyID', '==', filters.companyId));
+        }
+
+        // Add orderBy for consistent results
+        queryConstraints.push(orderBy('createdAt', 'desc'));
+
+        // Execute query
+        const shipmentsSnapshot = await getDocs(query(shipmentsQuery, ...queryConstraints));
+        const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        // Helper function to get shipment currency
+        const getShipmentCurrency = (shipment) => {
+            return shipment.currency || 
+                   shipment.selectedRate?.currency || 
+                   shipment.manualRates?.[0]?.currency || 
+                   'USD';
+        };
+
+        // Initialize metrics by currency
+        const metrics = {
+            totalShipments: { USD: 0, CAD: 0 },
+            totalRevenue: { USD: 0, CAD: 0 },
+            totalCosts: { USD: 0, CAD: 0 }
+        };
+
+        // Process each shipment
+        shipmentsData.forEach(shipment => {
+            const currency = getShipmentCurrency(shipment);
+            
+            // Count shipments by currency
+            metrics.totalShipments[currency] = (metrics.totalShipments[currency] || 0) + 1;
+
+            // Calculate revenue (customer charges)
+            let charge = 0;
+            if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                // QuickShip: sum up manual rates
+                charge = shipment.manualRates.reduce((sum, rate) => {
+                    return sum + (parseFloat(rate.charge) || 0);
+                }, 0);
+            } else {
+                // Regular shipments: use dual rate system
+                charge = shipment.markupRates?.totalCharges ||
+                        shipment.totalCharges ||
+                        shipment.selectedRate?.totalCharges || 0;
+            }
+            metrics.totalRevenue[currency] = (metrics.totalRevenue[currency] || 0) + charge;
+
+            // Calculate costs
+            let cost = 0;
+            if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                // QuickShip: sum up manual costs
+                cost = shipment.manualRates.reduce((sum, rate) => {
+                    return sum + (parseFloat(rate.cost) || 0);
+                }, 0);
+            } else {
+                // Regular shipments: use actual rates or fallback
+                cost = shipment.actualRates?.totalCharges ||
+                       shipment.totalCosts ||
+                       shipment.selectedRate?.totalCharges || 0;
+            }
+            metrics.totalCosts[currency] = (metrics.totalCosts[currency] || 0) + cost;
+        });
+
+        return metrics;
+    } catch (error) {
+        console.error('Error calculating metrics:', error);
+        // Return default metrics structure on error
+        return {
+            totalShipments: { USD: 0, CAD: 0 },
+            totalRevenue: { USD: 0, CAD: 0 },
+            totalCosts: { USD: 0, CAD: 0 }
+        };
+    }
+};
+
+/**
  * Fetch connected companies for a user
  * @param {string} userId - The user ID
  * @param {string} userRole - The user role ('superadmin', 'admin', 'user')
@@ -495,7 +612,8 @@ const chargesService = {
     getShipmentsWithMissingInvoiceNumbers,
     getShipmentsWithMissingEdiNumbers,
     generateInvoiceEdiReport,
-    fetchConnectedCompanies
+    fetchConnectedCompanies,
+    calculateMetrics
 };
 
 export default chargesService; 
