@@ -789,35 +789,35 @@ const RateDetails = ({
                                             Description
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Quoted Cost
                                             </TableCell>
                                         )}
-                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                             {enhancedIsAdmin ? 'Quoted Charge' : 'Amount'}
                                         </TableCell>
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Actual Cost
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Actual Charge
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Profit
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '100px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 Invoice#
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '100px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 EDI#
                                             </TableCell>
                                         )}
