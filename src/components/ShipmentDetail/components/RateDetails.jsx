@@ -239,7 +239,10 @@ const RateDetails = ({
             quotedCharge: '0',
             actualCost: '0',
             actualCharge: '0',
-            code: 'FRT'
+            code: 'FRT',
+            invoiceNumber: '',
+            ediNumber: '',
+            commissionable: false
         });
     }, [localRateBreakdown]);
 
@@ -1042,16 +1045,44 @@ const RateDetails = ({
                                             )}
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        -
-                                                    </Typography>
+                                                    {editingIndex === index ? (
+                                                        <TextField
+                                                            value={editingValues.invoiceNumber || ''}
+                                                            onChange={(e) => handleInputChange('invoiceNumber', e.target.value)}
+                                                            size="small"
+                                                            fullWidth
+                                                            placeholder="Invoice #"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <Typography sx={{ fontSize: '12px', color: item.invoiceNumber && item.invoiceNumber !== '-' ? '#374151' : '#6b7280' }}>
+                                                            {item.invoiceNumber || '-'}
+                                                        </Typography>
+                                                    )}
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        -
-                                                    </Typography>
+                                                    {editingIndex === index ? (
+                                                        <TextField
+                                                            value={editingValues.ediNumber || ''}
+                                                            onChange={(e) => handleInputChange('ediNumber', e.target.value)}
+                                                            size="small"
+                                                            fullWidth
+                                                            placeholder="EDI #"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <Typography sx={{ fontSize: '12px', color: item.ediNumber && item.ediNumber !== '-' ? '#374151' : '#6b7280' }}>
+                                                            {item.ediNumber || '-'}
+                                                        </Typography>
+                                                    )}
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
