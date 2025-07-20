@@ -256,16 +256,62 @@ const RateDetails = ({
         }));
     }, []);
 
-    // Calculate totals from local breakdown
+    // Comprehensive profit calculation logic for individual line items
+    const calculateLineItemProfit = useCallback((item) => {
+        const actualCost = parseFloat(item.actualCost) || 0;
+        const quotedCost = parseFloat(item.quotedCost) || 0;
+        const actualCharge = parseFloat(item.actualCharge) || 0;
+        const quotedCharge = parseFloat(item.quotedCharge) || 0;
+
+        // Profit Calculation Priority Logic:
+        // 1. If both actual cost and actual charge exist: actualCharge - actualCost
+        // 2. If only actual cost exists: quotedCharge - actualCost  
+        // 3. If only actual charge exists: actualCharge - quotedCost
+        // 4. If neither actual exists: quotedCharge - quotedCost
+
+        if (actualCost > 0 && actualCharge > 0) {
+            // Both actual values available - most accurate scenario
+            return actualCharge - actualCost;
+        } else if (actualCost > 0) {
+            // Only actual cost available - use with quoted charge
+            return quotedCharge - actualCost;
+        } else if (actualCharge > 0) {
+            // Only actual charge available - use with quoted cost
+            return actualCharge - quotedCost;
+        } else {
+            // No actual values - use quoted values
+            return quotedCharge - quotedCost;
+        }
+    }, []);
+
+    // Calculate totals from local breakdown with comprehensive profit logic
     const calculateLocalTotals = useCallback(() => {
         const totalQuotedCost = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.quotedCost) || 0), 0);
         const totalQuotedCharge = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.quotedCharge) || 0), 0);
         const totalActualCost = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.actualCost) || 0), 0);
         const totalActualCharge = localRateBreakdown.reduce((sum, item) => sum + (parseFloat(item.actualCharge) || 0), 0);
 
+        // Calculate effective totals (use actual when available, fallback to quoted)
+        const effectiveTotalCost = localRateBreakdown.reduce((sum, item) => {
+            const actualCost = parseFloat(item.actualCost) || 0;
+            const quotedCost = parseFloat(item.quotedCost) || 0;
+            return sum + (actualCost > 0 ? actualCost : quotedCost);
+        }, 0);
+
+        const effectiveTotalCharge = localRateBreakdown.reduce((sum, item) => {
+            const actualCharge = parseFloat(item.actualCharge) || 0;
+            const quotedCharge = parseFloat(item.quotedCharge) || 0;
+            return sum + (actualCharge > 0 ? actualCharge : quotedCharge);
+        }, 0);
+
+        // Calculate total profit using smart line-item logic
+        const totalProfit = localRateBreakdown.reduce((sum, item) => {
+            return sum + calculateLineItemProfit(item);
+        }, 0);
+
         // Legacy support - keep these for backward compatibility 
-        const totalCost = totalQuotedCost; // For now, map quoted cost to legacy total cost
-        const totalCharge = totalQuotedCharge; // For now, map quoted charge to legacy total charge
+        const totalCost = effectiveTotalCost; // Use effective cost (actual preferred)
+        const totalCharge = effectiveTotalCharge; // Use effective charge (actual preferred)
 
         return {
             totalCost,
@@ -273,9 +319,12 @@ const RateDetails = ({
             totalQuotedCost,
             totalQuotedCharge,
             totalActualCost,
-            totalActualCharge
+            totalActualCharge,
+            effectiveTotalCost,
+            effectiveTotalCharge,
+            totalProfit
         };
-    }, [localRateBreakdown]);
+    }, [localRateBreakdown, calculateLineItemProfit]);
 
     // Initialize local rate breakdown when component loads or data changes - moved above early return
     React.useEffect(() => {
@@ -637,7 +686,10 @@ const RateDetails = ({
         totalQuotedCost: localTotalQuotedCost,
         totalQuotedCharge: localTotalQuotedCharge,
         totalActualCost: localTotalActualCost,
-        totalActualCharge: localTotalActualCharge
+        totalActualCharge: localTotalActualCharge,
+        effectiveTotalCost: localEffectiveTotalCost,
+        effectiveTotalCharge: localEffectiveTotalCharge,
+        totalProfit: localTotalProfit
     } = calculateLocalTotals();
 
     // Get service information
@@ -934,34 +986,14 @@ const RateDetails = ({
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
                                                     {editingIndex === index ? (
-                                                        // Show calculated profit during editing
+                                                        // Show calculated profit during editing using smart logic
                                                         (() => {
-                                                            // If actual values exist, use actual charge - actual cost
-                                                            // If no actual values, use quoted charge - quoted cost
-                                                            const hasActualCharge = editingValues.actualCharge && parseFloat(editingValues.actualCharge) > 0;
-                                                            const hasActualCost = editingValues.actualCost && parseFloat(editingValues.actualCost) > 0;
-
-                                                            let effectiveCharge, effectiveCost;
-
-                                                            if (hasActualCharge && hasActualCost) {
-                                                                // Both actual values exist
-                                                                effectiveCharge = parseFloat(editingValues.actualCharge);
-                                                                effectiveCost = parseFloat(editingValues.actualCost);
-                                                            } else if (hasActualCharge && !hasActualCost) {
-                                                                // Only actual charge exists, use with quoted cost
-                                                                effectiveCharge = parseFloat(editingValues.actualCharge);
-                                                                effectiveCost = parseFloat(editingValues.quotedCost || 0);
-                                                            } else if (!hasActualCharge && hasActualCost) {
-                                                                // Only actual cost exists, use with quoted charge
-                                                                effectiveCharge = parseFloat(editingValues.quotedCharge || 0);
-                                                                effectiveCost = parseFloat(editingValues.actualCost);
-                                                            } else {
-                                                                // No actual values, use quoted values
-                                                                effectiveCharge = parseFloat(editingValues.quotedCharge || 0);
-                                                                effectiveCost = parseFloat(editingValues.quotedCost || 0);
-                                                            }
-
-                                                            const profit = effectiveCharge - effectiveCost;
+                                                            const profit = calculateLineItemProfit({
+                                                                quotedCost: editingValues.quotedCost,
+                                                                quotedCharge: editingValues.quotedCharge,
+                                                                actualCost: editingValues.actualCost,
+                                                                actualCharge: editingValues.actualCharge
+                                                            });
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -978,33 +1010,9 @@ const RateDetails = ({
                                                             );
                                                         })()
                                                     ) : (
-                                                        // Show calculated profit for each line item
+                                                        // Show calculated profit for each line item using smart logic
                                                         !item.isMarkup ? (() => {
-                                                            // Use the best available data for profit calculation
-                                                            const hasActualCharge = item.actualCharge && item.actualCharge > 0;
-                                                            const hasActualCost = item.actualCost && item.actualCost > 0;
-
-                                                            let effectiveCharge, effectiveCost;
-
-                                                            if (hasActualCharge && hasActualCost) {
-                                                                // Both actual values exist
-                                                                effectiveCharge = safeNumber(item.actualCharge);
-                                                                effectiveCost = safeNumber(item.actualCost);
-                                                            } else if (hasActualCharge && !hasActualCost) {
-                                                                // Only actual charge exists, use with quoted cost
-                                                                effectiveCharge = safeNumber(item.actualCharge);
-                                                                effectiveCost = safeNumber(item.quotedCost);
-                                                            } else if (!hasActualCharge && hasActualCost) {
-                                                                // Only actual cost exists, use with quoted charge
-                                                                effectiveCharge = safeNumber(item.quotedCharge);
-                                                                effectiveCost = safeNumber(item.actualCost);
-                                                            } else {
-                                                                // No actual values, use quoted values
-                                                                effectiveCharge = safeNumber(item.quotedCharge);
-                                                                effectiveCost = safeNumber(item.quotedCost);
-                                                            }
-
-                                                            const profit = effectiveCharge - effectiveCost;
+                                                            const profit = calculateLineItemProfit(item);
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -1128,11 +1136,31 @@ const RateDetails = ({
                                         </TableCell>
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
-                                                {formatCurrency(localTotalQuotedCost)}
+                                                {formatCurrency(localEffectiveTotalCost)}
+                                                {localTotalActualCost > 0 && (
+                                                    <Typography variant="caption" sx={{
+                                                        fontSize: '10px',
+                                                        color: '#059669',
+                                                        display: 'block',
+                                                        fontWeight: 400
+                                                    }}>
+                                                        (with actuals)
+                                                    </Typography>
+                                                )}
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                            {formatCurrency(localTotalQuotedCharge)}
+                                            {formatCurrency(localEffectiveTotalCharge)}
+                                            {localTotalActualCharge > 0 && (
+                                                <Typography variant="caption" sx={{
+                                                    fontSize: '10px',
+                                                    color: '#059669',
+                                                    display: 'block',
+                                                    fontWeight: 400
+                                                }}>
+                                                    (with actuals)
+                                                </Typography>
+                                            )}
                                         </TableCell>
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
@@ -1155,29 +1183,8 @@ const RateDetails = ({
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {(() => {
-                                                    // Calculate profit using best available data
-                                                    let effectiveTotalCharge, effectiveTotalCost;
-
-                                                    // Use actual totals if available, otherwise use quoted totals
-                                                    if (localTotalActualCharge > 0 && localTotalActualCost > 0) {
-                                                        // Both actual totals exist
-                                                        effectiveTotalCharge = localTotalActualCharge;
-                                                        effectiveTotalCost = localTotalActualCost;
-                                                    } else if (localTotalActualCharge > 0 && localTotalActualCost === 0) {
-                                                        // Only actual charge exists, use with quoted cost
-                                                        effectiveTotalCharge = localTotalActualCharge;
-                                                        effectiveTotalCost = localTotalQuotedCost;
-                                                    } else if (localTotalActualCharge === 0 && localTotalActualCost > 0) {
-                                                        // Only actual cost exists, use with quoted charge
-                                                        effectiveTotalCharge = localTotalQuotedCharge;
-                                                        effectiveTotalCost = localTotalActualCost;
-                                                    } else {
-                                                        // No actual totals, use quoted totals
-                                                        effectiveTotalCharge = localTotalQuotedCharge;
-                                                        effectiveTotalCost = localTotalQuotedCost;
-                                                    }
-
-                                                    const profit = effectiveTotalCharge - effectiveTotalCost;
+                                                    // Use the comprehensive profit calculation from calculateLocalTotals
+                                                    const profit = localTotalProfit;
                                                     const isProfit = profit > 0;
                                                     const isLoss = profit < 0;
                                                     const prefix = isProfit ? '+' : (isLoss ? '-' : '');
