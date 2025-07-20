@@ -912,7 +912,15 @@ const RateDetails = ({
                                                             sx={{
                                                                 width: '100px',
                                                                 '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                                '& .MuiInputBase-root': { height: '32px' },
+                                                                // Hide number input spinners
+                                                                '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                    WebkitAppearance: 'none',
+                                                                    margin: 0
+                                                                },
+                                                                '& input[type=number]': {
+                                                                    MozAppearance: 'textfield'
+                                                                }
                                                             }}
                                                         />
                                                     ) : (
@@ -931,7 +939,15 @@ const RateDetails = ({
                                                         sx={{
                                                             width: '100px',
                                                             '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                            '& .MuiInputBase-root': { height: '32px' }
+                                                            '& .MuiInputBase-root': { height: '32px' },
+                                                            // Hide number input spinners
+                                                            '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                WebkitAppearance: 'none',
+                                                                margin: 0
+                                                            },
+                                                            '& input[type=number]': {
+                                                                MozAppearance: 'textfield'
+                                                            }
                                                         }}
                                                     />
                                                 ) : (
@@ -950,7 +966,15 @@ const RateDetails = ({
                                                             sx={{
                                                                 width: '100px',
                                                                 '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                                '& .MuiInputBase-root': { height: '32px' },
+                                                                // Hide number input spinners
+                                                                '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                    WebkitAppearance: 'none',
+                                                                    margin: 0
+                                                                },
+                                                                '& input[type=number]': {
+                                                                    MozAppearance: 'textfield'
+                                                                }
                                                             }}
                                                         />
                                                     ) : (
@@ -974,7 +998,15 @@ const RateDetails = ({
                                                             sx={{
                                                                 width: '100px',
                                                                 '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'left' },
-                                                                '& .MuiInputBase-root': { height: '32px' }
+                                                                '& .MuiInputBase-root': { height: '32px' },
+                                                                // Hide number input spinners
+                                                                '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                                                                    WebkitAppearance: 'none',
+                                                                    margin: 0
+                                                                },
+                                                                '& input[type=number]': {
+                                                                    MozAppearance: 'textfield'
+                                                                }
                                                             }}
                                                         />
                                                     ) : (
