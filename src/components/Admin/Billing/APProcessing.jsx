@@ -925,7 +925,9 @@ const APProcessing = () => {
     const startBackgroundPdfProcessing = async (fileName, uploadUrl, carrier, fileId) => {
         try {
             // Call the cloud function but don't wait for it
-            const processPdfFileFunc = httpsCallable(functions, 'processPdfFile');
+            const processPdfFileFunc = httpsCallable(functions, 'processPdfFile', {
+                timeout: 540000  // 9 minutes to match cloud function timeout
+            });
 
             // This runs in the background - we don't await it
             processPdfFileFunc({
@@ -1048,7 +1050,9 @@ const APProcessing = () => {
                 // For batch PDF processing, we'll process each with "unknown" carrier
                 // In a real implementation, you might want to show a dialog for each file
                 // or have a bulk carrier selection UI
-                const processPdfBatch = httpsCallable(functions, 'processPdfBatch');
+                const processPdfBatch = httpsCallable(functions, 'processPdfBatch', {
+                    timeout: 540000  // 9 minutes to match cloud function timeout
+                });
                 const batchResult = await processPdfBatch({
                     files: pdfFiles,
                     carrier: 'unknown', // Default to unknown for batch processing
@@ -1080,7 +1084,9 @@ const APProcessing = () => {
     const processPdfFile = async (fileName, uploadUrl, carrier = null) => {
         console.log('processPdfFile called with carrier:', carrier, 'selectedCarrier state:', selectedCarrier);
         try {
-            const processPdfFileFunc = httpsCallable(functions, 'processPdfFile');
+            const processPdfFileFunc = httpsCallable(functions, 'processPdfFile', {
+                timeout: 540000  // 9 minutes to match cloud function timeout
+            });
             const result = await processPdfFileFunc({
                 fileName,
                 uploadUrl,
@@ -1143,7 +1149,9 @@ const APProcessing = () => {
         try {
             setLoading(true);
 
-            const retryPdfProcessing = httpsCallable(functions, 'retryPdfProcessing');
+            const retryPdfProcessing = httpsCallable(functions, 'retryPdfProcessing', {
+                timeout: 540000  // 9 minutes to match cloud function timeout
+            });
             const result = await retryPdfProcessing({
                 uploadId: upload.id,
                 newSettings: {
