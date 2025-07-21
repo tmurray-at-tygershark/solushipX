@@ -837,8 +837,8 @@ const APProcessing = () => {
             supported: true,
             confidence: 0.92,
             formats: ['invoice', 'bol', 'confirmation'],
-            features: ['tracking', 'addresses', 'charges', 'multi-document', 'system-integration'],
-            description: 'Freight carrier with integrated system confirmations and BOL generation',
+            features: ['tracking', 'addresses', 'charges', 'adaptive-documents', 'system-integration'],
+            description: 'Freight carrier with flexible document support (1-3 pages) and ProTransport integration',
             logoURL: '/images/carriers/landliner-logo.png',
             patterns: ['ICAL-', 'ProTransport Trucking Software', 'Landliner Inc'],
             referenceFormat: 'ICAL-XXXXXX'

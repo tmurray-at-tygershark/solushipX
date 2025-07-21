@@ -161,7 +161,7 @@ const carrierTemplates = {
     },
     landliner: {
         name: 'Landliner Inc',
-        format: 'multi-document',
+        format: 'adaptive-document',
         confidence: 0.92,
         patterns: {
             // Carrier identification patterns
@@ -2217,21 +2217,21 @@ function getCarrierSpecificInstructions(carrierInfo) {
         - "Tax": Government taxes
         `,
         landliner: `
-        For Landliner Inc (ProTransport Software) MULTI-DOCUMENT PDFs:
-        - CRITICAL: This PDF contains 3 document types: INVOICE + CONFIRMATION + BOL
-        - Primary Reference: ICAL-XXXXX (appears on ALL documents)
+        For Landliner Inc (ProTransport Software) FLEXIBLE DOCUMENT PDFs:
+        - FLEXIBLE: This PDF may contain 1-3 document types: INVOICE (required) + CONFIRMATION (optional) + BOL (optional)
+        - Primary Reference: ICAL-XXXXX (appears on invoice, may appear on additional docs)
         - Invoice Number: Numeric (e.g., 34342)
         - Generated System: ProTransport Trucking Software integration
         
-        DOCUMENT STRUCTURE:
-        Page 1 - INVOICE:
+        DOCUMENT STRUCTURE (ADAPTIVE):
+        ALWAYS PRESENT - INVOICE PAGE:
         - Header: "LANDLINER" with company logo
         - Invoice details: Date, number, terms, due date
         - Shipment details: Customer Load #, Origin-Destination, Quantity, Rate, Amount
         - Total amount: "TOTAL: $X,XXX.XX"
         - Reference format: ICAL-XXXXX as Customer Load #
         
-        Page 2 - CARRIER CONFIRMATION:
+        SOMETIMES PRESENT - CARRIER CONFIRMATION:
         - Header: "INTEGRATED CARRIERS" 
         - Order number: "ORDER # ICAL-XXXXX MUST BE ADDED TO YOUR FREIGHT INVOICE"
         - Carrier: LANDLINER
@@ -2240,7 +2240,7 @@ function getCarrierSpecificInstructions(carrierInfo) {
         - Commodity description
         - Contact information and special instructions
         
-        Page 3 - BILL OF LADING (BOL):
+        SOMETIMES PRESENT - BILL OF LADING (BOL):
         - Header: "LTL Bill of Lading - Not Negotiable"
         - BOL Number: ICAL-XXXXX
         - Ship From/Ship To addresses
@@ -2248,27 +2248,27 @@ function getCarrierSpecificInstructions(carrierInfo) {
         - Weight and commodity details
         - Signatures (shipper, carrier, consignee)
         
-        LANDLINER EXTRACTION PRIORITIES:
-        1. Reference Number: ICAL-XXXXX (PRIMARY IDENTIFIER - appears on all docs)
-        2. Invoice Number: From Page 1 invoice header
-        3. Total Amount: From "TOTAL:" line on invoice
-        4. Weight: Extract from "TOTAL WEIGHT: XXXXX LBS"
-        5. Pieces: Extract from "TOTAL PIECES: XX" 
-        6. Route: Extract PickUp/Delivery locations
-        7. Commodity: Usually "computers" or from commodity description
-        8. Contacts: Extract shipper/consignee contact information
+        LANDLINER EXTRACTION PRIORITIES (ADAPTIVE):
+        1. Reference Number: ICAL-XXXXX (PRIMARY IDENTIFIER - always on invoice)
+        2. Invoice Number: From invoice header (always available)
+        3. Total Amount: From "TOTAL:" line on invoice (always available)
+        4. Weight: Extract from confirmation if present, otherwise estimate from invoice data
+        5. Pieces: Extract from confirmation if present, otherwise use "1" as default
+        6. Route: Extract from PickUp/Delivery if available, otherwise from invoice origin-destination
+        7. Commodity: From commodity description if available, otherwise "General Freight"
+        8. Contacts: Extract from confirmation if present, otherwise from invoice billing info
         
         LANDLINER CHARGE PATTERNS:
-        - "Freight Income": Primary transportation charge
-        - "TOTAL": Final invoice amount
+        - "Freight Income": Primary transportation charge (from invoice)
+        - "TOTAL": Final invoice amount (from invoice)
         - Look for rate information in invoice table
-        - Cross-validate amounts across all 3 documents
+        - Cross-validate amounts if multiple documents present
         
-        CROSS-DOCUMENT VALIDATION:
-        - Same ICAL-XXXXX reference on all pages
-        - Weight/pieces consistent between confirmation and BOL
-        - Addresses match between confirmation and BOL
-        - Amount from invoice matches expected freight charges
+        ADAPTIVE DOCUMENT HANDLING:
+        - Single Page: Extract all data from invoice only
+        - Multi-Page: Cross-validate data between documents when available
+        - Always prioritize invoice data as the authoritative source
+        - Use confirmation/BOL data to enhance and validate invoice information
         `,
         default: `
         For this carrier's documents:
@@ -2594,49 +2594,132 @@ function createDHLFallbackData(text) {
     };
 }
 
-// Enhanced Landliner-specific fallback data extraction
+// Enhanced Landliner-specific fallback data extraction (adaptive for 1-3 documents)
 function createLandlinerFallbackData(text) {
-    console.log('Creating Landliner-specific fallback data');
+    console.log('Creating Landliner-specific fallback data (adaptive document handling)');
     
-    // Extract ICAL reference numbers (primary identifier)
+    // Extract ICAL reference numbers (primary identifier - always present on invoice)
     const icalReferences = extractWithRegex(text, /(ICAL-\w+)/gi);
     
-    // Extract invoice numbers
+    // Extract invoice numbers (always present)
     const invoiceNumbers = extractWithRegex(text, /Invoice\s*#\s*(\d+)/gi);
     
-    // Extract total amounts
+    // Extract total amounts (always present on invoice)
     const totalAmounts = extractWithRegex(text, /TOTAL\s*:\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi);
     const freightIncomes = extractWithRegex(text, /Freight\s*Income\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi);
     
-    // Extract weight information
+    // Extract weight information (may be from confirmation or estimated)
     const totalWeights = extractWithRegex(text, /TOTAL\s*WEIGHT:\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi);
     const weights = extractWithRegex(text, /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi);
     
-    // Extract pieces information
+    // Extract pieces information (may be from confirmation or estimated)
     const totalPieces = extractWithRegex(text, /TOTAL\s*PIECES:\s*(\d+)/gi);
     const pieces = extractWithRegex(text, /(\d+)\s*pieces?/gi);
+    const quantities = extractWithRegex(text, /Quantity\s*(\d+)/gi);
     
-    // Extract route information
+    // Extract route information (prefer confirmation, fallback to invoice)
     const pickupLocations = extractWithRegex(text, /PickUp:\s*(.*?)(?=Delivery:|$)/gi);
     const deliveryLocations = extractWithRegex(text, /Delivery:\s*(.*?)(?=\n|$)/gi);
+    const originDestination = extractWithRegex(text, /Origin\s*-\s*Destination\s*(.*?)(?=Quantity|Rate|$)/gi);
     
-    // Extract company information
+    // Extract company information (flexible sources)
     const vigInfo = extractWithRegex(text, /(VIG\s*INC\s*LLC[^\\n]*)/gi);
     const rdiInfo = extractWithRegex(text, /(RDI[^\\n]*)/gi);
     
-    // Extract dates
+    // Extract dates (invoice date is authoritative)
     const invoiceDates = extractWithRegex(text, /Invoice\s*Date\s*(\d{1,2}\/\d{1,2}\/\d{4})/gi);
     const shipmentDates = extractWithRegex(text, /(\d{1,2}\/\d{1,2}\/\d{4})/g);
     
-    // Extract commodity information
-    const commodities = extractWithRegex(text, /(computers?|computer\s+equipment)/gi);
+    // Extract commodity information (from any document)
+    const commodities = extractWithRegex(text, /(computers?|computer\s+equipment|general\s+freight)/gi);
     
-    // Create structured shipment data
+    // Detect document types present
+    const hasConfirmation = text.includes('INTEGRATED CARRIERS') || text.includes('ORDER #');
+    const hasBOL = text.includes('Bill of Lading') || text.includes('BOL Number');
+    const isMultiDocument = hasConfirmation || hasBOL;
+    
+    // Create structured shipment data with adaptive fallbacks
     const primaryReference = icalReferences[0] || 'Unknown';
     const invoiceNumber = invoiceNumbers[0] || 'Unknown';
     const totalAmount = totalAmounts[0] || freightIncomes[0] || '0';
-    const shipmentWeight = totalWeights[0] || weights[0] || '0';
-    const shipmentPieces = totalPieces[0] || pieces[0] || '1';
+    
+    // Adaptive weight/pieces handling
+    let shipmentWeight = totalWeights[0] || weights[0];
+    let shipmentPieces = totalPieces[0] || pieces[0] || quantities[0];
+    
+    // If no weight/pieces from confirmation, estimate from invoice data
+    if (!shipmentWeight && !shipmentPieces) {
+        // Estimate based on amount (rough freight calculation)
+        const amount = parseFloat(totalAmount.replace(/,/g, '')) || 0;
+        if (amount > 1000) {
+            shipmentWeight = '20000'; // Estimate for higher value shipments
+            shipmentPieces = '10';
+        } else {
+            shipmentWeight = '5000'; // Estimate for lower value shipments  
+            shipmentPieces = '1';
+        }
+    } else if (!shipmentWeight) {
+        // Estimate weight from pieces
+        const pcs = parseInt(shipmentPieces) || 1;
+        shipmentWeight = String(pcs * 1000); // Estimate 1000 lbs per piece
+    } else if (!shipmentPieces) {
+        // Estimate pieces from weight
+        const wgt = parseFloat(shipmentWeight.replace(/,/g, '')) || 1000;
+        shipmentPieces = String(Math.max(1, Math.floor(wgt / 1000))); // Estimate 1000 lbs per piece
+    }
+    
+    // Adaptive route handling
+    let fromLocation, toLocation;
+    if (pickupLocations[0] && deliveryLocations[0]) {
+        // From confirmation data
+        fromLocation = {
+            company: vigInfo[0] ? vigInfo[0].replace(/VIG\s*INC\s*LLC[,\s]*/i, '').trim() : 'VIG INC LLC',
+            address: pickupLocations[0],
+            city: 'Dallas',
+            province: 'TX',
+            country: 'US'
+        };
+        toLocation = {
+            company: rdiInfo[0] ? rdiInfo[0].replace(/RDI[,\s]*/i, '').trim() : 'RDI',
+            address: deliveryLocations[0],
+            city: 'Chicago',
+            province: 'IL',
+            country: 'US'
+        };
+    } else if (originDestination[0]) {
+        // From invoice origin-destination
+        const route = originDestination[0].trim();
+        fromLocation = {
+            company: 'Origin Company',
+            address: route.split('→')[0] || route.split('-')[0] || 'Origin Address',
+            city: 'Unknown',
+            province: 'Unknown',
+            country: 'Unknown'
+        };
+        toLocation = {
+            company: 'Destination Company',
+            address: route.split('→')[1] || route.split('-')[1] || 'Destination Address',
+            city: 'Unknown', 
+            province: 'Unknown',
+            country: 'Unknown'
+        };
+    } else {
+        // Default fallback
+        fromLocation = {
+            company: 'VIG INC LLC',
+            address: 'Dallas, TX',
+            city: 'Dallas',
+            province: 'TX',
+            country: 'US'
+        };
+        toLocation = {
+            company: 'RDI',
+            address: 'Chicago, IL',
+            city: 'Chicago',
+            province: 'IL',
+            country: 'US'
+        };
+    }
     
     // Parse amounts (remove commas and convert to number)
     const parsedAmount = parseFloat(totalAmount.replace(/,/g, '')) || 0;
@@ -2652,8 +2735,15 @@ function createLandlinerFallbackData(text) {
             currency: 'CAD'
         });
     }
+    if (totalAmounts[0] && totalAmounts[0] !== freightIncomes[0]) {
+        charges.push({
+            description: 'Total Invoice Amount',
+            amount: parsedAmount,
+            currency: 'CAD'
+        });
+    }
     
-    // Create shipment object
+    // Create shipment object with adaptive data
     const shipment = {
         trackingNumber: primaryReference,
         shipmentDate: convertDateFormat(invoiceDates[0] || shipmentDates[0]) || new Date().toISOString().split('T')[0],
@@ -2663,20 +2753,8 @@ function createLandlinerFallbackData(text) {
             unit: 'LB'
         },
         pieces: parsedPieces,
-        from: {
-            company: vigInfo[0] ? vigInfo[0].replace(/VIG\s*INC\s*LLC[,\s]*/i, '').trim() : 'VIG INC LLC',
-            address: pickupLocations[0] || 'Dallas, TX',
-            city: 'Dallas',
-            province: 'TX',
-            country: 'US'
-        },
-        to: {
-            company: rdiInfo[0] ? rdiInfo[0].replace(/RDI[,\s]*/i, '').trim() : 'RDI',
-            address: deliveryLocations[0] || 'Chicago, IL',
-            city: 'Chicago',
-            province: 'IL',
-            country: 'US'
-        },
+        from: fromLocation,
+        to: toLocation,
         charges: charges,
         totalAmount: parsedAmount,
         currency: 'CAD',
@@ -2686,25 +2764,26 @@ function createLandlinerFallbackData(text) {
             other: icalReferences.slice(1) // Additional ICAL references if found
         },
         commodity: commodities[0] || 'General Freight',
-        multiDocument: true,
-        documentTypes: ['invoice', 'confirmation', 'bol']
+        multiDocument: isMultiDocument,
+        documentTypes: ['invoice'].concat(hasConfirmation ? ['confirmation'] : []).concat(hasBOL ? ['bol'] : [])
     };
     
     return {
         shipments: [shipment],
         metadata: {
-            documentType: 'multi-document',
+            documentType: isMultiDocument ? 'multi-document' : 'invoice',
             documentNumber: invoiceNumber,
             documentDate: convertDateFormat(invoiceDates[0] || shipmentDates[0]),
             totalShipments: 1,
             totalAmount: parsedAmount,
             currency: 'CAD',
             carrier: 'Landliner Inc',
-            multiDocument: true,
-            primaryReference: primaryReference
+            multiDocument: isMultiDocument,
+            primaryReference: primaryReference,
+            documentsDetected: shipment.documentTypes
         },
         fallback: true,
-        extractionMethod: 'landliner_regex_patterns'
+        extractionMethod: 'landliner_adaptive_patterns'
     };
 }
 
