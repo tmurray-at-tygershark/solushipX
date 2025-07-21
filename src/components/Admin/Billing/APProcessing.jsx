@@ -2267,7 +2267,6 @@ const APProcessing = () => {
                         value="queue"
                     />
                     <Tab label="EDI Processing" value="edi" />
-                    <Tab label="PDF Parsing" value="pdf" />
                     <Tab label="Data Mapping" value="mapping" />
                     <Tab label="Analytics" value="analytics" />
                 </Tabs>

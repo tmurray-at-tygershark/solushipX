@@ -1,15 +1,15 @@
 import { db, functions } from '../firebase/firebase';
-import { 
-    collection, 
+import {
+    collection,
     doc, 
     getDoc, 
     updateDoc, 
-    query, 
-    where, 
+    query,
+    where,
     getDocs,
     orderBy,
     limit,
-    Timestamp 
+    Timestamp
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 
@@ -188,7 +188,7 @@ export const bulkUpdateInvoiceNumbers = async (shipmentId, updates) => {
         // Update the charges
         const updatedCharges = currentCharges.map(charge => {
             if (updateMap.has(charge.code)) {
-                return {
+            return {
                     ...charge,
                     invoiceNumber: updateMap.get(charge.code) || '-'
                 };
@@ -203,9 +203,9 @@ export const bulkUpdateInvoiceNumbers = async (shipmentId, updates) => {
         });
         
         return result.data?.success || false;
-    } catch (error) {
+        } catch (error) {
         console.error('Error bulk updating invoice numbers:', error);
-        throw error;
+            throw error;
     }
 };
 
@@ -344,7 +344,7 @@ export const getShipmentsWithMissingEdiNumbers = async (companyId, limitCount = 
         });
         
         return shipments;
-    } catch (error) {
+        } catch (error) {
         console.error('Error getting shipments with missing EDI numbers:', error);
         throw error;
     }
@@ -653,13 +653,13 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
 
         // Helper function to format route
         const formatRoute = (shipment) => {
-            const from = shipment.shipFrom || shipment.origin;
-            const to = shipment.shipTo || shipment.destination;
-            if (!from || !to) return 'N/A';
-            const fromCity = from.city || 'Unknown';
-            const fromState = from.state || from.province || '';
-            const toCity = to.city || 'Unknown';
-            const toState = to.state || to.province || '';
+        const from = shipment.shipFrom || shipment.origin;
+        const to = shipment.shipTo || shipment.destination;
+        if (!from || !to) return 'N/A';
+        const fromCity = from.city || 'Unknown';
+        const fromState = from.state || from.province || '';
+        const toCity = to.city || 'Unknown';
+        const toState = to.state || to.province || '';
             return `${fromCity}, ${fromState} → ${toCity}, ${toState}`;
         };
 
