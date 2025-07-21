@@ -736,7 +736,11 @@ const APProcessing = () => {
         ocrEnabled: true,
         tableDetection: true,
         structuredOutput: true,
-        carrierTemplates: true
+        carrierTemplates: true,
+        useMultiModalAnalysis: true,  // Phase 2A: Enable multi-modal analysis
+        aiVisionEnabled: true,        // Visual layout analysis
+        logoDetectionEnabled: true,   // Carrier logo detection
+        tableIntelligenceEnabled: true // Advanced table parsing
     });
     const [anchorEl, setAnchorEl] = useState(null);
     const [settingsDialog, setSettingsDialog] = useState(false);
@@ -766,14 +770,15 @@ const APProcessing = () => {
     const carrierTemplates = [
         {
             id: 'auto-detect',
-            name: '🤖 Auto-Detect Carrier',
+            name: '🧠 Multi-Modal AI Detection',
             supported: true,
             confidence: 0.98,
             formats: ['invoice', 'bol', 'confirmation', 'multi-document'],
-            features: ['ai-detection', 'multi-document', 'smart-parsing', 'all-carriers'],
-            description: 'AI automatically detects carrier and parses multi-document PDFs',
+            features: ['ai-vision', 'logo-detection', 'table-intelligence', 'layout-analysis', 'multi-modal'],
+            description: 'Phase 2A: Enhanced AI with visual + text analysis, logo detection, and intelligent table parsing',
             icon: '🎯',
-            intelligent: true
+            intelligent: true,
+            multiModal: true
         },
         {
             id: 'purolator',
@@ -1800,7 +1805,7 @@ const APProcessing = () => {
                                             ))}
                                     </Select>
                                     <FormHelperText sx={{ fontSize: '11px' }}>
-                                        🎯 <strong>Recommended:</strong> Use Auto-Detect for intelligent multi-document parsing. AI automatically identifies carrier and extracts invoices, BOLs, and confirmations from complex PDFs.
+                                        🧠 <strong>Phase 2A Enhanced:</strong> Multi-Modal AI uses advanced visual + text analysis with logo detection, table intelligence, and layout analysis for superior accuracy on complex multi-document PDFs.
                                     </FormHelperText>
                                 </FormControl>
                             </Box>

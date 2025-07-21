@@ -223,6 +223,767 @@ const carrierTemplates = {
     }
 };
 
+// PHASE 2A: Enhanced AI Vision - Multi-Modal Intelligence
+// Advanced visual analysis capabilities with Gemini 2.5 Flash Vision
+
+// Enhanced multi-modal document analysis combining text + visual intelligence
+async function enhancedMultiModalAnalysis(pdfUrl, settings = {}) {
+    console.log('🧠 Starting Enhanced Multi-Modal Analysis (Phase 2A)');
+    
+    try {
+        // Parallel multi-modal analysis
+        const analysisResults = await Promise.all([
+            // 1. Text extraction (existing)
+            extractTextWithGemini(pdfUrl, settings),
+            
+            // 2. NEW: Visual layout analysis
+            analyzeDocumentLayout(pdfUrl),
+            
+            // 3. NEW: Logo and branding detection
+            detectCarrierLogosAndBranding(pdfUrl),
+            
+            // 4. NEW: Table structure recognition
+            identifyTableStructures(pdfUrl),
+            
+            // 5. NEW: Document format classification
+            classifyDocumentFormat(pdfUrl)
+        ]);
+        
+        const [textAnalysis, layoutAnalysis, logoAnalysis, tableAnalysis, formatAnalysis] = analysisResults;
+        
+        // Combine all analyses into unified intelligence
+        const unifiedAnalysis = await combineMultiModalAnalysis({
+            textAnalysis,
+            layoutAnalysis,
+            logoAnalysis,
+            tableAnalysis,
+            formatAnalysis
+        });
+        
+        console.log('🎯 Multi-Modal Analysis Complete:', {
+            textConfidence: textAnalysis.confidence || 0.8,
+            visualConfidence: layoutAnalysis.confidence || 0.8,
+            logoConfidence: logoAnalysis.confidence || 0.8,
+            tableConfidence: tableAnalysis.confidence || 0.8,
+            unifiedConfidence: unifiedAnalysis.confidence || 0.8
+        });
+        
+        return unifiedAnalysis;
+        
+    } catch (error) {
+        console.error('❌ Multi-Modal Analysis Error:', error);
+        
+        // Fallback to text-only analysis
+        console.log('🔄 Falling back to text-only analysis...');
+        return await extractTextWithGemini(pdfUrl, settings);
+    }
+}
+
+// Visual layout analysis - understand document structure and hierarchy
+async function analyzeDocumentLayout(pdfUrl) {
+    console.log('🎨 Analyzing Document Layout...');
+    
+    try {
+        const response = await axios.get(pdfUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 30000 
+        });
+        const pdfBuffer = Buffer.from(response.data);
+        const pdfBase64 = pdfBuffer.toString('base64');
+        
+        const generativeModel = vertex_ai.preview.getGenerativeModel({
+            model: model,
+            generationConfig: {
+                maxOutputTokens: 8192,
+                temperature: 0.1,
+                topP: 0.95,
+            },
+            systemInstruction: 'You are a visual document layout analyzer. Analyze the visual structure, formatting, and organization of documents.',
+        });
+        
+        const layoutPrompt = `
+Analyze the VISUAL LAYOUT and STRUCTURE of this document:
+
+VISUAL ANALYSIS TASKS:
+1. DOCUMENT STRUCTURE:
+   - Identify headers, footers, main content areas
+   - Detect multi-column layouts vs single column
+   - Identify visual sections and their relationships
+   - Analyze spacing, alignment, and visual hierarchy
+
+2. FORMATTING PATTERNS:
+   - Font sizes and styles (headers vs body text)
+   - Color usage and highlighting
+   - Bold/italic text patterns
+   - Underlines, borders, and visual separators
+
+3. LAYOUT CLASSIFICATION:
+   - Document type based on visual structure (invoice, bol, confirmation, etc.)
+   - Professional vs basic formatting
+   - Structured vs unstructured layout
+   - Form-based vs free-text document
+
+4. VISUAL ELEMENTS:
+   - Location and size of logos/branding
+   - Tables and their visual structure
+   - Boxes, frames, and containers
+   - Visual emphasis elements
+
+Return ONLY valid JSON:
+{
+    "documentStructure": {
+        "layoutType": "single-column|multi-column|form-based|mixed",
+        "sections": [
+            {
+                "type": "header|content|footer|sidebar",
+                "position": "top|middle|bottom|left|right", 
+                "visualWeight": "high|medium|low",
+                "contains": ["logo", "title", "data", "table", "signature"]
+            }
+        ],
+        "visualHierarchy": "clear|moderate|unclear"
+    },
+    "formatting": {
+        "professionalLevel": "high|medium|low",
+        "colorUsage": "extensive|moderate|minimal|none",
+        "fontVariety": "high|medium|low",
+        "visualEmphasis": ["bold", "italic", "underline", "color", "size"]
+    },
+    "documentClassification": {
+        "primaryType": "invoice|bol|confirmation|manifest|receipt|other",
+        "confidence": 0.0-1.0,
+        "visualCues": ["letterhead", "form_structure", "table_layout", "signature_areas"]
+    },
+    "layoutMetrics": {
+        "complexity": "simple|moderate|complex",
+        "readability": "high|medium|low",
+        "structuredData": "high|medium|low"
+    },
+    "confidence": 0.0-1.0
+}`;
+
+        const result = await generativeModel.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: layoutPrompt },
+                    {
+                        inline_data: {
+                            mime_type: 'application/pdf',
+                            data: pdfBase64
+                        }
+                    }
+                ]
+            }]
+        });
+        
+        const responseText = result.response.text();
+        console.log('🎨 Layout Analysis Raw Response:', responseText.substring(0, 500));
+        
+        // Parse JSON response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const layoutAnalysis = JSON.parse(jsonMatch[0]);
+            console.log('✅ Layout Analysis Success:', layoutAnalysis.documentClassification);
+            return layoutAnalysis;
+        }
+        
+        throw new Error('Invalid JSON response from layout analysis');
+        
+    } catch (error) {
+        console.error('❌ Layout Analysis Error:', error);
+        return {
+            documentStructure: { layoutType: 'unknown', sections: [], visualHierarchy: 'unclear' },
+            formatting: { professionalLevel: 'medium', colorUsage: 'minimal', fontVariety: 'medium' },
+            documentClassification: { primaryType: 'unknown', confidence: 0.5 },
+            layoutMetrics: { complexity: 'moderate', readability: 'medium', structuredData: 'medium' },
+            confidence: 0.5,
+            error: error.message
+        };
+    }
+}
+
+// Advanced logo and branding detection
+async function detectCarrierLogosAndBranding(pdfUrl) {
+    console.log('🏷️ Detecting Carrier Logos and Branding...');
+    
+    try {
+        const response = await axios.get(pdfUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 30000 
+        });
+        const pdfBuffer = Buffer.from(response.data);
+        const pdfBase64 = pdfBuffer.toString('base64');
+        
+        const generativeModel = vertex_ai.preview.getGenerativeModel({
+            model: model,
+            generationConfig: {
+                maxOutputTokens: 8192,
+                temperature: 0.1,
+                topP: 0.95,
+            },
+            systemInstruction: 'You are a visual branding and logo detection specialist. Identify carrier logos, branding elements, and visual identifiers.',
+        });
+        
+        const brandingPrompt = `
+Analyze this document for CARRIER LOGOS and BRANDING elements:
+
+LOGO DETECTION TASKS:
+1. CARRIER IDENTIFICATION:
+   - Detect company logos and their visual characteristics
+   - Identify carrier names in headers/letterheads
+   - Find brand colors and visual themes
+   - Locate contact information and addresses
+
+2. VISUAL BRANDING ANALYSIS:
+   - Logo placement and prominence
+   - Brand color schemes (corporate colors)
+   - Typography styles and fonts used
+   - Visual design consistency
+
+3. CARRIER MATCHING:
+   - Match detected branding to known carriers:
+     - DHL (red/yellow branding)
+     - FedEx (purple/orange branding) 
+     - UPS (brown branding)
+     - Purolator (blue branding)
+     - Canada Post (red/white branding)
+     - Canpar (blue/red branding)
+     - Landliner (specific branding patterns)
+     - TNT (orange branding)
+
+4. CONFIDENCE ASSESSMENT:
+   - Visual clarity of logos
+   - Branding consistency throughout document
+   - Distinctive carrier identifiers
+
+Return ONLY valid JSON:
+{
+    "detectedCarriers": [
+        {
+            "carrierName": "carrier_name",
+            "carrierId": "carrier_id_lowercase",
+            "confidence": 0.0-1.0,
+            "visualEvidence": {
+                "logoDetected": true|false,
+                "logoClarity": "high|medium|low",
+                "logoPosition": "header|footer|center|multiple",
+                "brandingElements": ["colors", "fonts", "layout", "contact_info"]
+            },
+            "brandingDetails": {
+                "primaryColors": ["color1", "color2"],
+                "fontStyles": ["style1", "style2"],
+                "designTheme": "professional|basic|corporate|generic"
+            }
+        }
+    ],
+    "documentBranding": {
+        "professionalAppearance": "high|medium|low",
+        "brandConsistency": "high|medium|low",
+        "visualQuality": "high|medium|low"
+    },
+    "primaryCarrier": {
+        "name": "most_likely_carrier",
+        "id": "carrier_id",
+        "confidence": 0.0-1.0,
+        "reasoning": "why this carrier was selected"
+    },
+    "confidence": 0.0-1.0
+}`;
+
+        const result = await generativeModel.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: brandingPrompt },
+                    {
+                        inline_data: {
+                            mime_type: 'application/pdf',
+                            data: pdfBase64
+                        }
+                    }
+                ]
+            }]
+        });
+        
+        const responseText = result.response.text();
+        console.log('🏷️ Logo Detection Raw Response:', responseText.substring(0, 500));
+        
+        // Parse JSON response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const logoAnalysis = JSON.parse(jsonMatch[0]);
+            console.log('✅ Logo Detection Success:', logoAnalysis.primaryCarrier);
+            return logoAnalysis;
+        }
+        
+        throw new Error('Invalid JSON response from logo detection');
+        
+    } catch (error) {
+        console.error('❌ Logo Detection Error:', error);
+        return {
+            detectedCarriers: [],
+            documentBranding: { professionalAppearance: 'medium', brandConsistency: 'medium' },
+            primaryCarrier: { name: 'unknown', id: 'unknown', confidence: 0.5 },
+            confidence: 0.5,
+            error: error.message
+        };
+    }
+}
+
+// Advanced table structure recognition and data extraction
+async function identifyTableStructures(pdfUrl) {
+    console.log('📊 Identifying Table Structures...');
+    
+    try {
+        const response = await axios.get(pdfUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 30000 
+        });
+        const pdfBuffer = Buffer.from(response.data);
+        const pdfBase64 = pdfBuffer.toString('base64');
+        
+        const generativeModel = vertex_ai.preview.getGenerativeModel({
+            model: model,
+            generationConfig: {
+                maxOutputTokens: 12288,
+                temperature: 0.1,
+                topP: 0.95,
+            },
+            systemInstruction: 'You are a table structure recognition specialist. Identify, analyze, and extract data from tables in documents.',
+        });
+        
+        const tablePrompt = `
+Analyze this document for TABLE STRUCTURES and extract data systematically:
+
+TABLE ANALYSIS TASKS:
+1. TABLE DETECTION:
+   - Identify all tables in the document
+   - Determine table types (data tables, headers, forms, etc.)
+   - Analyze visual table structure (borders, alignment, spacing)
+
+2. TABLE STRUCTURE ANALYSIS:
+   - Extract column headers and their meanings
+   - Identify row structures and patterns
+   - Determine data types in each column
+   - Find relationships between tables
+
+3. DATA EXTRACTION:
+   - Extract all table data with proper column mapping
+   - Identify key data points (amounts, quantities, dates, references)
+   - Preserve data relationships and context
+   - Extract totals, subtotals, and calculated fields
+
+4. TABLE CLASSIFICATION:
+   - Classify table purposes (charges, shipments, addresses, etc.)
+   - Identify primary vs secondary tables
+   - Determine data importance and relevance
+
+Return ONLY valid JSON:
+{
+    "tablesDetected": [
+        {
+            "tableId": "table_1|table_2|etc",
+            "tableType": "charges|shipments|addresses|summary|other",
+            "importance": "high|medium|low",
+            "structure": {
+                "columnCount": number,
+                "rowCount": number,
+                "hasHeaders": true|false,
+                "hasFooters": true|false,
+                "borderStyle": "full|partial|none"
+            },
+            "headers": ["column1", "column2", "column3"],
+            "dataTypes": ["text|number|date|currency", "text|number|date|currency"],
+            "extractedData": [
+                {
+                    "column1": "value",
+                    "column2": "value",
+                    "column3": "value"
+                }
+            ],
+            "keyData": {
+                "totalAmount": number,
+                "quantities": [numbers],
+                "references": ["ref1", "ref2"],
+                "dates": ["date1", "date2"]
+            }
+        }
+    ],
+    "tableMetrics": {
+        "totalTables": number,
+        "dataQuality": "high|medium|low",
+        "extractionConfidence": 0.0-1.0,
+        "structuredDataPercentage": 0.0-1.0
+    },
+    "keyDataSummary": {
+        "totalAmounts": [numbers],
+        "allReferences": ["ref1", "ref2"],
+        "allDates": ["date1", "date2"],
+        "quantities": [numbers]
+    },
+    "confidence": 0.0-1.0
+}`;
+
+        const result = await generativeModel.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: tablePrompt },
+                    {
+                        inline_data: {
+                            mime_type: 'application/pdf',
+                            data: pdfBase64
+                        }
+                    }
+                ]
+            }]
+        });
+        
+        const responseText = result.response.text();
+        console.log('📊 Table Analysis Raw Response:', responseText.substring(0, 500));
+        
+        // Parse JSON response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const tableAnalysis = JSON.parse(jsonMatch[0]);
+            console.log('✅ Table Analysis Success:', tableAnalysis.tableMetrics);
+            return tableAnalysis;
+        }
+        
+        throw new Error('Invalid JSON response from table analysis');
+        
+    } catch (error) {
+        console.error('❌ Table Analysis Error:', error);
+        return {
+            tablesDetected: [],
+            tableMetrics: { totalTables: 0, dataQuality: 'medium', extractionConfidence: 0.5 },
+            keyDataSummary: { totalAmounts: [], allReferences: [], allDates: [], quantities: [] },
+            confidence: 0.5,
+            error: error.message
+        };
+    }
+}
+
+// Document format classification based on visual patterns
+async function classifyDocumentFormat(pdfUrl) {
+    console.log('📋 Classifying Document Format...');
+    
+    try {
+        const response = await axios.get(pdfUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 30000 
+        });
+        const pdfBuffer = Buffer.from(response.data);
+        const pdfBase64 = pdfBuffer.toString('base64');
+        
+        const generativeModel = vertex_ai.preview.getGenerativeModel({
+            model: model,
+            generationConfig: {
+                maxOutputTokens: 4096,
+                temperature: 0.1,
+                topP: 0.95,
+            },
+            systemInstruction: 'You are a document format classification expert. Classify documents based on their visual structure and content patterns.',
+        });
+        
+        const formatPrompt = `
+Classify this document's FORMAT and TYPE based on visual patterns:
+
+CLASSIFICATION TASKS:
+1. DOCUMENT TYPE IDENTIFICATION:
+   - Invoice (billing document with charges)
+   - Bill of Lading (shipping document with cargo details)
+   - Carrier Confirmation (booking confirmation)
+   - Manifest (shipment listing)
+   - Receipt (payment confirmation)
+   - Statement (account summary)
+
+2. FORMAT ANALYSIS:
+   - Form-based vs free-format
+   - Structured vs unstructured
+   - Single vs multi-page design
+   - Professional vs basic formatting
+
+3. CONTENT PATTERN RECOGNITION:
+   - Presence of specific sections (header, billing, charges, signatures)
+   - Data organization patterns
+   - Required vs optional information fields
+   - Standard format compliance
+
+Return ONLY valid JSON:
+{
+    "documentType": {
+        "primary": "invoice|bol|confirmation|manifest|receipt|statement|other",
+        "secondary": "additional_type_if_applicable",
+        "confidence": 0.0-1.0,
+        "indicators": ["visual_cue1", "visual_cue2", "pattern1", "pattern2"]
+    },
+    "formatCharacteristics": {
+        "structure": "form-based|free-format|hybrid",
+        "complexity": "simple|moderate|complex",
+        "standardization": "high|medium|low",
+        "dataOrganization": "excellent|good|fair|poor"
+    },
+    "contentSections": [
+        {
+            "section": "header|billing|charges|summary|signatures|other",
+            "present": true|false,
+            "quality": "clear|partial|unclear"
+        }
+    ],
+    "processingRecommendation": {
+        "strategy": "standard|enhanced|specialized|manual_review",
+        "confidence": 0.0-1.0,
+        "reasoning": "explanation for recommendation"
+    },
+    "confidence": 0.0-1.0
+}`;
+
+        const result = await generativeModel.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: formatPrompt },
+                    {
+                        inline_data: {
+                            mime_type: 'application/pdf',
+                            data: pdfBase64
+                        }
+                    }
+                ]
+            }]
+        });
+        
+        const responseText = result.response.text();
+        console.log('📋 Format Classification Raw Response:', responseText.substring(0, 500));
+        
+        // Parse JSON response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const formatAnalysis = JSON.parse(jsonMatch[0]);
+            console.log('✅ Format Classification Success:', formatAnalysis.documentType);
+            return formatAnalysis;
+        }
+        
+        throw new Error('Invalid JSON response from format classification');
+        
+    } catch (error) {
+        console.error('❌ Format Classification Error:', error);
+        return {
+            documentType: { primary: 'unknown', confidence: 0.5 },
+            formatCharacteristics: { structure: 'unknown', complexity: 'moderate' },
+            contentSections: [],
+            processingRecommendation: { strategy: 'standard', confidence: 0.5 },
+            confidence: 0.5,
+            error: error.message
+        };
+    }
+}
+
+// Combine all multi-modal analyses into unified intelligence
+async function combineMultiModalAnalysis(analyses) {
+    console.log('🔗 Combining Multi-Modal Analyses...');
+    
+    const { textAnalysis, layoutAnalysis, logoAnalysis, tableAnalysis, formatAnalysis } = analyses;
+    
+    // Cross-validate carrier detection across multiple modes
+    const carrierConsensus = determineCarrierConsensus([
+        { source: 'text', carrier: textAnalysis.carrier, confidence: textAnalysis.confidence || 0.8 },
+        { source: 'logo', carrier: logoAnalysis.primaryCarrier, confidence: logoAnalysis.confidence || 0.8 },
+        { source: 'format', carrier: formatAnalysis.documentType, confidence: formatAnalysis.confidence || 0.8 }
+    ]);
+    
+    // Enhance confidence scoring with multi-modal validation
+    const enhancedConfidence = calculateMultiModalConfidence({
+        textQuality: textAnalysis.extractionQuality || 0.8,
+        visualQuality: layoutAnalysis.layoutMetrics?.readability || 0.8,
+        logoClarity: logoAnalysis.documentBranding?.visualQuality || 0.8,
+        tableStructure: tableAnalysis.tableMetrics?.dataQuality || 0.8,
+        formatStandardization: formatAnalysis.formatCharacteristics?.standardization || 0.8
+    });
+    
+    // Combine extracted data with visual validation
+    const enrichedData = enrichDataWithVisualIntelligence(textAnalysis, {
+        layoutAnalysis,
+        logoAnalysis,
+        tableAnalysis,
+        formatAnalysis
+    });
+    
+    return {
+        ...enrichedData,
+        multiModalAnalysis: {
+            textAnalysis: {
+                confidence: textAnalysis.confidence || 0.8,
+                method: 'gemini_text_extraction'
+            },
+            layoutAnalysis: {
+                confidence: layoutAnalysis.confidence || 0.8,
+                documentStructure: layoutAnalysis.documentStructure,
+                complexity: layoutAnalysis.layoutMetrics?.complexity
+            },
+            logoAnalysis: {
+                confidence: logoAnalysis.confidence || 0.8,
+                detectedCarrier: logoAnalysis.primaryCarrier,
+                brandingQuality: logoAnalysis.documentBranding?.professionalAppearance
+            },
+            tableAnalysis: {
+                confidence: tableAnalysis.confidence || 0.8,
+                tablesFound: tableAnalysis.tableMetrics?.totalTables || 0,
+                dataQuality: tableAnalysis.tableMetrics?.dataQuality
+            },
+            formatAnalysis: {
+                confidence: formatAnalysis.confidence || 0.8,
+                documentType: formatAnalysis.documentType?.primary,
+                processingStrategy: formatAnalysis.processingRecommendation?.strategy
+            }
+        },
+        carrierConsensus,
+        enhancedConfidence,
+        processingVersion: '2.1-multimodal'
+    };
+}
+
+// Determine carrier consensus across multiple detection methods
+function determineCarrierConsensus(detections) {
+    console.log('🎯 Determining Carrier Consensus:', detections);
+    
+    // Weight detections by confidence and source reliability
+    const sourceWeights = {
+        text: 0.7,    // High weight for text analysis
+        logo: 0.8,    // Higher weight for visual logo detection
+        format: 0.5   // Medium weight for format patterns
+    };
+    
+    const weightedScores = {};
+    
+    detections.forEach(detection => {
+        if (detection.carrier && detection.carrier.id) {
+            const carrierId = detection.carrier.id || detection.carrier.name?.toLowerCase();
+            if (carrierId && carrierId !== 'unknown') {
+                const weight = sourceWeights[detection.source] || 0.5;
+                const score = detection.confidence * weight;
+                
+                if (!weightedScores[carrierId]) {
+                    weightedScores[carrierId] = {
+                        totalScore: 0,
+                        detections: [],
+                        name: detection.carrier.name || carrierId
+                    };
+                }
+                
+                weightedScores[carrierId].totalScore += score;
+                weightedScores[carrierId].detections.push(detection);
+            }
+        }
+    });
+    
+    // Find highest scoring carrier
+    let bestCarrier = null;
+    let bestScore = 0;
+    
+    Object.entries(weightedScores).forEach(([carrierId, data]) => {
+        if (data.totalScore > bestScore) {
+            bestScore = data.totalScore;
+            bestCarrier = {
+                id: carrierId,
+                name: data.name,
+                confidence: Math.min(data.totalScore / Object.keys(sourceWeights).length, 1.0),
+                supportingDetections: data.detections.length,
+                consensus: data.totalScore > 1.0 ? 'strong' : data.totalScore > 0.6 ? 'moderate' : 'weak'
+            };
+        }
+    });
+    
+    return bestCarrier || {
+        id: 'unknown',
+        name: 'Unknown Carrier',
+        confidence: 0.5,
+        supportingDetections: 0,
+        consensus: 'none'
+    };
+}
+
+// Calculate enhanced confidence based on multi-modal analysis
+function calculateMultiModalConfidence(qualityMetrics) {
+    const {
+        textQuality = 0.8,
+        visualQuality = 0.8,
+        logoClarity = 0.8,
+        tableStructure = 0.8,
+        formatStandardization = 0.8
+    } = qualityMetrics;
+    
+    // Weighted average with emphasis on key factors
+    const weights = {
+        textQuality: 0.3,        // 30% - Core text extraction
+        visualQuality: 0.2,      // 20% - Document readability
+        logoClarity: 0.2,        // 20% - Carrier identification
+        tableStructure: 0.2,     // 20% - Data organization
+        formatStandardization: 0.1 // 10% - Standard compliance
+    };
+    
+    const weightedScore = 
+        (textQuality * weights.textQuality) +
+        (visualQuality * weights.visualQuality) +
+        (logoClarity * weights.logoClarity) +
+        (tableStructure * weights.tableStructure) +
+        (formatStandardization * weights.formatStandardization);
+    
+    // Apply bonus for multi-modal agreement
+    const agreementBonus = calculateAgreementBonus(qualityMetrics);
+    
+    return Math.min(weightedScore + agreementBonus, 1.0);
+}
+
+// Calculate bonus for multi-modal agreement
+function calculateAgreementBonus(qualityMetrics) {
+    const scores = Object.values(qualityMetrics);
+    const averageScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const variance = scores.reduce((sum, score) => sum + Math.pow(score - averageScore, 2), 0) / scores.length;
+    
+    // Lower variance = higher agreement = bonus
+    const agreementBonus = Math.max(0, 0.1 - variance);
+    
+    return agreementBonus;
+}
+
+// Enrich extracted data with visual intelligence
+function enrichDataWithVisualIntelligence(textData, visualAnalyses) {
+    const { layoutAnalysis, logoAnalysis, tableAnalysis, formatAnalysis } = visualAnalyses;
+    
+    // Enhance carrier information with visual validation
+    const enhancedCarrier = {
+        ...textData.carrier,
+        visualValidation: {
+            logoDetected: logoAnalysis.primaryCarrier?.confidence > 0.7,
+            brandingConsistent: logoAnalysis.documentBranding?.brandConsistency === 'high',
+            professionalAppearance: logoAnalysis.documentBranding?.professionalAppearance === 'high'
+        }
+    };
+    
+    // Enhance extracted data with table intelligence
+    const enhancedData = {
+        ...textData,
+        carrier: enhancedCarrier,
+        visualIntelligence: {
+            documentQuality: layoutAnalysis.layoutMetrics?.readability || 'medium',
+            structuredDataPercentage: tableAnalysis.tableMetrics?.structuredDataPercentage || 0.5,
+            processingComplexity: formatAnalysis.formatCharacteristics?.complexity || 'moderate',
+            recommendedStrategy: formatAnalysis.processingRecommendation?.strategy || 'standard'
+        },
+        extractionMetadata: {
+            ...textData.extractionMetadata,
+            multiModalEnhanced: true,
+            visualAnalysisVersion: '2.1',
+            enhancementTimestamp: new Date().toISOString()
+        }
+    };
+    
+    return enhancedData;
+}
+
 // Main PDF parsing function with enhanced production features
 const processPdfFile = onCall(async (request) => {
     const startTime = Date.now();
@@ -292,16 +1053,24 @@ const processPdfFile = onCall(async (request) => {
             
             await updateProcessingStep(uploadDoc.id, 'carrier_detection', 'completed', carrierInfo);
             
-            // Step 3: Parse PDF directly with Gemini 2.5 Flash (no OCR needed!)
-            console.log('Step 3: Parsing PDF directly with Gemini 2.5 Flash...');
-            const structuredData = await parsePdfDirectlyWithGemini(
-                uploadUrl, 
-                carrierInfo, 
-                settings
-            );
+            // Step 3: Enhanced Multi-Modal Analysis (Phase 2A)
+            console.log('Step 3: Enhanced Multi-Modal Analysis with AI Vision...');
+            
+            // Use multi-modal analysis if enabled, fallback to text-only
+            let structuredData;
+            if (settings.useMultiModalAnalysis !== false) {
+                console.log('🧠 Using Enhanced Multi-Modal Analysis (Phase 2A)');
+                structuredData = await enhancedMultiModalAnalysis(uploadUrl, settings);
+            } else {
+                console.log('📝 Using Standard Text-Only Analysis');
+                structuredData = await parsePdfDirectlyWithGemini(uploadUrl, carrierInfo, settings);
+            }
+            
             await updateProcessingStep(uploadDoc.id, 'structured_parsing', 'completed', {
                 shipmentCount: structuredData.shipments?.length || 0,
-                method: 'direct_pdf_processing'
+                method: structuredData.processingVersion || 'direct_pdf_processing',
+                multiModalEnhanced: structuredData.extractionMetadata?.multiModalEnhanced || false,
+                visualIntelligence: structuredData.visualIntelligence || null
             });
             
             // Step 4: Data validation and enrichment
