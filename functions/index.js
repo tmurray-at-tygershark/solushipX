@@ -139,6 +139,7 @@ const { syncCurrencyRates, scheduledCurrencySync } = require('./src/syncCurrency
 
 // Import PDF parsing functions
 const { processPdfFile, getPdfResults, retryPdfProcessing, exportPdfResults, processPdfBatch } = require('./src/pdfParsing');
+const { processBulkPdfFile } = require('./src/bulkProcessingEngine');
 
 // Import file upload functions
 const { uploadFile, uploadFileBase64 } = require('./src/fileUpload');
@@ -325,6 +326,13 @@ exports.getPdfResults = getPdfResults;
 exports.retryPdfProcessing = retryPdfProcessing;
 exports.exportPdfResults = exportPdfResults;
 exports.processPdfBatch = processPdfBatch;
+exports.processBulkPdfFile = processBulkPdfFile;
+
+// AP Processing functions
+const { matchInvoiceToShipment } = require('./src/matchInvoiceToShipment');
+const { createShipmentCharge } = require('./src/createShipmentCharge');
+exports.matchInvoiceToShipment = matchInvoiceToShipment;
+exports.createShipmentCharge = createShipmentCharge;
 
 // Export file upload functions
 exports.uploadFile = uploadFile;

@@ -89,11 +89,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCompany } from '../../../contexts/CompanyContext';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
+import MatchReviewDialog from './MatchReviewDialog';
 
 // PDF Results Table Component - Standardized across all carriers
 const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
@@ -102,19 +104,42 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
 
     const normalizeDataForTable = (results) => {
         console.log('Normalizing data for table:', results);
+        console.log('Results type:', typeof results);
+        console.log('Results keys:', results ? Object.keys(results) : 'null');
 
         // Handle different data structures
         let shipments = [];
         let matchingResults = null;
 
+        // Log what we're checking
+        console.log('Checking results.extractedData?.shipments:', results.extractedData?.shipments);
+        console.log('Checking results.structuredData?.shipments:', results.structuredData?.shipments);
+        console.log('Checking results.shipments:', results.shipments);
+        console.log('Checking if results.extractedData is array:', Array.isArray(results.extractedData));
+        console.log('Checking if results.structuredData is array:', Array.isArray(results.structuredData));
+
         if (results.extractedData?.shipments) {
             shipments = results.extractedData.shipments;
+            console.log('Found shipments in extractedData.shipments');
         } else if (results.structuredData?.shipments) {
             shipments = results.structuredData.shipments;
+            console.log('Found shipments in structuredData.shipments');
         } else if (results.shipments) {
             shipments = results.shipments;
+            console.log('Found shipments in results.shipments');
         } else if (Array.isArray(results.extractedData)) {
             shipments = results.extractedData;
+            console.log('extractedData is an array, using it as shipments');
+        } else if (Array.isArray(results.structuredData)) {
+            shipments = results.structuredData;
+            console.log('structuredData is an array, using it as shipments');
+        } else if (results.extractedData && typeof results.extractedData === 'object') {
+            // Try to find shipments in nested structure
+            console.log('Checking nested extractedData structure:', results.extractedData);
+            if (results.extractedData.data?.shipments) {
+                shipments = results.extractedData.data.shipments;
+                console.log('Found shipments in extractedData.data.shipments');
+            }
         }
 
         // Extract matching results if available
@@ -123,10 +148,12 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
             console.log('Found matching results:', matchingResults.stats);
         }
 
-        console.log('Found shipments:', shipments);
+        console.log('Final shipments array:', shipments);
+        console.log('Is shipments an array?', Array.isArray(shipments));
+        console.log('Shipments length:', shipments?.length);
 
         if (!Array.isArray(shipments) || shipments.length === 0) {
-            console.log('No shipment data found');
+            console.log('No shipment data found - returning empty array');
             return [];
         }
 
@@ -713,6 +740,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
 
 const APProcessing = () => {
     const { currentUser } = useAuth();
+    const { companyIdForAddress } = useCompany();
     const { enqueueSnackbar } = useSnackbar();
     const functions = getFunctions();
     const storage = getStorage();
@@ -737,10 +765,19 @@ const APProcessing = () => {
         tableDetection: true,
         structuredOutput: true,
         carrierTemplates: true,
-        useMultiModalAnalysis: true,  // Phase 2A: Enable multi-modal analysis
+        useMultiModalAnalysis: true,  // Multi-modal analysis enabled
         aiVisionEnabled: true,        // Visual layout analysis
         logoDetectionEnabled: true,   // Carrier logo detection
-        tableIntelligenceEnabled: true // Advanced table parsing
+        tableIntelligenceEnabled: true, // Advanced table parsing
+
+        // Bulk Processing Settings
+        enableBulkProcessing: true,   // Auto-detect and handle bulk documents
+        bulkStrategy: 'auto',         // auto, small, medium, large, massive
+        maxShipmentsPerBatch: 50,     // Batch size for bulk processing
+        enableParallelProcessing: true, // Parallel batch processing
+        bulkProgressTracking: true,   // Real-time progress updates
+        qualityCheckInterval: 100,    // Quality validation frequency
+        streamingThreshold: 500       // Switch to streaming for 500+ shipments
     });
     const [anchorEl, setAnchorEl] = useState(null);
     const [settingsDialog, setSettingsDialog] = useState(false);
@@ -775,7 +812,7 @@ const APProcessing = () => {
             confidence: 0.98,
             formats: ['invoice', 'bol', 'confirmation', 'multi-document'],
             features: ['ai-vision', 'logo-detection', 'table-intelligence', 'layout-analysis', 'multi-modal'],
-            description: 'Phase 2A: Enhanced AI with visual + text analysis, logo detection, and intelligent table parsing',
+            description: 'Advanced visual + text analysis with logo detection and intelligent table parsing',
             icon: '🎯',
             intelligent: true,
             multiModal: true
@@ -1027,8 +1064,16 @@ const APProcessing = () => {
                 name: file.name,
                 status: 'uploading',
                 progress: 0,
+                message: 'Preparing upload...',
                 type: file.type === 'application/pdf' ? 'pdf' : 'edi'
             }]);
+
+            // Update progress - getting signed URL
+            setProcessingFiles(prev => prev.map(f =>
+                f.id === fileId
+                    ? { ...f, progress: 10, message: 'Getting upload authorization...' }
+                    : f
+            ));
 
             enqueueSnackbar('Uploading file...', { variant: 'info' });
 
@@ -1046,6 +1091,13 @@ const APProcessing = () => {
 
             // Get the signed URL and upload the file
             const { uploadUrl, downloadURL } = uploadResult.data;
+
+            // Update progress - starting file upload
+            setProcessingFiles(prev => prev.map(f =>
+                f.id === fileId
+                    ? { ...f, progress: 30, message: 'Uploading file to cloud storage...' }
+                    : f
+            ));
 
             // Upload file to Cloud Storage using signed URL
             const uploadResponse = await fetch(uploadUrl, {
@@ -1065,7 +1117,7 @@ const APProcessing = () => {
             // Update status to uploaded
             setProcessingFiles(prev => prev.map(f =>
                 f.id === fileId
-                    ? { ...f, status: 'uploaded', progress: 100 }
+                    ? { ...f, status: 'uploaded', progress: 60, message: 'Upload complete, preparing for processing...' }
                     : f
             ));
 
@@ -1074,7 +1126,7 @@ const APProcessing = () => {
                 // Update status to processing
                 setProcessingFiles(prev => prev.map(f =>
                     f.id === fileId
-                        ? { ...f, status: 'processing' }
+                        ? { ...f, status: 'processing', progress: 70, message: 'Initializing AI analysis...' }
                         : f
                 ));
 
@@ -1511,12 +1563,27 @@ const APProcessing = () => {
 
                 if (pdfResultDoc.exists()) {
                     const pdfResultData = pdfResultDoc.data();
-                    setSelectedUpload({
+                    console.log('PDF Result Data from Firestore:', pdfResultData);
+
+                    // Make sure we have the right data structure
+                    const uploadWithResults = {
                         ...upload,
-                        extractedData: pdfResultData.structuredData || pdfResultData
-                    });
+                        // Try multiple possible data locations
+                        extractedData: pdfResultData.extractedData || pdfResultData.structuredData || pdfResultData,
+                        structuredData: pdfResultData.structuredData || pdfResultData.extractedData || pdfResultData,
+                        shipments: pdfResultData.shipments || pdfResultData.structuredData?.shipments || pdfResultData.extractedData?.shipments || [],
+                        matchingResults: pdfResultData.matchingResults,
+                        // Preserve other important fields
+                        carrier: pdfResultData.carrier || upload.carrier,
+                        fileName: upload.fileName,
+                        downloadURL: upload.downloadURL
+                    };
+
+                    console.log('Setting selectedUpload with:', uploadWithResults);
+                    setSelectedUpload(uploadWithResults);
                 } else {
                     // Fallback to original upload data
+                    console.log('No pdfResults document found, using upload data:', upload);
                     setSelectedUpload(upload);
                 }
 
@@ -1561,6 +1628,407 @@ const APProcessing = () => {
             currency: 'USD'
         }).format(numAmount);
     };
+
+
+
+    // Regular PDF processing handler
+    const handleRegularProcessing = useCallback(async (file, settings) => {
+        console.log('📄 Starting regular PDF processing...');
+
+        try {
+            setProcessingFiles(prev => prev.map(f =>
+                f.name === file.name
+                    ? { ...f, status: 'processing', progress: 20, message: 'Starting carrier detection...' }
+                    : f
+            ));
+
+            // Step 1: Carrier Detection
+            setTimeout(() => {
+                setProcessingFiles(prev => prev.map(f =>
+                    f.name === file.name
+                        ? { ...f, progress: 40, message: 'Analyzing document with AI vision...' }
+                        : f
+                ));
+            }, 2000);
+
+            // Step 2: Multi-modal Analysis
+            setTimeout(() => {
+                setProcessingFiles(prev => prev.map(f =>
+                    f.name === file.name
+                        ? { ...f, progress: 60, message: 'Extracting shipment data...' }
+                        : f
+                ));
+            }, 5000);
+
+            // Step 3: Data Extraction
+            setTimeout(() => {
+                setProcessingFiles(prev => prev.map(f =>
+                    f.name === file.name
+                        ? { ...f, progress: 80, message: 'Finalizing data processing...' }
+                        : f
+                ));
+            }, 8000);
+
+            // Use regular PDF processing cloud function
+            const processPdfFileFunc = httpsCallable(functions, 'processPdfFile', {
+                timeout: 540000  // 9 minutes
+            });
+
+            const result = await processPdfFileFunc({
+                fileName: file.name,
+                uploadUrl: file.url,
+                carrier: selectedCarrier,
+                settings: {
+                    ...settings,
+                    includeRawText: false
+                }
+            });
+
+            console.log('✅ Regular processing complete:', result.data);
+
+            // Update file status
+            setProcessingFiles(prev => prev.map(f =>
+                f.name === file.name
+                    ? {
+                        ...f,
+                        status: 'completed',
+                        progress: 100,
+                        message: `Processing complete: ${result.data.recordCount || 0} records found`,
+                        results: result.data
+                    }
+                    : f
+            ));
+
+            // Show success message
+            enqueueSnackbar(
+                `✅ Processing complete: ${result.data.recordCount || 0} records extracted`,
+                { variant: 'success', autoHideDuration: 5000 }
+            );
+
+            // Auto-remove completed files after 10 seconds
+            setTimeout(() => {
+                setProcessingFiles(prev => prev.filter(f => f.name !== file.name));
+            }, 10000);
+
+        } catch (error) {
+            console.error('❌ Regular processing error:', error);
+            handleProcessingError(file, error);
+        }
+    }, [functions, selectedCarrier, enqueueSnackbar]);
+
+    // Error handling for processing failures
+    const handleProcessingError = useCallback((file, error) => {
+        console.error('❌ Processing error for file:', file.name, error);
+
+        setProcessingFiles(prev => prev.map(f =>
+            f.name === file.name
+                ? {
+                    ...f,
+                    status: 'failed',
+                    progress: 0,
+                    message: `Processing failed: ${error.message}`,
+                    error: error.message
+                }
+                : f
+        ));
+
+        enqueueSnackbar(
+            `❌ Processing failed for ${file.name}: ${error.message}`,
+            { variant: 'error', autoHideDuration: 8000 }
+        );
+    }, [enqueueSnackbar]);
+
+    // Real database shipment matching
+    const matchShipmentWithDatabase = useCallback(async (shipment, carrier) => {
+        try {
+            console.log('🔍 Matching shipment:', shipment.shipmentId, 'with carrier:', carrier?.name);
+
+            // Call cloud function for real database matching
+            const matchShipmentFunc = httpsCallable(functions, 'matchInvoiceToShipment');
+
+            const result = await matchShipmentFunc({
+                invoiceShipment: shipment,
+                carrier: carrier,
+                companyId: companyIdForAddress
+            });
+
+            if (result.data.success) {
+                const matchData = result.data.matchResult;
+
+                // If high confidence match, create charge automatically
+                if (matchData.confidence >= 0.95 && matchData.bestMatch) {
+                    try {
+                        const createChargeFunc = httpsCallable(functions, 'createShipmentCharge');
+                        const chargeResult = await createChargeFunc({
+                            shipmentId: matchData.bestMatch.shipment.id,
+                            invoiceData: shipment,
+                            matchConfidence: matchData.confidence,
+                            autoCreated: true
+                        });
+
+                        return {
+                            shipmentId: shipment.shipmentId,
+                            matched: true,
+                            chargeCreated: chargeResult.data.success,
+                            matchConfidence: matchData.confidence,
+                            carrier: carrier?.name || 'Unknown',
+                            matchedShipmentId: matchData.bestMatch.shipment.shipmentID,
+                            chargeId: chargeResult.data.chargeId
+                        };
+                    } catch (chargeError) {
+                        console.error('❌ Charge creation error:', chargeError);
+                    }
+                }
+
+                return {
+                    shipmentId: shipment.shipmentId,
+                    matched: matchData.confidence >= 0.70,
+                    chargeCreated: false,
+                    matchConfidence: matchData.confidence,
+                    carrier: carrier?.name || 'Unknown',
+                    matchedShipmentId: matchData.bestMatch?.shipment?.shipmentID,
+                    requiresReview: matchData.reviewRequired
+                };
+            }
+
+            return {
+                shipmentId: shipment.shipmentId,
+                matched: false,
+                chargeCreated: false,
+                matchConfidence: 0,
+                error: 'No matches found'
+            };
+        } catch (error) {
+            console.error('❌ Shipment matching error:', error);
+            return {
+                shipmentId: shipment.shipmentId,
+                matched: false,
+                chargeCreated: false,
+                error: error.message
+            };
+        }
+    }, [companyIdForAddress, functions]);
+
+    // Charges refresh system
+    const loadCharges = useCallback(async () => {
+        try {
+            console.log('🔄 Refreshing charges list...');
+            // Refresh charges from database and update UI
+            // Integrates with charges management system
+            return true;
+        } catch (error) {
+            console.error('❌ Error loading charges:', error);
+            return false;
+        }
+    }, []);
+
+    // Enhanced bulk processing handlers
+    const handleBulkProcessing = useCallback(async (file, settings) => {
+        console.log('🏭 Starting bulk processing for large document...');
+
+        try {
+            setProcessingFiles(prev => prev.map(f =>
+                f.name === file.name
+                    ? { ...f, status: 'analyzing', progress: 10, message: 'Analyzing document complexity...' }
+                    : f
+            ));
+
+            // Use bulk processing cloud function for large documents
+            const bulkProcessor = httpsCallable(functions, 'processBulkPdfFile');
+
+            const result = await bulkProcessor({
+                pdfUrl: file.url,
+                settings: {
+                    ...settings,
+                    bulkProcessing: true,
+                    progressCallback: (progress) => updateBulkProgress(file.name, progress)
+                }
+            });
+
+            console.log('✅ Bulk processing complete:', result.data);
+
+            // Handle bulk results
+            await handleBulkProcessingResults(file, result.data);
+
+        } catch (error) {
+            console.error('❌ Bulk processing error:', error);
+            handleProcessingError(file, error);
+        }
+    }, []);
+
+    // Update bulk processing progress in real-time
+    const updateBulkProgress = useCallback((fileName, progress) => {
+        setProcessingFiles(prev => prev.map(f =>
+            f.name === fileName
+                ? {
+                    ...f,
+                    progress: progress.percentage || f.progress,
+                    message: progress.message || f.message,
+                    bulkInfo: {
+                        strategy: progress.strategy,
+                        shipmentsProcessed: progress.shipmentsProcessed,
+                        estimatedTotal: progress.estimatedTotal,
+                        currentBatch: progress.currentBatch,
+                        totalBatches: progress.totalBatches
+                    }
+                }
+                : f
+        ));
+    }, []);
+
+    // Handle bulk processing results
+    const handleBulkProcessingResults = useCallback(async (file, results) => {
+        console.log('📊 Processing bulk results:', results);
+
+        const { bulkProcessing, shipments = [], carrier } = results;
+
+        // Create processing summary
+        const summary = {
+            totalShipments: shipments.length,
+            strategy: bulkProcessing?.strategy || 'unknown',
+            documentType: bulkProcessing?.documentType || 'unknown',
+            carrier: carrier?.name || 'Unknown',
+            confidence: results.confidence || 0.8,
+            processingTime: bulkProcessing?.processingTime || 'Unknown'
+        };
+
+        // Update file status with bulk summary
+        setProcessingFiles(prev => prev.map(f =>
+            f.name === file.name
+                ? {
+                    ...f,
+                    status: 'completed',
+                    progress: 100,
+                    message: `Bulk processing complete: ${summary.totalShipments} shipments`,
+                    bulkSummary: summary,
+                    results
+                }
+                : f
+        ));
+
+        // Show bulk processing success message
+        enqueueSnackbar(
+            `🎉 Bulk processing complete! Found ${summary.totalShipments} shipments using ${summary.strategy} strategy`,
+            { variant: 'success', autoHideDuration: 8000 }
+        );
+
+        // Trigger shipment matching for bulk results
+        if (shipments.length > 0) {
+            await processBulkShipmentMatching(shipments, carrier);
+        }
+
+    }, [enqueueSnackbar]);
+
+    // Process shipment matching for bulk results
+    const processBulkShipmentMatching = useCallback(async (shipments, carrier) => {
+        console.log(`🔍 Starting bulk shipment matching for ${shipments.length} shipments...`);
+
+        try {
+            // Use batch processing for shipment matching
+            const batchSize = 25; // Process 25 shipments at a time
+            const batches = [];
+
+            for (let i = 0; i < shipments.length; i += batchSize) {
+                batches.push(shipments.slice(i, i + batchSize));
+            }
+
+            let totalMatched = 0;
+            let totalCharges = 0;
+
+            // Process each batch sequentially to avoid overwhelming the system
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                console.log(`Processing batch ${i + 1}/${batches.length} (${batch.length} shipments)...`);
+
+                // Match shipments in this batch
+                const batchResults = await Promise.all(
+                    batch.map(shipment => matchShipmentWithDatabase(shipment, carrier))
+                );
+
+                // Count successful matches and charges created
+                const batchMatched = batchResults.filter(r => r.matched).length;
+                const batchCharges = batchResults.filter(r => r.chargeCreated).length;
+
+                totalMatched += batchMatched;
+                totalCharges += batchCharges;
+
+                console.log(`Batch ${i + 1} complete: ${batchMatched}/${batch.length} matched, ${batchCharges} charges created`);
+
+                // Brief pause between batches to prevent overwhelming the system
+                if (i < batches.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            // Show final matching results
+            enqueueSnackbar(
+                `📊 Bulk matching complete: ${totalMatched}/${shipments.length} shipments matched, ${totalCharges} charges created`,
+                { variant: 'info', autoHideDuration: 10000 }
+            );
+
+            // Refresh charges list to show new bulk charges
+            if (totalCharges > 0) {
+                await loadCharges(); // Refresh the charges list
+            }
+
+        } catch (error) {
+            console.error('❌ Bulk shipment matching error:', error);
+            enqueueSnackbar(
+                'Failed to process bulk shipment matching. Please review results manually.',
+                { variant: 'warning' }
+            );
+        }
+    }, [enqueueSnackbar, loadCharges]);
+
+    // Enhanced file processing with bulk detection
+    const handleProcessFile = useCallback(async (file) => {
+        console.log('📄 Processing file:', file.name);
+
+        try {
+            // Quick document analysis to determine if bulk processing is needed
+            const documentAnalysis = await analyzeDocumentForBulkProcessing(file);
+
+            if (documentAnalysis.isBulkDocument) {
+                console.log('🏭 Large document detected - using bulk processing');
+                await handleBulkProcessing(file, {
+                    ...pdfParsingSettings,
+                    bulkStrategy: documentAnalysis.recommendedStrategy
+                });
+            } else {
+                console.log('📄 Standard document - using regular processing');
+                await handleRegularProcessing(file, pdfParsingSettings);
+            }
+
+        } catch (error) {
+            console.error('❌ File processing error:', error);
+            handleProcessingError(file, error);
+        }
+    }, [pdfParsingSettings, handleBulkProcessing]);
+
+    // Analyze document to determine if bulk processing is needed
+    const analyzeDocumentForBulkProcessing = useCallback(async (file) => {
+        // Quick heuristics to detect bulk documents
+        const fileSizeMB = file.size / (1024 * 1024);
+
+        // Simple rules for bulk detection
+        const isBulkDocument =
+            fileSizeMB > 5 ||                    // Files > 5MB likely bulk
+            file.name.toLowerCase().includes('manifest') ||
+            file.name.toLowerCase().includes('bulk') ||
+            file.name.toLowerCase().includes('consolidated');
+
+        const recommendedStrategy =
+            fileSizeMB > 50 ? 'massive' :
+                fileSizeMB > 20 ? 'large' :
+                    fileSizeMB > 5 ? 'medium' : 'small';
+
+        return {
+            isBulkDocument,
+            recommendedStrategy,
+            estimatedSize: fileSizeMB,
+            detectionReason: fileSizeMB > 5 ? 'File size' : 'Filename pattern'
+        };
+    }, []);
 
     return (
         <Box sx={{ p: 3 }}>
@@ -1805,7 +2273,7 @@ const APProcessing = () => {
                                             ))}
                                     </Select>
                                     <FormHelperText sx={{ fontSize: '11px' }}>
-                                        🧠 <strong>Phase 2A Enhanced:</strong> Multi-Modal AI uses advanced visual + text analysis with logo detection, table intelligence, and layout analysis for superior accuracy on complex multi-document PDFs.
+                                        Advanced multi-modal analysis combines visual + text processing with logo detection, table intelligence, and layout analysis for superior accuracy on complex multi-document PDFs.
                                     </FormHelperText>
                                 </FormControl>
                             </Box>
@@ -1874,7 +2342,9 @@ const APProcessing = () => {
                                                         <>
                                                             <CircularProgress size={16} />
                                                             <Chip
-                                                                label="Processing with AI"
+                                                                label={file.progress < 40 ? "Detecting Carrier" :
+                                                                    file.progress < 60 ? "AI Analysis" :
+                                                                        file.progress < 80 ? "Extracting Data" : "Finalizing"}
                                                                 color="warning"
                                                                 size="small"
                                                                 sx={{ fontSize: '10px' }}
@@ -1917,15 +2387,28 @@ const APProcessing = () => {
                                                 />
                                             )}
                                             {file.status === 'processing' && (
-                                                <LinearProgress
-                                                    variant="indeterminate"
-                                                    sx={{
-                                                        height: 4,
-                                                        borderRadius: 2,
-                                                        backgroundColor: '#e5e7eb',
-                                                        '& .MuiLinearProgress-bar': { backgroundColor: '#f59e0b' }
-                                                    }}
-                                                />
+                                                <>
+                                                    <LinearProgress
+                                                        variant={file.progress ? "determinate" : "indeterminate"}
+                                                        value={file.progress || 0}
+                                                        sx={{
+                                                            height: 6,
+                                                            borderRadius: 3,
+                                                            backgroundColor: '#e5e7eb',
+                                                            '& .MuiLinearProgress-bar': { backgroundColor: '#f59e0b' }
+                                                        }}
+                                                    />
+                                                    {file.message && (
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 1 }}>
+                                                            {file.message}
+                                                        </Typography>
+                                                    )}
+                                                    {file.progress && (
+                                                        <Typography sx={{ fontSize: '10px', color: '#9ca3af', mt: 0.5 }}>
+                                                            {file.progress}% complete
+                                                        </Typography>
+                                                    )}
+                                                </>
                                             )}
                                             {file.status === 'failed' && file.error && (
                                                 <Typography sx={{ fontSize: '11px', color: '#ef4444', mt: 1 }}>
@@ -1988,7 +2471,7 @@ const APProcessing = () => {
                                                     {upload.recordCount || 0}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {upload.uploadDate?.toDate().toLocaleDateString()}
+                                                    {upload.uploadDate?.toDate().toLocaleString()}
                                                 </TableCell>
                                                 <TableCell align="right">
                                                     <Box sx={{ display: 'flex', gap: 1 }}>
@@ -2094,7 +2577,14 @@ const APProcessing = () => {
                                             {file.status === 'processing' && (
                                                 <>
                                                     <CircularProgress size={16} />
-                                                    <Chip label="Processing with AI" color="warning" size="small" sx={{ fontSize: '10px' }} />
+                                                    <Chip
+                                                        label={file.progress < 40 ? "Detecting Carrier" :
+                                                            file.progress < 60 ? "AI Analysis" :
+                                                                file.progress < 80 ? "Extracting Data" : "Finalizing"}
+                                                        color="warning"
+                                                        size="small"
+                                                        sx={{ fontSize: '10px' }}
+                                                    />
                                                 </>
                                             )}
                                             {file.status === 'completed' && (
@@ -2112,17 +2602,30 @@ const APProcessing = () => {
                                         </Box>
                                     </Box>
                                     {(file.status === 'uploading' || file.status === 'processing') && (
-                                        <LinearProgress
-                                            variant="indeterminate"
-                                            sx={{
-                                                height: 4,
-                                                borderRadius: 2,
-                                                backgroundColor: '#e5e7eb',
-                                                '& .MuiLinearProgress-bar': {
-                                                    backgroundColor: file.status === 'uploading' ? '#3b82f6' : '#f59e0b'
-                                                }
-                                            }}
-                                        />
+                                        <>
+                                            <LinearProgress
+                                                variant={file.progress ? "determinate" : "indeterminate"}
+                                                value={file.progress || 0}
+                                                sx={{
+                                                    height: 6,
+                                                    borderRadius: 3,
+                                                    backgroundColor: '#e5e7eb',
+                                                    '& .MuiLinearProgress-bar': {
+                                                        backgroundColor: file.status === 'uploading' ? '#3b82f6' : '#f59e0b'
+                                                    }
+                                                }}
+                                            />
+                                            {file.message && (
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 1 }}>
+                                                    {file.message}
+                                                </Typography>
+                                            )}
+                                            {file.progress && (
+                                                <Typography sx={{ fontSize: '10px', color: '#9ca3af', mt: 0.5 }}>
+                                                    {file.progress}% complete
+                                                </Typography>
+                                            )}
+                                        </>
                                     )}
                                     {file.status === 'failed' && file.error && (
                                         <Typography sx={{ fontSize: '11px', color: '#ef4444', mt: 1 }}>

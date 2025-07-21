@@ -223,61 +223,65 @@ const carrierTemplates = {
     }
 };
 
-// PHASE 2A: Enhanced AI Vision - Multi-Modal Intelligence
+// Multi-Modal Intelligence System
 // Advanced visual analysis capabilities with Gemini 2.5 Flash Vision
 
 // Enhanced multi-modal document analysis combining text + visual intelligence
 async function enhancedMultiModalAnalysis(pdfUrl, settings = {}) {
-    console.log('🧠 Starting Enhanced Multi-Modal Analysis (Phase 2A)');
+    console.log('🧠 Starting Multi-Modal Analysis');
     
     try {
-        // Parallel multi-modal analysis
-        const analysisResults = await Promise.all([
-            // 1. Text extraction (existing)
-            extractTextWithGemini(pdfUrl, settings),
-            
-            // 2. NEW: Visual layout analysis
+        // First get the carrier info from visual analysis
+        const [layoutAnalysis, logoAnalysis, formatAnalysis] = await Promise.allSettled([
             analyzeDocumentLayout(pdfUrl),
-            
-            // 3. NEW: Logo and branding detection
             detectCarrierLogosAndBranding(pdfUrl),
-            
-            // 4. NEW: Table structure recognition
-            identifyTableStructures(pdfUrl),
-            
-            // 5. NEW: Document format classification
             classifyDocumentFormat(pdfUrl)
         ]);
         
-        const [textAnalysis, layoutAnalysis, logoAnalysis, tableAnalysis, formatAnalysis] = analysisResults;
+        // Extract successful results
+        const logoResult = logoAnalysis.status === 'fulfilled' ? logoAnalysis.value : null;
+        const formatResult = formatAnalysis.status === 'fulfilled' ? formatAnalysis.value : null;
+        const layoutResult = layoutAnalysis.status === 'fulfilled' ? layoutAnalysis.value : null;
         
-        // Combine all analyses into unified intelligence
-        const unifiedAnalysis = await combineMultiModalAnalysis({
-            textAnalysis,
-            layoutAnalysis,
-            logoAnalysis,
-            tableAnalysis,
-            formatAnalysis
-        });
+        // Determine the carrier from visual analysis
+        let detectedCarrier = null;
+        if (logoResult?.primaryCarrier) {
+            detectedCarrier = logoResult.primaryCarrier;
+            console.log(`📋 Carrier detected from logo: ${detectedCarrier.name} (confidence: ${detectedCarrier.confidence})`);
+        }
         
-        console.log('🎯 Multi-Modal Analysis Complete:', {
-            textConfidence: textAnalysis.confidence || 0.8,
-            visualConfidence: layoutAnalysis.confidence || 0.8,
-            logoConfidence: logoAnalysis.confidence || 0.8,
-            tableConfidence: tableAnalysis.confidence || 0.8,
-            unifiedConfidence: unifiedAnalysis.confidence || 0.8
-        });
+        // Now parse the actual shipment data with the detected carrier
+        let structuredData;
+        if (detectedCarrier && detectedCarrier.confidence > 0.7) {
+            console.log('📄 Parsing PDF with detected carrier info...');
+            structuredData = await parsePdfDirectlyWithGemini(pdfUrl, detectedCarrier, settings);
+        } else {
+            console.log('📄 Parsing PDF without specific carrier info...');
+            structuredData = await parsePdfDirectlyWithGemini(pdfUrl, { id: 'unknown', name: 'Unknown', confidence: 0.1 }, settings);
+        }
         
-        return unifiedAnalysis;
+        // Combine everything
+        return {
+            ...structuredData,
+            carrier: detectedCarrier || structuredData.carrier,
+            multiModalAnalysis: {
+                layoutAnalysis: layoutResult,
+                logoAnalysis: logoResult,
+                formatAnalysis: formatResult
+            },
+            processingVersion: '2.1-multimodal'
+        };
         
     } catch (error) {
         console.error('❌ Multi-Modal Analysis Error:', error);
         
-        // Fallback to text-only analysis
-        console.log('🔄 Falling back to text-only analysis...');
-        return await extractTextWithGemini(pdfUrl, settings);
+        // Fallback to direct PDF parsing with Gemini
+        console.log('🔄 Falling back to direct PDF parsing...');
+        return await parsePdfDirectlyWithGemini(pdfUrl, detectedCarrier || { id: 'unknown', name: 'Unknown', confidence: 0.1 }, settings);
     }
 }
+
+// Visual layout analysis - understand document structure and hierarchy
 
 // Visual layout analysis - understand document structure and hierarchy
 async function analyzeDocumentLayout(pdfUrl) {
@@ -377,7 +381,7 @@ Return ONLY valid JSON:
             }]
         });
         
-        const responseText = result.response.text();
+        const responseText = result.response.text || result.response.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(result.response);
         console.log('🎨 Layout Analysis Raw Response:', responseText.substring(0, 500));
         
         // Parse JSON response
@@ -506,7 +510,7 @@ Return ONLY valid JSON:
             }]
         });
         
-        const responseText = result.response.text();
+        const responseText = result.response.text || result.response.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(result.response);
         console.log('🏷️ Logo Detection Raw Response:', responseText.substring(0, 500));
         
         // Parse JSON response
@@ -640,7 +644,7 @@ Return ONLY valid JSON:
             }]
         });
         
-        const responseText = result.response.text();
+        const responseText = result.response.text || result.response.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(result.response);
         console.log('📊 Table Analysis Raw Response:', responseText.substring(0, 500));
         
         // Parse JSON response
@@ -755,7 +759,7 @@ Return ONLY valid JSON:
             }]
         });
         
-        const responseText = result.response.text();
+        const responseText = result.response.text || result.response.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(result.response);
         console.log('📋 Format Classification Raw Response:', responseText.substring(0, 500));
         
         // Parse JSON response
@@ -813,6 +817,8 @@ async function combineMultiModalAnalysis(analyses) {
     
     return {
         ...enrichedData,
+        // Override carrier with consensus result
+        carrier: carrierConsensus || enrichedData.carrier,
         multiModalAnalysis: {
             textAnalysis: {
                 confidence: textAnalysis.confidence || 0.8,
@@ -1053,14 +1059,20 @@ const processPdfFile = onCall(async (request) => {
             
             await updateProcessingStep(uploadDoc.id, 'carrier_detection', 'completed', carrierInfo);
             
-            // Step 3: Enhanced Multi-Modal Analysis (Phase 2A)
+            // Step 3: Multi-Modal Analysis
             console.log('Step 3: Enhanced Multi-Modal Analysis with AI Vision...');
             
             // Use multi-modal analysis if enabled, fallback to text-only
             let structuredData;
             if (settings.useMultiModalAnalysis !== false) {
-                console.log('🧠 Using Enhanced Multi-Modal Analysis (Phase 2A)');
+                console.log('🧠 Using Multi-Modal Analysis');
                 structuredData = await enhancedMultiModalAnalysis(uploadUrl, settings);
+                
+                // Update carrierInfo if better carrier was detected in multi-modal analysis
+                if (structuredData.carrier && structuredData.carrier.confidence > carrierInfo.confidence) {
+                    console.log(`📋 Updating carrier from multi-modal analysis: ${structuredData.carrier.name} (confidence: ${structuredData.carrier.confidence})`);
+                    carrierInfo = structuredData.carrier;
+                }
             } else {
                 console.log('📝 Using Standard Text-Only Analysis');
                 structuredData = await parsePdfDirectlyWithGemini(uploadUrl, carrierInfo, settings);
@@ -1151,6 +1163,7 @@ const processPdfFile = onCall(async (request) => {
 
             console.log('Enhanced PDF processing completed successfully');
             
+            // Return full processed data for frontend display
             return {
                 success: true,
                 uploadId: uploadDoc.id,
@@ -1158,7 +1171,12 @@ const processPdfFile = onCall(async (request) => {
                 carrier: carrierInfo.name,
                 confidence: carrierInfo.confidence,
                 processingTime: processedData.processingTime,
-                exportFormats: processedData.exportFormats
+                exportFormats: processedData.exportFormats,
+                // Include actual extracted data for frontend display
+                structuredData: processedData.structuredData,
+                extractedData: processedData.structuredData,  // Alternative path
+                shipments: processedData.structuredData?.shipments || [],  // Direct path
+                matchingResults: processedData.matchingResults
             };
 
         } catch (processingError) {
@@ -3027,11 +3045,30 @@ function getCarrierSpecificInstructions(carrierInfo) {
         7. Commodity: From commodity description if available, otherwise "General Freight"
         8. Contacts: Extract from confirmation if present, otherwise from invoice billing info
         
-        LANDLINER CHARGE PATTERNS:
-        - "Freight Income": Primary transportation charge (from invoice)
-        - "TOTAL": Final invoice amount (from invoice)
-        - Look for rate information in invoice table
-        - Cross-validate amounts if multiple documents present
+        LANDLINER CHARGE PATTERNS - CRITICAL:
+        From INVOICE PAGE (always present):
+        - "Freight Income": Primary transportation charge
+        - "TOTAL": Final invoice amount (always extract this)
+        - Rate information from invoice table/row
+        - Quantity and Rate columns if present
+        
+        MANDATORY EXTRACTION:
+        1. shipmentId: ICAL-XXXXX (PRIMARY - this is the database lookup key)
+        2. trackingNumber: Same as shipmentId (ICAL-XXXXX)
+        3. totalAmount: From "TOTAL:" line
+        4. charges: Array with at least freight charge
+        5. references.customerRef: ICAL-XXXXX
+        
+        CHARGE STRUCTURE:
+        - Always create charges array with freight charge
+        - Extract individual line items if visible
+        - Include total amount in charges breakdown
+        - Currency: CAD
+        
+        CRITICAL SUCCESS FACTORS:
+        - MUST extract ICAL-XXXXX as both shipmentId AND trackingNumber
+        - MUST create valid charges array even if only total amount visible
+        - MUST format as structured shipment object in shipments array
         
         ADAPTIVE DOCUMENT HANDLING:
         - Single Page: Extract all data from invoice only
@@ -4561,7 +4598,14 @@ function isCarrierMatch(shipmentData, detectedCarrier) {
         'canadapost': ['canada post', 'canadapost', 'postes canada'],
         'canpar': ['canpar', 'canpar express', 'canpar courier'],
         'tnt': ['tnt', 'tnt express'],
-        'landliner': ['landliner', 'landliner inc', 'landliner freight', 'protransport trucking software']
+        'landliner': [
+            'landliner', 'landliner inc', 'landliner freight', 'landliner transport',
+            'protransport trucking software', 'protransport', 'pro transport',
+            'ical-', 'ical shipment', 'landliner logistics',
+            // Common document headers/footers
+            'this document was generated by landliner',
+            'landliner inc.', 'landliner incorporated'
+        ]
     };
     
     for (const [standard, variations] of Object.entries(carrierMappings)) {
@@ -4611,6 +4655,87 @@ async function findPotentialMatches(invoiceShipment, connectedCompanies, detecte
 }
 
 /**
+ * Generate OCR character confusion variations for better matching
+ */
+function generateOcrVariations(shipmentId) {
+    const variations = [];
+    
+    // Common OCR character confusions
+    const ocrMappings = {
+        '0': ['O', '0'],  // Zero vs Letter O
+        'O': ['0', 'O'],  // Letter O vs Zero
+        '1': ['I', '1'],  // One vs Letter I
+        'I': ['1', 'I'],  // Letter I vs One
+        '5': ['S', '5'],  // Five vs Letter S
+        'S': ['5', 'S'],  // Letter S vs Five
+        '8': ['B', '8'],  // Eight vs Letter B
+        'B': ['8', 'B'],  // Letter B vs Eight
+        '6': ['G', '6'],  // Six vs Letter G
+        'G': ['6', 'G'],  // Letter G vs Six
+        '2': ['Z', '2'],  // Two vs Letter Z
+        'Z': ['2', 'Z']   // Letter Z vs Two
+    };
+    
+    // Generate single-character variations
+    for (let i = 0; i < shipmentId.length; i++) {
+        const char = shipmentId[i];
+        if (ocrMappings[char]) {
+            for (const replacement of ocrMappings[char]) {
+                if (replacement !== char) {
+                    const variation = shipmentId.substring(0, i) + replacement + shipmentId.substring(i + 1);
+                    variations.push(variation);
+                }
+            }
+        }
+    }
+    
+    // For ICAL IDs, also try common pattern variations
+    if (shipmentId.startsWith('ICAL-')) {
+        const suffix = shipmentId.substring(5); // Get part after ICAL-
+        
+        // Generate multiple character variations for the suffix
+        const suffixVariations = generateCombinedVariations(suffix, ocrMappings);
+        suffixVariations.forEach(variation => {
+            if (variation !== suffix) {
+                variations.push('ICAL-' + variation);
+            }
+        });
+    }
+    
+    return [...new Set(variations)]; // Remove duplicates
+}
+
+/**
+ * Generate combined character variations (up to 2 character changes)
+ */
+function generateCombinedVariations(text, mappings) {
+    const variations = [text];
+    const maxChanges = Math.min(2, text.length); // Limit to prevent explosion
+    
+    function generateRecursive(current, remaining, changes) {
+        if (changes >= maxChanges || remaining === 0) {
+            variations.push(current);
+            return;
+        }
+        
+        for (let i = 0; i < current.length; i++) {
+            const char = current[i];
+            if (mappings[char]) {
+                for (const replacement of mappings[char]) {
+                    if (replacement !== char) {
+                        const newVariation = current.substring(0, i) + replacement + current.substring(i + 1);
+                        generateRecursive(newVariation, remaining - 1, changes + 1);
+                    }
+                }
+            }
+        }
+    }
+    
+    generateRecursive(text, text.length, 0);
+    return [...new Set(variations)]; // Remove duplicates
+}
+
+/**
  * Try exact shipment ID matching with carrier filtering
  */
 async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
@@ -4623,9 +4748,74 @@ async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connec
         ...(invoiceShipment.references?.other || [])
     ].filter(Boolean);
     
+    // Add support for ICAL format detection with OCR character confusion handling
+    const icalPattern = /\b(ICAL-[A-Z0-9]{6})\b/i;
+    
+    // Extract ICAL IDs from any text fields
+    const textFields = [
+        invoiceShipment.description,
+        invoiceShipment.notes,
+        invoiceShipment.trackingNumber,
+        invoiceShipment.bolNumber,
+        ...(invoiceShipment.chargeDescriptions || [])
+    ].filter(Boolean);
+    
+    textFields.forEach(field => {
+        const matches = field.match(icalPattern);
+        if (matches) {
+            const originalId = matches[1].toUpperCase();
+            possibleIds.push(originalId);
+            
+            // Add OCR character confusion variations for ICAL IDs
+            const ocrVariations = generateOcrVariations(originalId);
+            possibleIds.push(...ocrVariations);
+        }
+    });
+    
+    console.log(`🔍 Searching for shipment IDs: ${possibleIds.join(', ')}`);
+    
+    // Debug OCR variations
+    possibleIds.forEach(id => {
+        if (id.includes('ICAL-')) {
+            const variations = generateOcrVariations(id);
+            console.log(`📝 OCR variations for ${id}: ${variations.join(', ')}`);
+        }
+    });
+    
     for (const possibleId of possibleIds) {
         // Try to match against shipmentID field with carrier filtering
         try {
+            // Direct document ID lookup for ICAL format
+            if (possibleId.startsWith('ICAL-')) {
+                const shipmentDoc = await db.collection('shipments').doc(possibleId).get();
+                if (shipmentDoc.exists) {
+                    const shipmentData = { id: shipmentDoc.id, ...shipmentDoc.data() };
+                    const companyAccessible = isCompanyAccessible(shipmentData, connectedCompanies);
+                    const carrierMatches = isCarrierMatch(shipmentData, detectedCarrier);
+                    
+                    console.log(`🔍 Document ID match ${possibleId}: company=${companyAccessible}, carrier=${carrierMatches}`);
+                    console.log(`🔍 Shipment carrier data:`, {
+                        carrier: shipmentData.carrier,
+                        carrierName: shipmentData.carrierName,
+                        selectedCarrier: shipmentData.selectedCarrier,
+                        detectedCarrier: detectedCarrier?.name
+                    });
+                    
+                    if (companyAccessible && carrierMatches) {
+                        console.log(`✅ Found shipment by document ID: ${possibleId}`);
+                        potentialMatches.add(JSON.stringify({
+                            shipment: shipmentData,
+                            matchStrategy: 'EXACT_SHIPMENT_ID',
+                            matchField: 'documentId',
+                            matchValue: possibleId
+                        }));
+                    } else {
+                        console.log(`❌ Shipment ${possibleId} filtered out: company=${companyAccessible}, carrier=${carrierMatches}`);
+                    }
+                }
+            }
+            
+            // Query by shipmentID field
             let shipmentQuery = db.collection('shipments').where('shipmentID', '==', possibleId);
             
             // Apply carrier filtering for improved accuracy
@@ -4640,14 +4830,29 @@ async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connec
             
             snapshot.docs.forEach(doc => {
                 const shipmentData = { id: doc.id, ...doc.data() };
-                if (isCompanyAccessible(shipmentData, connectedCompanies) && 
-                    isCarrierMatch(shipmentData, detectedCarrier)) {
+                const companyAccessible = isCompanyAccessible(shipmentData, connectedCompanies);
+                const carrierMatches = isCarrierMatch(shipmentData, detectedCarrier);
+                
+                console.log(`🔍 ShipmentID field match ${possibleId}: company=${companyAccessible}, carrier=${carrierMatches}`);
+                console.log(`🔍 Shipment data:`, {
+                    docId: doc.id,
+                    shipmentID: shipmentData.shipmentID,
+                    carrier: shipmentData.carrier,
+                    carrierName: shipmentData.carrierName,
+                    selectedCarrier: shipmentData.selectedCarrier,
+                    detectedCarrier: detectedCarrier?.name
+                });
+                
+                if (companyAccessible && carrierMatches) {
+                    console.log(`✅ Found shipment by shipmentID field: ${possibleId}`);
                     potentialMatches.add(JSON.stringify({
                         shipment: shipmentData,
                         matchStrategy: 'EXACT_SHIPMENT_ID',
                         matchField: 'shipmentID',
                         matchValue: possibleId
                     }));
+                } else {
+                    console.log(`❌ Shipment ${possibleId} filtered out: company=${companyAccessible}, carrier=${carrierMatches}`);
                 }
             });
         } catch (error) {
@@ -4657,7 +4862,7 @@ async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connec
 }
 
 /**
- * Try tracking number matching with carrier filtering
+ * Try tracking number matching with carrier filtering and OCR variations
  */
 async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     const trackingNumber = invoiceShipment.trackingNumber;
@@ -4669,25 +4874,35 @@ async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connect
         'carrierBookingConfirmation.confirmationNumber'
     ];
     
-    for (const field of trackingFields) {
-        try {
-            const shipmentQuery = db.collection('shipments').where(field, '==', trackingNumber).limit(10);
-            const snapshot = await shipmentQuery.get();
-            
-            snapshot.docs.forEach(doc => {
-                const shipmentData = { id: doc.id, ...doc.data() };
-                if (isCompanyAccessible(shipmentData, connectedCompanies) &&
-                    isCarrierMatch(shipmentData, detectedCarrier)) {
-                    potentialMatches.add(JSON.stringify({
-                        shipment: shipmentData,
-                        matchStrategy: 'EXACT_TRACKING_NUMBER',
-                        matchField: field,
-                        matchValue: trackingNumber
-                    }));
-                }
-            });
-        } catch (error) {
-            console.warn(`Warning: Could not search tracking field ${field}:`, error);
+    // Generate tracking number variations for OCR confusion
+    const trackingVariations = [trackingNumber];
+    if (trackingNumber && trackingNumber.includes('ICAL-')) {
+        trackingVariations.push(...generateOcrVariations(trackingNumber));
+    }
+    
+    for (const trackingVar of trackingVariations) {
+        for (const field of trackingFields) {
+            try {
+                const shipmentQuery = db.collection('shipments').where(field, '==', trackingVar).limit(10);
+                const snapshot = await shipmentQuery.get();
+                
+                snapshot.docs.forEach(doc => {
+                    const shipmentData = { id: doc.id, ...doc.data() };
+                    if (isCompanyAccessible(shipmentData, connectedCompanies) &&
+                        isCarrierMatch(shipmentData, detectedCarrier)) {
+                        potentialMatches.add(JSON.stringify({
+                            shipment: shipmentData,
+                            matchStrategy: 'EXACT_TRACKING_NUMBER',
+                            matchField: field,
+                            matchValue: trackingVar,
+                            originalValue: trackingNumber,
+                            ocrCorrected: trackingVar !== trackingNumber
+                        }));
+                    }
+                });
+            } catch (error) {
+                console.warn(`Warning: Could not search tracking field ${field}:`, error);
+            }
         }
     }
 }
@@ -4867,6 +5082,18 @@ async function scoreMatches(potentialMatches, invoiceShipment) {
 function calculateMatchConfidence(match, invoiceShipment) {
     let confidence = MATCHING_STRATEGIES[match.matchStrategy]?.confidence || 0.5;
     
+    // OCR correction bonus - if we found a match through OCR variation, it's highly likely correct
+    if (match.ocrCorrected === true) {
+        console.log(`🔧 OCR correction bonus applied for ${match.matchStrategy}`);
+        confidence = Math.max(confidence, 0.95); // Boost to excellent confidence for OCR corrections
+    }
+    
+    // Exact shipment ID match bonus - these should be excellent matches
+    if (match.matchStrategy === 'EXACT_SHIPMENT_ID') {
+        console.log(`🎯 Exact shipment ID match - boosting confidence`);
+        confidence = Math.max(confidence, 0.95); // Shipment ID matches are excellent
+    }
+    
     // Date proximity bonus
     if (match.shipment.bookedAt && invoiceShipment.shipmentDate) {
         const shipmentDate = match.shipment.bookedAt.toDate ? match.shipment.bookedAt.toDate() : new Date(match.shipment.bookedAt);
@@ -4887,7 +5114,25 @@ function calculateMatchConfidence(match, invoiceShipment) {
         }
     }
     
+    console.log(`📊 Final match confidence: ${confidence.toFixed(2)} for ${match.matchStrategy}`);
     return Math.min(confidence, 0.99); // Cap at 99%
+}
+
+// Calculate average confidence from matches array
+function calculateAverageConfidence(matches) {
+    if (!matches || matches.length === 0) return 0;
+    
+    let totalConfidence = 0;
+    let count = 0;
+    
+    matches.forEach(match => {
+        if (match.matches && match.matches.length > 0) {
+            totalConfidence += match.matches[0].confidence || 0;
+            count++;
+        }
+    });
+    
+    return count > 0 ? totalConfidence / count : 0;
 }
 
 function isCompanyAccessible(shipmentData, connectedCompanies) {
@@ -4938,29 +5183,48 @@ function calculateMatchingStats(matches) {
         poorMatches: 0,
         noMatches: 0,
         requireReview: 0,
-        autoApplicable: 0
+        autoApplicable: 0,
+        averageConfidence: 0
     };
     
+    let totalConfidence = 0;
+    let matchedShipments = 0;
+    
     matches.forEach(match => {
-        const confidence = match.confidence;
+        const confidence = match.confidence || 0;
         
-        if (confidence >= CONFIDENCE_THRESHOLDS.EXCELLENT) {
-            stats.excellentMatches++;
-            stats.autoApplicable++;
-        } else if (confidence >= CONFIDENCE_THRESHOLDS.GOOD) {
-            stats.goodMatches++;
-        } else if (confidence >= CONFIDENCE_THRESHOLDS.FAIR) {
-            stats.fairMatches++;
-            stats.requireReview++;
-        } else if (confidence >= CONFIDENCE_THRESHOLDS.POOR) {
-            stats.poorMatches++;
-            stats.requireReview++;
+        if (match.matches && match.matches.length > 0) {
+            // Use the best match confidence
+            const bestMatchConfidence = match.matches[0].confidence || 0;
+            totalConfidence += bestMatchConfidence;
+            matchedShipments++;
+            
+            if (bestMatchConfidence >= CONFIDENCE_THRESHOLDS.EXCELLENT) {
+                stats.excellentMatches++;
+                stats.autoApplicable++;
+            } else if (bestMatchConfidence >= CONFIDENCE_THRESHOLDS.GOOD) {
+                stats.goodMatches++;
+                stats.autoApplicable++;  // GOOD matches are also auto-applicable
+            } else if (bestMatchConfidence >= CONFIDENCE_THRESHOLDS.FAIR) {
+                stats.fairMatches++;
+                stats.requireReview++;
+            } else if (bestMatchConfidence >= CONFIDENCE_THRESHOLDS.POOR) {
+                stats.poorMatches++;
+                stats.requireReview++;
+            } else {
+                stats.noMatches++;
+                stats.requireReview++;
+            }
         } else {
             stats.noMatches++;
             stats.requireReview++;
         }
     });
     
+    // Calculate average confidence
+    stats.averageConfidence = matchedShipments > 0 ? totalConfidence / matchedShipments : 0;
+    
+    console.log('📊 Matching statistics:', stats);
     return stats;
 }
 
@@ -4968,7 +5232,10 @@ function calculateAverageConfidence(matches) {
     if (!matches || matches.length === 0) return 0;
     
     const totalConfidence = matches.reduce((sum, match) => sum + (match.confidence || 0), 0);
-    return totalConfidence / matches.length;
+    const average = totalConfidence / matches.length;
+    
+    // Ensure we never return NaN
+    return isNaN(average) ? 0 : average;
 }
 
 module.exports = {
