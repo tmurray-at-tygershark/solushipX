@@ -615,102 +615,195 @@ export const fetchConnectedCompanies = async (userId, userRole) => {
  */
 export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, userRole, connectedCompanies }) => {
     try {
-        let shipmentsQuery = collection(db, 'shipments');
-        const queryConstraints = [where('status', '!=', 'draft')];
+        console.log('🔍 Fetching charges for', userRole, 'with', connectedCompanies.length, 'companies');
 
-        // Apply company filtering
-        if (userRole !== 'superadmin' && connectedCompanies && connectedCompanies.length > 0) {
-            // Handle Firestore 'in' query limitation (max 10)
-            const companyBatches = [];
-            for (let i = 0; i < connectedCompanies.length; i += 10) {
-                const batch = connectedCompanies.slice(i, i + 10);
-                companyBatches.push(batch);
-            }
-            
-            if (companyBatches.length > 0) {
-                queryConstraints.push(where('companyID', 'in', companyBatches[0]));
-            }
-        }
-
-        // Apply specific filters
-        if (filters.companyId && filters.companyId !== 'all') {
-            queryConstraints.push(where('companyID', '==', filters.companyId));
-        }
-
-        if (filters.status && filters.status !== 'all') {
-            queryConstraints.push(where('invoiceStatus', '==', filters.status));
-        }
-
-        if (filters.carrier && filters.carrier !== 'all') {
-            queryConstraints.push(where('selectedCarrier', '==', filters.carrier));
-        }
-
-        // Add orderBy for consistent results
-        queryConstraints.push(orderBy('createdAt', 'desc'));
-
-        // Execute query
-        const shipmentsSnapshot = await getDocs(query(shipmentsQuery, ...queryConstraints));
-        let allShipments = shipmentsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        // Apply search filter in memory if needed
-        if (filters.searchTerm) {
-            const searchLower = filters.searchTerm.toLowerCase();
-            allShipments = allShipments.filter(shipment => {
-                return shipment.shipmentID?.toLowerCase().includes(searchLower) ||
-                       shipment.trackingNumber?.toLowerCase().includes(searchLower) ||
-                       shipment.invoiceNumber?.toLowerCase().includes(searchLower) ||
-                       shipment.shipTo?.company?.toLowerCase().includes(searchLower) ||
-                       shipment.shipTo?.city?.toLowerCase().includes(searchLower);
+        // Create company lookup map for proper display names
+        const companyMap = {};
+        
+        // Load all companies for super admin to ensure proper company name display
+        if (userRole === 'superadmin') {
+            console.log('🔒 Super admin: Loading all companies for proper display');
+            const allCompaniesSnapshot = await getDocs(collection(db, 'companies'));
+            const allCompanies = allCompaniesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            console.log('🏢 All companies loaded for super admin:', allCompanies.length);
+            allCompanies.forEach(company => {
+                if (company.companyID) {
+                    companyMap[company.companyID] = company;
+                }
+            });
+        } else {
+            // For regular admins, use connected companies
+            connectedCompanies.forEach(company => {
+                companyMap[company.companyID] = company;
             });
         }
 
-        // Transform shipments to charges format
-        const charges = allShipments.map(shipment => {
-            // Calculate cost and charge
-            let actualCost = 0;
-            let customerCharge = 0;
+        // Helper function to get shipment currency
+        const getShipmentCurrency = (shipment) => {
+            return shipment.currency ||
+                   shipment.selectedRate?.currency ||
+                   shipment.markupRates?.currency ||
+                   shipment.actualRates?.currency ||
+                   (shipment.shipFrom?.country === 'CA' || shipment.shipTo?.country === 'CA' ? 'CAD' : 'USD') ||
+                   'USD';
+        };
 
-            if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
-                actualCost = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
-                customerCharge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
-            } else {
-                actualCost = shipment.actualRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
-                customerCharge = shipment.markupRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+        // Helper function to format route
+        const formatRoute = (shipment) => {
+            const from = shipment.shipFrom || shipment.origin;
+            const to = shipment.shipTo || shipment.destination;
+            if (!from || !to) return 'N/A';
+            const fromCity = from.city || 'Unknown';
+            const fromState = from.state || from.province || '';
+            const toCity = to.city || 'Unknown';
+            const toState = to.state || to.province || '';
+            return `${fromCity}, ${fromState} → ${toCity}, ${toState}`;
+        };
+
+        const shipmentCharges = [];
+        const shipmentsRef = collection(db, 'shipments');
+
+        if (userRole === 'superadmin') {
+            // Super admin: Fetch ALL shipments (like BillingDashboard logic)
+            console.log('🔒 Super admin mode: Fetching ALL shipments');
+            
+            let q = query(
+                shipmentsRef,
+                where('status', '!=', 'draft'),
+                orderBy('status'),
+                orderBy('createdAt', 'desc')
+            );
+
+            // Apply time range filters if provided
+            if (filters.startDate) {
+                q = query(
+                    shipmentsRef,
+                    where('status', '!=', 'draft'),
+                    where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
+                    orderBy('createdAt', 'desc')
+                );
             }
 
-            return {
-                id: shipment.id,
-                shipmentID: shipment.shipmentID || shipment.id,
-                companyID: shipment.companyID || shipment.companyId,
-                companyName: shipment.companyName || 'Unknown Company',
-                customerId: shipment.customerId || shipment.customerID,
-                customerName: shipment.shipTo?.company || shipment.shipTo?.name || 'Unknown Customer',
-                cost: actualCost,
-                charge: customerCharge,
-                currency: shipment.currency || shipment.selectedRate?.currency || 'USD',
-                status: shipment.invoiceStatus || 'uninvoiced',
-                shipmentDate: shipment.bookedAt || shipment.createdAt,
-                route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
-                carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
-                trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
-                shipmentData: shipment
-            };
-        });
+            const snapshot = await getDocs(q);
+            const allShipments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            console.log('📦 Super admin: Found', allShipments.length, 'total shipments');
+
+            // Process all shipments for super admin
+            allShipments.forEach(shipment => {
+                processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
+            });
+
+        } else {
+            // Regular admin: Filter by connected companies (existing working logic)
+            const companyIDs = connectedCompanies.map(company => company.companyID).filter(Boolean);
+            if (companyIDs.length === 0) {
+                return {
+                    charges: [],
+                    totalCount: 0,
+                    hasMore: false,
+                    lastDoc: null,
+                    total: 0
+                };
+            }
+
+            console.log('👤 Regular admin mode: Filtering by connected companies:', companyIDs);
+
+            // Fetch shipments in batches (Firestore 'in' limit is 10)
+            const batches = [];
+            for (let i = 0; i < companyIDs.length; i += 10) {
+                const batch = companyIDs.slice(i, i + 10);
+                let q = query(
+                    shipmentsRef,
+                    where('companyID', 'in', batch),
+                    where('status', '!=', 'draft'),
+                    orderBy('createdAt', 'desc')
+                );
+
+                // Apply time range filter
+                if (filters.startDate) {
+                    q = query(
+                        shipmentsRef,
+                        where('companyID', 'in', batch),
+                        where('status', '!=', 'draft'),
+                        where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
+                        orderBy('createdAt', 'desc')
+                    );
+                }
+
+                batches.push(getDocs(q));
+            }
+
+            const results = await Promise.all(batches);
+
+            results.forEach(snapshot => {
+                snapshot.docs.forEach(doc => {
+                    const shipment = { id: doc.id, ...doc.data() };
+                    processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
+                });
+            });
+        }
+
+        // Apply additional filters
+        let filteredCharges = shipmentCharges;
+
+        // Company filter
+        if (filters.companyId && filters.companyId !== 'all') {
+            filteredCharges = filteredCharges.filter(charge => charge.companyID === filters.companyId);
+        }
+
+        // Status filter
+        if (filters.invoiceStatus && filters.invoiceStatus !== 'all') {
+            filteredCharges = filteredCharges.filter(charge => charge.status === filters.invoiceStatus);
+        }
+
+        // Search filter
+        if (filters.searchTerm) {
+            const searchLower = filters.searchTerm.toLowerCase();
+            filteredCharges = filteredCharges.filter(charge => {
+                return charge.shipmentID?.toLowerCase().includes(searchLower) ||
+                       charge.companyName?.toLowerCase().includes(searchLower) ||
+                       charge.customerName?.toLowerCase().includes(searchLower) ||
+                       charge.trackingNumber?.toLowerCase().includes(searchLower) ||
+                       charge.route?.toLowerCase().includes(searchLower);
+            });
+        }
+
+        // Sort charges
+        if (filters.sortField && filters.sortDirection) {
+            filteredCharges.sort((a, b) => {
+                let aVal = a[filters.sortField];
+                let bVal = b[filters.sortField];
+                
+                if (filters.sortField === 'shipmentDate') {
+                    aVal = new Date(aVal);
+                    bVal = new Date(bVal);
+                }
+                
+                if (filters.sortDirection === 'desc') {
+                    return bVal > aVal ? 1 : -1;
+                } else {
+                    return aVal > bVal ? 1 : -1;
+                }
+            });
+        }
+
+        console.log('💰 Charges loaded:', filteredCharges.length);
 
         // Apply pagination
         const startIndex = page * pageSize;
         const endIndex = startIndex + pageSize;
-        const paginatedCharges = charges.slice(startIndex, endIndex);
+        const paginatedCharges = filteredCharges.slice(startIndex, endIndex);
 
         return {
             charges: paginatedCharges,
-            totalCount: charges.length,
-            hasMore: endIndex < charges.length,
+            totalCount: filteredCharges.length,
+            hasMore: endIndex < filteredCharges.length,
             lastDoc: null, // Not applicable for in-memory pagination
-            total: charges.length // Keep for backward compatibility
+            total: filteredCharges.length // Keep for backward compatibility
         };
     } catch (error) {
         console.error('Error fetching charges:', error);
@@ -723,6 +816,75 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
         };
     }
 };
+
+// Helper function to process individual shipment charges (extracted from BillingDashboard)
+function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute) {
+    let actualCost = 0;
+    let customerCharge = 0;
+
+    // Enhanced charge extraction to handle QuickShip orders (from BillingDashboard logic)
+    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+        // Sum up actual costs from manual rates
+        actualCost = shipment.manualRates.reduce((sum, rate) => {
+            return sum + (parseFloat(rate.cost) || 0);
+        }, 0);
+
+        // Sum up customer charges from manual rates
+        customerCharge = shipment.manualRates.reduce((sum, rate) => {
+            return sum + (parseFloat(rate.charge) || 0);
+        }, 0);
+
+    } else {
+        // Use dual rate system for regular shipments
+        actualCost = shipment.actualRates?.totalCharges ||
+                    shipment.totalCosts ||
+                    shipment.selectedRate?.totalCharges || 0;
+
+        customerCharge = shipment.markupRates?.totalCharges ||
+                        shipment.totalCharges ||
+                        shipment.selectedRate?.totalCharges || 0;
+    }
+
+    // Only include shipments with positive charges
+    if (customerCharge > 0) {
+        const company = companyMap[shipment.companyID];
+
+        let shipmentDate;
+        if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
+            shipmentDate = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
+        } else {
+            shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+        }
+
+        // Extract currency from shipment data
+        const currency = getShipmentCurrency(shipment);
+
+        shipmentCharges.push({
+            id: shipment.id,
+            shipmentID: shipment.shipmentID || shipment.id,
+            companyID: shipment.companyID,
+            customerId: shipment.customerId || shipment.customerID || shipment.shipTo?.addressClassID || null,
+            customerName: shipment.customerName || shipment.customer?.name || shipment.shipTo?.company || shipment.shipTo?.name || 'Unknown Customer',
+            companyName: company?.name || shipment.companyName || shipment.companyID || 'Unknown Company',
+            company: company,
+            actualCost: actualCost,
+            customerCharge: customerCharge,
+            margin: customerCharge - actualCost,
+            marginPercent: customerCharge > 0 ? ((customerCharge - actualCost) / customerCharge) * 100 : 0,
+            currency: currency,
+            actualRates: shipment.actualRates,
+            markupRates: shipment.markupRates,
+            manualRates: shipment.manualRates,
+            isQuickShip: shipment.creationMethod === 'quickship',
+            status: shipment.invoiceStatus || 'uninvoiced',
+            shipmentDate: shipmentDate,
+            route: formatRoute(shipment),
+            carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+            trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
+            shipmentData: shipment
+        });
+    }
+}
 
 const chargesService = {
     updateChargeInvoiceNumber,
