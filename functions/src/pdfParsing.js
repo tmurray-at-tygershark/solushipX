@@ -158,6 +158,68 @@ const carrierTemplates = {
             weight: /(\d+(?:\.\d+)?)\s*(?:KG|kg)/gi,
             postalCode: /([A-Z]\d[A-Z]\s*\d[A-Z]\d)/gi
         }
+    },
+    landliner: {
+        name: 'Landliner Inc',
+        format: 'multi-document',
+        confidence: 0.92,
+        patterns: {
+            // Carrier identification patterns
+            carrierIdentifier: /(LANDLINER|Landliner Inc|ProTransport Trucking Software)/gi,
+            
+            // Primary reference pattern (appears on all documents)
+            referenceNumber: /(ICAL-\w+)/gi,
+            orderNumber: /(ORDER #\s*ICAL-\w+)/gi,
+            bolNumber: /(BOL\s*Number:\s*ICAL-\w+)/gi,
+            
+            // Invoice specific patterns
+            invoiceNumber: /Invoice\s*#\s*(\d+)/gi,
+            invoiceDate: /Invoice\s*Date\s*(\d{1,2}\/\d{1,2}\/\d{4})/gi,
+            totalAmount: /TOTAL\s*:\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi,
+            freightIncome: /Freight\s*Income\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi,
+            
+            // Shipment details
+            trackingNumber: /(ICAL-\w+)/gi,
+            shipmentDate: /(\d{1,2}\/\d{1,2}\/\d{4})/g,
+            
+            // Weight and pieces
+            totalWeight: /TOTAL\s*WEIGHT:\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi,
+            totalPieces: /TOTAL\s*PIECES:\s*(\d+)/gi,
+            weight: /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi,
+            pieces: /(\d+)\s*pieces?/gi,
+            
+            // Route information
+            pickup: /PickUp:\s*(.*?)(?=Delivery:|$)/gi,
+            delivery: /Delivery:\s*(.*?)(?=\n|$)/gi,
+            origin: /VIG\s*INC\s*LLC[,\s]*(.*?)(?=Delivery|$)/gi,
+            destination: /RDI[,\s]*(.*?)(?=\n|$)/gi,
+            
+            // Contact information
+            customerContact: /CONTACT:\s*([^\\n]+)/gi,
+            telephone: /TELEPHONE:\s*([^\\n]+)/gi,
+            
+            // Commodity information
+            commodity: /computers|computer equipment/gi,
+            commodityDescription: /(computers|computer\s+equipment)/gi,
+            
+            // Special instructions
+            specialInstructions: /SPECIAL\s*INSTRUCTIONS:\s*(.*?)(?=BROKER|$)/gis,
+            
+            // Signature and dates
+            shipperSignature: /SHIPPER\s*SIGNATURE\/DATE/gi,
+            carrierSignature: /CARRIER\s*SIGNATURE\/DATE/gi,
+            consigneeSignature: /CONSIGNEE\s*SIGNATURE\/DATE/gi
+        },
+        structure: {
+            header: ['invoiceDate', 'invoiceNumber', 'referenceNumber'],
+            shipments: ['referenceNumber', 'pickup', 'delivery', 'weight', 'pieces', 'totalAmount'],
+            charges: ['freightIncome', 'totalAmount'],
+            addresses: ['origin', 'destination'],
+            documents: ['invoice', 'confirmation', 'bol']
+        },
+        documentTypes: ['invoice', 'confirmation', 'bol'],
+        multiDocument: true,
+        systemIntegration: true
     }
 };
 
@@ -2154,6 +2216,60 @@ function getCarrierSpecificInstructions(carrierInfo) {
         - "Customs": Border processing fee
         - "Tax": Government taxes
         `,
+        landliner: `
+        For Landliner Inc (ProTransport Software) MULTI-DOCUMENT PDFs:
+        - CRITICAL: This PDF contains 3 document types: INVOICE + CONFIRMATION + BOL
+        - Primary Reference: ICAL-XXXXX (appears on ALL documents)
+        - Invoice Number: Numeric (e.g., 34342)
+        - Generated System: ProTransport Trucking Software integration
+        
+        DOCUMENT STRUCTURE:
+        Page 1 - INVOICE:
+        - Header: "LANDLINER" with company logo
+        - Invoice details: Date, number, terms, due date
+        - Shipment details: Customer Load #, Origin-Destination, Quantity, Rate, Amount
+        - Total amount: "TOTAL: $X,XXX.XX"
+        - Reference format: ICAL-XXXXX as Customer Load #
+        
+        Page 2 - CARRIER CONFIRMATION:
+        - Header: "INTEGRATED CARRIERS" 
+        - Order number: "ORDER # ICAL-XXXXX MUST BE ADDED TO YOUR FREIGHT INVOICE"
+        - Carrier: LANDLINER
+        - Shipper/Consignee information with full addresses
+        - Weight and pieces: "TOTAL WEIGHT: XXXXX LBS", "TOTAL PIECES: XX"
+        - Commodity description
+        - Contact information and special instructions
+        
+        Page 3 - BILL OF LADING (BOL):
+        - Header: "LTL Bill of Lading - Not Negotiable"
+        - BOL Number: ICAL-XXXXX
+        - Ship From/Ship To addresses
+        - Freight charges information
+        - Weight and commodity details
+        - Signatures (shipper, carrier, consignee)
+        
+        LANDLINER EXTRACTION PRIORITIES:
+        1. Reference Number: ICAL-XXXXX (PRIMARY IDENTIFIER - appears on all docs)
+        2. Invoice Number: From Page 1 invoice header
+        3. Total Amount: From "TOTAL:" line on invoice
+        4. Weight: Extract from "TOTAL WEIGHT: XXXXX LBS"
+        5. Pieces: Extract from "TOTAL PIECES: XX" 
+        6. Route: Extract PickUp/Delivery locations
+        7. Commodity: Usually "computers" or from commodity description
+        8. Contacts: Extract shipper/consignee contact information
+        
+        LANDLINER CHARGE PATTERNS:
+        - "Freight Income": Primary transportation charge
+        - "TOTAL": Final invoice amount
+        - Look for rate information in invoice table
+        - Cross-validate amounts across all 3 documents
+        
+        CROSS-DOCUMENT VALIDATION:
+        - Same ICAL-XXXXX reference on all pages
+        - Weight/pieces consistent between confirmation and BOL
+        - Addresses match between confirmation and BOL
+        - Amount from invoice matches expected freight charges
+        `,
         default: `
         For this carrier's documents:
         - Extract all available tracking information
@@ -2178,6 +2294,11 @@ function createFallbackStructuredData(text, carrierInfo) {
     // Enhanced DHL-specific extraction
     if (carrierInfo.id === 'dhl') {
         return createDHLFallbackData(text);
+    }
+    
+    // Enhanced Landliner-specific extraction
+    if (carrierInfo.id === 'landliner') {
+        return createLandlinerFallbackData(text);
     }
     
     // Generic fallback for other carriers
@@ -2470,6 +2591,120 @@ function createDHLFallbackData(text) {
         },
         fallback: true,
         extractionMethod: 'dhl_regex_patterns'
+    };
+}
+
+// Enhanced Landliner-specific fallback data extraction
+function createLandlinerFallbackData(text) {
+    console.log('Creating Landliner-specific fallback data');
+    
+    // Extract ICAL reference numbers (primary identifier)
+    const icalReferences = extractWithRegex(text, /(ICAL-\w+)/gi);
+    
+    // Extract invoice numbers
+    const invoiceNumbers = extractWithRegex(text, /Invoice\s*#\s*(\d+)/gi);
+    
+    // Extract total amounts
+    const totalAmounts = extractWithRegex(text, /TOTAL\s*:\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi);
+    const freightIncomes = extractWithRegex(text, /Freight\s*Income\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/gi);
+    
+    // Extract weight information
+    const totalWeights = extractWithRegex(text, /TOTAL\s*WEIGHT:\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi);
+    const weights = extractWithRegex(text, /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*LBS/gi);
+    
+    // Extract pieces information
+    const totalPieces = extractWithRegex(text, /TOTAL\s*PIECES:\s*(\d+)/gi);
+    const pieces = extractWithRegex(text, /(\d+)\s*pieces?/gi);
+    
+    // Extract route information
+    const pickupLocations = extractWithRegex(text, /PickUp:\s*(.*?)(?=Delivery:|$)/gi);
+    const deliveryLocations = extractWithRegex(text, /Delivery:\s*(.*?)(?=\n|$)/gi);
+    
+    // Extract company information
+    const vigInfo = extractWithRegex(text, /(VIG\s*INC\s*LLC[^\\n]*)/gi);
+    const rdiInfo = extractWithRegex(text, /(RDI[^\\n]*)/gi);
+    
+    // Extract dates
+    const invoiceDates = extractWithRegex(text, /Invoice\s*Date\s*(\d{1,2}\/\d{1,2}\/\d{4})/gi);
+    const shipmentDates = extractWithRegex(text, /(\d{1,2}\/\d{1,2}\/\d{4})/g);
+    
+    // Extract commodity information
+    const commodities = extractWithRegex(text, /(computers?|computer\s+equipment)/gi);
+    
+    // Create structured shipment data
+    const primaryReference = icalReferences[0] || 'Unknown';
+    const invoiceNumber = invoiceNumbers[0] || 'Unknown';
+    const totalAmount = totalAmounts[0] || freightIncomes[0] || '0';
+    const shipmentWeight = totalWeights[0] || weights[0] || '0';
+    const shipmentPieces = totalPieces[0] || pieces[0] || '1';
+    
+    // Parse amounts (remove commas and convert to number)
+    const parsedAmount = parseFloat(totalAmount.replace(/,/g, '')) || 0;
+    const parsedWeight = parseFloat(shipmentWeight.replace(/,/g, '')) || 0;
+    const parsedPieces = parseInt(shipmentPieces) || 1;
+    
+    // Create charges array
+    const charges = [];
+    if (freightIncomes[0]) {
+        charges.push({
+            description: 'Freight Income',
+            amount: parseFloat(freightIncomes[0].replace(/,/g, '')),
+            currency: 'CAD'
+        });
+    }
+    
+    // Create shipment object
+    const shipment = {
+        trackingNumber: primaryReference,
+        shipmentDate: convertDateFormat(invoiceDates[0] || shipmentDates[0]) || new Date().toISOString().split('T')[0],
+        serviceType: 'Landliner Freight',
+        weight: {
+            value: parsedWeight,
+            unit: 'LB'
+        },
+        pieces: parsedPieces,
+        from: {
+            company: vigInfo[0] ? vigInfo[0].replace(/VIG\s*INC\s*LLC[,\s]*/i, '').trim() : 'VIG INC LLC',
+            address: pickupLocations[0] || 'Dallas, TX',
+            city: 'Dallas',
+            province: 'TX',
+            country: 'US'
+        },
+        to: {
+            company: rdiInfo[0] ? rdiInfo[0].replace(/RDI[,\s]*/i, '').trim() : 'RDI',
+            address: deliveryLocations[0] || 'Chicago, IL',
+            city: 'Chicago',
+            province: 'IL',
+            country: 'US'
+        },
+        charges: charges,
+        totalAmount: parsedAmount,
+        currency: 'CAD',
+        references: {
+            customerRef: primaryReference,
+            invoiceRef: invoiceNumber,
+            other: icalReferences.slice(1) // Additional ICAL references if found
+        },
+        commodity: commodities[0] || 'General Freight',
+        multiDocument: true,
+        documentTypes: ['invoice', 'confirmation', 'bol']
+    };
+    
+    return {
+        shipments: [shipment],
+        metadata: {
+            documentType: 'multi-document',
+            documentNumber: invoiceNumber,
+            documentDate: convertDateFormat(invoiceDates[0] || shipmentDates[0]),
+            totalShipments: 1,
+            totalAmount: parsedAmount,
+            currency: 'CAD',
+            carrier: 'Landliner Inc',
+            multiDocument: true,
+            primaryReference: primaryReference
+        },
+        fallback: true,
+        extractionMethod: 'landliner_regex_patterns'
     };
 }
 
@@ -3161,7 +3396,7 @@ async function enhancedCarrierDetection(pdfUrl, fileName) {
 1. CARRIER IDENTIFICATION:
    - Which shipping carrier issued this document?
    - Look for logos, company names, branding, and contact information
-   - Common carriers: DHL, FedEx, UPS, Purolator, Canada Post, Canpar, TNT
+   - Common carriers: DHL, FedEx, UPS, Purolator, Canada Post, Canpar, TNT, Landliner
 
 2. DOCUMENT TYPES PRESENT:
    - Invoice (billing document with charges)
@@ -3185,6 +3420,7 @@ async function enhancedCarrierDetection(pdfUrl, fileName) {
    - Purolator: Specific tracking formats
    - Canada Post: 16-digit tracking numbers
    - Canpar: Barcode/tracking patterns
+   - Landliner: ICAL- reference format, ProTransport software branding, multi-document PDFs
 
 Return ONLY a JSON object with this structure:
 {
@@ -3476,7 +3712,8 @@ function isCarrierMatch(shipmentData, detectedCarrier) {
         'purolator': ['purolator', 'purolator courier', 'purolator ground'],
         'canadapost': ['canada post', 'canadapost', 'postes canada'],
         'canpar': ['canpar', 'canpar express', 'canpar courier'],
-        'tnt': ['tnt', 'tnt express']
+        'tnt': ['tnt', 'tnt express'],
+        'landliner': ['landliner', 'landliner inc', 'landliner freight', 'protransport trucking software']
     };
     
     for (const [standard, variations] of Object.entries(carrierMappings)) {

@@ -832,6 +832,18 @@ const APProcessing = () => {
             features: ['tracking', 'addresses', 'charges']
         },
         {
+            id: 'landliner',
+            name: 'Landliner Inc',
+            supported: true,
+            confidence: 0.92,
+            formats: ['invoice', 'bol', 'confirmation'],
+            features: ['tracking', 'addresses', 'charges', 'multi-document', 'system-integration'],
+            description: 'Freight carrier with integrated system confirmations and BOL generation',
+            logoURL: '/images/carriers/landliner-logo.png',
+            patterns: ['ICAL-', 'ProTransport Trucking Software', 'Landliner Inc'],
+            referenceFormat: 'ICAL-XXXXXX'
+        },
+        {
             id: 'dayross',
             name: 'Day & Ross',
             supported: false,
