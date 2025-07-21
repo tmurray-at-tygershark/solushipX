@@ -128,10 +128,10 @@ const PaymentTerms = () => {
     }
 
     return (
-        <Box>
-            <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>Manage Company Payment Terms</Typography>
+        <Box sx={{ width: '100%' }}>
+            <Typography variant="h5" gutterBottom sx={{ mb: 2, px: 2 }}>Manage Company Payment Terms</Typography>
 
-            <Paper sx={{ p: 2, mb: 3 }} elevation={1} variant="outlined">
+            <Paper sx={{ p: 2, mb: 3, mx: 2 }} elevation={1} variant="outlined">
                 <TextField
                     fullWidth
                     label="Search Companies (by Name or Company ID)"
@@ -149,7 +149,7 @@ const PaymentTerms = () => {
                 />
             </Paper>
 
-            <TableContainer component={Paper} elevation={1} variant="outlined">
+            <TableContainer component={Paper} elevation={1} variant="outlined" sx={{ mx: 2 }}>
                 <Table size="small">
                     <TableHead>
                         <TableRow>

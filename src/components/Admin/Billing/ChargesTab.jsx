@@ -1134,9 +1134,9 @@ const ChargesTab = () => {
 
     return (
         <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <Box className="admin-billing-charges">
+            <Box className="admin-billing-charges" sx={{ width: '100%' }}>
                 {/* Header with Title and Action Buttons */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, px: 2 }}>
                     <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827' }}>
                         Charges
                     </Typography>
@@ -1164,7 +1164,7 @@ const ChargesTab = () => {
                 </Box>
 
                 {/* Enhanced Filters */}
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', p: 3, mb: 3 }}>
+                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', p: 3, mb: 3, mx: 2 }}>
                     <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
                         Filters
                     </Typography>
@@ -1469,7 +1469,7 @@ const ChargesTab = () => {
                 </Box>
 
                 {/* Optimized Charges Table */}
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mx: 2 }}>
                     <TableContainer>
                         <Table>
                             <TableHead>

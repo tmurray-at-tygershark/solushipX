@@ -318,9 +318,9 @@ const InvoiceManagement = () => {
     }
 
     return (
-        <Box>
+        <Box sx={{ width: '100%' }}>
             {/* Metrics Cards */}
-            <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                 <Grid item xs={12} md={3}>
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
@@ -430,7 +430,7 @@ const InvoiceManagement = () => {
             </Grid>
 
             {/* Invoices Table */}
-            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mx: 2 }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                         <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '18px', color: '#111827' }}>

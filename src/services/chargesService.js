@@ -693,9 +693,9 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
             console.log('📦 Super admin: Found', allShipments.length, 'total shipments');
 
             // Process all shipments for super admin
-            allShipments.forEach(shipment => {
-                processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
-            });
+            for (const shipment of allShipments) {
+                await processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
+            }
 
         } else {
             // Regular admin: Filter by connected companies (existing working logic)
@@ -739,12 +739,12 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
 
             const results = await Promise.all(batches);
 
-            results.forEach(snapshot => {
-                snapshot.docs.forEach(doc => {
+            for (const snapshot of results) {
+                for (const doc of snapshot.docs) {
                     const shipment = { id: doc.id, ...doc.data() };
-                    processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
-                });
-            });
+                    await processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
+                }
+            }
         }
 
         // Apply additional filters
@@ -818,7 +818,7 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
 };
 
 // Helper function to process individual shipment charges (extracted from BillingDashboard)
-function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute) {
+async function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute) {
     let actualCost = 0;
     let customerCharge = 0;
 
@@ -859,13 +859,56 @@ function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmen
         // Extract currency from shipment data
         const currency = getShipmentCurrency(shipment);
 
+        // CUSTOMER ID EXTRACTION (using ShipmentDetailX logic)
+        const customerId = shipment.customerId ||
+            shipment.customerID ||
+            shipment.customer?.id ||
+            shipment.customer?.customerID ||
+            null;
+
+        // LOAD ACTUAL CUSTOMER DATA FROM DATABASE (like ShipmentDetailX does)
+        let customerData = null;
+        if (customerId) {
+            try {
+                // FIRST: Try to get customer by document ID (direct lookup)
+                const customerDocRef = doc(db, 'customers', customerId);
+                const customerDocSnapshot = await getDoc(customerDocRef);
+
+                if (customerDocSnapshot.exists()) {
+                    customerData = { id: customerDocSnapshot.id, ...customerDocSnapshot.data() };
+                } else {
+                    // SECOND: Try to query by customerID field
+                    const customerQuery = query(
+                        collection(db, 'customers'),
+                        where('customerID', '==', customerId),
+                        limit(1)
+                    );
+                    const customerSnapshot = await getDocs(customerQuery);
+
+                    if (!customerSnapshot.empty) {
+                        const customerDoc = customerSnapshot.docs[0];
+                        customerData = { id: customerDoc.id, ...customerDoc.data() };
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading customer data for', customerId, ':', error);
+            }
+        }
+
+        // USE LOADED CUSTOMER DATA (like ShipmentDetailX does)
+        const customerName = customerData?.companyName || customerData?.name || 
+            shipment.customerName || shipment.customer?.name || 'Unknown Customer';
+        const customerLogo = customerData?.logoUrl || customerData?.logo || null;
+
         shipmentCharges.push({
             id: shipment.id,
             shipmentID: shipment.shipmentID || shipment.id,
             companyID: shipment.companyID,
-            customerId: shipment.customerId || shipment.customerID || shipment.shipTo?.addressClassID || null,
-            customerName: shipment.customerName || shipment.customer?.name || shipment.shipTo?.company || shipment.shipTo?.name || 'Unknown Customer',
+            customerId: customerId,
+            customerName: customerName,
             companyName: company?.name || shipment.companyName || shipment.companyID || 'Unknown Company',
+            companyLogo: company?.logoUrl || company?.logo || shipment.companyLogo || null,
+            customerLogo: customerLogo,
             company: company,
             actualCost: actualCost,
             customerCharge: customerCharge,

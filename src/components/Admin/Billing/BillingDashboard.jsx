@@ -2247,8 +2247,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
     }
 
     return (
-        <Box className="admin-billing-dashboard">
-            <Box sx={{ mb: 4 }}>
+        <Box className="admin-billing-dashboard" sx={{ width: '100%', height: '100%' }}>
+            <Box sx={{ px: 3, py: 2, mb: 3, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
                 <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
                     Billing Management
                 </Typography>
@@ -2262,7 +2262,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 </Alert>
             )}
 
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3, px: 2 }}>
                 <Tabs
                     value={activeTab}
                     onChange={handleTabChange}
@@ -2295,10 +2295,10 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 <>
                     {loading ? (
                         <>
-                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3 }}>
+                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3, px: 2 }}>
                                 Billing Overview
                             </Typography>
-                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                                 {[1, 2, 3, 4].map((item) => (
                                     <Grid item xs={12} md={3} key={item}>
                                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
@@ -2317,7 +2317,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                                     </Grid>
                                 ))}
                             </Grid>
-                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                                 {[1, 2].map((item) => (
                                     <Grid item xs={12} md={6} key={item}>
                                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
@@ -2369,12 +2369,12 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     ) : (
                         <>
                             {/* Enterprise Financial KPIs */}
-                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3 }}>
+                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3, px: 2 }}>
                                 Billing Overview
                             </Typography>
 
                             {/* Primary KPIs */}
-                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                                 <Grid item xs={12} md={3}>
                                     <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)' }}>
                                         <CardContent sx={{ p: 3 }}>
@@ -2457,7 +2457,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                             </Grid>
 
                             {/* Operational Metrics */}
-                            <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                                 <Grid item xs={12} md={6}>
                                     <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
                                         <CardContent sx={{ p: 3 }}>

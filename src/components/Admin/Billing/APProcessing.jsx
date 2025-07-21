@@ -2158,9 +2158,9 @@ const APProcessing = () => {
     }, []);
 
     return (
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ width: '100%' }}>
             {/* Header */}
-            <Box sx={{ mb: 4 }}>
+            <Box sx={{ px: 3, py: 2, mb: 3, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
                 <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
                     AP Processing
                 </Typography>
@@ -2171,7 +2171,7 @@ const APProcessing = () => {
             </Box>
 
             {/* Statistics Cards */}
-            <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                 <Grid item xs={12} md={3}>
                     <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                         <CardContent sx={{ p: 2 }}>
@@ -2243,7 +2243,7 @@ const APProcessing = () => {
             </Grid>
 
             {/* Tabs Navigation */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3, px: 2 }}>
                 <Tabs
                     value={activeTab}
                     onChange={(e, newValue) => setActiveTab(newValue)}
@@ -2274,7 +2274,7 @@ const APProcessing = () => {
 
             {/* Overview Tab */}
             {activeTab === 'overview' && (
-                <Grid container spacing={3}>
+                <Grid container spacing={3} sx={{ px: 2 }}>
                     <Grid item xs={12}>
                         {/* Upload Area */}
                         <Paper

@@ -1347,8 +1347,8 @@ const GenerateInvoicesPage = () => {
 
     if (error) {
         return (
-            <Box>
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
+            <Box sx={{ width: '100%' }}>
+                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mx: 2 }}>
                     <Alert severity="error" sx={{ mb: 2, fontSize: '12px' }}>
                         {error}
                     </Alert>
@@ -1366,8 +1366,8 @@ const GenerateInvoicesPage = () => {
     }
 
     return (
-        <Box>
-            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
+        <Box sx={{ width: '100%' }}>
+            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mx: 2 }}>
                 <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
                     {steps.map((label) => (
                         <Step key={label}>
