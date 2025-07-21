@@ -1068,11 +1068,50 @@ const APProcessing = () => {
                 type: file.type === 'application/pdf' ? 'pdf' : 'edi'
             }]);
 
+            // 🔥 IMMEDIATELY add upload to uploads table so it shows without refresh
+            const tempUploadRecord = {
+                id: fileId, // Temporary ID until we get the real Firestore ID
+                fileName: file.name,
+                type: file.type === 'application/pdf' ? 'pdf' : 'edi',
+                processingStatus: 'uploading',
+                uploadDate: new Date(), // Use current time
+                recordCount: 0,
+                carrier: selectedCarrier === 'auto-detect' ? 'Auto-Detecting...' : selectedCarrier,
+                _isTemporary: true // Flag to identify temporary records
+            };
+
+            // Add to uploads list immediately
+            setUploads(prev => [tempUploadRecord, ...prev]);
+
+            // Also update filtered list if it matches current filters
+            setFilteredUploads(prev => {
+                // Check if this upload matches current filters
+                let matches = true;
+                if (statusFilter !== 'all' && statusFilter !== 'uploading') matches = false;
+                if (typeFilter !== 'all' && typeFilter !== tempUploadRecord.type) matches = false;
+                if (carrierFilter !== 'all' && carrierFilter !== tempUploadRecord.carrier) matches = false;
+                if (searchTerm && !tempUploadRecord.fileName.toLowerCase().includes(searchTerm.toLowerCase())) matches = false;
+
+                return matches ? [tempUploadRecord, ...prev] : prev;
+            });
+
             // Update progress - getting signed URL
             setProcessingFiles(prev => prev.map(f =>
                 f.id === fileId
                     ? { ...f, progress: 10, message: 'Getting upload authorization...' }
                     : f
+            ));
+
+            // 🔥 Update upload status in real-time
+            setUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploading', message: 'Getting upload authorization...' }
+                    : upload
+            ));
+            setFilteredUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploading', message: 'Getting upload authorization...' }
+                    : upload
             ));
 
             enqueueSnackbar('Uploading file...', { variant: 'info' });
@@ -1099,6 +1138,18 @@ const APProcessing = () => {
                     : f
             ));
 
+            // 🔥 Update upload status in real-time
+            setUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
+                    : upload
+            ));
+            setFilteredUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
+                    : upload
+            ));
+
             // Upload file to Cloud Storage using signed URL
             const uploadResponse = await fetch(uploadUrl, {
                 method: 'PUT',
@@ -1121,6 +1172,18 @@ const APProcessing = () => {
                     : f
             ));
 
+            // 🔥 Update upload status in real-time
+            setUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploaded', message: 'Upload complete, preparing for processing...' }
+                    : upload
+            ));
+            setFilteredUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'uploaded', message: 'Upload complete, preparing for processing...' }
+                    : upload
+            ));
+
             // For PDF files, start background processing and return immediately
             if (file.type === 'application/pdf') {
                 // Update status to processing
@@ -1128,6 +1191,18 @@ const APProcessing = () => {
                     f.id === fileId
                         ? { ...f, status: 'processing', progress: 70, message: 'Initializing AI analysis...' }
                         : f
+                ));
+
+                // 🔥 Update upload status in real-time
+                setUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'processing', message: 'Initializing AI analysis...' }
+                        : upload
+                ));
+                setFilteredUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'processing', message: 'Initializing AI analysis...' }
+                        : upload
                 ));
 
                 // Start background PDF processing (no await - fire and forget)
@@ -1173,6 +1248,18 @@ const APProcessing = () => {
                     : f
             ));
 
+            // 🔥 Update upload status to failed in real-time
+            setUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'failed', error: error.message }
+                    : upload
+            ));
+            setFilteredUploads(prev => prev.map(upload =>
+                upload.id === fileId
+                    ? { ...upload, processingStatus: 'failed', error: error.message }
+                    : upload
+            ));
+
             // Remove failed file from list after 5 seconds
             setTimeout(() => {
                 setProcessingFiles(prev => prev.filter(f => f.id !== fileId));
@@ -1215,7 +1302,33 @@ const APProcessing = () => {
                         { variant: 'success' }
                     );
 
-                    // Refresh the uploads list
+                    // 🔥 Replace temporary record with real data from cloud function
+                    const realUploadRecord = {
+                        id: result.data.uploadId, // Real Firestore ID from cloud function
+                        fileName: fileName,
+                        type: 'pdf',
+                        processingStatus: 'completed',
+                        uploadDate: new Date(), // Current time (close enough)
+                        recordCount: result.data.recordCount,
+                        carrier: result.data.carrier,
+                        confidence: result.data.confidence,
+                        downloadURL: uploadUrl,
+                        _isTemporary: false
+                    };
+
+                    // Replace the temporary record with the real one
+                    setUploads(prev => prev.map(upload =>
+                        upload.id === fileId
+                            ? realUploadRecord // Replace temporary with real record
+                            : upload
+                    ));
+                    setFilteredUploads(prev => prev.map(upload =>
+                        upload.id === fileId
+                            ? realUploadRecord // Replace temporary with real record
+                            : upload
+                    ));
+
+                    // Also refresh the uploads list to get any other updates
                     loadUploads();
                 }
             }).catch((error) => {
@@ -1227,6 +1340,18 @@ const APProcessing = () => {
                     f.id === fileId
                         ? { ...f, status: 'failed', error: error.message }
                         : f
+                ));
+
+                // 🔥 Update upload status to failed in real-time
+                setUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'failed', error: error.message }
+                        : upload
+                ));
+                setFilteredUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'failed', error: error.message }
+                        : upload
                 ));
 
                 // Show error notification
@@ -1503,6 +1628,8 @@ const APProcessing = () => {
         const config = {
             completed: { color: 'success', icon: <CheckIcon />, label: 'Completed' },
             processing: { color: 'primary', icon: <AutorenewIcon />, label: 'Processing' },
+            uploading: { color: 'info', icon: <UploadIcon />, label: 'Uploading' }, // 🔥 Added uploading status
+            uploaded: { color: 'info', icon: <CheckIcon />, label: 'Uploaded' }, // 🔥 Added uploaded status
             queued: { color: 'default', icon: <PendingIcon />, label: 'Queued' },
             failed: { color: 'error', icon: <ErrorIcon />, label: 'Failed' },
             error: { color: 'error', icon: <ErrorIcon />, label: 'Error' },
@@ -2462,7 +2589,16 @@ const APProcessing = () => {
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                         {upload.type === 'pdf' ? <PdfIcon /> : <TableIcon />}
-                                                        {upload.fileName}
+                                                        <Box>
+                                                            <Typography sx={{ fontSize: '12px' }}>
+                                                                {upload.fileName}
+                                                            </Typography>
+                                                            {upload.message && (upload.processingStatus === 'uploading' || upload.processingStatus === 'uploaded' || upload.processingStatus === 'processing') && (
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                    {upload.message}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
                                                     </Box>
                                                 </TableCell>
                                                 <TableCell>{getTypeChip(upload.type)}</TableCell>
@@ -2471,7 +2607,7 @@ const APProcessing = () => {
                                                     {upload.recordCount || 0}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {upload.uploadDate?.toDate().toLocaleString()}
+                                                    {upload.uploadDate?.toDate ? upload.uploadDate.toDate().toLocaleString() : upload.uploadDate?.toLocaleString?.() || 'N/A'}
                                                 </TableCell>
                                                 <TableCell align="right">
                                                     <Box sx={{ display: 'flex', gap: 1 }}>

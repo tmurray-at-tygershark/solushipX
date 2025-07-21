@@ -29,6 +29,46 @@ if (admin.apps.length === 0) {
   console.log('Admin SDK already initialized.');
 }
 
+// Temporary function to update user role
+const tempUpdateUserRole = onRequest({ cors: true }, async (req, res) => {
+    try {
+        const db = admin.firestore();
+        // User ID from the logs
+        const userId = 'TzLyhOoYJfR6ev0OCZXdFdsE9Xj2';
+        
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            console.log('Current user data:', {
+                email: userData.email,
+                role: userData.role,
+                connectedCompanies: userData.connectedCompanies
+            });
+            
+            // Update role to admin
+            await userRef.update({
+                role: 'admin',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            res.json({ 
+                success: true, 
+                message: 'User role updated to admin successfully',
+                email: userData.email,
+                oldRole: userData.role,
+                newRole: 'admin'
+            });
+        } else {
+            res.status(404).json({ success: false, message: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Error updating user role:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const db = admin.firestore();
 
 // Import function handlers
@@ -347,6 +387,7 @@ exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
 
 // Document regeneration functions
 exports.regenerateBOL = regenerateBOL;
+exports.tempUpdateUserRole = tempUpdateUserRole;
 exports.regenerateCarrierConfirmation = regenerateCarrierConfirmation;
 exports.regenerateAllDocuments = regenerateAllDocuments;
 

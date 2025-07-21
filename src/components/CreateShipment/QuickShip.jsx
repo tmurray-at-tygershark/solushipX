@@ -517,8 +517,8 @@ const QuickShip = ({
     const [loadingCustomers, setLoadingCustomers] = useState(false);
     const [customerManuallyCleared, setCustomerManuallyCleared] = useState(false);
 
-    // Determine if super admin needs to select a company (always show for super admins to allow switching)
-    const needsCompanySelection = userRole === 'superadmin';
+    // Determine if admin needs to select a company (always show for company admins/admins/super admins to allow switching)
+    const needsCompanySelection = userRole === 'superadmin' || userRole === 'admin' || userRole === 'user';
 
     // Helper function to determine if broker section should be visible (US shipments only)
     const shouldShowBrokerSection = useMemo(() => {
@@ -2651,8 +2651,8 @@ const QuickShip = ({
                                     // Switch company context
                                     await setCompanyContext(targetCompanyData);
 
-                                    // Update local state for super admins
-                                    if (userRole === 'superadmin') {
+                                    // Update local state for company admins, admins and super admins
+                                    if (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') {
                                         setSelectedCompanyId(draftData.companyID);
                                         setSelectedCompanyData(targetCompanyData);
                                     }
@@ -3297,9 +3297,9 @@ const QuickShip = ({
 
             let addresses = allAddresses;
 
-            // Add customer filter for super admins if specific customer is selected
+            // Add customer filter for admins if specific customer is selected
             const effectiveCustomerId = customerId || selectedCustomerId;
-            if (userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all') {
+            if ((userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && effectiveCustomerId && effectiveCustomerId !== 'all') {
                 // Try multiple filter approaches to handle different data structures
                 addresses = allAddresses.filter(addr => {
                     const matches = addr.addressClassID === effectiveCustomerId ||
@@ -3331,7 +3331,7 @@ const QuickShip = ({
                 effectiveCustomerId,
                 userRole,
                 addressCount: addresses.length,
-                isFiltered: userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all',
+                isFiltered: (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && effectiveCustomerId && effectiveCustomerId !== 'all',
                 addresses: addresses.slice(0, 3) // Show first 3 for debugging
             });
 
@@ -3789,8 +3789,8 @@ const QuickShip = ({
 
     // Load company data when company context changes (not customer filter)
     useEffect(() => {
-        // For super admins, prioritize selectedCompanyId over companyIdForAddress to prevent auto switchback
-        const currentCompanyId = userRole === 'superadmin' && selectedCompanyId
+        // For company admins/admins/super admins, prioritize selectedCompanyId over companyIdForAddress to prevent auto switchback
+        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
             ? selectedCompanyId
             : companyIdForAddress;
 
@@ -3805,6 +3805,22 @@ const QuickShip = ({
             loadAddressesForCompany(currentCompanyId, null);
         }
     }, [companyIdForAddress, selectedCompanyId, userRole]); // Don't include functions or selectedCustomerId
+
+    // Customer filter effect - reload addresses when customer selection changes
+    useEffect(() => {
+        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+            ? selectedCompanyId
+            : companyIdForAddress;
+
+        if (currentCompanyId && selectedCustomerId) {
+            console.log('🎯 Customer filter changed, reloading addresses:', {
+                currentCompanyId,
+                selectedCustomerId,
+                userRole
+            });
+            loadAddressesForCompany(currentCompanyId, selectedCustomerId);
+        }
+    }, [selectedCustomerId, loadAddressesForCompany]); // Reload when customer changes
 
     // REMOVED: Customer filter effect that was causing infinite loops
     // The customer filter now works without needing to reload addresses from the server
@@ -4472,31 +4488,34 @@ const QuickShip = ({
                         </Alert>
                     )}
 
-                    {/* Company Selector for Super Admins */}
+                    {/* Company Selector for Super Admins and Admins */}
                     {(() => {
-                        const shouldShowSelector = userRole === 'superadmin';
-                        // console.log('🔍 QuickShip Company Selector Debug:', {
-                        //     userRole,
-                        //     companyIdForAddress,
-                        //     selectedCompanyId,
-                        //     needsCompanySelection,
-                        //     shouldShowSelector
-                        // });
+                        const shouldShowSelector = userRole === 'superadmin' || userRole === 'admin' || userRole === 'user';
+                        console.log('🔍 QuickShip Company Selector Debug:', {
+                            userRole,
+                            companyIdForAddress,
+                            selectedCompanyId,
+                            needsCompanySelection,
+                            shouldShowSelector
+                        });
                         return shouldShowSelector;
                     })() && (
                             <CompanySelector
                                 selectedCompanyId={selectedCompanyId || companyIdForAddress}
                                 onCompanyChange={handleCompanySelection}
                                 userRole={userRole}
+                                userEmail={currentUser?.email}
+                                companyData={companyData} // Pass company data for logo display
                                 size="small"
                                 required={true}
-                                label="Select Company to Create QuickShip"
+                                label={userRole === 'user' ? "Company Context" : "Select Company to Create QuickShip"}
                                 placeholder="Choose a company to create QuickShip on their behalf..."
+                                locked={userRole === 'user'} // Lock for company admins
                             />
                         )}
 
-                    {/* Customer Filter for Super Admins - Show when company is selected and customers are loaded */}
-                    {userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
+                    {/* Customer Filter for Super Admins, Admins, and Company Admins - Show when company is selected and customers are loaded */}
+                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
                         <Box sx={{ mb: 3 }}>
                             <Autocomplete
                                 loading={loadingCustomers}
@@ -4688,17 +4707,17 @@ const QuickShip = ({
                         </Box>
                     )}
 
-                    {/* Show form only when company is selected or user is not super admin */}
+                    {/* Show form only when company is selected or user is not admin/super admin */}
                     {(() => {
-                        const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyIdForAddress));
-                        // console.log('🔍 QuickShip Form Visibility Debug:', {
-                        //     userRole,
-                        //     companyIdForAddress,
-                        //     selectedCompanyId,
-                        //     shouldShowForm,
-                        //     'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                        //     'regularUserCondition': userRole !== 'superadmin' && companyIdForAddress
-                        // });
+                        const shouldShowForm = (((userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && companyIdForAddress));
+                        console.log('🔍 QuickShip Form Visibility Debug:', {
+                            userRole,
+                            companyIdForAddress,
+                            selectedCompanyId,
+                            shouldShowForm,
+                            'adminCondition': (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
+                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && companyIdForAddress
+                        });
                         return shouldShowForm;
                     })() && (
                             <form autoComplete="off" noValidate>
