@@ -1035,7 +1035,7 @@ const ChargesTab = () => {
                                 <Box sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
                                     <Typography sx={{ fontSize: '11px', fontWeight: 500, mr: 1 }}>Weight:</Typography>
                                     <Typography sx={{ fontSize: '11px' }}>
-                                        {data.shipmentInfo.weight > 0 ? `${data.shipmentInfo.weight.toLocaleString()} lbs` : 'N/A'}
+                                        {(data.shipmentInfo.weight && data.shipmentInfo.weight > 0) ? `${data.shipmentInfo.weight.toLocaleString()} lbs` : 'N/A'}
                                     </Typography>
                                 </Box>
                                 <Box sx={{ mb: 0.5, display: 'flex', alignItems: 'center' }}>
@@ -1425,7 +1425,7 @@ const ChargesTab = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Showing {Math.min(page * rowsPerPage + 1, totalCount)} - {Math.min((page + 1) * rowsPerPage, totalCount)} of {totalCount.toLocaleString()} total charges
+                            Showing {Math.min(page * rowsPerPage + 1, totalCount || 0)} - {Math.min((page + 1) * rowsPerPage, totalCount || 0)} of {(totalCount || 0).toLocaleString()} total charges
                         </Typography>
                         {selectedCharges.size > 0 && (
                             <Chip

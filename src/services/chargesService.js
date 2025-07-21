@@ -1,4 +1,4 @@
-import { db, functions } from '../firebase';
+import { db, functions } from '../firebase/firebase';
 import { 
     collection, 
     doc, 
@@ -603,6 +603,127 @@ export const fetchConnectedCompanies = async (userId, userRole) => {
     }
 };
 
+/**
+ * Fetch charges based on filters and pagination
+ * @param {Object} params - Parameters object
+ * @param {number} params.page - Current page
+ * @param {number} params.pageSize - Page size
+ * @param {Object} params.filters - Filter parameters
+ * @param {string} params.userRole - User role
+ * @param {Array} params.connectedCompanies - Connected company IDs
+ * @returns {Promise<Object>} - Object with charges array and total count
+ */
+export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, userRole, connectedCompanies }) => {
+    try {
+        let shipmentsQuery = collection(db, 'shipments');
+        const queryConstraints = [where('status', '!=', 'draft')];
+
+        // Apply company filtering
+        if (userRole !== 'superadmin' && connectedCompanies && connectedCompanies.length > 0) {
+            // Handle Firestore 'in' query limitation (max 10)
+            const companyBatches = [];
+            for (let i = 0; i < connectedCompanies.length; i += 10) {
+                const batch = connectedCompanies.slice(i, i + 10);
+                companyBatches.push(batch);
+            }
+            
+            if (companyBatches.length > 0) {
+                queryConstraints.push(where('companyID', 'in', companyBatches[0]));
+            }
+        }
+
+        // Apply specific filters
+        if (filters.companyId && filters.companyId !== 'all') {
+            queryConstraints.push(where('companyID', '==', filters.companyId));
+        }
+
+        if (filters.status && filters.status !== 'all') {
+            queryConstraints.push(where('invoiceStatus', '==', filters.status));
+        }
+
+        if (filters.carrier && filters.carrier !== 'all') {
+            queryConstraints.push(where('selectedCarrier', '==', filters.carrier));
+        }
+
+        // Add orderBy for consistent results
+        queryConstraints.push(orderBy('createdAt', 'desc'));
+
+        // Execute query
+        const shipmentsSnapshot = await getDocs(query(shipmentsQuery, ...queryConstraints));
+        let allShipments = shipmentsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        // Apply search filter in memory if needed
+        if (filters.searchTerm) {
+            const searchLower = filters.searchTerm.toLowerCase();
+            allShipments = allShipments.filter(shipment => {
+                return shipment.shipmentID?.toLowerCase().includes(searchLower) ||
+                       shipment.trackingNumber?.toLowerCase().includes(searchLower) ||
+                       shipment.invoiceNumber?.toLowerCase().includes(searchLower) ||
+                       shipment.shipTo?.company?.toLowerCase().includes(searchLower) ||
+                       shipment.shipTo?.city?.toLowerCase().includes(searchLower);
+            });
+        }
+
+        // Transform shipments to charges format
+        const charges = allShipments.map(shipment => {
+            // Calculate cost and charge
+            let actualCost = 0;
+            let customerCharge = 0;
+
+            if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+                actualCost = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+                customerCharge = shipment.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+            } else {
+                actualCost = shipment.actualRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+                customerCharge = shipment.markupRates?.totalCharges || shipment.totalCharges || shipment.selectedRate?.totalCharges || 0;
+            }
+
+            return {
+                id: shipment.id,
+                shipmentID: shipment.shipmentID || shipment.id,
+                companyID: shipment.companyID || shipment.companyId,
+                companyName: shipment.companyName || 'Unknown Company',
+                customerId: shipment.customerId || shipment.customerID,
+                customerName: shipment.shipTo?.company || shipment.shipTo?.name || 'Unknown Customer',
+                cost: actualCost,
+                charge: customerCharge,
+                currency: shipment.currency || shipment.selectedRate?.currency || 'USD',
+                status: shipment.invoiceStatus || 'uninvoiced',
+                shipmentDate: shipment.bookedAt || shipment.createdAt,
+                route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+                trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
+                shipmentData: shipment
+            };
+        });
+
+        // Apply pagination
+        const startIndex = page * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedCharges = charges.slice(startIndex, endIndex);
+
+        return {
+            charges: paginatedCharges,
+            totalCount: charges.length,
+            hasMore: endIndex < charges.length,
+            lastDoc: null, // Not applicable for in-memory pagination
+            total: charges.length // Keep for backward compatibility
+        };
+    } catch (error) {
+        console.error('Error fetching charges:', error);
+        return {
+            charges: [],
+            totalCount: 0,
+            hasMore: false,
+            lastDoc: null,
+            total: 0 // Keep for backward compatibility
+        };
+    }
+};
+
 const chargesService = {
     updateChargeInvoiceNumber,
     updateChargeEdiNumber,
@@ -613,7 +734,8 @@ const chargesService = {
     getShipmentsWithMissingEdiNumbers,
     generateInvoiceEdiReport,
     fetchConnectedCompanies,
-    calculateMetrics
+    calculateMetrics,
+    fetchCharges
 };
 
 export default chargesService; 
