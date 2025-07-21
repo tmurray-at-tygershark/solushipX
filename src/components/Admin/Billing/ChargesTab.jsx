@@ -1603,7 +1603,7 @@ const ChargesTab = () => {
                                                         </Typography>
                                                     </Box>
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', minWidth: '160px' }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                         <Box sx={{
                                                             width: 20,
@@ -1724,7 +1724,7 @@ const ChargesTab = () => {
                                                         )}
                                                     </Box>
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', maxWidth: '130px' }}>
                                                     {/* Invoice Status (NOT shipment delivery status) - with dropdown arrow */}
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                         {(() => {
