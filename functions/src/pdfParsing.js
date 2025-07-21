@@ -249,13 +249,24 @@ const processPdfFile = onCall(async (request) => {
                 validationScore: validatedData.validation?.confidence || 1.0
             });
             
-            // Step 5: Generate final output with export capabilities
+            // Step 5: Intelligent shipment matching
+            console.log('Step 5: Starting intelligent shipment matching...');
+            const matchingResults = await performIntelligentMatching(validatedData, request.auth.uid);
+            await updateProcessingStep(uploadDoc.id, 'shipment_matching', 'completed', {
+                totalShipments: matchingResults.stats?.totalShipments || 0,
+                matchedShipments: matchingResults.stats?.autoApplicable || 0,
+                requiresReview: matchingResults.stats?.requireReview || 0,
+                averageConfidence: calculateAverageConfidence(matchingResults.matches)
+            });
+            
+            // Step 6: Generate final output with export capabilities
             const processedData = {
                 carrier: carrierInfo.name,
                 carrierCode: carrierInfo.id,
                 format: carrierInfo.format,
                 confidence: carrierInfo.confidence,
                 structuredData: validatedData,
+                matchingResults: matchingResults, // Include matching results
                 recordCount: validatedData.shipments?.length || 1,
                 processingTime: Date.now() - startTime,
                 fileName: fileName,
@@ -267,7 +278,9 @@ const processPdfFile = onCall(async (request) => {
                     aiModel: 'gemini-2.5-flash',
                     processingMethod: 'direct_pdf_analysis',
                     ocrEnabled: false,
-                    performance: 'native-pdf-processing'
+                    performance: 'native-pdf-processing',
+                    matchingEnabled: true,
+                    matchingStats: matchingResults.stats
                 }
             };
 
@@ -3118,6 +3131,498 @@ const retryPdfProcessing = onCall(async (request) => {
         throw new Error(`Retry failed: ${error.message}`);
     }
 });
+
+/**
+ * Intelligent Shipment Matching for AP Processing
+ * Matches extracted invoice data to existing shipments
+ */
+
+// Matching confidence thresholds
+const CONFIDENCE_THRESHOLDS = {
+    EXCELLENT: 0.95,    // Auto-apply
+    GOOD: 0.85,         // Review recommended  
+    FAIR: 0.70,         // Manual review required
+    POOR: 0.50          // Likely no match
+};
+
+// Matching strategies with weights
+const MATCHING_STRATEGIES = {
+    EXACT_SHIPMENT_ID: { weight: 100, confidence: 0.98 },
+    EXACT_TRACKING_NUMBER: { weight: 90, confidence: 0.95 },
+    EXACT_BOOKING_REFERENCE: { weight: 85, confidence: 0.92 },
+    REFERENCE_NUMBER_MATCH: { weight: 70, confidence: 0.80 },
+    DATE_AMOUNT_MATCH: { weight: 60, confidence: 0.75 },
+    FUZZY_REFERENCE_MATCH: { weight: 40, confidence: 0.65 },
+    CARRIER_DATE_MATCH: { weight: 30, confidence: 0.55 }
+};
+
+/**
+ * Perform intelligent matching for extracted invoice data
+ */
+async function performIntelligentMatching(validatedData, userId) {
+    try {
+        console.log('🔍 Starting intelligent shipment matching...');
+        
+        // Get user's connected companies for filtering
+        const connectedCompanies = await getUserConnectedCompanies(userId);
+        
+        const matches = [];
+        const shipments = validatedData.shipments || [];
+        
+        for (const invoiceShipment of shipments) {
+            console.log('🔍 Processing shipment:', invoiceShipment.trackingNumber || invoiceShipment.references?.customerRef);
+            
+            // Find potential matches
+            const potentialMatches = await findPotentialMatches(invoiceShipment, connectedCompanies);
+            
+            // Score and rank matches
+            const scoredMatches = await scoreMatches(potentialMatches, invoiceShipment);
+            
+            // Create match result
+            const matchResult = {
+                invoiceShipment: invoiceShipment,
+                matches: scoredMatches,
+                bestMatch: scoredMatches.length > 0 ? scoredMatches[0] : null,
+                confidence: scoredMatches.length > 0 ? scoredMatches[0].confidence : 0,
+                status: determineMatchStatus(scoredMatches),
+                reviewRequired: scoredMatches.length === 0 || scoredMatches[0].confidence < CONFIDENCE_THRESHOLDS.GOOD,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            };
+            
+            matches.push(matchResult);
+        }
+        
+        // Calculate overall matching statistics
+        const stats = calculateMatchingStats(matches);
+        
+        console.log('🎯 Matching completed:', stats);
+        
+        return {
+            success: true,
+            matches: matches,
+            stats: stats,
+            requiresReview: matches.some(m => m.reviewRequired),
+            autoApplicable: matches.filter(m => !m.reviewRequired).length
+        };
+        
+    } catch (error) {
+        console.error('❌ Error in intelligent matching:', error);
+        return {
+            success: false,
+            error: error.message,
+            matches: []
+        };
+    }
+}
+
+/**
+ * Get connected companies for a user
+ */
+async function getUserConnectedCompanies(userId) {
+    try {
+        // Get user document
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            console.warn('User document not found:', userId);
+            return [];
+        }
+        
+        const userData = userDoc.data();
+        const userRole = userData.role || 'user';
+        
+        if (userRole === 'superadmin') {
+            // Super admin sees all companies
+            const companiesSnapshot = await db.collection('companies').get();
+            return companiesSnapshot.docs.map(doc => doc.data().companyID || doc.id);
+        } else if (userRole === 'admin') {
+            // Regular admin sees connected companies
+            return userData.connectedCompanies || [];
+        } else {
+            // Regular user sees only their company
+            return [userData.companyID || userData.companyId].filter(Boolean);
+        }
+    } catch (error) {
+        console.error('Error getting connected companies:', error);
+        return [];
+    }
+}
+
+/**
+ * Find potential shipment matches using multiple strategies
+ */
+async function findPotentialMatches(invoiceShipment, connectedCompanies) {
+    const potentialMatches = new Set(); // Use Set to avoid duplicates
+    
+    // Strategy 1: Exact shipment ID match
+    await tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    
+    // Strategy 2: Exact tracking number match
+    if (invoiceShipment.trackingNumber) {
+        await tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    }
+    
+    // Strategy 3: Booking reference match (eShipPlus, etc.)
+    if (invoiceShipment.references?.invoiceRef || invoiceShipment.references?.customerRef) {
+        await tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    }
+    
+    // Strategy 4: Reference number variations
+    if (invoiceShipment.references) {
+        await tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    }
+    
+    // Strategy 5: Date and amount correlation
+    await tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    
+    return Array.from(potentialMatches);
+}
+
+/**
+ * Try exact shipment ID matching
+ */
+async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+    // Look for shipment ID in various places
+    const possibleIds = [
+        invoiceShipment.shipmentId,
+        invoiceShipment.references?.customerRef,
+        invoiceShipment.references?.invoiceRef,
+        invoiceShipment.references?.manifestRef,
+        ...(invoiceShipment.references?.other || [])
+    ].filter(Boolean);
+    
+    for (const possibleId of possibleIds) {
+        // Try to match against shipmentID field
+        try {
+            const shipmentQuery = db.collection('shipments').where('shipmentID', '==', possibleId).limit(5);
+            const snapshot = await shipmentQuery.get();
+            
+            snapshot.docs.forEach(doc => {
+                const shipmentData = { id: doc.id, ...doc.data() };
+                if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                    potentialMatches.add(JSON.stringify({
+                        shipment: shipmentData,
+                        matchStrategy: 'EXACT_SHIPMENT_ID',
+                        matchField: 'shipmentID',
+                        matchValue: possibleId
+                    }));
+                }
+            });
+        } catch (error) {
+            console.warn('Warning: Could not search by shipmentID:', error);
+        }
+    }
+}
+
+/**
+ * Try tracking number matching
+ */
+async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+    const trackingNumber = invoiceShipment.trackingNumber;
+    
+    const trackingFields = [
+        'trackingNumber',
+        'carrierBookingConfirmation.trackingNumber',
+        'carrierBookingConfirmation.proNumber',
+        'carrierBookingConfirmation.confirmationNumber'
+    ];
+    
+    for (const field of trackingFields) {
+        try {
+            const shipmentQuery = db.collection('shipments').where(field, '==', trackingNumber).limit(5);
+            const snapshot = await shipmentQuery.get();
+            
+            snapshot.docs.forEach(doc => {
+                const shipmentData = { id: doc.id, ...doc.data() };
+                if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                    potentialMatches.add(JSON.stringify({
+                        shipment: shipmentData,
+                        matchStrategy: 'EXACT_TRACKING_NUMBER',
+                        matchField: field,
+                        matchValue: trackingNumber
+                    }));
+                }
+            });
+        } catch (error) {
+            console.warn(`Warning: Could not search tracking field ${field}:`, error);
+        }
+    }
+}
+
+/**
+ * Try booking reference matching
+ */
+async function tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+    const references = [
+        invoiceShipment.references?.invoiceRef,
+        invoiceShipment.references?.customerRef,
+        invoiceShipment.references?.manifestRef,
+        ...(invoiceShipment.references?.other || [])
+    ].filter(Boolean);
+    
+    const bookingFields = [
+        'selectedRate.BookingReferenceNumber',
+        'selectedRateRef.BookingReferenceNumber',
+        'bookingReferenceNumber',
+        'referenceNumber'
+    ];
+    
+    for (const reference of references) {
+        for (const field of bookingFields) {
+            try {
+                const shipmentQuery = db.collection('shipments').where(field, '==', reference).limit(3);
+                const snapshot = await shipmentQuery.get();
+                
+                snapshot.docs.forEach(doc => {
+                    const shipmentData = { id: doc.id, ...doc.data() };
+                    if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                        potentialMatches.add(JSON.stringify({
+                            shipment: shipmentData,
+                            matchStrategy: 'EXACT_BOOKING_REFERENCE',
+                            matchField: field,
+                            matchValue: reference
+                        }));
+                    }
+                });
+            } catch (error) {
+                console.warn(`Warning: Could not search booking field ${field}:`, error);
+            }
+        }
+    }
+}
+
+/**
+ * Try reference number matching
+ */
+async function tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+    const allReferences = [
+        invoiceShipment.references?.customerRef,
+        invoiceShipment.references?.invoiceRef,
+        ...(invoiceShipment.references?.other || [])
+    ].filter(Boolean);
+    
+    const referenceFields = [
+        'shipmentInfo.shipperReferenceNumber',
+        'shipmentInfo.customerReference',
+        'referenceNumber',
+        'shipperReferenceNumber'
+    ];
+    
+    for (const reference of allReferences) {
+        for (const field of referenceFields) {
+            try {
+                const shipmentQuery = db.collection('shipments').where(field, '==', reference).limit(3);
+                const snapshot = await shipmentQuery.get();
+                
+                snapshot.docs.forEach(doc => {
+                    const shipmentData = { id: doc.id, ...doc.data() };
+                    if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                        potentialMatches.add(JSON.stringify({
+                            shipment: shipmentData,
+                            matchStrategy: 'REFERENCE_NUMBER_MATCH',
+                            matchField: field,
+                            matchValue: reference
+                        }));
+                    }
+                });
+            } catch (error) {
+                console.warn(`Warning: Could not search reference field ${field}:`, error);
+            }
+        }
+    }
+}
+
+/**
+ * Try date and amount correlation matching
+ */
+async function tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+    if (!invoiceShipment.shipmentDate && !invoiceShipment.totalAmount) return;
+    
+    try {
+        const shipmentDate = new Date(invoiceShipment.shipmentDate);
+        const amount = invoiceShipment.totalAmount;
+        
+        // Search within ±3 days of the shipment date
+        const startDate = admin.firestore.Timestamp.fromDate(new Date(shipmentDate.getTime() - 3 * 24 * 60 * 60 * 1000));
+        const endDate = admin.firestore.Timestamp.fromDate(new Date(shipmentDate.getTime() + 3 * 24 * 60 * 60 * 1000));
+        
+        const shipmentQuery = db.collection('shipments')
+            .where('bookedAt', '>=', startDate)
+            .where('bookedAt', '<=', endDate)
+            .limit(20);
+        
+        const snapshot = await shipmentQuery.get();
+        snapshot.docs.forEach(doc => {
+            const shipmentData = { id: doc.id, ...doc.data() };
+            if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                // Check if amounts are similar (within 15%)
+                const shipmentAmount = getShipmentTotalAmount(shipmentData);
+                if (shipmentAmount > 0 && Math.abs(amount - shipmentAmount) / shipmentAmount < 0.15) {
+                    potentialMatches.add(JSON.stringify({
+                        shipment: shipmentData,
+                        matchStrategy: 'DATE_AMOUNT_MATCH',
+                        matchField: 'bookedAt + amount',
+                        matchValue: `${shipmentDate.toISOString().split('T')[0]} + $${amount}`
+                    }));
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.warn('Warning: Could not perform date/amount matching:', error);
+    }
+}
+
+/**
+ * Score potential matches and calculate confidence
+ */
+async function scoreMatches(potentialMatches, invoiceShipment) {
+    const scoredMatches = [];
+    
+    // Parse potential matches from JSON strings and remove duplicates
+    const uniqueMatches = new Map();
+    
+    potentialMatches.forEach(matchStr => {
+        try {
+            const match = JSON.parse(matchStr);
+            const key = match.shipment.id;
+            
+            if (!uniqueMatches.has(key) || 
+                MATCHING_STRATEGIES[match.matchStrategy]?.weight > 
+                MATCHING_STRATEGIES[uniqueMatches.get(key).matchStrategy]?.weight) {
+                uniqueMatches.set(key, match);
+            }
+        } catch (error) {
+            console.warn('Error parsing match:', error);
+        }
+    });
+    
+    // Score each unique match
+    for (const match of uniqueMatches.values()) {
+        const confidence = calculateMatchConfidence(match, invoiceShipment);
+        
+        scoredMatches.push({
+            shipment: match.shipment,
+            matchStrategy: match.matchStrategy,
+            matchField: match.matchField,
+            matchValue: match.matchValue,
+            confidence: confidence,
+            details: generateMatchDetails(match, invoiceShipment)
+        });
+    }
+    
+    // Sort by confidence (highest first)
+    return scoredMatches.sort((a, b) => b.confidence - a.confidence);
+}
+
+/**
+ * Helper functions
+ */
+function calculateMatchConfidence(match, invoiceShipment) {
+    let confidence = MATCHING_STRATEGIES[match.matchStrategy]?.confidence || 0.5;
+    
+    // Date proximity bonus
+    if (match.shipment.bookedAt && invoiceShipment.shipmentDate) {
+        const shipmentDate = match.shipment.bookedAt.toDate ? match.shipment.bookedAt.toDate() : new Date(match.shipment.bookedAt);
+        const invoiceDate = new Date(invoiceShipment.shipmentDate);
+        const daysDiff = Math.abs((shipmentDate - invoiceDate) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff <= 1) confidence += 0.05;
+        else if (daysDiff <= 3) confidence += 0.02;
+    }
+    
+    // Amount proximity bonus
+    if (invoiceShipment.totalAmount > 0) {
+        const shipmentAmount = getShipmentTotalAmount(match.shipment);
+        if (shipmentAmount > 0) {
+            const amountDiff = Math.abs(invoiceShipment.totalAmount - shipmentAmount) / shipmentAmount;
+            if (amountDiff <= 0.05) confidence += 0.05; // Within 5%
+            else if (amountDiff <= 0.10) confidence += 0.02; // Within 10%
+        }
+    }
+    
+    return Math.min(confidence, 0.99); // Cap at 99%
+}
+
+function isCompanyAccessible(shipmentData, connectedCompanies) {
+    if (!connectedCompanies || connectedCompanies.length === 0) return true;
+    
+    const shipmentCompany = shipmentData.companyID || shipmentData.companyId;
+    return connectedCompanies.includes(shipmentCompany);
+}
+
+function getShipmentTotalAmount(shipmentData) {
+    return shipmentData.markupRates?.totalCharges ||
+           shipmentData.totalCharges ||
+           shipmentData.selectedRate?.totalCharges ||
+           (shipmentData.manualRates?.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0)) ||
+           0;
+}
+
+function determineMatchStatus(matches) {
+    if (matches.length === 0) return 'NO_MATCH';
+    
+    const bestConfidence = matches[0].confidence;
+    
+    if (bestConfidence >= CONFIDENCE_THRESHOLDS.EXCELLENT) return 'EXCELLENT_MATCH';
+    if (bestConfidence >= CONFIDENCE_THRESHOLDS.GOOD) return 'GOOD_MATCH';
+    if (bestConfidence >= CONFIDENCE_THRESHOLDS.FAIR) return 'FAIR_MATCH';
+    return 'POOR_MATCH';
+}
+
+function generateMatchDetails(match, invoiceShipment) {
+    return {
+        strategy: match.matchStrategy,
+        field: match.matchField,
+        value: match.matchValue,
+        shipmentId: match.shipment.shipmentID || match.shipment.id,
+        companyId: match.shipment.companyID || match.shipment.companyId,
+        trackingNumber: match.shipment.trackingNumber,
+        amount: getShipmentTotalAmount(match.shipment),
+        invoiceAmount: invoiceShipment.totalAmount
+    };
+}
+
+function calculateMatchingStats(matches) {
+    const stats = {
+        totalShipments: matches.length,
+        excellentMatches: 0,
+        goodMatches: 0,
+        fairMatches: 0,
+        poorMatches: 0,
+        noMatches: 0,
+        requireReview: 0,
+        autoApplicable: 0
+    };
+    
+    matches.forEach(match => {
+        const confidence = match.confidence;
+        
+        if (confidence >= CONFIDENCE_THRESHOLDS.EXCELLENT) {
+            stats.excellentMatches++;
+            stats.autoApplicable++;
+        } else if (confidence >= CONFIDENCE_THRESHOLDS.GOOD) {
+            stats.goodMatches++;
+        } else if (confidence >= CONFIDENCE_THRESHOLDS.FAIR) {
+            stats.fairMatches++;
+            stats.requireReview++;
+        } else if (confidence >= CONFIDENCE_THRESHOLDS.POOR) {
+            stats.poorMatches++;
+            stats.requireReview++;
+        } else {
+            stats.noMatches++;
+            stats.requireReview++;
+        }
+    });
+    
+    return stats;
+}
+
+function calculateAverageConfidence(matches) {
+    if (!matches || matches.length === 0) return 0;
+    
+    const totalConfidence = matches.reduce((sum, match) => sum + (match.confidence || 0), 0);
+    return totalConfidence / matches.length;
+}
 
 module.exports = {
     processPdfFile,

@@ -105,6 +105,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
 
         // Handle different data structures
         let shipments = [];
+        let matchingResults = null;
 
         if (results.extractedData?.shipments) {
             shipments = results.extractedData.shipments;
@@ -114,6 +115,12 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
             shipments = results.shipments;
         } else if (Array.isArray(results.extractedData)) {
             shipments = results.extractedData;
+        }
+
+        // Extract matching results if available
+        if (results.matchingResults) {
+            matchingResults = results.matchingResults;
+            console.log('Found matching results:', matchingResults.stats);
         }
 
         console.log('Found shipments:', shipments);
@@ -140,6 +147,16 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                 }];
             }
 
+            // Find corresponding match result
+            let matchResult = null;
+            if (matchingResults && matchingResults.matches) {
+                matchResult = matchingResults.matches.find(match => {
+                    return match.invoiceShipment === shipment ||
+                        match.invoiceShipment?.trackingNumber === shipment.trackingNumber ||
+                        match.invoiceShipment?.references?.customerRef === (shipment.references?.customerRef || shipment.shipmentId);
+                });
+            }
+
             return {
                 id: shipment.id || `shipment-${index + 1}`,
                 shipmentId: shipment.shipmentId || shipment.trackingNumber || `SHIP-${String(index + 1).padStart(3, '0')}`,
@@ -159,7 +176,9 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                 references: shipment.references || {},
                 specialServices: shipment.specialServices || [],
                 // Store the original shipment data for detailed view
-                originalData: shipment
+                originalData: shipment,
+                // Include matching information
+                matchResult: matchResult
             };
         });
     };
@@ -198,6 +217,79 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
 
     const calculateTotal = (charges) => {
         return charges.reduce((sum, charge) => sum + charge.amount, 0);
+    };
+
+    // Render match status with appropriate styling
+    const renderMatchStatus = (row) => {
+        if (!row.matchResult) {
+            return (
+                <Chip
+                    label="No Match"
+                    size="small"
+                    color="default"
+                    sx={{ fontSize: '10px', backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                />
+            );
+        }
+
+        const { confidence, status, matches, reviewRequired } = row.matchResult;
+
+        // Determine chip color and icon based on status
+        let chipColor = 'default';
+        let backgroundColor = '#f3f4f6';
+        let textColor = '#6b7280';
+        let icon = null;
+
+        if (status === 'EXCELLENT_MATCH') {
+            chipColor = 'success';
+            backgroundColor = '#dcfce7';
+            textColor = '#166534';
+            icon = <CheckCompleteIcon sx={{ fontSize: '12px' }} />;
+        } else if (status === 'GOOD_MATCH') {
+            chipColor = 'info';
+            backgroundColor = '#dbeafe';
+            textColor = '#1e40af';
+            icon = <CheckIcon sx={{ fontSize: '12px' }} />;
+        } else if (status === 'FAIR_MATCH') {
+            chipColor = 'warning';
+            backgroundColor = '#fef3c7';
+            textColor = '#d97706';
+            icon = <PendingIcon sx={{ fontSize: '12px' }} />;
+        } else {
+            chipColor = 'error';
+            backgroundColor = '#fee2e2';
+            textColor = '#dc2626';
+            icon = <ErrorIcon sx={{ fontSize: '12px' }} />;
+        }
+
+        const confidencePercent = Math.round(confidence * 100);
+        const matchCount = matches?.length || 0;
+
+        return (
+            <Box>
+                <Chip
+                    label={`${confidencePercent}%`}
+                    size="small"
+                    icon={icon}
+                    sx={{
+                        fontSize: '10px',
+                        backgroundColor: backgroundColor,
+                        color: textColor,
+                        '& .MuiChip-icon': { color: textColor }
+                    }}
+                />
+                {matchCount > 1 && (
+                    <Typography variant="caption" sx={{ fontSize: '9px', color: '#6b7280', display: 'block', mt: 0.5 }}>
+                        +{matchCount - 1} more
+                    </Typography>
+                )}
+                {reviewRequired && (
+                    <Typography variant="caption" sx={{ fontSize: '9px', color: '#dc2626', display: 'block' }}>
+                        Review Required
+                    </Typography>
+                )}
+            </Box>
+        );
     };
 
     const formatCurrency = (amount, currency = 'CAD') => {
@@ -424,6 +516,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Destination</TableCell>
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Charges</TableCell>
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
+                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Match Status</TableCell>
                             <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
@@ -490,6 +583,9 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                                     {formatCurrency(row.totalAmount, row.currency)}
                                 </TableCell>
                                 <TableCell sx={{ fontSize: '12px' }}>
+                                    {renderMatchStatus(row)}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '12px' }}>
                                     <Button
                                         size="small"
                                         variant="outlined"
@@ -511,22 +607,105 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                     Summary
                 </Typography>
                 <Grid container spacing={2}>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
                             Total Shipments: <strong>{tableData.length}</strong>
                         </Typography>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
                             Total Amount: <strong>{formatCurrency(tableData.reduce((sum, row) => sum + row.totalAmount, 0))}</strong>
                         </Typography>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
                             Carriers: <strong>{[...new Set(tableData.map(row => row.carrier))].join(', ')}</strong>
                         </Typography>
                     </Grid>
+                    <Grid item xs={12} md={3}>
+                        {pdfResults.matchingResults ? (
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Matches: <strong style={{ color: '#059669' }}>{pdfResults.matchingResults.stats?.autoApplicable || 0}</strong> auto,
+                                <strong style={{ color: '#d97706' }}> {pdfResults.matchingResults.stats?.requireReview || 0}</strong> review
+                            </Typography>
+                        ) : (
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                Matching: <strong>Not performed</strong>
+                            </Typography>
+                        )}
+                    </Grid>
                 </Grid>
+
+                {/* Matching Statistics */}
+                {pdfResults.matchingResults && (
+                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                            Matching Results
+                        </Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#059669' }}>
+                                        {pdfResults.matchingResults.stats?.excellentMatches || 0}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Excellent
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#2563eb' }}>
+                                        {pdfResults.matchingResults.stats?.goodMatches || 0}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Good
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#d97706' }}>
+                                        {pdfResults.matchingResults.stats?.fairMatches || 0}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Fair
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#dc2626' }}>
+                                        {pdfResults.matchingResults.stats?.poorMatches || 0}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Poor
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#6b7280' }}>
+                                        {pdfResults.matchingResults.stats?.noMatches || 0}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        No Match
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                            <Grid item xs={6} md={2}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 700, color: '#7c3aed' }}>
+                                        {Math.round((pdfResults.matchingResults.metadata?.matchingStats?.averageConfidence || 0) * 100)}%
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Avg Score
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        </Grid>
+                    </Box>
+                )}
             </Box>
         </Box>
     );
