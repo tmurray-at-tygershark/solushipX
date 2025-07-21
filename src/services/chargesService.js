@@ -877,9 +877,13 @@ function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmen
             manualRates: shipment.manualRates,
             isQuickShip: shipment.creationMethod === 'quickship',
             status: shipment.invoiceStatus || 'uninvoiced',
+            shipmentStatus: shipment.status, // Shipment delivery status for status chips
+            shipmentSubStatus: shipment.subStatus, // Sub-status for enhanced status chips
+            hasManualOverride: shipment.statusOverride?.isManual || false, // Manual override indicator
             shipmentDate: shipmentDate,
             route: formatRoute(shipment),
             carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+            carrierName: shipment.selectedCarrier || shipment.carrier || 'N/A', // Add carrierName field
             trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
             shipmentData: shipment
         });
