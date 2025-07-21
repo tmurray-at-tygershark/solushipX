@@ -206,11 +206,11 @@ const processPdfFile = onCall(async (request) => {
             const pdfAnalysis = await analyzePdfFile(uploadUrl);
             await updateProcessingStep(uploadDoc.id, 'pdf_analysis', 'completed', pdfAnalysis);
 
-            // Step 2: Use provided carrier or detect from PDF
-            console.log('Step 2: Determining carrier...');
+            // Step 2: Enhanced carrier detection with intelligent multi-document parsing
+            console.log('Step 2: Enhanced carrier detection...');
             let carrierInfo;
             
-            if (carrier && carrier !== 'unknown') {
+            if (carrier && carrier !== 'unknown' && carrier !== 'auto-detect') {
                 // Use the user-provided carrier
                 const carrierTemplate = carrierTemplates[carrier];
                 carrierInfo = {
@@ -222,11 +222,10 @@ const processPdfFile = onCall(async (request) => {
                 };
                 console.log(`Using user-selected carrier: ${carrierInfo.name}`);
             } else {
-                // Auto-detect carrier from PDF
-                console.log('No carrier provided, auto-detecting from PDF...');
-                const pdfSample = await downloadPdfSample(uploadUrl);
-                carrierInfo = await detectCarrierFromPdfSample(pdfSample, fileName);
-                console.log(`Auto-detected carrier: ${carrierInfo.name}`);
+                // Enhanced AI-powered carrier detection with multi-document support
+                console.log('Using AI-powered auto-detection with multi-document parsing...');
+                carrierInfo = await enhancedCarrierDetection(uploadUrl, fileName);
+                console.log(`Auto-detected carrier: ${carrierInfo.name} (confidence: ${carrierInfo.confidence})`);
             }
             
             await updateProcessingStep(uploadDoc.id, 'carrier_detection', 'completed', carrierInfo);
@@ -249,14 +248,17 @@ const processPdfFile = onCall(async (request) => {
                 validationScore: validatedData.validation?.confidence || 1.0
             });
             
-            // Step 5: Intelligent shipment matching
-            console.log('Step 5: Starting intelligent shipment matching...');
-            const matchingResults = await performIntelligentMatching(validatedData, request.auth.uid);
+            // Step 5: Intelligent shipment matching with carrier filtering
+            console.log('Step 5: Starting intelligent carrier-filtered shipment matching...');
+            const matchingResults = await performIntelligentMatching(validatedData, request.auth.uid, carrierInfo);
             await updateProcessingStep(uploadDoc.id, 'shipment_matching', 'completed', {
                 totalShipments: matchingResults.stats?.totalShipments || 0,
                 matchedShipments: matchingResults.stats?.autoApplicable || 0,
                 requiresReview: matchingResults.stats?.requireReview || 0,
-                averageConfidence: calculateAverageConfidence(matchingResults.matches)
+                averageConfidence: calculateAverageConfidence(matchingResults.matches),
+                carrierFiltered: matchingResults.stats?.carrierFiltered || false,
+                detectedCarrier: matchingResults.stats?.detectedCarrier || 'Unknown',
+                carrierConfidence: matchingResults.stats?.carrierConfidence || 0
             });
             
             // Step 6: Generate final output with export capabilities
@@ -3133,6 +3135,184 @@ const retryPdfProcessing = onCall(async (request) => {
 });
 
 /**
+ * Enhanced AI-powered carrier detection with multi-document support
+ * Detects carrier and document types from complex PDFs
+ */
+async function enhancedCarrierDetection(pdfUrl, fileName) {
+    try {
+        console.log('🔍 Starting enhanced carrier detection...');
+        
+        // Download PDF for analysis
+        const pdfBuffer = await downloadPdfSample(pdfUrl);
+        
+        // Use Gemini 2.5 Flash for intelligent carrier and document type detection
+        const vertex_ai = new VertexAI({
+            project: 'solushipx',
+            location: 'us-central1',
+            keyFilename: './service-account.json'
+        });
+        
+        const generativeModel = vertex_ai.getGenerativeModel({
+            model: 'gemini-2.5-flash',
+        });
+        
+        const prompt = `Analyze this shipping document PDF and identify:
+
+1. CARRIER IDENTIFICATION:
+   - Which shipping carrier issued this document?
+   - Look for logos, company names, branding, and contact information
+   - Common carriers: DHL, FedEx, UPS, Purolator, Canada Post, Canpar, TNT
+
+2. DOCUMENT TYPES PRESENT:
+   - Invoice (billing document with charges)
+   - Bill of Lading (BOL) - shipping manifest
+   - Carrier Confirmation (booking confirmation)
+   - Tracking document
+   - Multi-page document with multiple types
+
+3. KEY IDENTIFIERS FOUND:
+   - Shipment IDs or reference numbers
+   - Tracking numbers or barcodes
+   - BOL numbers
+   - Confirmation numbers
+   - Invoice numbers
+   - Account numbers
+
+4. CARRIER-SPECIFIC PATTERNS:
+   - DHL: Air waybill numbers (10-12 digits), YHMR invoice format
+   - FedEx: Tracking numbers starting with specific patterns
+   - UPS: Tracking numbers with 1Z format
+   - Purolator: Specific tracking formats
+   - Canada Post: 16-digit tracking numbers
+   - Canpar: Barcode/tracking patterns
+
+Return ONLY a JSON object with this structure:
+{
+    "carrier": {
+        "id": "carrier_id_lowercase",
+        "name": "Full Carrier Name",
+        "confidence": 0.95,
+        "detectedFrom": "logo|header|contact_info|tracking_pattern|invoice_format",
+        "evidence": ["specific evidence found"]
+    },
+    "documentTypes": ["invoice", "bol", "confirmation", "tracking"],
+    "identifiers": {
+        "shipmentIds": ["ID1", "ID2"],
+        "trackingNumbers": ["TRACK1", "TRACK2"],
+        "bolNumbers": ["BOL1"],
+        "confirmationNumbers": ["CONF1"],
+        "invoiceNumbers": ["INV1"],
+        "accountNumbers": ["ACC1"]
+    },
+    "multiDocument": true/false,
+    "pages": 1-N
+}`;
+
+        const request = {
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        {
+                            inlineData: {
+                                mimeType: 'application/pdf',
+                                data: pdfBuffer.toString('base64')
+                            }
+                        },
+                        { text: prompt }
+                    ]
+                }
+            ]
+        };
+
+        let result;
+        let lastError;
+        
+        // Retry logic for carrier detection
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                result = await generativeModel.generateContent(request);
+                break;
+            } catch (error) {
+                lastError = error;
+                console.error(`Enhanced carrier detection attempt ${attempt} failed:`, error.message);
+                if (attempt < 2 && (error.message?.includes('deadline-exceeded') || error.code === 4)) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+                throw error;
+            }
+        }
+        
+        if (!result && lastError) {
+            throw lastError;
+        }
+        
+        // Parse the AI response
+        let detectionResult = null;
+        if (result?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            const responseText = result.response.candidates[0].content.parts[0].text.trim();
+            
+            try {
+                // Extract JSON from response
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    detectionResult = JSON.parse(jsonMatch[0]);
+                }
+            } catch (parseError) {
+                console.error('Error parsing AI detection result:', parseError);
+            }
+        }
+        
+        // Fallback to basic detection if AI parsing fails
+        if (!detectionResult || !detectionResult.carrier) {
+            console.log('AI detection failed, falling back to basic detection...');
+            return await detectCarrierFromPdfSample(pdfBuffer, fileName);
+        }
+        
+        // Map detected carrier to internal format
+        const carrierId = detectionResult.carrier.id || 'unknown';
+        const carrierTemplate = carrierTemplates[carrierId] || {
+            id: 'unknown',
+            name: detectionResult.carrier.name || 'Unknown Carrier',
+            format: 'invoice',
+            confidence: 0.5
+        };
+        
+        return {
+            id: carrierId,
+            name: carrierTemplate.name || detectionResult.carrier.name,
+            format: carrierTemplate.format || 'invoice',
+            confidence: Math.min(detectionResult.carrier.confidence || 0.8, 0.99),
+            detectedFrom: 'enhanced_ai_detection',
+            documentTypes: detectionResult.documentTypes || ['invoice'],
+            identifiers: detectionResult.identifiers || {},
+            multiDocument: detectionResult.multiDocument || false,
+            pages: detectionResult.pages || 1,
+            evidence: detectionResult.carrier.evidence || []
+        };
+        
+    } catch (error) {
+        console.error('Enhanced carrier detection failed:', error);
+        
+        // Fallback to basic detection
+        try {
+            const pdfBuffer = await downloadPdfSample(pdfUrl);
+            return await detectCarrierFromPdfSample(pdfBuffer, fileName);
+        } catch (fallbackError) {
+            console.error('Fallback detection also failed:', fallbackError);
+            return {
+                id: 'unknown',
+                name: 'Unknown Carrier',
+                format: 'invoice',
+                confidence: 0.3,
+                detectedFrom: 'fallback'
+            };
+        }
+    }
+}
+
+/**
  * Intelligent Shipment Matching for AP Processing
  * Matches extracted invoice data to existing shipments
  */
@@ -3159,9 +3339,10 @@ const MATCHING_STRATEGIES = {
 /**
  * Perform intelligent matching for extracted invoice data
  */
-async function performIntelligentMatching(validatedData, userId) {
+async function performIntelligentMatching(validatedData, userId, detectedCarrier = null) {
     try {
-        console.log('🔍 Starting intelligent shipment matching...');
+        console.log('🔍 Starting intelligent shipment matching with carrier filtering...');
+        console.log(`📋 Detected carrier: ${detectedCarrier?.name || 'None'} (confidence: ${detectedCarrier?.confidence || 'N/A'})`);
         
         // Get user's connected companies for filtering
         const connectedCompanies = await getUserConnectedCompanies(userId);
@@ -3172,8 +3353,8 @@ async function performIntelligentMatching(validatedData, userId) {
         for (const invoiceShipment of shipments) {
             console.log('🔍 Processing shipment:', invoiceShipment.trackingNumber || invoiceShipment.references?.customerRef);
             
-            // Find potential matches
-            const potentialMatches = await findPotentialMatches(invoiceShipment, connectedCompanies);
+            // Find potential matches with carrier filtering
+            const potentialMatches = await findPotentialMatches(invoiceShipment, connectedCompanies, detectedCarrier);
             
             // Score and rank matches
             const scoredMatches = await scoreMatches(potentialMatches, invoiceShipment);
@@ -3186,6 +3367,8 @@ async function performIntelligentMatching(validatedData, userId) {
                 confidence: scoredMatches.length > 0 ? scoredMatches[0].confidence : 0,
                 status: determineMatchStatus(scoredMatches),
                 reviewRequired: scoredMatches.length === 0 || scoredMatches[0].confidence < CONFIDENCE_THRESHOLDS.GOOD,
+                carrierFiltered: detectedCarrier ? true : false,
+                detectedCarrier: detectedCarrier?.name || 'Unknown',
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             };
             
@@ -3195,14 +3378,20 @@ async function performIntelligentMatching(validatedData, userId) {
         // Calculate overall matching statistics
         const stats = calculateMatchingStats(matches);
         
-        console.log('🎯 Matching completed:', stats);
+        // Add carrier-specific statistics
+        stats.carrierFiltered = detectedCarrier ? true : false;
+        stats.detectedCarrier = detectedCarrier?.name || 'Unknown';
+        stats.carrierConfidence = detectedCarrier?.confidence || 0;
+        
+        console.log('🎯 Carrier-filtered matching completed:', stats);
         
         return {
             success: true,
             matches: matches,
             stats: stats,
             requiresReview: matches.some(m => m.reviewRequired),
-            autoApplicable: matches.filter(m => !m.reviewRequired).length
+            autoApplicable: matches.filter(m => !m.reviewRequired).length,
+            carrierInfo: detectedCarrier
         };
         
     } catch (error) {
@@ -3248,39 +3437,98 @@ async function getUserConnectedCompanies(userId) {
 }
 
 /**
- * Find potential shipment matches using multiple strategies
+ * Check if shipment carrier matches detected carrier from invoice
  */
-async function findPotentialMatches(invoiceShipment, connectedCompanies) {
+function isCarrierMatch(shipmentData, detectedCarrier) {
+    if (!detectedCarrier || detectedCarrier.id === 'unknown') {
+        return true; // If no carrier detected, allow all matches
+    }
+    
+    // Get carrier information from shipment
+    const shipmentCarriers = [
+        shipmentData.carrier,
+        shipmentData.selectedRate?.carrier,
+        shipmentData.selectedRateRef?.carrier,
+        shipmentData.selectedRate?.displayCarrierId,
+        shipmentData.selectedRateRef?.displayCarrierId,
+        shipmentData.selectedRate?.sourceCarrierName,
+        shipmentData.selectedRateRef?.sourceCarrierName
+    ].filter(Boolean).map(c => c.toLowerCase());
+    
+    // Check for carrier name matches
+    const detectedCarrierName = detectedCarrier.name.toLowerCase();
+    const detectedCarrierId = detectedCarrier.id.toLowerCase();
+    
+    // Direct matches
+    if (shipmentCarriers.some(sc => 
+        sc.includes(detectedCarrierId) || 
+        detectedCarrierName.includes(sc) ||
+        sc.includes(detectedCarrierName)
+    )) {
+        return true;
+    }
+    
+    // Carrier mapping for common variations
+    const carrierMappings = {
+        'dhl': ['dhl', 'dhl express', 'dhl ecommerce'],
+        'fedex': ['fedex', 'federal express', 'fedex ground', 'fedex express'],
+        'ups': ['ups', 'united parcel service', 'ups ground', 'ups express'],
+        'purolator': ['purolator', 'purolator courier', 'purolator ground'],
+        'canadapost': ['canada post', 'canadapost', 'postes canada'],
+        'canpar': ['canpar', 'canpar express', 'canpar courier'],
+        'tnt': ['tnt', 'tnt express']
+    };
+    
+    for (const [standard, variations] of Object.entries(carrierMappings)) {
+        if ((detectedCarrierId === standard || variations.includes(detectedCarrierName)) &&
+            shipmentCarriers.some(sc => variations.some(v => sc.includes(v)))) {
+            return true;
+        }
+    }
+    
+    console.log(`Carrier mismatch: shipment carriers [${shipmentCarriers.join(', ')}] vs detected ${detectedCarrierName}`);
+    return false; // No carrier match found
+}
+
+/**
+ * Find potential shipment matches using multiple strategies with carrier filtering
+ */
+async function findPotentialMatches(invoiceShipment, connectedCompanies, detectedCarrier = null) {
     const potentialMatches = new Set(); // Use Set to avoid duplicates
     
+    console.log(`🔍 Finding matches for ${invoiceShipment.trackingNumber || invoiceShipment.references?.customerRef || 'shipment'} with carrier filter: ${detectedCarrier?.name || 'none'}`);
+    
     // Strategy 1: Exact shipment ID match
-    await tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    await tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier);
     
     // Strategy 2: Exact tracking number match
     if (invoiceShipment.trackingNumber) {
-        await tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies);
+        await tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier);
     }
     
     // Strategy 3: Booking reference match (eShipPlus, etc.)
     if (invoiceShipment.references?.invoiceRef || invoiceShipment.references?.customerRef) {
-        await tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies);
+        await tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier);
     }
     
     // Strategy 4: Reference number variations
     if (invoiceShipment.references) {
-        await tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies);
+        await tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier);
     }
     
     // Strategy 5: Date and amount correlation
-    await tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies);
+    await tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier);
+    
+    const matchCount = Array.from(potentialMatches).length;
+    console.log(`🎯 Found ${matchCount} potential matches with carrier filtering`);
     
     return Array.from(potentialMatches);
 }
 
 /**
- * Try exact shipment ID matching
+ * Try exact shipment ID matching with carrier filtering
  */
-async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     // Look for shipment ID in various places
     const possibleIds = [
         invoiceShipment.shipmentId,
@@ -3291,14 +3539,24 @@ async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connec
     ].filter(Boolean);
     
     for (const possibleId of possibleIds) {
-        // Try to match against shipmentID field
+        // Try to match against shipmentID field with carrier filtering
         try {
-            const shipmentQuery = db.collection('shipments').where('shipmentID', '==', possibleId).limit(5);
+            let shipmentQuery = db.collection('shipments').where('shipmentID', '==', possibleId);
+            
+            // Apply carrier filtering for improved accuracy
+            if (detectedCarrier && detectedCarrier.id !== 'unknown') {
+                // Add carrier-specific filtering to reduce false matches
+                shipmentQuery = shipmentQuery.limit(10); // Increase limit since we're filtering
+            } else {
+                shipmentQuery = shipmentQuery.limit(5);
+            }
+            
             const snapshot = await shipmentQuery.get();
             
             snapshot.docs.forEach(doc => {
                 const shipmentData = { id: doc.id, ...doc.data() };
-                if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                if (isCompanyAccessible(shipmentData, connectedCompanies) && 
+                    isCarrierMatch(shipmentData, detectedCarrier)) {
                     potentialMatches.add(JSON.stringify({
                         shipment: shipmentData,
                         matchStrategy: 'EXACT_SHIPMENT_ID',
@@ -3314,9 +3572,9 @@ async function tryExactShipmentIdMatch(potentialMatches, invoiceShipment, connec
 }
 
 /**
- * Try tracking number matching
+ * Try tracking number matching with carrier filtering
  */
-async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     const trackingNumber = invoiceShipment.trackingNumber;
     
     const trackingFields = [
@@ -3328,12 +3586,13 @@ async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connect
     
     for (const field of trackingFields) {
         try {
-            const shipmentQuery = db.collection('shipments').where(field, '==', trackingNumber).limit(5);
+            const shipmentQuery = db.collection('shipments').where(field, '==', trackingNumber).limit(10);
             const snapshot = await shipmentQuery.get();
             
             snapshot.docs.forEach(doc => {
                 const shipmentData = { id: doc.id, ...doc.data() };
-                if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                if (isCompanyAccessible(shipmentData, connectedCompanies) &&
+                    isCarrierMatch(shipmentData, detectedCarrier)) {
                     potentialMatches.add(JSON.stringify({
                         shipment: shipmentData,
                         matchStrategy: 'EXACT_TRACKING_NUMBER',
@@ -3351,7 +3610,7 @@ async function tryTrackingNumberMatch(potentialMatches, invoiceShipment, connect
 /**
  * Try booking reference matching
  */
-async function tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+async function tryBookingReferenceMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     const references = [
         invoiceShipment.references?.invoiceRef,
         invoiceShipment.references?.customerRef,
@@ -3372,17 +3631,18 @@ async function tryBookingReferenceMatch(potentialMatches, invoiceShipment, conne
                 const shipmentQuery = db.collection('shipments').where(field, '==', reference).limit(3);
                 const snapshot = await shipmentQuery.get();
                 
-                snapshot.docs.forEach(doc => {
-                    const shipmentData = { id: doc.id, ...doc.data() };
-                    if (isCompanyAccessible(shipmentData, connectedCompanies)) {
-                        potentialMatches.add(JSON.stringify({
-                            shipment: shipmentData,
-                            matchStrategy: 'EXACT_BOOKING_REFERENCE',
-                            matchField: field,
-                            matchValue: reference
-                        }));
-                    }
-                });
+                            snapshot.docs.forEach(doc => {
+                const shipmentData = { id: doc.id, ...doc.data() };
+                if (isCompanyAccessible(shipmentData, connectedCompanies) &&
+                    isCarrierMatch(shipmentData, detectedCarrier)) {
+                    potentialMatches.add(JSON.stringify({
+                        shipment: shipmentData,
+                        matchStrategy: 'EXACT_BOOKING_REFERENCE',
+                        matchField: field,
+                        matchValue: reference
+                    }));
+                }
+            });
             } catch (error) {
                 console.warn(`Warning: Could not search booking field ${field}:`, error);
             }
@@ -3393,7 +3653,7 @@ async function tryBookingReferenceMatch(potentialMatches, invoiceShipment, conne
 /**
  * Try reference number matching
  */
-async function tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+async function tryReferenceNumberMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     const allReferences = [
         invoiceShipment.references?.customerRef,
         invoiceShipment.references?.invoiceRef,
@@ -3415,7 +3675,8 @@ async function tryReferenceNumberMatch(potentialMatches, invoiceShipment, connec
                 
                 snapshot.docs.forEach(doc => {
                     const shipmentData = { id: doc.id, ...doc.data() };
-                    if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+                    if (isCompanyAccessible(shipmentData, connectedCompanies) &&
+                        isCarrierMatch(shipmentData, detectedCarrier)) {
                         potentialMatches.add(JSON.stringify({
                             shipment: shipmentData,
                             matchStrategy: 'REFERENCE_NUMBER_MATCH',
@@ -3434,7 +3695,7 @@ async function tryReferenceNumberMatch(potentialMatches, invoiceShipment, connec
 /**
  * Try date and amount correlation matching
  */
-async function tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies) {
+async function tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCompanies, detectedCarrier = null) {
     if (!invoiceShipment.shipmentDate && !invoiceShipment.totalAmount) return;
     
     try {
@@ -3453,7 +3714,8 @@ async function tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCo
         const snapshot = await shipmentQuery.get();
         snapshot.docs.forEach(doc => {
             const shipmentData = { id: doc.id, ...doc.data() };
-            if (isCompanyAccessible(shipmentData, connectedCompanies)) {
+            if (isCompanyAccessible(shipmentData, connectedCompanies) &&
+                isCarrierMatch(shipmentData, detectedCarrier)) {
                 // Check if amounts are similar (within 15%)
                 const shipmentAmount = getShipmentTotalAmount(shipmentData);
                 if (shipmentAmount > 0 && Math.abs(amount - shipmentAmount) / shipmentAmount < 0.15) {

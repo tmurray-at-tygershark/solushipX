@@ -743,7 +743,7 @@ const APProcessing = () => {
     const [showEdiResults, setShowEdiResults] = useState(false);
     const [showPdfResults, setShowPdfResults] = useState(false);
     const [processingFiles, setProcessingFiles] = useState([]);
-    const [selectedCarrier, setSelectedCarrier] = useState('');
+    const [selectedCarrier, setSelectedCarrier] = useState('auto-detect'); // Default to AI auto-detection
     const [shipmentDetailDialog, setShipmentDetailDialog] = useState(false);
     const [selectedShipmentDetail, setSelectedShipmentDetail] = useState(null);
 
@@ -762,8 +762,19 @@ const APProcessing = () => {
         processingTime: 0
     });
 
-    // Carrier templates for PDF parsing - Enhanced with additional carriers
+    // Carrier templates for PDF parsing - Enhanced with additional carriers and auto-detection
     const carrierTemplates = [
+        {
+            id: 'auto-detect',
+            name: '🤖 Auto-Detect Carrier',
+            supported: true,
+            confidence: 0.98,
+            formats: ['invoice', 'bol', 'confirmation', 'multi-document'],
+            features: ['ai-detection', 'multi-document', 'smart-parsing', 'all-carriers'],
+            description: 'AI automatically detects carrier and parses multi-document PDFs',
+            icon: '🎯',
+            intelligent: true
+        },
         {
             id: 'purolator',
             name: 'Purolator',
@@ -983,10 +994,10 @@ const APProcessing = () => {
 
     // Single file upload handler using cloud function to bypass CORS
     const handleSingleFileUpload = async (file) => {
-        // Check if it's a PDF and no carrier is selected
-        if (file.type === 'application/pdf' && (!selectedCarrier || selectedCarrier === '')) {
+        // Check if it's a PDF and no carrier is selected (auto-detect is always valid)
+        if (file.type === 'application/pdf' && (!selectedCarrier || selectedCarrier === '') && selectedCarrier !== 'auto-detect') {
             console.log('PDF upload blocked - selectedCarrier:', selectedCarrier, 'file type:', file.type);
-            enqueueSnackbar('Please select a carrier before uploading PDF files', { variant: 'warning' });
+            enqueueSnackbar('Please select a carrier or use Auto-Detect before uploading PDF files', { variant: 'warning' });
             return;
         }
 
@@ -1666,17 +1677,17 @@ const APProcessing = () => {
                             {/* Carrier Selection for PDF */}
                             <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
                                 <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
-                                    PDF Carrier Selection (Required for PDF uploads)
+                                    🤖 Smart PDF Processing (AI-Powered)
                                 </Typography>
                                 <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Select Carrier for PDF Processing</InputLabel>
+                                    <InputLabel sx={{ fontSize: '12px' }}>Choose Processing Method</InputLabel>
                                     <Select
                                         value={selectedCarrier}
                                         onChange={(e) => {
                                             console.log('Carrier selected:', e.target.value);
                                             setSelectedCarrier(e.target.value);
                                         }}
-                                        label="Select Carrier for PDF Processing"
+                                        label="Choose Processing Method"
                                         sx={{
                                             fontSize: '12px',
                                             backgroundColor: 'white',
@@ -1702,19 +1713,36 @@ const APProcessing = () => {
                                         {carrierTemplates
                                             .filter(carrier => carrier.supported)
                                             .map(carrier => (
-                                                <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px', py: 1.5 }}>
+                                                <MenuItem
+                                                    key={carrier.id}
+                                                    value={carrier.id}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        py: 1.5,
+                                                        backgroundColor: carrier.intelligent ? '#f0f9ff' : 'transparent',
+                                                        borderLeft: carrier.intelligent ? '3px solid #0ea5e9' : 'none',
+                                                        '&:hover': {
+                                                            backgroundColor: carrier.intelligent ? '#e0f2fe' : '#f9fafb'
+                                                        }
+                                                    }}
+                                                >
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                                                        {/* Carrier Logo */}
+                                                        {/* Carrier Logo/Icon */}
                                                         <Avatar
                                                             src={carrier.logoURL}
                                                             sx={{
                                                                 width: 24,
                                                                 height: 24,
                                                                 border: '1px solid #e5e7eb',
-                                                                bgcolor: '#f8fafc'
+                                                                bgcolor: carrier.intelligent ? '#0ea5e9' : '#f8fafc',
+                                                                color: carrier.intelligent ? 'white' : '#6b7280'
                                                             }}
                                                         >
-                                                            <LocalShippingIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                                                            {carrier.intelligent ? (
+                                                                <AiIcon sx={{ fontSize: 14, color: 'white' }} />
+                                                            ) : (
+                                                                <LocalShippingIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                                                            )}
                                                         </Avatar>
 
                                                         {/* Carrier Details */}
@@ -1723,7 +1751,7 @@ const APProcessing = () => {
                                                                 sx={{
                                                                     fontWeight: 600,
                                                                     fontSize: '12px',
-                                                                    color: '#374151',
+                                                                    color: carrier.intelligent ? '#0ea5e9' : '#374151',
                                                                     whiteSpace: 'nowrap',
                                                                     overflow: 'hidden',
                                                                     textOverflow: 'ellipsis'
@@ -1740,15 +1768,15 @@ const APProcessing = () => {
                                                                     textOverflow: 'ellipsis'
                                                                 }}
                                                             >
-                                                                ID: {carrier.id}
+                                                                {carrier.intelligent ? carrier.description : `ID: ${carrier.id}`}
                                                             </Typography>
                                                         </Box>
 
                                                         {/* Status Chip */}
                                                         <Chip
-                                                            label={carrier.supported ? 'Supported' : 'Not Supported'}
+                                                            label={carrier.intelligent ? 'RECOMMENDED' : (carrier.supported ? 'Supported' : 'Not Supported')}
                                                             size="small"
-                                                            color={carrier.supported ? 'success' : 'default'}
+                                                            color={carrier.intelligent ? 'primary' : (carrier.supported ? 'success' : 'default')}
                                                             sx={{
                                                                 height: 18,
                                                                 fontSize: '9px',
@@ -1760,7 +1788,7 @@ const APProcessing = () => {
                                             ))}
                                     </Select>
                                     <FormHelperText sx={{ fontSize: '11px' }}>
-                                        Select the carrier before uploading PDF invoices. Leave empty for EDI files.
+                                        🎯 <strong>Recommended:</strong> Use Auto-Detect for intelligent multi-document parsing. AI automatically identifies carrier and extracts invoices, BOLs, and confirmations from complex PDFs.
                                     </FormHelperText>
                                 </FormControl>
                             </Box>
