@@ -153,20 +153,64 @@ async function sendQuickShipNotifications({ shipmentData, carrierDetails, docume
                 if (selectedTerminal) {
                     logger.info('Using terminal for carrier notification email:', selectedTerminal.name);
                     
-                    // Get emails for carrier confirmation - prioritize dispatch emails
-                    const contactTypes = selectedTerminal.contactTypes || {};
-                    const dispatchEmails = contactTypes.dispatch || [];
-                    const customerServiceEmails = contactTypes.customer_service || [];
-                    const allEmails = [
-                        ...dispatchEmails,
-                        ...customerServiceEmails,
-                        ...(contactTypes.quotes || []),
-                        ...(contactTypes.billing_adjustments || []),
-                        ...(contactTypes.claims || []),
-                        ...(contactTypes.sales_reps || []),
-                        ...(contactTypes.customs || []),
-                        ...(contactTypes.other || [])
-                    ].filter(email => email && email.trim());
+                    // Log terminal selection for debugging
+                    logger.info('Selected terminal for carrier notification:', {
+                        terminalName: selectedTerminal.name,
+                        terminalId: selectedTerminal.id,
+                        hasContactTypes: !!selectedTerminal.contactTypes,
+                        hasContacts: !!selectedTerminal.contacts
+                    });
+                    
+                    // FIXED: Handle both contactTypes (expected) and contacts (actual database) structures
+                    let allEmails = [];
+                    
+                    if (selectedTerminal.contactTypes) {
+                        // Expected structure: contactTypes object
+                        logger.info('Using contactTypes structure for email extraction');
+                        const contactTypes = selectedTerminal.contactTypes;
+                        const dispatchEmails = contactTypes.dispatch || [];
+                        const customerServiceEmails = contactTypes.customer_service || [];
+                        allEmails = [
+                            ...dispatchEmails,
+                            ...customerServiceEmails,
+                            ...(contactTypes.quotes || []),
+                            ...(contactTypes.billing_adjustments || []),
+                            ...(contactTypes.claims || []),
+                            ...(contactTypes.sales_reps || []),
+                            ...(contactTypes.customs || []),
+                            ...(contactTypes.other || [])
+                        ].filter(email => email && email.trim());
+                    } else if (selectedTerminal.contacts && Array.isArray(selectedTerminal.contacts)) {
+                        // Actual database structure: contacts array
+                        logger.info('Using contacts array structure for email extraction');
+                        const contacts = selectedTerminal.contacts || [];
+                        
+                        // Extract emails from contacts array, prioritizing dispatch
+                        const dispatchContact = contacts.find(contact => contact.type === 'dispatch');
+                        const customerServiceContact = contacts.find(contact => contact.type === 'customer_service');
+                        const otherContacts = contacts.filter(contact => 
+                            !['dispatch', 'customer_service'].includes(contact.type)
+                        );
+                        
+                        allEmails = [
+                            ...(dispatchContact?.emails || []),
+                            ...(customerServiceContact?.emails || []),
+                            ...otherContacts.flatMap(contact => contact.emails || [])
+                        ].filter(email => email && email.trim());
+                        
+                        logger.info('Extracted emails from contacts array:', {
+                            dispatchEmails: dispatchContact?.emails || [],
+                            customerServiceEmails: customerServiceContact?.emails || [],
+                            totalContacts: contacts.length,
+                            totalEmails: allEmails.length
+                        });
+                    } else {
+                        logger.warn('No valid email structure found in terminal', {
+                            hasContactTypes: !!selectedTerminal.contactTypes,
+                            hasContacts: !!selectedTerminal.contacts,
+                            terminalKeys: Object.keys(selectedTerminal)
+                        });
+                    }
                     
                     // Use the first available email (usually dispatch)
                     carrierEmail = allEmails[0] || null;

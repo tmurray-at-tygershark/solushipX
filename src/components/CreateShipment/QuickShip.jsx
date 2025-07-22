@@ -75,6 +75,9 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { shipmentConverter } from '../../utils/shipmentConversion';
 import { convertDraftInDatabase } from '../../utils/draftConversion';
+import shipmentChargeTypeService from '../../services/shipmentChargeTypeService';
+import { validateManualRates, getAutoPopulatedChargeName } from '../../utils/shipmentValidation';
+import { migrateShipmentChargeCodes } from '../../utils/chargeTypeCompatibility';
 
 
 // Lazy load other components
@@ -515,6 +518,11 @@ const QuickShip = ({
     const [availableCustomers, setAvailableCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+    // Dynamic charge types state
+    const [availableChargeTypes, setAvailableChargeTypes] = useState([]);
+    const [loadingChargeTypes, setLoadingChargeTypes] = useState(false);
+    const [chargeTypesError, setChargeTypesError] = useState(null);
     const [customerManuallyCleared, setCustomerManuallyCleared] = useState(false);
 
     // Determine if admin needs to select a company (always show for company admins/admins/super admins to allow switching)
@@ -625,6 +633,9 @@ const QuickShip = ({
         }
     }, []);
 
+    // Track if we've already processed prePopulatedData to prevent re-runs
+    const processedPrePopulatedDataRef = useRef(false);
+
     // Process pre-populated data from CreateShipmentX conversion (MAIN CONVERSION LOGIC)
     useEffect(() => {
         console.log('🔍 CONVERSION EFFECT: useEffect triggered with:', {
@@ -632,10 +643,13 @@ const QuickShip = ({
             draftId,
             isEditingDraft,
             editMode,
-            shouldProcess: !!(prePopulatedData && !draftId && !editMode)
+            shouldProcess: !!(prePopulatedData && !draftId && !editMode),
+            alreadyProcessed: processedPrePopulatedDataRef.current
         });
 
-        if (prePopulatedData && !draftId && !editMode) {
+        if (prePopulatedData && !draftId && !editMode && !processedPrePopulatedDataRef.current) {
+            // Mark as processed to prevent re-runs
+            processedPrePopulatedDataRef.current = true;
             console.log('🔄 MAIN CONVERSION: Processing converted data from CreateShipmentX:', prePopulatedData);
 
             try {
@@ -1542,19 +1556,21 @@ const QuickShip = ({
             if (rate.id === id) {
                 const updatedRate = { ...rate, [field]: value };
 
-                // Auto-populate charge name when code is selected, but only if charge name is empty or was auto-populated
+                // Auto-populate charge name when code is selected using dynamic charge types
                 if (field === 'code' && value) {
-                    const selectedOption = RATE_CODE_OPTIONS.find(option => option.value === value);
-                    if (selectedOption) {
-                        // Check if the current charge name is empty, or matches a previous auto-populated value
-                        const currentChargeName = rate.chargeName || '';
-                        const isCurrentValueAutopopulated = RATE_CODE_OPTIONS.some(option => option.description === currentChargeName);
-
-                        // Only update if field is empty or contains an auto-populated value
-                        if (!currentChargeName.trim() || isCurrentValueAutopopulated) {
-                            updatedRate.chargeName = selectedOption.description;
+                    // Use async auto-population with dynamic charge types
+                    getAutoPopulatedChargeName(value, rate.chargeName || '').then(newChargeName => {
+                        if (newChargeName !== (rate.chargeName || '')) {
+                            setManualRates(currentRates => currentRates.map(currentRate =>
+                                currentRate.id === id
+                                    ? { ...currentRate, chargeName: newChargeName }
+                                    : currentRate
+                            ));
                         }
-                    }
+                    }).catch(error => {
+                        console.error('Error auto-populating charge name:', error);
+                        // Continue without auto-population on error
+                    });
                 }
 
                 return updatedRate;
@@ -2735,16 +2751,29 @@ const QuickShip = ({
                                 setPackages(validatedPackages);
                             }
 
-                            // Load manual rates with deduplication
+                            // Load manual rates with migration support
                             if (draftData.manualRates && draftData.manualRates.length > 0) {
                                 console.log('🔧 Loading manual rates from draft:', draftData.manualRates.length);
+
                                 // Format rates to 2 decimal places
                                 const formattedRates = draftData.manualRates.map(rate => ({
                                     ...rate,
                                     cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
                                     charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
                                 }));
-                                setManualRates(formattedRates); // Load rates exactly as saved - no deduplication
+
+                                // Check if rates need migration to dynamic charge types
+                                migrateShipmentChargeCodes(formattedRates).then(migrationResult => {
+                                    if (migrationResult.changes.length > 0) {
+                                        console.log('🔄 Migrated charge codes in draft:', migrationResult.changes);
+                                        setManualRates(migrationResult.migratedRates);
+                                    } else {
+                                        setManualRates(formattedRates);
+                                    }
+                                }).catch(error => {
+                                    console.error('⚠️  Error migrating charge codes, using original rates:', error);
+                                    setManualRates(formattedRates); // Use original rates if migration fails
+                                });
                             }
 
                             // Load additional services and create corresponding rate line items
@@ -2870,7 +2899,7 @@ const QuickShip = ({
                     setPackages(validatedPackages);
                 }
 
-                // Load manual rates with deduplication
+                // Load manual rates with migration support
                 if (editShipment.manualRates && editShipment.manualRates.length > 0) {
                     console.log('🔧 Loading manual rates from edit shipment:', editShipment.manualRates.length);
                     // Format rates to 2 decimal places
@@ -2879,7 +2908,19 @@ const QuickShip = ({
                         cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
                         charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
                     }));
-                    setManualRates(formattedRates); // Load rates exactly as saved - no deduplication
+
+                    // Check if rates need migration to dynamic charge types
+                    migrateShipmentChargeCodes(formattedRates).then(migrationResult => {
+                        if (migrationResult.changes.length > 0) {
+                            console.log('🔄 Migrated charge codes in edit shipment:', migrationResult.changes);
+                            setManualRates(migrationResult.migratedRates);
+                        } else {
+                            setManualRates(formattedRates);
+                        }
+                    }).catch(error => {
+                        console.error('⚠️  Error migrating charge codes, using original rates:', error);
+                        setManualRates(formattedRates); // Use original rates if migration fails
+                    });
                 } else if (editShipment.rates && editShipment.rates.length > 0) {
                     // Convert from stored rates format if needed
                     const convertedRates = editShipment.rates.map((rate, index) => ({
@@ -2893,7 +2934,19 @@ const QuickShip = ({
                         chargeCurrency: rate.chargeCurrency || rate.currency || 'CAD'
                     }));
                     console.log('🔧 Converting rates from edit shipment:', convertedRates.length);
-                    setManualRates(convertedRates); // Load converted rates - no deduplication
+
+                    // Also migrate converted rates
+                    migrateShipmentChargeCodes(convertedRates).then(migrationResult => {
+                        if (migrationResult.changes.length > 0) {
+                            console.log('🔄 Migrated charge codes in converted rates:', migrationResult.changes);
+                            setManualRates(migrationResult.migratedRates);
+                        } else {
+                            setManualRates(convertedRates);
+                        }
+                    }).catch(error => {
+                        console.error('⚠️  Error migrating converted charge codes, using original rates:', error);
+                        setManualRates(convertedRates); // Use original rates if migration fails
+                    });
                 }
 
                 // Load carrier
@@ -3668,12 +3721,17 @@ const QuickShip = ({
     const validateRates = () => {
         // Allow booking with no rates or $0.00 rates
         // Only validate that if a rate code is provided, it's valid
+        const validChargeTypeCodes = availableChargeTypes.map(ct => ct.value);
+
         for (let i = 0; i < manualRates.length; i++) {
             const rate = manualRates[i];
 
             // Only validate the rate code if it's not empty
-            if (rate.code && !QUICKSHIP_VALIDATION.rates.validCodes.includes(rate.code)) {
-                return { valid: false, message: `Rate ${i + 1}: Invalid rate code '${rate.code}'. Please select a valid code.` };
+            if (rate.code) {
+                // Check against dynamic charge types first, then fallback to validation service
+                if (validChargeTypeCodes.length > 0 && !validChargeTypeCodes.includes(rate.code)) {
+                    return { valid: false, message: `Rate ${i + 1}: Invalid rate code '${rate.code}'. Please select a valid code.` };
+                }
             }
 
             // If cost or charge is provided, ensure it's a valid number (can be 0)
@@ -4095,6 +4153,29 @@ const QuickShip = ({
             setAvailableServiceLevels([]);
         }
     }, [shipmentInfo.shipmentType]);
+
+    // Load dynamic charge types on component mount
+    useEffect(() => {
+        const loadChargeTypes = async () => {
+            setLoadingChargeTypes(true);
+            setChargeTypesError(null);
+
+            try {
+                console.log('📦 QuickShip: Loading dynamic charge types...');
+                const chargeTypes = await shipmentChargeTypeService.getChargeTypes();
+                console.log(`📦 QuickShip: Loaded ${chargeTypes.length} charge types`);
+                setAvailableChargeTypes(chargeTypes);
+            } catch (error) {
+                console.error('❌ QuickShip: Failed to load charge types:', error);
+                setChargeTypesError(error.message);
+                // Don't clear charge types on error - they may be cached
+            } finally {
+                setLoadingChargeTypes(false);
+            }
+        };
+
+        loadChargeTypes();
+    }, []); // Only load once on component mount
 
     // Debug useEffect to see when shipmentInfo changes
     useEffect(() => {
@@ -6812,15 +6893,30 @@ const QuickShip = ({
                                                                         onChange={(e) => updateRateLineItem(rate.id, 'code', e.target.value)}
                                                                         sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
                                                                         displayEmpty
+                                                                        disabled={loadingChargeTypes}
                                                                     >
                                                                         <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                                            <em>Select Code</em>
+                                                                            <em>{loadingChargeTypes ? 'Loading...' : 'Select Code'}</em>
                                                                         </MenuItem>
-                                                                        {RATE_CODE_OPTIONS.map(option => (
-                                                                            <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
-                                                                                {option.label}
+                                                                        {availableChargeTypes.map(chargeType => (
+                                                                            <MenuItem key={chargeType.value} value={chargeType.value} sx={{ fontSize: '12px' }}>
+                                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                        {chargeType.value}
+                                                                                    </Typography>
+                                                                                    {chargeType.description && (
+                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                                            {chargeType.description}
+                                                                                        </Typography>
+                                                                                    )}
+                                                                                </Box>
                                                                             </MenuItem>
                                                                         ))}
+                                                                        {chargeTypesError && (
+                                                                            <MenuItem disabled sx={{ fontSize: '11px', color: '#dc2626', fontStyle: 'italic' }}>
+                                                                                Error loading charge types
+                                                                            </MenuItem>
+                                                                        )}
                                                                     </Select>
                                                                 </FormControl>
                                                             </TableCell>

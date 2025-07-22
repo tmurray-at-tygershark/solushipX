@@ -699,3 +699,7 @@ exports.getHistoryEShipPlus = onRequest(
     }
   });
 });
+
+// Add the QuickShip email diagnostic function
+const { quickShipEmailDiagnostic } = require('./src/quickShipEmailDiagnostic');
+exports.quickShipEmailDiagnostic = quickShipEmailDiagnostic;

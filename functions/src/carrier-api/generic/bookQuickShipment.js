@@ -226,17 +226,42 @@ async function bookQuickShipmentInternal(data, auth = null) {
         }
         // Check for new terminal-based email structure
         else if (carrierDetails?.emailContacts && Array.isArray(carrierDetails.emailContacts)) {
-            // Check if any terminal has any emails
+            // FIXED: Check if any terminal has any emails - handle both data structures
             const hasAnyEmails = carrierDetails.emailContacts.some(terminal => {
-                const contactTypes = terminal.contactTypes || {};
-                return Object.values(contactTypes).some(emails => 
-                    Array.isArray(emails) && emails.length > 0 && emails.some(email => email && email.trim())
-                );
+                // Check for contactTypes structure (expected)
+                if (terminal.contactTypes) {
+                    const contactTypes = terminal.contactTypes;
+                    return Object.values(contactTypes).some(emails => 
+                        Array.isArray(emails) && emails.length > 0 && emails.some(email => email && email.trim())
+                    );
+                }
+                
+                // Check for contacts array structure (actual database format)
+                if (terminal.contacts && Array.isArray(terminal.contacts)) {
+                    return terminal.contacts.some(contact => {
+                        return contact.emails && Array.isArray(contact.emails) && 
+                               contact.emails.some(email => email && email.trim());
+                    });
+                }
+                
+                return false;
             });
             
             if (hasAnyEmails) {
                 shouldGenerateCarrierConfirmation = true;
                 logger.info('Carrier confirmation will be generated - found emails in terminal structure');
+            } else {
+                logger.info('🔍 URGENT DEBUG - No emails found in terminal structure:', {
+                    terminalsCount: carrierDetails.emailContacts.length,
+                    terminals: carrierDetails.emailContacts.map(terminal => ({
+                        id: terminal.id,
+                        name: terminal.name,
+                        hasContactTypes: !!terminal.contactTypes,
+                        hasContacts: !!terminal.contacts,
+                        contactsIsArray: Array.isArray(terminal.contacts),
+                        contactsLength: terminal.contacts?.length || 0
+                    }))
+                });
             }
         }
         

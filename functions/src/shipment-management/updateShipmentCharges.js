@@ -102,8 +102,8 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             cost: parseFloat(charge.quotedCost || charge.cost) || 0,
             amount: parseFloat(charge.quotedCharge || charge.amount) || 0,
             actualAmount: parseFloat(charge.actualCharge || charge.actualAmount) || 0,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedBy: userEmail
+            updatedAt: new Date(),
+            updatedBy: userEmail || 'system'
         };
 
         // Validate numeric values
@@ -115,22 +115,18 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         return validatedCharge;
     });
 
-    // Prepare update data
+    // Prepare update data - FIXED: Different data storage for QuickShip vs Regular shipments
     const updateData = {
-        // Store charges in multiple formats for backward compatibility
-        chargesBreakdown: validatedCharges,
-        updatedCharges: validatedCharges,
-        
         // Update modification tracking
         lastModified: admin.firestore.FieldValue.serverTimestamp(),
-        lastModifiedBy: userEmail,
+        lastModifiedBy: userEmail || 'system',
         
         // Add to shipment history
         [`statusHistory.${Date.now()}`]: {
             status: shipmentData.status || 'unknown',
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            note: `Charges updated by ${userEmail}`,
-            updatedBy: userEmail,
+            note: `Charges updated by ${userEmail || 'system'}`,
+            updatedBy: userEmail || 'system',
             type: 'charges_update',
             changes: {
                 chargesCount: validatedCharges.length,
@@ -141,16 +137,42 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         }
     };
 
-    // For QuickShip shipments, also update manualRates
-    if (shipmentData.creationMethod === 'quickship') {
-        updateData.manualRates = validatedCharges.map(charge => ({
+    // FIXED: Different storage strategy for QuickShip vs Regular shipments
+    const isQuickShipShipment = shipmentData.creationMethod === 'quickship' || shipmentData.isQuickShip;
+    
+    if (isQuickShipShipment) {
+        // For QuickShip: ONLY update manualRates (single source of truth)
+        updateData.manualRates = validatedCharges.map((charge, index) => ({
+            id: index + 1, // Add ID for consistency with QuickShip format
+            carrier: shipmentData.selectedCarrier || shipmentData.carrier || '',
             code: charge.code,
             chargeName: charge.description,
-            cost: charge.cost,
-            charge: charge.amount,
-            actualCharge: charge.actualAmount,
-            chargeCurrency: shipmentData.currency || 'CAD'
+            cost: charge.quotedCost.toString(), // Convert to string for QuickShip compatibility
+            costCurrency: shipmentData.currency || 'CAD',
+            charge: charge.quotedCharge.toString(), // Convert to string for QuickShip compatibility  
+            chargeCurrency: shipmentData.currency || 'CAD',
+            // Include actual cost/charge for inline editing compatibility
+            actualCost: charge.actualCost || 0,
+            actualCharge: charge.actualCharge || 0,
+            invoiceNumber: charge.invoiceNumber || '-',
+            ediNumber: charge.ediNumber || '-',
+            commissionable: charge.commissionable || false
         }));
+        
+        // Clear conflicting fields for QuickShip to prevent data inconsistency
+        updateData.chargesBreakdown = admin.firestore.FieldValue.delete();
+        updateData.updatedCharges = admin.firestore.FieldValue.delete();
+        
+        logger.info('Updated manualRates for QuickShip (cleared other charge fields):', { 
+            manualRatesCount: updateData.manualRates.length,
+            rates: updateData.manualRates 
+        });
+    } else {
+        // For regular shipments: Use chargesBreakdown and updatedCharges
+        updateData.chargesBreakdown = validatedCharges;
+        updateData.updatedCharges = validatedCharges;
+        
+        logger.info('Updated chargesBreakdown and updatedCharges for regular shipment');
     }
 
     // For regular shipments, update billingDetails if it exists
@@ -170,7 +192,7 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
     logger.info('Charges updated successfully:', {
         docId: shipmentDoc.id,
         chargesCount: validatedCharges.length,
-        updatedBy: userEmail
+        updatedBy: userEmail || 'system'
     });
 }
 

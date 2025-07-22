@@ -1128,18 +1128,24 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         });
     }, []);
 
-    // Handle charges update - save to database
-    const handleChargesUpdate = useCallback(async (updatedCharges) => {
+    // Handle charges update - save to database with optimistic updates
+    const handleChargesUpdate = useCallback(async (updatedCharges, isOptimistic = false) => {
         console.log('💰 ShipmentDetailX: handleChargesUpdate called', {
             shipmentId: shipment?.id,
             shipmentExists: !!shipment,
             chargesCount: updatedCharges?.length,
-            updatedCharges
+            isOptimistic
         });
 
         if (!shipment?.id || !updatedCharges) {
             console.error('❌ Missing shipment ID or charges:', { shipmentId: shipment?.id, chargesLength: updatedCharges?.length });
             return;
+        }
+
+        // For optimistic updates, just return success immediately
+        if (isOptimistic) {
+            console.log('🚀 Optimistic update - UI updated, will save in background');
+            return { success: true };
         }
 
         try {
@@ -1163,38 +1169,32 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 }))
             };
 
-            console.log('💰 Calling Cloud Function with:', chargesData);
             const result = await updateShipmentCharges(chargesData);
-            console.log('💰 Cloud Function result:', result);
 
             if (result.data && result.data.success) {
-                console.log('✅ Charges updated successfully');
-                showSnackbar('Charges updated successfully', 'success');
+                console.log('✅ Charges saved to database successfully');
+                if (showSnackbar) {
+                    showSnackbar('Charges saved successfully', 'success');
+                }
 
-                // Refresh shipment data to show updated charges
-                console.log('🔄 Refreshing shipment data...');
+                // SMART BACKGROUND REFRESH - Update data without disrupting UI
+                setTimeout(() => {
+                    console.log('🔄 Background refresh: Updating shipment data silently');
+                    refreshShipment();
+                }, 500); // Small delay to ensure database consistency
 
-                // Option 1: Force reload the entire page to get fresh data
-                window.location.reload();
-
-                // Option 2: Alternative - try refreshShipment with error handling
-                // setTimeout(() => {
-                //     try {
-                //         refreshShipment();
-                //     } catch (refreshError) {
-                //         console.error('❌ Error during refresh:', refreshError);
-                //         // Fallback to page reload
-                //         window.location.reload();
-                //     }
-                // }, 500);
+                return { success: true };
             } else {
                 throw new Error(result.data?.error || 'Failed to update charges');
             }
         } catch (error) {
             console.error('❌ Error updating charges:', error);
-            showSnackbar(`Failed to update charges: ${error.message}`, 'error');
+            if (showSnackbar) {
+                showSnackbar(`Failed to save charges: ${error.message}`, 'error');
+            }
+            return { success: false, error: error.message };
         }
-    }, [shipment?.id, showSnackbar, refreshShipment]);
+    }, [shipment?.id, showSnackbar]);
 
     if (loading) {
         return <LoadingSkeleton />;
@@ -1291,6 +1291,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     <Grid container spacing={1} sx={{ mt: 1 }}>
                         {/* Rate Details */}
                         <RateDetails
+                            key={`rate-details-${shipment?.id}`}
                             getBestRateInfo={getBestRateInfo}
                             carrierData={carrierData}
                             shipment={shipment}

@@ -76,6 +76,8 @@ import markupEngine from '../../utils/markupEngine';
 import ModalHeader from '../common/ModalHeader';
 import { shipmentConverter } from '../../utils/shipmentConversion';
 import { convertDraftInDatabase } from '../../utils/draftConversion';
+import shipmentChargeTypeService from '../../services/shipmentChargeTypeService';
+import { mapAPIChargesToDynamicTypes, migrateShipmentChargeCodes } from '../../utils/chargeTypeCompatibility';
 
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
@@ -435,6 +437,11 @@ const CreateShipmentX = (props) => {
     const [availableCustomers, setAvailableCustomers] = useState([]);
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+    // Dynamic charge types state
+    const [availableChargeTypes, setAvailableChargeTypes] = useState([]);
+    const [loadingChargeTypes, setLoadingChargeTypes] = useState(false);
+    const [chargeTypesError, setChargeTypesError] = useState(null);
 
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
@@ -1563,6 +1570,29 @@ const CreateShipmentX = (props) => {
             setAvailableServiceLevels([]);
         }
     }, [shipmentInfo.shipmentType]);
+
+    // Load dynamic charge types on component mount
+    useEffect(() => {
+        const loadChargeTypes = async () => {
+            setLoadingChargeTypes(true);
+            setChargeTypesError(null);
+
+            try {
+                console.log('📦 CreateShipmentX: Loading dynamic charge types...');
+                const chargeTypes = await shipmentChargeTypeService.getChargeTypes();
+                console.log(`📦 CreateShipmentX: Loaded ${chargeTypes.length} charge types`);
+                setAvailableChargeTypes(chargeTypes);
+            } catch (error) {
+                console.error('❌ CreateShipmentX: Failed to load charge types:', error);
+                setChargeTypesError(error.message);
+                // Don't clear charge types on error - they may be cached
+            } finally {
+                setLoadingChargeTypes(false);
+            }
+        };
+
+        loadChargeTypes();
+    }, []); // Only load once on component mount
 
     // Debug useEffect to see when shipmentInfo changes
     useEffect(() => {
@@ -3109,10 +3139,32 @@ const CreateShipmentX = (props) => {
                 setPackages(prePopulatedData.packages);
             }
 
-            // Apply converted rate as selectedRate (from manual rates)
+            // Apply converted rate as selectedRate (from manual rates) with charge type migration
             if (prePopulatedData.selectedRate) {
                 console.log('🔄 Applying selected rate:', prePopulatedData.selectedRate);
-                setSelectedRate(prePopulatedData.selectedRate);
+
+                // Check if the selectedRate contains billing details that need charge type migration
+                if (prePopulatedData.selectedRate.billingDetails && Array.isArray(prePopulatedData.selectedRate.billingDetails)) {
+                    const migratedBillingDetails = prePopulatedData.selectedRate.billingDetails.map(detail => {
+                        if (detail.code) {
+                            // Migrate the charge code if needed
+                            const migrationResult = mapAPIChargesToDynamicTypes(detail.category || '', detail.name || '', availableChargeTypes);
+                            return {
+                                ...detail,
+                                code: migrationResult.chargeCode || detail.code,
+                                name: migrationResult.chargeName || detail.name
+                            };
+                        }
+                        return detail;
+                    });
+
+                    setSelectedRate({
+                        ...prePopulatedData.selectedRate,
+                        billingDetails: migratedBillingDetails
+                    });
+                } else {
+                    setSelectedRate(prePopulatedData.selectedRate);
+                }
             }
 
             // Apply additional services
@@ -3291,26 +3343,20 @@ const CreateShipmentX = (props) => {
 
                         selectedRate.billingDetails.forEach(detail => {
                             if (detail.amount && detail.amount > 0) {
-                                // Map charge categories to rate codes
-                                let code = 'MSC'; // Default miscellaneous
+                                // Map charge categories to dynamic charge type codes
                                 const detailName = detail.name || '';
                                 const detailCategory = detail.category || '';
 
-                                if (detailCategory === 'freight' || detailName.toLowerCase().includes('freight')) {
-                                    code = 'FRT';
-                                } else if (detailCategory === 'fuel' || detailName.toLowerCase().includes('fuel')) {
-                                    code = 'FUE';
-                                } else if (detailCategory === 'service' || detailName.toLowerCase().includes('service')) {
-                                    code = 'SUR';
-                                } else if (detailCategory === 'accessorial' || detailName.toLowerCase().includes('accessorial')) {
-                                    code = 'ACC';
-                                }
+                                // Use dynamic charge type mapping with fallback to static codes
+                                const mappingResult = mapAPIChargesToDynamicTypes(detailCategory, detailName, availableChargeTypes);
+                                const code = mappingResult.chargeCode || 'MSC'; // Default to miscellaneous if mapping fails
+                                const chargeName = mappingResult.chargeName || detailName || 'Unknown Charge';
 
                                 rates.push({
                                     id: rateId++,
                                     carrier: carrierName,
                                     code: code,
-                                    chargeName: detailName || 'Unknown Charge',
+                                    chargeName: chargeName,
                                     cost: detail.actualAmount ? detail.actualAmount.toString() : detail.amount.toString(),
                                     costCurrency: selectedRate.pricing?.currency || 'CAD',
                                     charge: detail.amount.toString(),

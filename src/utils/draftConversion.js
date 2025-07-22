@@ -1,5 +1,7 @@
 import { doc, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import shipmentChargeTypeService from '../services/shipmentChargeTypeService';
+import { migrateShipmentChargeCodes, mapAPIChargesToDynamicTypes } from './chargeTypeCompatibility';
 
 /**
  * Convert a draft shipment between QuickShip and CreateShipmentX formats
@@ -25,6 +27,15 @@ export const convertDraftInDatabase = async (draftId, targetFormat) => {
         const currentData = draftDoc.data();
         console.log('📄 Current draft data:', currentData);
         
+        // Load dynamic charge types for migration
+        let availableChargeTypes = [];
+        try {
+            availableChargeTypes = await shipmentChargeTypeService.getChargeTypes();
+            console.log(`📦 Loaded ${availableChargeTypes.length} charge types for conversion`);
+        } catch (error) {
+            console.warn('⚠️  Could not load charge types for conversion, using fallback', error);
+        }
+        
         let updatedData = {};
         
         if (targetFormat === 'advanced') {
@@ -34,11 +45,20 @@ export const convertDraftInDatabase = async (draftId, targetFormat) => {
             // Change the creation method
             updatedData.creationMethod = 'advanced';
             
-            // Convert manual rates to selectedRate format
+            // Convert manual rates to selectedRate format with charge type migration
             if (currentData.manualRates && currentData.manualRates.length > 0) {
+                // First migrate any legacy charge codes in manual rates
+                const migrationResult = await migrateShipmentChargeCodes(currentData.manualRates);
+                const migratedRates = migrationResult.migratedRates;
+                
+                if (migrationResult.changes.length > 0) {
+                    console.log('🔄 Migrated charge codes during conversion:', migrationResult.changes);
+                }
+                
                 const convertedRate = convertManualRatesToSelectedRate(
-                    currentData.manualRates,
-                    currentData.selectedCarrier
+                    migratedRates,
+                    currentData.selectedCarrier,
+                    availableChargeTypes
                 );
                 updatedData.selectedRate = convertedRate;
                 
@@ -54,13 +74,21 @@ export const convertDraftInDatabase = async (draftId, targetFormat) => {
             // Change the creation method
             updatedData.creationMethod = 'quickship';
             
-            // Convert selectedRate to manual rates format
+            // Convert selectedRate to manual rates format with charge type migration
             if (currentData.selectedRate) {
                 const { manualRates, carrier } = convertSelectedRateToManualRates(
-                    currentData.selectedRate
+                    currentData.selectedRate,
+                    availableChargeTypes
                 );
-                updatedData.manualRates = manualRates;
+                
+                // Apply migration to the converted manual rates
+                const migrationResult = await migrateShipmentChargeCodes(manualRates);
+                updatedData.manualRates = migrationResult.migratedRates;
                 updatedData.selectedCarrier = carrier;
+                
+                if (migrationResult.changes.length > 0) {
+                    console.log('🔄 Migrated charge codes during conversion:', migrationResult.changes);
+                }
                 
                 // Remove Advanced-specific fields
                 updatedData.selectedRate = deleteField();
@@ -105,7 +133,7 @@ export const convertDraftInDatabase = async (draftId, targetFormat) => {
 /**
  * Convert manual rates array to selectedRate object format
  */
-function convertManualRatesToSelectedRate(manualRates, selectedCarrier) {
+function convertManualRatesToSelectedRate(manualRates, selectedCarrier, availableChargeTypes = []) {
     // Extract individual rate types
     const freightRate = manualRates.find(rate => rate.code === 'FRT');
     const fuelRate = manualRates.find(rate => rate.code === 'FUE');
@@ -143,7 +171,8 @@ function convertManualRatesToSelectedRate(manualRates, selectedCarrier) {
             name: rate.chargeName,
             amount: parseFloat(rate.charge || 0),
             actualAmount: parseFloat(rate.cost || rate.charge || 0),
-            category: getChargeCategory(rate.code)
+            category: getChargeCategory(rate.code, availableChargeTypes),
+            code: rate.code // Preserve the charge code for conversion back
         }))
     };
 }
@@ -151,7 +180,7 @@ function convertManualRatesToSelectedRate(manualRates, selectedCarrier) {
 /**
  * Convert selectedRate object to manual rates array format
  */
-function convertSelectedRateToManualRates(selectedRate) {
+function convertSelectedRateToManualRates(selectedRate, availableChargeTypes = []) {
     const manualRates = [];
     let rateId = 1;
     
@@ -165,12 +194,21 @@ function convertSelectedRateToManualRates(selectedRate) {
     if (selectedRate.billingDetails && selectedRate.billingDetails.length > 0) {
         selectedRate.billingDetails.forEach(detail => {
             if (detail.amount && detail.amount > 0) {
-                const code = getCategoryCode(detail.category);
+                // Use preserved code if available, otherwise map from category/name
+                let code = detail.code;
+                let chargeName = detail.name;
+                
+                if (!code) {
+                    const mappingResult = mapAPIChargesToDynamicTypes(detail.category, detail.name, availableChargeTypes);
+                    code = mappingResult.chargeCode;
+                    chargeName = mappingResult.chargeName;
+                }
+                
                 manualRates.push({
                     id: rateId++,
                     carrier: carrierName,
                     code: code,
-                    chargeName: detail.name || getDefaultChargeName(code),
+                    chargeName: chargeName || getDefaultChargeName(code),
                     cost: (detail.actualAmount || detail.amount).toString(),
                     costCurrency: selectedRate.pricing?.currency || 'CAD',
                     charge: detail.amount.toString(),
@@ -240,11 +278,24 @@ function convertSelectedRateToManualRates(selectedRate) {
 /**
  * Helper function to get charge category from code
  */
-function getChargeCategory(code) {
+function getChargeCategory(code, availableChargeTypes = []) {
+    // Try to find category from dynamic charge types first
+    if (availableChargeTypes && availableChargeTypes.length > 0) {
+        const chargeType = availableChargeTypes.find(ct => ct.value === code);
+        if (chargeType && chargeType.category) {
+            return chargeType.category;
+        }
+    }
+    
+    // Fallback to static mapping
     if (code === 'FRT') return 'freight';
     if (code === 'FUE') return 'fuel';
     if (code === 'SUR') return 'service';
     if (code === 'ACC') return 'accessorial';
+    if (code === 'TAX') return 'taxes';
+    if (code === 'INS') return 'insurance';
+    if (code === 'LOG') return 'logistics';
+    if (code === 'GOV') return 'government';
     return 'miscellaneous';
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     Grid,
     Paper,
@@ -19,19 +19,27 @@ import {
     FormControl,
     Select,
     MenuItem,
-    Checkbox
+    Checkbox,
+    Menu,
+    MenuList,
+    ListItemIcon,
+    ListItemText
 } from '@mui/material';
 import {
     Edit as EditIcon,
     Check as CheckIcon,
     Cancel as CancelIcon,
     Add as AddIcon,
-    Delete as DeleteIcon
+    Delete as DeleteIcon,
+    MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canSeeActualRates, getMarkupSummary } from '../../../utils/markupEngine';
+import shipmentChargeTypeService from '../../../services/shipmentChargeTypeService';
+import { getAutoPopulatedChargeName } from '../../../utils/shipmentValidation';
 
-// Rate code options (same as QuickShip.jsx)
+// Rate code options - DEPRECATED: Now using dynamic charge types from database
+// Kept as fallback for when dynamic loading fails
 const RATE_CODE_OPTIONS = [
     { value: 'FRT', label: 'FRT', description: 'Freight' },
     { value: 'ACC', label: 'ACC', description: 'Accessorial' },
@@ -94,10 +102,19 @@ const RateDetails = ({
     const { currentUser, userRole } = useAuth();
     const isAdmin = canSeeActualRates(currentUser);
 
+    // Dynamic charge types state
+    const [availableChargeTypes, setAvailableChargeTypes] = useState([]);
+    const [loadingChargeTypes, setLoadingChargeTypes] = useState(false);
+    const [chargeTypesError, setChargeTypesError] = useState(null);
+
     // State for inline editing
     const [editingIndex, setEditingIndex] = useState(null);
     const [editingValues, setEditingValues] = useState({});
     const [localRateBreakdown, setLocalRateBreakdown] = useState([]);
+
+    // State for action menu
+    const [anchorEl, setAnchorEl] = useState(null);
+    const [menuRowIndex, setMenuRowIndex] = useState(null);
 
     // Enhanced admin check using the userRole from AuthContext
     const enhancedIsAdmin = userRole && (
@@ -187,77 +204,229 @@ const RateDetails = ({
         setEditingValues({});
     }, []);
 
-    const handleEditSave = useCallback((index) => {
+    const handleEditSave = useCallback(async (index) => {
         console.log('💾 RateDetails: handleEditSave called', { index, editingValues });
+
+        // Validate charge code against dynamic charge types
+        if (editingValues.code && availableChargeTypes.length > 0) {
+            const isValidCode = availableChargeTypes.some(ct => ct.value === editingValues.code);
+            if (!isValidCode) {
+                console.warn('⚠️ Invalid charge code:', editingValues.code);
+                alert(`Invalid charge code: ${editingValues.code}. Please select a valid code from the dropdown.`);
+                return;
+            }
+        }
+
+        // Validate required fields
+        if (!editingValues.description || editingValues.description.trim() === '') {
+            alert('Please enter a description for the charge.');
+            return;
+        }
+
+        // Save original state for potential revert
+        const originalBreakdown = [...localRateBreakdown];
 
         const updatedBreakdown = [...localRateBreakdown];
         updatedBreakdown[index] = {
             ...updatedBreakdown[index],
-            description: editingValues.description,
+            description: editingValues.description.trim(),
             quotedCost: parseFloat(editingValues.quotedCost) || 0,
             quotedCharge: parseFloat(editingValues.quotedCharge) || 0,
             actualCost: parseFloat(editingValues.actualCost) || 0,
             actualCharge: parseFloat(editingValues.actualCharge) || 0,
-            code: editingValues.code,
+            code: editingValues.code || 'FRT',
             invoiceNumber: editingValues.invoiceNumber || '-',
             ediNumber: editingValues.ediNumber || '-',
             commissionable: editingValues.commissionable || false
         };
 
-        console.log('💾 RateDetails: Updated breakdown:', updatedBreakdown);
-        console.log('💾 RateDetails: onChargesUpdate function:', typeof onChargesUpdate);
-
+        // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
         setLocalRateBreakdown(updatedBreakdown);
         setEditingIndex(null);
         setEditingValues({});
 
-        // Notify parent component of changes
-        console.log('💾 RateDetails: Calling onChargesUpdate');
-        onChargesUpdate(updatedBreakdown);
-    }, [editingValues, localRateBreakdown, onChargesUpdate]);
+        console.log('🚀 Optimistic update: UI updated, saving to database...');
+        console.log('💾 Saving charge data:', updatedBreakdown[index]);
 
-    const handleAddCharge = useCallback(() => {
+        // Save to database with proper error handling
+        if (onChargesUpdate) {
+            try {
+                const result = await onChargesUpdate(updatedBreakdown);
+                if (result && result.success) {
+                    console.log('✅ Charge saved successfully');
+                } else {
+                    throw new Error(result?.error || 'Save failed');
+                }
+            } catch (error) {
+                console.error('❌ Error saving charges:', error);
+                // Revert to original state
+                setLocalRateBreakdown(originalBreakdown);
+                setEditingIndex(index); // Go back to editing mode
+                setEditingValues({
+                    description: originalBreakdown[index]?.description || '',
+                    quotedCost: originalBreakdown[index]?.quotedCost || 0,
+                    quotedCharge: originalBreakdown[index]?.quotedCharge || 0,
+                    actualCost: originalBreakdown[index]?.actualCost || 0,
+                    actualCharge: originalBreakdown[index]?.actualCharge || 0,
+                    code: originalBreakdown[index]?.code || 'FRT',
+                    invoiceNumber: originalBreakdown[index]?.invoiceNumber || '-',
+                    ediNumber: originalBreakdown[index]?.ediNumber || '-',
+                    commissionable: originalBreakdown[index]?.commissionable || false
+                });
+                alert(`Failed to save charge: ${error.message}. Please try again.`);
+            }
+        }
+    }, [editingValues, localRateBreakdown, onChargesUpdate, availableChargeTypes]);
+
+    const handleAddCharge = useCallback(async () => {
+        // Use first available dynamic charge type or fallback to 'FRT'
+        const defaultCode = availableChargeTypes.length > 0 ? availableChargeTypes[0].value : 'FRT';
+
+        // Get commissionable flag from charge type
+        const defaultChargeType = availableChargeTypes.find(ct => ct.value === defaultCode);
+        const defaultCommissionable = defaultChargeType?.commissionable || false;
+
+        // Get appropriate description/label for the default code
+        let defaultDescription = 'New Charge';
+        try {
+            defaultDescription = await getAutoPopulatedChargeName(defaultCode, '');
+        } catch (error) {
+            console.error('Error getting default charge name:', error);
+            // Fallback to static description if available
+            if (availableChargeTypes.length > 0) {
+                const firstChargeType = availableChargeTypes[0];
+                defaultDescription = firstChargeType.label || firstChargeType.description || 'New Charge';
+            }
+        }
+
+        console.log('➕ Adding new charge with auto-populated properties:', {
+            code: defaultCode,
+            description: defaultDescription,
+            commissionable: defaultCommissionable,
+            chargeType: defaultChargeType
+        });
+
         const newCharge = {
-            description: 'New Charge',
+            id: `new_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Unique ID for new charges
+            description: defaultDescription,
             quotedCost: 0,
             quotedCharge: 0,
             actualCost: 0,
             actualCharge: 0,
-            code: 'FRT',
+            code: defaultCode,
             isNew: true,
             invoiceNumber: '-',
             ediNumber: '-',
-            commissionable: false
+            commissionable: defaultCommissionable // Auto-populate based on charge type
         };
 
         const updatedBreakdown = [...localRateBreakdown, newCharge];
+
+        // Update local state immediately for UI feedback
         setLocalRateBreakdown(updatedBreakdown);
         setEditingIndex(updatedBreakdown.length - 1);
         setEditingValues({
-            description: 'New Charge',
+            description: defaultDescription,
             quotedCost: '0',
             quotedCharge: '0',
             actualCost: '0',
             actualCharge: '0',
-            code: 'FRT',
-            invoiceNumber: '',
-            ediNumber: '',
-            commissionable: false
+            code: defaultCode,
+            invoiceNumber: '-',
+            ediNumber: '-',
+            commissionable: defaultCommissionable // Auto-populate based on charge type
         });
-    }, [localRateBreakdown]);
 
-    const handleDeleteCharge = useCallback((index) => {
+        // NO AUTO-SAVE: Let user edit the new charge first
+        // The charge will be saved when they click the checkmark (handleEditSave)
+        console.log('➕ New charge added to UI, ready for editing');
+    }, [localRateBreakdown, availableChargeTypes]);
+
+    const handleDeleteCharge = useCallback(async (index) => {
         const updatedBreakdown = localRateBreakdown.filter((_, i) => i !== index);
+
+        // Update local state first for immediate UI feedback
         setLocalRateBreakdown(updatedBreakdown);
-        onChargesUpdate(updatedBreakdown);
+
+        // Notify parent component of changes - this will trigger the save to database
+        if (onChargesUpdate) {
+            // Don't await - fire and forget for true optimistic updates
+            onChargesUpdate(updatedBreakdown).catch(error => {
+                console.error('❌ Error saving charges:', error);
+            });
+        }
     }, [localRateBreakdown, onChargesUpdate]);
 
-    const handleInputChange = useCallback((field, value) => {
+    // Menu handlers for action menu
+    const handleMenuOpen = useCallback((event, index) => {
+        setAnchorEl(event.currentTarget);
+        setMenuRowIndex(index);
+    }, []);
+
+    const handleMenuClose = useCallback(() => {
+        setAnchorEl(null);
+        setMenuRowIndex(null);
+    }, []);
+
+    const handleMenuEdit = useCallback(() => {
+        if (menuRowIndex !== null) {
+            const item = localRateBreakdown[menuRowIndex];
+            handleEditStart(menuRowIndex, item);
+        }
+        handleMenuClose();
+    }, [menuRowIndex, localRateBreakdown, handleEditStart]);
+
+    const handleMenuDelete = useCallback(() => {
+        if (menuRowIndex !== null) {
+            handleDeleteCharge(menuRowIndex);
+        }
+        handleMenuClose();
+    }, [menuRowIndex, handleDeleteCharge]);
+
+    const handleInputChange = useCallback(async (field, value) => {
         setEditingValues(prev => ({
             ...prev,
             [field]: value
         }));
-    }, []);
+
+        // Auto-populate description and commissionable flag when code is selected
+        if (field === 'code' && value) {
+            try {
+                // Auto-populate description
+                const newDescription = await getAutoPopulatedChargeName(value, editingValues.description || '');
+
+                // Auto-populate commissionable flag based on charge type
+                const selectedChargeType = availableChargeTypes.find(ct => ct.value === value);
+                const isCommissionable = selectedChargeType?.commissionable || false;
+
+                console.log('🏷️ Auto-populating charge properties:', {
+                    code: value,
+                    description: newDescription,
+                    commissionable: isCommissionable,
+                    chargeType: selectedChargeType
+                });
+
+                const updates = {};
+
+                if (newDescription !== (editingValues.description || '')) {
+                    updates.description = newDescription;
+                }
+
+                // Always update commissionable flag to match charge type
+                updates.commissionable = isCommissionable;
+
+                if (Object.keys(updates).length > 0) {
+                    setEditingValues(prev => ({
+                        ...prev,
+                        ...updates
+                    }));
+                }
+            } catch (error) {
+                console.error('Error auto-populating charge properties:', error);
+                // Continue without auto-population on error
+            }
+        }
+    }, [editingValues.description, availableChargeTypes]);
 
     // Comprehensive profit calculation logic for individual line items
     const calculateLineItemProfit = useCallback((item) => {
@@ -329,11 +498,46 @@ const RateDetails = ({
         };
     }, [localRateBreakdown, calculateLineItemProfit]);
 
-    // Initialize local rate breakdown when component loads or data changes - moved above early return
+    // Load dynamic charge types on component mount
+    useEffect(() => {
+        const loadChargeTypes = async () => {
+            setLoadingChargeTypes(true);
+            setChargeTypesError(null);
+
+            try {
+                console.log('📦 RateDetails: Loading dynamic charge types...');
+                const chargeTypes = await shipmentChargeTypeService.getChargeTypes();
+                console.log(`📦 RateDetails: Loaded ${chargeTypes.length} charge types`);
+                setAvailableChargeTypes(chargeTypes);
+            } catch (error) {
+                console.error('❌ RateDetails: Failed to load charge types:', error);
+                setChargeTypesError(error.message);
+                // Don't clear charge types on error - they may be cached
+            } finally {
+                setLoadingChargeTypes(false);
+            }
+        };
+
+        loadChargeTypes();
+    }, []); // Only load once on component mount
+
+    // Smart data refresh - only when safe to do so
     React.useEffect(() => {
-        const rateBreakdown = getRateBreakdown();
-        setLocalRateBreakdown(rateBreakdown);
-    }, [JSON.stringify(getBestRateInfo), JSON.stringify(quickShipData), enhancedIsAdmin, markupSummary]);
+        // Only refresh data if:
+        // 1. No one is actively editing (editingIndex is null)
+        // 2. shipment ID changed (new shipment loaded)
+        // 3. shipment was modified externally
+
+        const shouldRefresh = editingIndex === null && shipment?.id;
+
+        if (shouldRefresh) {
+            const rateBreakdown = getRateBreakdown();
+            console.log('🔄 Smart refresh: Updating rate breakdown (safe to refresh)');
+            setLocalRateBreakdown(rateBreakdown);
+        } else {
+            console.log('⚠️ Skipping rate breakdown reload - user is editing');
+        }
+    }, [shipment?.id, shipment?.lastModified, editingIndex]);
 
     if (!getBestRateInfo && !quickShipData) {
         return null;
@@ -351,13 +555,16 @@ const RateDetails = ({
 
     const currency = getCurrency();
 
-    // Helper function to format currency amounts
+    // Helper function to format currency amounts with thousands separators
     const formatCurrency = (amount, includeCents = true) => {
         const numAmount = parseFloat(amount) || 0;
         if (includeCents) {
-            return `$${numAmount.toFixed(2)} ${currency}`;
+            return `$${numAmount.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            })} ${currency}`;
         } else {
-            return `$${Math.round(numAmount)} ${currency}`;
+            return `$${Math.round(numAmount).toLocaleString('en-US')} ${currency}`;
         }
     };
 
@@ -477,34 +684,56 @@ const RateDetails = ({
     const getRateBreakdown = () => {
         const breakdown = [];
 
-        // Priority 1: Check for saved charges from database (highest priority)
-        if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
-            return shipment.updatedCharges.map(charge => ({
-                description: charge.description,
-                quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
-                quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
-                actualCost: parseFloat(charge.actualCost) || 0,
-                actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
-                code: charge.code || 'FRT',
-                invoiceNumber: charge.invoiceNumber || '-',
-                ediNumber: charge.ediNumber || '-',
-                commissionable: charge.commissionable || false
-            }));
-        }
+        // FIXED PRIORITY: For QuickShip shipments, manualRates is the single source of truth
+        const isQuickShipShipment = shipment?.creationMethod === 'quickship' || shipment?.isQuickShip;
 
-        // Priority 2: Check chargesBreakdown
-        if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown) && shipment.chargesBreakdown.length > 0) {
-            return shipment.chargesBreakdown.map(charge => ({
-                description: charge.description,
-                quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
-                quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
-                actualCost: parseFloat(charge.actualCost) || 0,
-                actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
-                code: charge.code || 'FRT',
-                invoiceNumber: charge.invoiceNumber || '-',
-                ediNumber: charge.ediNumber || '-',
-                commissionable: charge.commissionable || false
-            }));
+        if (isQuickShipShipment) {
+            // For QuickShip: ALWAYS use manualRates as the primary source
+            if (shipment?.manualRates && Array.isArray(shipment.manualRates) && shipment.manualRates.length > 0) {
+                return shipment.manualRates.map(rate => ({
+                    description: rate.chargeName || rate.description || '',
+                    quotedCost: parseFloat(rate.cost) || 0,
+                    quotedCharge: parseFloat(rate.charge) || 0,
+                    actualCost: parseFloat(rate.actualCost) || 0,
+                    actualCharge: parseFloat(rate.actualCharge) || 0,
+                    code: rate.code || 'FRT',
+                    invoiceNumber: rate.invoiceNumber || '-',
+                    ediNumber: rate.ediNumber || '-',
+                    commissionable: rate.commissionable || false
+                }));
+            }
+        } else {
+            // For regular shipments: Use the original priority order
+
+            // Priority 1: Check for saved charges from database (highest priority)
+            if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
+                return shipment.updatedCharges.map(charge => ({
+                    description: charge.description,
+                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
+                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
+                    actualCost: parseFloat(charge.actualCost) || 0,
+                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
+                    code: charge.code || 'FRT',
+                    invoiceNumber: charge.invoiceNumber || '-',
+                    ediNumber: charge.ediNumber || '-',
+                    commissionable: charge.commissionable || false
+                }));
+            }
+
+            // Priority 2: Check chargesBreakdown
+            if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown) && shipment.chargesBreakdown.length > 0) {
+                return shipment.chargesBreakdown.map(charge => ({
+                    description: charge.description,
+                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
+                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
+                    actualCost: parseFloat(charge.actualCost) || 0,
+                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
+                    code: charge.code || 'FRT',
+                    invoiceNumber: charge.invoiceNumber || '-',
+                    ediNumber: charge.ediNumber || '-',
+                    commissionable: charge.commissionable || false
+                }));
+            }
         }
 
         // Priority 3: QuickShip data
@@ -771,7 +1000,11 @@ const RateDetails = ({
                                 <Button
                                     size="small"
                                     startIcon={<AddIcon />}
-                                    onClick={handleAddCharge}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleAddCharge();
+                                    }}
                                     sx={{ fontSize: '12px' }}
                                 >
                                     Add Charge
@@ -785,7 +1018,7 @@ const RateDetails = ({
                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '80px' }}>
                                             Code
                                         </TableCell>
-                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc' }}>
+                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '200px' }}>
                                             Description
                                         </TableCell>
                                         {enhancedIsAdmin && (
@@ -827,7 +1060,7 @@ const RateDetails = ({
                                             </TableCell>
                                         )}
                                         {enhancedIsAdmin && (
-                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '100px' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '60px' }}>
                                                 Actions
                                             </TableCell>
                                         )}
@@ -842,16 +1075,42 @@ const RateDetails = ({
                                                         <Select
                                                             value={editingValues.code || 'FRT'}
                                                             onChange={(e) => handleInputChange('code', e.target.value)}
+                                                            disabled={loadingChargeTypes}
                                                             sx={{
                                                                 '& .MuiSelect-select': { fontSize: '12px', padding: '6px 8px' },
                                                                 '& .MuiInputBase-root': { height: '32px' }
                                                             }}
                                                         >
-                                                            {RATE_CODE_OPTIONS.map(option => (
-                                                                <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
-                                                                    {option.label}
+                                                            {loadingChargeTypes ? (
+                                                                <MenuItem disabled sx={{ fontSize: '12px' }}>Loading...</MenuItem>
+                                                            ) : availableChargeTypes.length > 0 ? (
+                                                                availableChargeTypes.map(chargeType => (
+                                                                    <MenuItem key={chargeType.value} value={chargeType.value} sx={{ fontSize: '12px' }}>
+                                                                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                {chargeType.value}
+                                                                            </Typography>
+                                                                            {(chargeType.label || chargeType.description) && (
+                                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                                    {chargeType.label || chargeType.description}
+                                                                                </Typography>
+                                                                            )}
+                                                                        </Box>
+                                                                    </MenuItem>
+                                                                ))
+                                                            ) : (
+                                                                // Fallback to static options if dynamic loading fails
+                                                                RATE_CODE_OPTIONS.map(option => (
+                                                                    <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
+                                                                        {option.label}
+                                                                    </MenuItem>
+                                                                ))
+                                                            )}
+                                                            {chargeTypesError && (
+                                                                <MenuItem disabled sx={{ fontSize: '11px', color: '#dc2626', fontStyle: 'italic' }}>
+                                                                    Error loading charge types
                                                                 </MenuItem>
-                                                            ))}
+                                                            )}
                                                         </Select>
                                                     </FormControl>
                                                 ) : (
@@ -1120,15 +1379,24 @@ const RateDetails = ({
                                             {enhancedIsAdmin && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
                                                     <Checkbox
-                                                        checked={item.commissionable || false}
+                                                        checked={editingIndex === index ? (editingValues.commissionable || false) : (item.commissionable || false)}
                                                         onChange={(e) => {
-                                                            const updatedBreakdown = [...localRateBreakdown];
-                                                            updatedBreakdown[index] = {
-                                                                ...updatedBreakdown[index],
-                                                                commissionable: e.target.checked
-                                                            };
-                                                            setLocalRateBreakdown(updatedBreakdown);
-                                                            onChargesUpdate(updatedBreakdown);
+                                                            if (editingIndex === index) {
+                                                                // Update editing values when in edit mode
+                                                                handleInputChange('commissionable', e.target.checked);
+                                                            } else {
+                                                                // Direct update when not in edit mode
+                                                                const updatedBreakdown = [...localRateBreakdown];
+                                                                updatedBreakdown[index] = {
+                                                                    ...updatedBreakdown[index],
+                                                                    commissionable: e.target.checked
+                                                                };
+                                                                setLocalRateBreakdown(updatedBreakdown);
+                                                                // Fire and forget for optimistic updates
+                                                                onChargesUpdate(updatedBreakdown).catch(error => {
+                                                                    console.error('❌ Error saving commissionable flag:', error);
+                                                                });
+                                                            }
                                                         }}
                                                         size="small"
                                                         sx={{
@@ -1146,7 +1414,11 @@ const RateDetails = ({
                                                             <Tooltip title="Save">
                                                                 <IconButton
                                                                     size="small"
-                                                                    onClick={() => handleEditSave(index)}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleEditSave(index);
+                                                                    }}
                                                                     sx={{ color: '#059669' }}
                                                                 >
                                                                     <CheckIcon sx={{ fontSize: 16 }} />
@@ -1155,7 +1427,11 @@ const RateDetails = ({
                                                             <Tooltip title="Cancel">
                                                                 <IconButton
                                                                     size="small"
-                                                                    onClick={handleEditCancel}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleEditCancel();
+                                                                    }}
                                                                     sx={{ color: '#dc2626' }}
                                                                 >
                                                                     <CancelIcon sx={{ fontSize: 16 }} />
@@ -1163,23 +1439,18 @@ const RateDetails = ({
                                                             </Tooltip>
                                                         </Box>
                                                     ) : (
-                                                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                                                            <Tooltip title="Edit">
+                                                        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                                            <Tooltip title="Actions">
                                                                 <IconButton
                                                                     size="small"
-                                                                    onClick={() => handleEditStart(index, item)}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleMenuOpen(e, index);
+                                                                    }}
                                                                     sx={{ color: '#6b7280' }}
                                                                 >
-                                                                    <EditIcon sx={{ fontSize: 16 }} />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                            <Tooltip title="Delete">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => handleDeleteCharge(index)}
-                                                                    sx={{ color: '#dc2626' }}
-                                                                >
-                                                                    <DeleteIcon sx={{ fontSize: 16 }} />
+                                                                    <MoreVertIcon sx={{ fontSize: 16 }} />
                                                                 </IconButton>
                                                             </Tooltip>
                                                         </Box>
@@ -1319,6 +1590,43 @@ const RateDetails = ({
 
                 </Box>
             </Paper>
+
+            {/* Action Menu */}
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+                PaperProps={{
+                    sx: {
+                        minWidth: 100,
+                        '& .MuiMenuItem-root': {
+                            fontSize: '11px',
+                            px: 1.5,
+                            py: 0.5,
+                            minHeight: 'auto'
+                        }
+                    }
+                }}
+            >
+                <MenuItem onClick={handleMenuEdit}>
+                    <ListItemIcon sx={{ minWidth: 24 }}>
+                        <EditIcon sx={{ fontSize: 14 }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Edit"
+                        primaryTypographyProps={{ fontSize: '11px' }}
+                    />
+                </MenuItem>
+                <MenuItem onClick={handleMenuDelete} sx={{ color: '#dc2626' }}>
+                    <ListItemIcon sx={{ minWidth: 24 }}>
+                        <DeleteIcon sx={{ fontSize: 14, color: '#dc2626' }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Delete"
+                        primaryTypographyProps={{ fontSize: '11px' }}
+                    />
+                </MenuItem>
+            </Menu>
         </Grid>
     );
 };
