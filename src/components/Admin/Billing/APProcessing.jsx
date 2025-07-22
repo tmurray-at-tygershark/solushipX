@@ -33,7 +33,6 @@ import {
     CardContent,
     Divider,
     LinearProgress,
-    Badge,
     Menu,
     ListItemIcon,
     ListItemText,
@@ -69,7 +68,8 @@ import {
     Refresh as RefreshIcon,
     Visibility as ViewIcon,
     Download as DownloadIcon,
-    LocalShipping as LocalShippingIcon
+    LocalShipping as LocalShippingIcon,
+    MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useSnackbar } from 'notistack';
@@ -85,7 +85,8 @@ import {
     updateDoc,
     deleteDoc,
     addDoc,
-    serverTimestamp
+    serverTimestamp,
+    onSnapshot
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -93,14 +94,17 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import AdminBreadcrumb from '../AdminBreadcrumb';
-import EDIUploader from './EDIUploader';
-import EDIResults from './EDIResults';
+import PdfViewerDialog from '../../Shipments/components/PdfViewerDialog';
+
 import MatchReviewDialog from './MatchReviewDialog';
 
+
 // PDF Results Table Component - Standardized across all carriers
-const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
+const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfViewer }) => {
     const [selectedRows, setSelectedRows] = useState([]);
     const [isExporting, setIsExporting] = useState(false);
+    const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
+    const [selectedRowForAction, setSelectedRowForAction] = useState(null);
 
     const normalizeDataForTable = (results) => {
         console.log('Normalizing data for table:', results);
@@ -244,6 +248,41 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
 
     const calculateTotal = (charges) => {
         return charges.reduce((sum, charge) => sum + charge.amount, 0);
+    };
+
+    // Helper function for date formatting (mm/dd/yy)
+    const formatDate = (dateString) => {
+        if (!dateString) return '';
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return dateString; // Return original if invalid
+
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const year = String(date.getFullYear()).slice(-2);
+
+            return `${month}/${day}/${year}`;
+        } catch (error) {
+            return dateString; // Return original if parsing fails
+        }
+    };
+
+    // Action menu handlers
+    const handleActionMenuOpen = (event, row) => {
+        setActionMenuAnchor(event.currentTarget);
+        setSelectedRowForAction(row);
+    };
+
+    const handleActionMenuClose = () => {
+        setActionMenuAnchor(null);
+        setSelectedRowForAction(null);
+    };
+
+    const handleViewDetails = () => {
+        if (selectedRowForAction && onViewShipmentDetail) {
+            onViewShipmentDetail(selectedRowForAction);
+        }
+        handleActionMenuClose();
     };
 
     // Render match status with appropriate styling
@@ -453,15 +492,8 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                     No shipment data found
                 </Typography>
                 <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
-                    The PDF processing completed but no structured shipment data was extracted.
+                    The PDF processing completed but no structured shipment data was extracted. Use the close button above to return to the overview.
                 </Typography>
-                <Button
-                    variant="outlined"
-                    onClick={onClose}
-                    sx={{ fontSize: '12px' }}
-                >
-                    Back to Overview
-                </Button>
             </Box>
         );
     }
@@ -481,7 +513,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                             variant="outlined"
                             size="small"
                             startIcon={<PdfIcon />}
-                            onClick={() => window.open(pdfResults.downloadURL, '_blank')}
+                            onClick={() => onOpenPdfViewer(pdfResults.downloadURL, `Original PDF: ${pdfResults.fileName || 'Document'}`)}
                             sx={{ fontSize: '11px' }}
                         >
                             View Original PDF
@@ -490,6 +522,28 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                 </Box>
 
                 <Box sx={{ display: 'flex', gap: 1 }}>
+                    {/* View Invoice Button */}
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<ViewIcon />}
+                        onClick={() => {
+                            // Use the same robust URL detection logic
+                            const fileUrl = pdfResults.downloadURL ||
+                                pdfResults.fileUrl ||
+                                pdfResults.url ||
+                                pdfResults.uploadUrl ||
+                                pdfResults.fileURL;
+
+                            if (fileUrl) {
+                                onOpenPdfViewer(fileUrl, `Invoice: ${pdfResults.fileName || 'Document'}`);
+                            }
+                        }}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        View Invoice
+                    </Button>
+
                     {/* CSV Export Button */}
                     <Button
                         variant="contained"
@@ -500,15 +554,6 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                         sx={{ fontSize: '11px' }}
                     >
                         {isExporting ? 'Exporting...' : `Export CSV${selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}`}
-                    </Button>
-
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={onClose}
-                        sx={{ fontSize: '11px' }}
-                    >
-                        Back to Overview
                     </Button>
                 </Box>
             </Box>
@@ -533,72 +578,166 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                                     size="small"
                                 />
                             </TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Shipment ID</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Tracking</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Carrier</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Service</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Ship Date</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Weight & Dimensions</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Origin</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Destination</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Charges</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Match Status</TableCell>
-                            <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', maxWidth: '120px !important', width: '120px !important' }}>Shipment ID</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', maxWidth: '110px !important', width: '110px !important' }}>Tracking</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', maxWidth: '100px !important', width: '100px !important' }}>Carrier</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', maxWidth: '90px !important', width: '90px !important' }}>Service</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', maxWidth: '80px !important', width: '80px !important' }}>Ship Date</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Weight & Dimensions</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Route</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '200px' }}>Charges</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Total</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Match Status</TableCell>
+                            <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {tableData.map((row) => (
                             <TableRow key={row.id} hover sx={{ '&:hover': { backgroundColor: '#f9fafb' } }}>
-                                <TableCell padding="checkbox">
+                                <TableCell padding="checkbox" sx={{ verticalAlign: 'top' }}>
                                     <Checkbox
                                         checked={selectedRows.includes(row.id)}
                                         onChange={() => handleSelectRow(row.id)}
                                         size="small"
                                     />
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>{row.shipmentId}</TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>{row.trackingNumber}</TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>{row.carrier}</TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>{row.service}</TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>{row.shipDate}</TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>
-                                    <Box>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '120px !important', width: '120px !important' }} style={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '110px !important', width: '110px !important' }} style={{ fontSize: '11px' }}>{row.trackingNumber}</TableCell>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '100px !important', width: '100px !important' }} style={{ fontSize: '11px' }}>{row.carrier}</TableCell>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '90px !important', width: '90px !important' }} style={{ fontSize: '11px' }}>{row.service}</TableCell>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '80px !important', width: '80px !important' }} style={{ fontSize: '11px' }}>{formatDate(row.shipDate)}</TableCell>
+                                <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', textAlign: 'left' }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                                         {row.weight && (
-                                            <Typography variant="body2" sx={{ fontSize: '11px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 600 }}>
                                                 {typeof row.weight === 'string' ? row.weight : JSON.stringify(row.weight)}
                                             </Typography>
                                         )}
                                         {row.dimensions && (
-                                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.25 }}>
                                                 {row.dimensions}
                                             </Typography>
                                         )}
                                     </Box>
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px', maxWidth: 150 }}>
-                                    <Typography variant="body2" sx={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {row.origin}
-                                    </Typography>
+                                <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', textAlign: 'left' }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                        {/* FROM Company and Address */}
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                            <Typography variant="body2" sx={{
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: '#374151',
+                                                lineHeight: 1.2
+                                            }}>
+                                                {(() => {
+                                                    // Extract company name from origin
+                                                    if (typeof row.origin === 'string') {
+                                                        // If origin is a simple string, try to extract company name
+                                                        const parts = row.origin.split(',');
+                                                        return parts[0]?.trim() || 'Unknown Shipper';
+                                                    } else if (row.origin?.companyName || row.origin?.company) {
+                                                        return row.origin.companyName || row.origin.company;
+                                                    }
+                                                    return 'Unknown Shipper';
+                                                })()}
+                                            </Typography>
+                                            <Typography variant="caption" sx={{
+                                                fontSize: '11px',
+                                                color: '#6b7280',
+                                                lineHeight: 1.2
+                                            }}>
+                                                {(() => {
+                                                    // Extract address from origin
+                                                    if (typeof row.origin === 'string') {
+                                                        // If origin is a string, show it as is but truncated
+                                                        return row.origin.length > 40 ? `${row.origin.substring(0, 40)}...` : row.origin;
+                                                    } else if (row.origin) {
+                                                        // Build address from object
+                                                        const parts = [
+                                                            row.origin.street || row.origin.addressLine1,
+                                                            row.origin.city,
+                                                            row.origin.state || row.origin.province,
+                                                            row.origin.postalCode || row.origin.zipCode
+                                                        ].filter(Boolean);
+                                                        const address = parts.join(', ');
+                                                        return address.length > 40 ? `${address.substring(0, 40)}...` : address;
+                                                    }
+                                                    return '';
+                                                })()}
+                                            </Typography>
+                                        </Box>
+
+                                        {/* Arrow */}
+                                        <Box sx={{
+                                            color: '#9ca3af',
+                                            fontSize: '12px',
+                                            fontWeight: 600,
+                                            alignSelf: 'center',
+                                            py: 0.25
+                                        }}>
+                                            ↓
+                                        </Box>
+
+                                        {/* TO Company and Address */}
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                            <Typography variant="body2" sx={{
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: '#374151',
+                                                lineHeight: 1.2
+                                            }}>
+                                                {(() => {
+                                                    // Extract company name from destination
+                                                    if (typeof row.destination === 'string') {
+                                                        // If destination is a simple string, try to extract company name
+                                                        const parts = row.destination.split(',');
+                                                        return parts[0]?.trim() || 'Unknown Consignee';
+                                                    } else if (row.destination?.companyName || row.destination?.company) {
+                                                        return row.destination.companyName || row.destination.company;
+                                                    }
+                                                    return 'Unknown Consignee';
+                                                })()}
+                                            </Typography>
+                                            <Typography variant="caption" sx={{
+                                                fontSize: '10px',
+                                                color: '#6b7280',
+                                                lineHeight: 1.2
+                                            }}>
+                                                {(() => {
+                                                    // Extract address from destination
+                                                    if (typeof row.destination === 'string') {
+                                                        // If destination is a string, show it as is but truncated
+                                                        return row.destination.length > 40 ? `${row.destination.substring(0, 40)}...` : row.destination;
+                                                    } else if (row.destination) {
+                                                        // Build address from object
+                                                        const parts = [
+                                                            row.destination.street || row.destination.addressLine1,
+                                                            row.destination.city,
+                                                            row.destination.state || row.destination.province,
+                                                            row.destination.postalCode || row.destination.zipCode
+                                                        ].filter(Boolean);
+                                                        const address = parts.join(', ');
+                                                        return address.length > 40 ? `${address.substring(0, 40)}...` : address;
+                                                    }
+                                                    return '';
+                                                })()}
+                                            </Typography>
+                                        </Box>
+                                    </Box>
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px', maxWidth: 150 }}>
-                                    <Typography variant="body2" sx={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {row.destination}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>
+                                <TableCell sx={{ fontSize: '11px', minWidth: '200px', verticalAlign: 'top', textAlign: 'left' }}>
                                     {row.charges.length > 0 ? (
-                                        <Box>
-                                            {row.charges.slice(0, 2).map((charge, index) => (
-                                                <Typography key={index} variant="caption" sx={{ fontSize: '10px', display: 'block' }}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
+                                            {row.charges.map((charge, index) => (
+                                                <Typography key={index} variant="caption" sx={{
+                                                    fontSize: '10px',
+                                                    display: 'block',
+                                                    lineHeight: 1.3
+                                                }}>
                                                     {charge.name}: {formatCurrency(charge.amount, charge.currency)}
                                                 </Typography>
                                             ))}
-                                            {row.charges.length > 2 && (
-                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                    +{row.charges.length - 2} more...
-                                                </Typography>
-                                            )}
                                         </Box>
                                     ) : (
                                         <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280' }}>
@@ -606,21 +745,23 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                                         </Typography>
                                     )}
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#059669' }}>
+                                <TableCell sx={{ fontSize: '11px', fontWeight: 600, color: '#059669', verticalAlign: 'top', textAlign: 'left' }}>
                                     {formatCurrency(row.totalAmount, row.currency)}
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>
+                                <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', textAlign: 'left' }}>
                                     {renderMatchStatus(row)}
                                 </TableCell>
-                                <TableCell sx={{ fontSize: '12px' }}>
-                                    <Button
+                                <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', textAlign: 'left' }}>
+                                    <IconButton
                                         size="small"
-                                        variant="outlined"
-                                        onClick={() => onViewShipmentDetail && onViewShipmentDetail(row)}
-                                        sx={{ fontSize: '11px' }}
+                                        onClick={(event) => handleActionMenuOpen(event, row)}
+                                        sx={{
+                                            fontSize: '11px',
+                                            padding: '4px'
+                                        }}
                                     >
-                                        View Details
-                                    </Button>
+                                        <MoreVertIcon fontSize="small" />
+                                    </IconButton>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -733,6 +874,29 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail }) => {
                         </Grid>
                     </Box>
                 )}
+
+                {/* Action Menu */}
+                <Menu
+                    anchorEl={actionMenuAnchor}
+                    open={Boolean(actionMenuAnchor)}
+                    onClose={handleActionMenuClose}
+                    PaperProps={{
+                        sx: {
+                            width: 200,
+                            maxWidth: '100%',
+                        },
+                    }}
+                >
+                    <MenuItem onClick={handleViewDetails} sx={{ fontSize: '11px' }}>
+                        <ListItemIcon>
+                            <ViewIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary="View Details"
+                            primaryTypographyProps={{ fontSize: '11px' }}
+                        />
+                    </MenuItem>
+                </Menu>
             </Box>
         </Box>
     );
@@ -748,6 +912,7 @@ const APProcessing = () => {
 
     // State Management
     const [loading, setLoading] = useState(true);
+
     const [activeTab, setActiveTab] = useState('overview');
     const [uploads, setUploads] = useState([]);
     const [filteredUploads, setFilteredUploads] = useState([]);
@@ -759,6 +924,8 @@ const APProcessing = () => {
     const [processingDialog, setProcessingDialog] = useState(false);
     const [selectedUpload, setSelectedUpload] = useState(null);
     const [processingJob, setProcessingJob] = useState(null);
+    const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
+    const [selectedUploadForAction, setSelectedUploadForAction] = useState(null);
     const [pdfParsingSettings, setPdfParsingSettings] = useState({
         autoExtract: true,
         ocrEnabled: true,
@@ -781,12 +948,24 @@ const APProcessing = () => {
     });
     const [anchorEl, setAnchorEl] = useState(null);
     const [settingsDialog, setSettingsDialog] = useState(false);
-    const [showEdiResults, setShowEdiResults] = useState(false);
+
     const [showPdfResults, setShowPdfResults] = useState(false);
     const [processingFiles, setProcessingFiles] = useState([]);
     const [selectedCarrier, setSelectedCarrier] = useState('auto-detect'); // Default to AI auto-detection
     const [shipmentDetailDialog, setShipmentDetailDialog] = useState(false);
     const [selectedShipmentDetail, setSelectedShipmentDetail] = useState(null);
+
+    // PDF Viewer Dialog State
+    const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+    const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
+    const [currentPdfTitle, setCurrentPdfTitle] = useState('');
+
+    // Helper function to open PDF in dialog viewer
+    const handleOpenPdfViewer = (pdfUrl, title = 'PDF Document') => {
+        setCurrentPdfUrl(pdfUrl);
+        setCurrentPdfTitle(title);
+        setPdfViewerOpen(true);
+    };
 
     // Debug: Log carrier state changes
     useEffect(() => {
@@ -904,14 +1083,155 @@ const APProcessing = () => {
     ];
 
     useEffect(() => {
-        loadUploads();
         loadSettings();
+        const cleanup = setupRealtimeListeners();
+        return cleanup; // Return cleanup function to unsubscribe from listeners
     }, []);
+
+    // Setup real-time listeners for PDF uploads
+    const setupRealtimeListeners = () => {
+        console.log('🔥 Setting up real-time listeners for AP Processing');
+
+        // Listen to PDF uploads with real-time updates
+        const pdfQuery = query(
+            collection(db, 'pdfUploads'),
+            orderBy('uploadDate', 'desc'),
+            limit(100)
+        );
+
+        const unsubscribePdf = onSnapshot(pdfQuery, (snapshot) => {
+            console.log('📄 PDF uploads real-time update:', snapshot.docs.length, 'documents');
+
+            const pdfUploads = snapshot.docs.map(doc => ({
+                id: doc.id,
+                type: 'pdf',
+                ...doc.data()
+            }));
+
+            updateUploadsData(pdfUploads, 'pdf');
+        }, (error) => {
+            console.warn('PDF uploads listener error:', error);
+        });
+
+        // Listen to EDI uploads with real-time updates  
+        const ediQuery = query(
+            collection(db, 'ediUploads'),
+            orderBy('uploadDate', 'desc'),
+            limit(100)
+        );
+
+        const unsubscribeEdi = onSnapshot(ediQuery, (snapshot) => {
+            console.log('📊 EDI uploads real-time update:', snapshot.docs.length, 'documents');
+
+            const ediUploads = snapshot.docs.map(doc => ({
+                id: doc.id,
+                type: 'edi',
+                ...doc.data()
+            }));
+
+            updateUploadsData(ediUploads, 'edi');
+        }, (error) => {
+            console.warn('EDI uploads listener error:', error);
+        });
+
+        // Listen to AP uploads with real-time updates (new enhanced uploads)
+        const apQuery = query(
+            collection(db, 'apUploads'),
+            orderBy('uploadDate', 'desc'),
+            limit(100)
+        );
+
+        const unsubscribeAp = onSnapshot(apQuery, (snapshot) => {
+            console.log('🚀 AP uploads real-time update:', snapshot.docs.length, 'documents');
+
+            const apUploads = snapshot.docs.map(doc => ({
+                id: doc.id,
+                type: doc.data().type || 'pdf', // Use stored type, fallback to pdf
+                ...doc.data()
+            }));
+
+            updateUploadsData(apUploads, 'ap');
+        }, (error) => {
+            console.warn('AP uploads listener error:', error);
+        });
+
+        // Cleanup function to unsubscribe from listeners
+        return () => {
+            unsubscribePdf();
+            unsubscribeEdi();
+            unsubscribeAp();
+        };
+    };
 
     useEffect(() => {
         filterUploads();
     }, [uploads, searchTerm, statusFilter, typeFilter, carrierFilter]);
 
+    // Update uploads data from real-time listeners
+    // Safe date conversion function to handle different date formats
+    const safeToDate = (dateValue) => {
+        if (!dateValue) return new Date(0);
+
+        // If it's already a Date object, return it
+        if (dateValue instanceof Date) return dateValue;
+
+        // If it's a Firestore Timestamp, convert it
+        if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+            return dateValue.toDate();
+        }
+
+        // If it's a string or number, try to parse it
+        if (typeof dateValue === 'string' || typeof dateValue === 'number') {
+            return new Date(dateValue);
+        }
+
+        // Fallback
+        return new Date(0);
+    };
+
+    // Safe date formatting function for display
+    const formatSafeDate = (dateValue) => {
+        if (!dateValue) return 'N/A';
+
+        try {
+            const date = safeToDate(dateValue);
+            return date.toLocaleString();
+        } catch (error) {
+            console.warn('Error formatting date:', error, dateValue);
+            return 'Invalid Date';
+        }
+    };
+
+    const updateUploadsData = (newUploads, type) => {
+        setUploads(prevUploads => {
+            // For 'ap' type, we need to handle it differently since ap uploads can contain both pdf and edi types
+            let filteredUploads;
+            if (type === 'ap') {
+                // For AP uploads, don't filter by type since they contain mixed types
+                // Instead, filter out any uploads that have the same ID (to avoid duplicates)
+                const newUploadIds = newUploads.map(upload => upload.id);
+                filteredUploads = prevUploads.filter(upload => !newUploadIds.includes(upload.id));
+            } else {
+                // Remove old uploads of this type and add new ones
+                filteredUploads = prevUploads.filter(upload => upload.type !== type);
+            }
+
+            const updatedUploads = [...filteredUploads, ...newUploads];
+
+            // Sort by upload date (newest first) - use safe date conversion
+            const sortedUploads = updatedUploads.sort((a, b) => {
+                const aDate = safeToDate(a.uploadDate);
+                const bDate = safeToDate(b.uploadDate);
+                return bDate - aDate;
+            });
+
+            calculateStats(sortedUploads);
+            setLoading(false); // Data is loaded
+            return sortedUploads;
+        });
+    };
+
+    // Fallback function for manual refresh
     const loadUploads = async () => {
         try {
             setLoading(true);
@@ -943,6 +1263,20 @@ const APProcessing = () => {
                 console.warn('PDF uploads collection not found:', error.message);
             }
 
+            // Load AP uploads (new enhanced uploads with page counting)
+            let apSnapshot = { docs: [] };
+            try {
+                const apQuery = query(
+                    collection(db, 'apUploads'),
+                    orderBy('uploadDate', 'desc'),
+                    limit(100)
+                );
+                apSnapshot = await getDocs(apQuery);
+            } catch (error) {
+                // AP uploads collection might not exist yet
+                console.warn('AP uploads collection not found:', error.message);
+            }
+
             const allUploads = [
                 ...ediSnapshot.docs.map(doc => ({
                     id: doc.id,
@@ -953,10 +1287,16 @@ const APProcessing = () => {
                     id: doc.id,
                     type: 'pdf',
                     ...doc.data()
+                })),
+                ...apSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    // Use the type from the document data, fallback to 'pdf' for most AP uploads
+                    type: doc.data().type || 'pdf',
+                    ...doc.data()
                 }))
             ].sort((a, b) => {
-                const aDate = a.uploadDate?.toDate() || new Date(0);
-                const bDate = b.uploadDate?.toDate() || new Date(0);
+                const aDate = safeToDate(a.uploadDate);
+                const bDate = safeToDate(b.uploadDate);
                 return bDate - aDate;
             });
 
@@ -1077,6 +1417,8 @@ const APProcessing = () => {
                 uploadDate: new Date(), // Use current time
                 recordCount: 0,
                 carrier: selectedCarrier === 'auto-detect' ? 'Auto-Detecting...' : selectedCarrier,
+                pageCount: null, // Will be updated for PDFs
+                metadata: { pageCount: null }, // Ensure metadata structure exists
                 _isTemporary: true // Flag to identify temporary records
             };
 
@@ -1116,54 +1458,124 @@ const APProcessing = () => {
 
             enqueueSnackbar('Uploading file...', { variant: 'info' });
 
-            // Upload file using uploadFile cloud function
-            const uploadFileFunc = httpsCallable(functions, 'uploadFile');
-            const uploadResult = await uploadFileFunc({
-                fileName: file.name,
-                fileType: file.type,
-                fileSize: file.size
-            });
+            // For PDF files, use uploadAPFile to get page count; for others use uploadFileBase64
+            let uploadResult;
+            if (file.type === 'application/pdf') {
+                // Convert file to base64 for page counting
+                const base64Data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const base64 = reader.result.split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.onerror = () => reject(new Error(`Failed to read file ${file.name}`));
+                    reader.readAsDataURL(file);
+                });
+
+                const uploadAPFileFunc = httpsCallable(functions, 'uploadAPFile');
+                uploadResult = await uploadAPFileFunc({
+                    fileName: file.name,
+                    fileData: base64Data,
+                    fileType: file.type,
+                    fileSize: file.size,
+                    carrier: selectedCarrier === 'auto-detect' ? 'auto-detect' : selectedCarrier
+                });
+            } else {
+                // Use regular upload for non-PDF files
+                const uploadFileFunc = httpsCallable(functions, 'uploadFile');
+                uploadResult = await uploadFileFunc({
+                    fileName: file.name,
+                    fileType: file.type,
+                    fileSize: file.size
+                });
+            }
 
             if (!uploadResult.data.success) {
                 throw new Error(uploadResult.data.error || 'Upload failed');
             }
 
-            // Get the signed URL and upload the file
-            const { uploadUrl, downloadURL } = uploadResult.data;
+            // Handle different response structures for PDF vs non-PDF uploads
+            let downloadURL, uploadUrl;
+            let pageCount = null;
 
-            // Update progress - starting file upload
-            setProcessingFiles(prev => prev.map(f =>
-                f.id === fileId
-                    ? { ...f, progress: 30, message: 'Uploading file to cloud storage...' }
-                    : f
-            ));
-
-            // 🔥 Update upload status in real-time
-            setUploads(prev => prev.map(upload =>
-                upload.id === fileId
-                    ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
-                    : upload
-            ));
-            setFilteredUploads(prev => prev.map(upload =>
-                upload.id === fileId
-                    ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
-                    : upload
-            ));
-
-            // Upload file to Cloud Storage using signed URL
-            const uploadResponse = await fetch(uploadUrl, {
-                method: 'PUT',
-                body: file,
-                headers: {
-                    'Content-Type': file.type,
-                },
-            });
-
-            if (!uploadResponse.ok) {
-                throw new Error('Failed to upload file to storage');
+            if (file.type === 'application/pdf') {
+                // uploadAPFile returns direct download URL and page count
+                downloadURL = uploadResult.data.downloadURL;
+                pageCount = uploadResult.data.pageCount;
+                console.log('PDF uploaded with page count:', pageCount);
+            } else {
+                // uploadFile returns signed URLs
+                uploadUrl = uploadResult.data.uploadUrl;
+                downloadURL = uploadResult.data.downloadURL;
             }
 
-            console.log('File uploaded successfully:', downloadURL);
+            // Handle upload flow differently for PDF vs non-PDF files
+            if (file.type === 'application/pdf') {
+                // PDF is already uploaded by uploadAPFile, just update progress
+                setProcessingFiles(prev => prev.map(f =>
+                    f.id === fileId
+                        ? { ...f, progress: 60, message: 'PDF uploaded successfully, page count extracted...' }
+                        : f
+                ));
+
+                // 🔥 Update upload status in real-time with page count
+                setUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? {
+                            ...upload,
+                            processingStatus: 'uploaded',
+                            message: `PDF uploaded (${pageCount || 'unknown'} pages)`,
+                            pageCount: pageCount
+                        }
+                        : upload
+                ));
+                setFilteredUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? {
+                            ...upload,
+                            processingStatus: 'uploaded',
+                            message: `PDF uploaded (${pageCount || 'unknown'} pages)`,
+                            pageCount: pageCount
+                        }
+                        : upload
+                ));
+
+                console.log('PDF uploaded successfully with page count:', downloadURL, 'Pages:', pageCount);
+            } else {
+                // Update progress - starting file upload for non-PDF files
+                setProcessingFiles(prev => prev.map(f =>
+                    f.id === fileId
+                        ? { ...f, progress: 30, message: 'Uploading file to cloud storage...' }
+                        : f
+                ));
+
+                // 🔥 Update upload status in real-time
+                setUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
+                        : upload
+                ));
+                setFilteredUploads(prev => prev.map(upload =>
+                    upload.id === fileId
+                        ? { ...upload, processingStatus: 'uploading', message: 'Uploading file to cloud storage...' }
+                        : upload
+                ));
+
+                // Upload file to Cloud Storage using signed URL
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': file.type,
+                    },
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error('Failed to upload file to storage');
+                }
+
+                console.log('File uploaded successfully:', downloadURL);
+            }
 
             // Update status to uploaded
             setProcessingFiles(prev => prev.map(f =>
@@ -1669,17 +2081,7 @@ const APProcessing = () => {
         );
     };
 
-    const handleEdiUploadComplete = (uploadId) => {
-        setShowEdiResults(true);
-        setSelectedUpload({ id: uploadId, type: 'edi' });
-        loadUploads();
-    };
 
-    const handleCloseEdiResults = () => {
-        setShowEdiResults(false);
-        setSelectedUpload(null);
-        loadUploads();
-    };
 
     // Enhanced view results handler that differentiates between PDF and EDI
     const handleViewResults = async (upload) => {
@@ -1724,16 +2126,15 @@ const APProcessing = () => {
                 setShowPdfResults(true);
             }
         } else {
-            // For EDI files, show EDI results in the EDI tab
-            setSelectedUpload(upload);
-            setActiveTab('edi');
-            setShowEdiResults(true);
+            // Only PDF files are supported now
+            enqueueSnackbar('Only PDF results are supported', { variant: 'info' });
         }
     };
 
     const handleClosePdfResults = () => {
         setShowPdfResults(false);
         setSelectedUpload(null);
+        setActiveTab('overview'); // Return to overview main screen
     };
 
     const handleViewShipmentDetail = (shipment) => {
@@ -1754,6 +2155,31 @@ const APProcessing = () => {
             style: 'currency',
             currency: 'USD'
         }).format(numAmount);
+    };
+
+    // Action menu handlers
+    const handleActionMenuOpen = (event, upload) => {
+        setActionMenuAnchor(event.currentTarget);
+        setSelectedUploadForAction(upload);
+    };
+
+    const handleActionMenuClose = () => {
+        setActionMenuAnchor(null);
+        setSelectedUploadForAction(null);
+    };
+
+    const handleMenuViewResults = () => {
+        if (selectedUploadForAction) {
+            handleViewResults(selectedUploadForAction);
+        }
+        handleActionMenuClose();
+    };
+
+    const handleMenuExportCSV = () => {
+        if (selectedUploadForAction) {
+            handleExportResults(selectedUploadForAction, 'csv');
+        }
+        handleActionMenuClose();
     };
 
 
@@ -2257,18 +2683,8 @@ const APProcessing = () => {
                         }
                     }}
                 >
-                    <Tab label="Overview" value="overview" />
-                    <Tab
-                        label={
-                            <Badge badgeContent={stats.pendingUploads} color="warning">
-                                Upload Queue
-                            </Badge>
-                        }
-                        value="queue"
-                    />
-                    <Tab label="EDI Processing" value="edi" />
+                    <Tab label="Processor" value="overview" />
                     <Tab label="Data Mapping" value="mapping" />
-                    <Tab label="Analytics" value="analytics" />
                 </Tabs>
             </Box>
 
@@ -2547,12 +2963,12 @@ const APProcessing = () => {
                             </Paper>
                         )}
 
-                        {/* Recent Uploads */}
+                        {/* Carrier Invoice Uploads */}
                         <Paper elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
                             <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                                        Recent Uploads
+                                        Carrier Invoice Uploads
                                     </Typography>
                                     <Button
                                         size="small"
@@ -2569,17 +2985,19 @@ const APProcessing = () => {
                                     <TableHead>
                                         <TableRow>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>File</TableCell>
-                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Type</TableCell>
-                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Status</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Carrier</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Carrier Invoice#</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Records</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Pages</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Uploaded</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Status</TableCell>
                                             <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>Actions</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
                                         {loading ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                                                <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
                                                     <CircularProgress size={24} />
                                                 </TableCell>
                                             </TableRow>
@@ -2589,7 +3007,37 @@ const APProcessing = () => {
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                         {upload.type === 'pdf' ? <PdfIcon /> : <TableIcon />}
                                                         <Box>
-                                                            <Typography sx={{ fontSize: '12px' }}>
+                                                            <Typography
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    cursor: (upload.downloadURL || upload.fileUrl || upload.url || upload.uploadUrl || upload.fileURL) ? 'pointer' : 'default',
+                                                                    color: (upload.downloadURL || upload.fileUrl || upload.url || upload.uploadUrl || upload.fileURL) ? '#1976d2' : 'inherit',
+                                                                    fontWeight: (upload.downloadURL || upload.fileUrl || upload.url || upload.uploadUrl || upload.fileURL) ? 500 : 'normal',
+                                                                    '&:hover': (upload.downloadURL || upload.fileUrl || upload.url || upload.uploadUrl || upload.fileURL) ? {
+                                                                        textDecoration: 'underline',
+                                                                        color: '#1565c0'
+                                                                    } : {}
+                                                                }}
+                                                                onClick={() => {
+                                                                    // Debug: Log the entire upload object to see what fields are available
+                                                                    console.log('Upload object:', upload);
+
+                                                                    const fileUrl = upload.downloadURL || upload.fileUrl || upload.url || upload.uploadUrl || upload.fileURL;
+                                                                    if (fileUrl) {
+                                                                        console.log('Opening file:', fileUrl);
+                                                                        if (upload.type === 'pdf') {
+                                                                            // Open PDFs in the dialog viewer
+                                                                            handleOpenPdfViewer(fileUrl, upload.fileName || 'PDF Document');
+                                                                        } else {
+                                                                            // Open other files in new window
+                                                                            window.open(fileUrl, '_blank');
+                                                                        }
+                                                                    } else {
+                                                                        console.log('No file URL available for:', upload.fileName);
+                                                                        console.log('Available fields:', Object.keys(upload));
+                                                                    }
+                                                                }}
+                                                            >
                                                                 {upload.fileName}
                                                             </Typography>
                                                             {upload.message && (upload.processingStatus === 'uploading' || upload.processingStatus === 'uploaded' || upload.processingStatus === 'processing') && (
@@ -2600,55 +3048,30 @@ const APProcessing = () => {
                                                         </Box>
                                                     </Box>
                                                 </TableCell>
-                                                <TableCell>{getTypeChip(upload.type)}</TableCell>
-                                                <TableCell>{getStatusChip(upload.processingStatus)}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {upload.carrier || upload.detectedCarrier || 'N/A'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {upload.carrierInvoiceNumber || upload.invoiceNumber || 'N/A'}
+                                                </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     {upload.recordCount || 0}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {upload.uploadDate?.toDate ? upload.uploadDate.toDate().toLocaleString() : upload.uploadDate?.toLocaleString?.() || 'N/A'}
+                                                    {upload.metadata?.pageCount || upload.pageCount || (upload.type === 'pdf' ? 'N/A' : '-')}
                                                 </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {formatSafeDate(upload.uploadDate)}
+                                                </TableCell>
+                                                <TableCell>{getStatusChip(upload.processingStatus)}</TableCell>
                                                 <TableCell align="right">
-                                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleViewResults(upload)}
-                                                            title="View Results"
-                                                        >
-                                                            <ViewIcon fontSize="small" />
-                                                        </IconButton>
-
-                                                        {upload.processingStatus === 'completed' && upload.type === 'pdf' && (
-                                                            <>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => handleExportResults(upload, 'json')}
-                                                                    title="Export as JSON"
-                                                                >
-                                                                    <DownloadIcon fontSize="small" />
-                                                                </IconButton>
-
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => handleExportResults(upload, 'csv')}
-                                                                    title="Export as CSV"
-                                                                >
-                                                                    <TableIcon fontSize="small" />
-                                                                </IconButton>
-                                                            </>
-                                                        )}
-
-                                                        {upload.processingStatus === 'failed' && (
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => handleRetryProcessing(upload)}
-                                                                title="Retry Processing"
-                                                                color="warning"
-                                                            >
-                                                                <RefreshIcon fontSize="small" />
-                                                            </IconButton>
-                                                        )}
-                                                    </Box>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(event) => handleActionMenuOpen(event, upload)}
+                                                        sx={{ fontSize: '11px' }}
+                                                    >
+                                                        <MoreVertIcon fontSize="small" />
+                                                    </IconButton>
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -2656,133 +3079,69 @@ const APProcessing = () => {
                                 </Table>
                             </TableContainer>
                         </Paper>
+
+                        {/* Action Menu */}
+                        <Menu
+                            anchorEl={actionMenuAnchor}
+                            open={Boolean(actionMenuAnchor)}
+                            onClose={handleActionMenuClose}
+                            PaperProps={{
+                                sx: {
+                                    width: 200,
+                                    maxWidth: '100%',
+                                },
+                            }}
+                        >
+                            <MenuItem onClick={handleMenuViewResults} sx={{ fontSize: '11px' }}>
+                                <ListItemIcon>
+                                    <ViewIcon fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="View Results"
+                                    primaryTypographyProps={{ fontSize: '11px' }}
+                                />
+                            </MenuItem>
+                            {selectedUploadForAction?.type === 'pdf' && (
+                                <MenuItem onClick={() => {
+                                    // Use the same URL detection logic as the working filename click
+                                    const fileUrl = selectedUploadForAction.downloadURL ||
+                                        selectedUploadForAction.fileUrl ||
+                                        selectedUploadForAction.url ||
+                                        selectedUploadForAction.uploadUrl ||
+                                        selectedUploadForAction.fileURL;
+
+                                    if (fileUrl) {
+                                        handleOpenPdfViewer(fileUrl, `Invoice: ${selectedUploadForAction.fileName || 'Document'}`);
+                                    }
+                                    handleActionMenuClose();
+                                }} sx={{ fontSize: '11px' }}>
+                                    <ListItemIcon>
+                                        <PdfIcon fontSize="small" />
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary="View Invoice"
+                                        primaryTypographyProps={{ fontSize: '11px' }}
+                                    />
+                                </MenuItem>
+                            )}
+                            {selectedUploadForAction?.processingStatus === 'completed' && (
+                                <MenuItem onClick={handleMenuExportCSV} sx={{ fontSize: '11px' }}>
+                                    <ListItemIcon>
+                                        <TableIcon fontSize="small" />
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary="Export CSV"
+                                        primaryTypographyProps={{ fontSize: '11px' }}
+                                    />
+                                </MenuItem>
+                            )}
+                        </Menu>
                     </Grid>
 
                 </Grid>
             )}
 
-            {/* EDI Processing Tab */}
-            {activeTab === 'edi' && (
-                <>
-                    {showEdiResults && selectedUpload ? (
-                        <Box sx={{ mb: 3 }}>
-                            <EDIResults
-                                uploadId={selectedUpload.id}
-                                onClose={handleCloseEdiResults}
-                            />
-                        </Box>
-                    ) : (
-                        <EDIUploader
-                            onUploadComplete={handleEdiUploadComplete}
-                            showHistory={true}
-                        />
-                    )}
-                </>
-            )}
 
-            {/* Upload Queue Tab */}
-            {activeTab === 'queue' && (
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                    <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600, mb: 3 }}>
-                        Upload Queue Management
-                    </Typography>
-
-                    {/* Processing Files Display */}
-                    {processingFiles.length > 0 ? (
-                        <Box>
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                                Currently Processing ({processingFiles.length} files)
-                            </Typography>
-                            {processingFiles.map((file) => (
-                                <Box key={file.id} sx={{ mb: 2, p: 2, border: '1px solid #e5e7eb', borderRadius: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            {file.type === 'pdf' ? <PdfIcon sx={{ color: '#ef4444' }} /> : <TableIcon sx={{ color: '#3b82f6' }} />}
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                {file.name}
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            {file.status === 'uploading' && (
-                                                <>
-                                                    <CircularProgress size={16} />
-                                                    <Chip label="Uploading" color="primary" size="small" sx={{ fontSize: '10px' }} />
-                                                </>
-                                            )}
-                                            {file.status === 'processing' && (
-                                                <>
-                                                    <CircularProgress size={16} />
-                                                    <Chip
-                                                        label={file.progress < 40 ? "Detecting Carrier" :
-                                                            file.progress < 60 ? "AI Analysis" :
-                                                                file.progress < 80 ? "Extracting Data" : "Finalizing"}
-                                                        color="warning"
-                                                        size="small"
-                                                        sx={{ fontSize: '10px' }}
-                                                    />
-                                                </>
-                                            )}
-                                            {file.status === 'completed' && (
-                                                <>
-                                                    <CheckCompleteIcon sx={{ color: '#10b981', fontSize: 16 }} />
-                                                    <Chip label="Completed" color="success" size="small" sx={{ fontSize: '10px' }} />
-                                                </>
-                                            )}
-                                            {file.status === 'failed' && (
-                                                <>
-                                                    <ErrorIcon sx={{ color: '#ef4444', fontSize: 16 }} />
-                                                    <Chip label="Failed" color="error" size="small" sx={{ fontSize: '10px' }} />
-                                                </>
-                                            )}
-                                        </Box>
-                                    </Box>
-                                    {(file.status === 'uploading' || file.status === 'processing') && (
-                                        <>
-                                            <LinearProgress
-                                                variant={file.progress ? "determinate" : "indeterminate"}
-                                                value={file.progress || 0}
-                                                sx={{
-                                                    height: 6,
-                                                    borderRadius: 3,
-                                                    backgroundColor: '#e5e7eb',
-                                                    '& .MuiLinearProgress-bar': {
-                                                        backgroundColor: file.status === 'uploading' ? '#3b82f6' : '#f59e0b'
-                                                    }
-                                                }}
-                                            />
-                                            {file.message && (
-                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', mt: 1 }}>
-                                                    {file.message}
-                                                </Typography>
-                                            )}
-                                            {file.progress && (
-                                                <Typography sx={{ fontSize: '10px', color: '#9ca3af', mt: 0.5 }}>
-                                                    {file.progress}% complete
-                                                </Typography>
-                                            )}
-                                        </>
-                                    )}
-                                    {file.status === 'failed' && file.error && (
-                                        <Typography sx={{ fontSize: '11px', color: '#ef4444', mt: 1 }}>
-                                            Error: {file.error}
-                                        </Typography>
-                                    )}
-                                </Box>
-                            ))}
-                        </Box>
-                    ) : (
-                        <Box sx={{ textAlign: 'center', py: 6 }}>
-                            <UploadIcon sx={{ fontSize: 64, color: '#d1d5db', mb: 2 }} />
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#6b7280', mb: 1 }}>
-                                No files in queue
-                            </Typography>
-                            <Typography sx={{ fontSize: '12px', color: '#9ca3af' }}>
-                                Upload files to see processing status here
-                            </Typography>
-                        </Box>
-                    )}
-                </Paper>
-            )}
 
             {/* Data Mapping Tab */}
             {activeTab === 'mapping' && (
@@ -2872,112 +3231,7 @@ const APProcessing = () => {
                 </Paper>
             )}
 
-            {/* Analytics Tab */}
-            {activeTab === 'analytics' && (
-                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                    <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600, mb: 3 }}>
-                        Processing Analytics & Insights
-                    </Typography>
 
-                    <Grid container spacing={3}>
-                        <Grid item xs={12} md={4}>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                                    Processing Performance
-                                </Typography>
-                                <Stack spacing={2}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <Typography sx={{ fontSize: '12px' }}>Success Rate</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}>
-                                            {stats.totalUploads > 0 ?
-                                                `${Math.round((stats.completedUploads / stats.totalUploads) * 100)}%` :
-                                                '0%'
-                                            }
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <Typography sx={{ fontSize: '12px' }}>Avg Processing Time</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            {stats.totalUploads > 0 ?
-                                                `${Math.round(stats.processingTime / stats.totalUploads / 1000)}s` :
-                                                '0s'
-                                            }
-                                        </Typography>
-                                    </Box>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <Typography sx={{ fontSize: '12px' }}>Records per File</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            {stats.totalUploads > 0 ?
-                                                `${Math.round(stats.totalRecords / stats.totalUploads)}` :
-                                                '0'
-                                            }
-                                        </Typography>
-                                    </Box>
-                                </Stack>
-                            </Card>
-                        </Grid>
-
-                        <Grid item xs={12} md={4}>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                                    Carrier Breakdown
-                                </Typography>
-                                <Stack spacing={1}>
-                                    {carrierTemplates.filter(c => c.supported).map((carrier) => (
-                                        <Box
-                                            key={carrier.id}
-                                            sx={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                p: 1,
-                                                backgroundColor: '#f8fafc',
-                                                borderRadius: 1
-                                            }}
-                                        >
-                                            <Typography sx={{ fontSize: '11px' }}>{carrier.name}</Typography>
-                                            <Typography sx={{ fontSize: '11px', fontWeight: 600 }}>
-                                                {Math.floor(Math.random() * 20)} files
-                                            </Typography>
-                                        </Box>
-                                    ))}
-                                </Stack>
-                            </Card>
-                        </Grid>
-
-                        <Grid item xs={12} md={4}>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3 }}>
-                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
-                                    Recent Trends
-                                </Typography>
-                                <Stack spacing={2}>
-                                    <Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Today</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            {stats.pendingUploads} files processed
-                                        </Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>This Week</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            {stats.totalUploads} total uploads
-                                        </Typography>
-                                    </Box>
-                                    <Box>
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Error Rate</Typography>
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: stats.failedUploads > 0 ? '#ef4444' : '#10b981' }}>
-                                            {stats.totalUploads > 0 ?
-                                                `${Math.round((stats.failedUploads / stats.totalUploads) * 100)}%` :
-                                                '0%'
-                                            }
-                                        </Typography>
-                                    </Box>
-                                </Stack>
-                            </Card>
-                        </Grid>
-                    </Grid>
-                </Paper>
-            )}
 
             {/* PDF Parsing Tab */}
             {activeTab === 'pdf' && (
@@ -2989,14 +3243,33 @@ const APProcessing = () => {
                                     <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600 }}>
                                         PDF Processing Results: {selectedUpload.fileName}
                                     </Typography>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        onClick={handleClosePdfResults}
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Back to PDF Overview
-                                    </Button>
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                        {/* View Original File Button */}
+                                        {selectedUpload.downloadURL && (
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={selectedUpload.type === 'pdf' ? <PdfIcon /> : <TableIcon />}
+                                                onClick={() => {
+                                                    if (selectedUpload.type === 'pdf') {
+                                                        handleOpenPdfViewer(selectedUpload.downloadURL, `Original PDF: ${selectedUpload.fileName}`);
+                                                    } else {
+                                                        window.open(selectedUpload.downloadURL, '_blank');
+                                                    }
+                                                }}
+                                                sx={{ fontSize: '12px' }}
+                                            >
+                                                View Original {selectedUpload.type === 'pdf' ? 'PDF' : 'File'}
+                                            </Button>
+                                        )}
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleClosePdfResults}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <CloseIcon />
+                                        </IconButton>
+                                    </Box>
                                 </Box>
                                 <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center' }}>
                                     <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
@@ -3018,6 +3291,7 @@ const APProcessing = () => {
                                         pdfResults={selectedUpload}
                                         onClose={handleClosePdfResults}
                                         onViewShipmentDetail={handleViewShipmentDetail}
+                                        onOpenPdfViewer={handleOpenPdfViewer}
                                     />
                                 ) : selectedUpload.processingStatus === 'failed' ? (
                                     <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -3432,6 +3706,13 @@ const APProcessing = () => {
                 </DialogContent>
             </Dialog>
 
+            {/* PDF Viewer Dialog */}
+            <PdfViewerDialog
+                open={pdfViewerOpen}
+                onClose={() => setPdfViewerOpen(false)}
+                pdfUrl={currentPdfUrl}
+                title={currentPdfTitle}
+            />
 
         </Box >
     );

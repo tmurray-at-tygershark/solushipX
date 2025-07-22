@@ -3,6 +3,7 @@ const {setGlobalOptions} = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const { Storage } = require('@google-cloud/storage');
 const cors = require('cors')({ origin: true });
+const { countPdfPages, getPdfMetadata } = require('./utils/pdfPageCounter');
 
 // Set global options
 setGlobalOptions({maxInstances: 10, timeoutSeconds: 300, memory: '512MiB'});
@@ -167,6 +168,20 @@ exports.uploadFileBase64 = onCall({
         // Convert base64 to buffer
         const buffer = Buffer.from(fileData, 'base64');
 
+        // For PDF files, count pages and extract metadata
+        let pdfMetadata = null;
+        if (fileType === 'application/pdf') {
+            console.log('PDF detected, counting pages...');
+            try {
+                pdfMetadata = await getPdfMetadata(buffer);
+                console.log('PDF metadata extracted:', pdfMetadata);
+            } catch (error) {
+                console.error('Error extracting PDF metadata:', error);
+                // Continue with upload even if page counting fails
+                pdfMetadata = { pageCount: null, error: error.message };
+            }
+        }
+
         // Upload to Cloud Storage
         const file = bucket.file(filePath);
         await file.save(buffer, {
@@ -175,7 +190,14 @@ exports.uploadFileBase64 = onCall({
                 metadata: {
                     originalName: fileName,
                     uploadedAt: new Date().toISOString(),
-                    fileSize: fileSize.toString()
+                    fileSize: fileSize.toString(),
+                    ...(pdfMetadata && {
+                        pageCount: pdfMetadata.pageCount?.toString(),
+                        pdfTitle: pdfMetadata.title,
+                        pdfAuthor: pdfMetadata.author,
+                        pdfCreator: pdfMetadata.creator,
+                        pdfProducer: pdfMetadata.producer
+                    })
                 }
             }
         });
@@ -186,17 +208,159 @@ exports.uploadFileBase64 = onCall({
         // Get public URL
         const downloadURL = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
 
-        console.log(`Uploaded file: ${fileName}, size: ${fileSize} bytes`);
+        console.log(`Uploaded file: ${fileName}, size: ${fileSize} bytes${pdfMetadata?.pageCount ? `, pages: ${pdfMetadata.pageCount}` : ''}`);
 
         return {
             success: true,
             downloadURL,
             filePath,
-            message: 'File uploaded successfully'
+            message: 'File uploaded successfully',
+            metadata: pdfMetadata ? {
+                pageCount: pdfMetadata.pageCount,
+                pdfInfo: {
+                    title: pdfMetadata.title,
+                    author: pdfMetadata.author,
+                    creator: pdfMetadata.creator,
+                    producer: pdfMetadata.producer
+                }
+            } : null
         };
 
     } catch (error) {
         console.error('Error uploading file:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+});
+
+/**
+ * Enhanced upload function for AP Processing with PDF page counting
+ * This function is specifically designed for the AP Processing module
+ */
+exports.uploadAPFile = onCall({
+    cors: true,
+    timeoutSeconds: 120,
+}, async (request) => {
+    try {
+        const { fileName, fileData, fileType, fileSize, carrier } = request.data;
+        
+        if (!fileName || !fileData || !fileType) {
+            throw new Error('fileName, fileData, and fileType are required');
+        }
+
+        // Check file size limit (50MB)
+        const maxSize = 50 * 1024 * 1024;
+        if (fileSize > maxSize) {
+            throw new Error('File size exceeds 50MB limit');
+        }
+
+        // Generate unique file path for AP processing
+        const timestamp = Date.now();
+        const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const filePath = `ap-processing/${timestamp}_${sanitizedFileName}`;
+
+        // Convert base64 to buffer
+        const buffer = Buffer.from(fileData, 'base64');
+
+        // For PDF files, count pages and extract metadata
+        let pdfMetadata = null;
+        if (fileType === 'application/pdf') {
+            console.log('PDF detected for AP Processing, counting pages...');
+            try {
+                pdfMetadata = await getPdfMetadata(buffer);
+                console.log('PDF metadata extracted for AP:', pdfMetadata);
+            } catch (error) {
+                console.error('Error extracting PDF metadata:', error);
+                // Continue with upload even if page counting fails
+                pdfMetadata = { pageCount: null, error: error.message };
+            }
+        }
+
+        // Upload to Cloud Storage
+        const file = bucket.file(filePath);
+        await file.save(buffer, {
+            metadata: {
+                contentType: fileType,
+                metadata: {
+                    originalName: fileName,
+                    uploadedAt: new Date().toISOString(),
+                    fileSize: fileSize.toString(),
+                    carrier: carrier || 'unknown',
+                    uploadType: 'ap-processing',
+                    ...(pdfMetadata && {
+                        pageCount: pdfMetadata.pageCount?.toString(),
+                        pdfTitle: pdfMetadata.title,
+                        pdfAuthor: pdfMetadata.author,
+                        pdfCreator: pdfMetadata.creator,
+                        pdfProducer: pdfMetadata.producer
+                    })
+                }
+            }
+        });
+
+        // Make file publicly accessible
+        await file.makePublic();
+
+        // Get public URL
+        const downloadURL = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+
+        // Create a record in the AP uploads collection with page count
+        const uploadRecord = {
+            fileName: fileName,
+            fileSize: fileSize,
+            fileType: fileType,
+            filePath: filePath,
+            downloadURL: downloadURL,
+            carrier: carrier || 'unknown',
+            processingStatus: 'uploaded',
+            uploadDate: admin.firestore.FieldValue.serverTimestamp(),
+            userId: request.auth?.uid || 'anonymous',
+            type: fileType === 'application/pdf' ? 'pdf' : 'edi',
+            recordCount: 0, // Will be updated after processing
+            metadata: {
+                fileSize: fileSize,
+                ...(pdfMetadata && {
+                    pageCount: pdfMetadata.pageCount,
+                    pdfInfo: {
+                        title: pdfMetadata.title,
+                        author: pdfMetadata.author,
+                        creator: pdfMetadata.creator,
+                        producer: pdfMetadata.producer,
+                        creationDate: pdfMetadata.creationDate,
+                        modificationDate: pdfMetadata.modificationDate,
+                        version: pdfMetadata.version
+                    }
+                })
+            }
+        };
+
+        // Save to Firestore
+        const docRef = await admin.firestore().collection('apUploads').add(uploadRecord);
+
+        console.log(`AP file uploaded: ${fileName}, size: ${fileSize} bytes${pdfMetadata?.pageCount ? `, pages: ${pdfMetadata.pageCount}` : ''}, docId: ${docRef.id}`);
+
+        return {
+            success: true,
+            downloadURL,
+            filePath,
+            docId: docRef.id,
+            message: 'File uploaded successfully',
+            pageCount: pdfMetadata?.pageCount || null,
+            metadata: pdfMetadata ? {
+                pageCount: pdfMetadata.pageCount,
+                pdfInfo: {
+                    title: pdfMetadata.title,
+                    author: pdfMetadata.author,
+                    creator: pdfMetadata.creator,
+                    producer: pdfMetadata.producer
+                }
+            } : null
+        };
+
+    } catch (error) {
+        console.error('Error uploading AP file:', error);
         return {
             success: false,
             error: error.message

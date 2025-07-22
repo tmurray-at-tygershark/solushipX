@@ -182,7 +182,7 @@ const { processPdfFile, getPdfResults, retryPdfProcessing, exportPdfResults, pro
 const { processBulkPdfFile } = require('./src/bulkProcessingEngine');
 
 // Import file upload functions
-const { uploadFile, uploadFileBase64 } = require('./src/fileUpload');
+const { uploadFile, uploadFileBase64, uploadAPFile } = require('./src/fileUpload');
 
 // Import address book update function
 const { updateAddressBookOwnerCompanyID } = require('./src/updateAddressBookOwnerCompanyID');
@@ -377,6 +377,7 @@ exports.createShipmentCharge = createShipmentCharge;
 // Export file upload functions
 exports.uploadFile = uploadFile;
 exports.uploadFileBase64 = uploadFileBase64;
+exports.uploadAPFile = uploadAPFile;
 
 // Export address book update function
 exports.updateAddressBookOwnerCompanyID = updateAddressBookOwnerCompanyID;

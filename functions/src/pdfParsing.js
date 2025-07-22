@@ -1129,7 +1129,10 @@ const processPdfFile = onCall(async (request) => {
                 }
             };
 
-            // Update record with final results
+            // Extract invoice number from validated data for upload record
+            const extractedInvoiceNumber = extractInvoiceNumber(validatedData, carrierInfo);
+            
+            // Update record with final results including invoice number
             await uploadDoc.update({
                 processingStatus: 'completed',
                 processingTime: Date.now() - startTime,
@@ -1138,6 +1141,8 @@ const processPdfFile = onCall(async (request) => {
                 carrier: carrierInfo.name,
                 carrierCode: carrierInfo.id,
                 confidence: carrierInfo.confidence,
+                carrierInvoiceNumber: extractedInvoiceNumber,
+                invoiceNumber: extractedInvoiceNumber, // Alternative field name for consistency
                 metadata: processedData.metadata
             });
 
@@ -3948,6 +3953,9 @@ const processPdfBatch = onCall(async (request) => {
                         processingTime: Date.now() - startTime
                     };
 
+                    // Extract invoice number from validated data for batch processing
+                    const extractedInvoiceNumber = extractInvoiceNumber(validatedData, carrierInfo);
+                    
                     // Update record with results
                     await uploadDoc.update({
                         processingStatus: 'completed',
@@ -3956,7 +3964,9 @@ const processPdfBatch = onCall(async (request) => {
                         recordCount: processedData.recordCount,
                         carrier: carrierInfo.name,
                         carrierCode: carrierInfo.id,
-                        confidence: carrierInfo.confidence
+                        confidence: carrierInfo.confidence,
+                        carrierInvoiceNumber: extractedInvoiceNumber,
+                        invoiceNumber: extractedInvoiceNumber
                     });
 
                     // Store detailed results
@@ -4189,6 +4199,9 @@ const retryPdfProcessing = onCall(async (request) => {
                 }
             };
 
+            // Extract invoice number from validated data for retry processing
+            const extractedInvoiceNumber = extractInvoiceNumber(validatedData, carrierInfo);
+            
             // Update record with final results
             await uploadDoc.ref.update({
                 processingStatus: 'completed',
@@ -4198,6 +4211,8 @@ const retryPdfProcessing = onCall(async (request) => {
                 carrier: carrierInfo.name,
                 carrierCode: carrierInfo.id,
                 confidence: carrierInfo.confidence,
+                carrierInvoiceNumber: extractedInvoiceNumber,
+                invoiceNumber: extractedInvoiceNumber,
                 metadata: processedData.metadata,
                 error: null // Clear any previous errors
             });
@@ -5236,6 +5251,67 @@ function calculateAverageConfidence(matches) {
     
     // Ensure we never return NaN
     return isNaN(average) ? 0 : average;
+}
+
+/**
+ * Extract invoice number from validated data using multiple strategies
+ * @param {Object} validatedData - The structured data from PDF processing
+ * @param {Object} carrierInfo - Carrier information with templates
+ * @returns {string|null} - Extracted invoice number or null
+ */
+function extractInvoiceNumber(validatedData, carrierInfo) {
+    try {
+        // Strategy 1: Check metadata document number (primary source)
+        if (validatedData?.metadata?.documentNumber) {
+            console.log('📋 Invoice number from metadata:', validatedData.metadata.documentNumber);
+            return validatedData.metadata.documentNumber;
+        }
+        
+        // Strategy 2: Check first shipment's invoice reference
+        if (validatedData?.shipments?.[0]?.references?.invoiceRef) {
+            console.log('📋 Invoice number from shipment reference:', validatedData.shipments[0].references.invoiceRef);
+            return validatedData.shipments[0].references.invoiceRef;
+        }
+        
+        // Strategy 3: Check direct invoice number field
+        if (validatedData?.shipments?.[0]?.invoiceNumber) {
+            console.log('📋 Invoice number from shipment field:', validatedData.shipments[0].invoiceNumber);
+            return validatedData.shipments[0].invoiceNumber;
+        }
+        
+        // Strategy 4: Check carrier-specific patterns (for more flexible extraction)
+        if (carrierInfo?.patterns?.invoiceNumber && validatedData?.extractedText) {
+            const matches = validatedData.extractedText.match(carrierInfo.patterns.invoiceNumber);
+            if (matches && matches.length > 0) {
+                console.log('📋 Invoice number from carrier pattern:', matches[0]);
+                return matches[0];
+            }
+        }
+        
+        // Strategy 5: Look in other common locations
+        const otherSources = [
+            validatedData?.metadata?.invoiceNumber,
+            validatedData?.invoiceNumber,
+            validatedData?.documentNumber,
+            validatedData?.shipments?.[0]?.documentNumber,
+            validatedData?.shipments?.[0]?.references?.documentRef,
+            validatedData?.shipments?.[0]?.references?.other?.[0]
+        ];
+        
+        for (const source of otherSources) {
+            if (source && typeof source === 'string' && source.trim().length > 0) {
+                console.log('📋 Invoice number from alternative source:', source);
+                return source.trim();
+            }
+        }
+        
+        console.log('📋 No invoice number found in extracted data');
+        return null;
+        
+    } catch (error) {
+        console.error('Error extracting invoice number:', error);
+        return null;
+    }
 }
 
 module.exports = {

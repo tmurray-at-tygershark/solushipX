@@ -1504,9 +1504,57 @@ const ChargesTab = () => {
                                     // Optimized skeleton loading
                                     Array.from({ length: rowsPerPage }).map((_, index) => (
                                         <TableRow key={`skeleton-${index}`}>
-                                            {Array.from({ length: 12 }).map((_, cellIndex) => (
-                                                <TableCell key={cellIndex} sx={{ fontSize: '12px', verticalAlign: 'top' }}>
-                                                    <Skeleton variant="text" width={cellIndex === 0 ? 120 : cellIndex < 3 ? 100 : 80} height={16} />
+                                            {Array.from({ length: 13 }).map((_, cellIndex) => (
+                                                <TableCell
+                                                    key={cellIndex}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        verticalAlign: 'top',
+                                                        // Match actual column constraints exactly
+                                                        ...(cellIndex === 0 && { padding: 'checkbox' }), // Checkbox column
+                                                        ...(cellIndex === 4 && { minWidth: '160px' }), // Customer column
+                                                        ...(cellIndex === 11 && { maxWidth: '130px' }), // Invoice Status column
+                                                        ...(cellIndex === 12 && { width: 40 }) // Actions column
+                                                    }}
+                                                >
+                                                    {cellIndex === 0 ? (
+                                                        // Checkbox skeleton
+                                                        <Skeleton variant="rectangular" width={18} height={18} />
+                                                    ) : cellIndex === 3 || cellIndex === 4 ? (
+                                                        // Company and Customer columns with avatar + text
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Skeleton variant="rectangular" width={20} height={20} sx={{ borderRadius: '4px' }} />
+                                                            <Skeleton variant="text" width={cellIndex === 4 ? 120 : 100} height={16} />
+                                                        </Box>
+                                                    ) : cellIndex === 10 ? (
+                                                        // Shipment Status column with chip-like skeleton
+                                                        <Skeleton variant="rectangular" width={80} height={18} sx={{ borderRadius: '12px' }} />
+                                                    ) : cellIndex === 11 ? (
+                                                        // Invoice Status column with chip + icon
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            <Skeleton variant="rectangular" width={70} height={20} sx={{ borderRadius: '12px' }} />
+                                                            <Skeleton variant="circular" width={16} height={16} />
+                                                        </Box>
+                                                    ) : cellIndex === 12 ? (
+                                                        // Actions column with icon
+                                                        <Skeleton variant="circular" width={16} height={16} />
+                                                    ) : (
+                                                        // Regular text columns
+                                                        <Skeleton
+                                                            variant="text"
+                                                            width={
+                                                                cellIndex === 1 ? 100 :      // Shipment ID
+                                                                    cellIndex === 2 ? 70 :       // Date
+                                                                        cellIndex === 5 ? 80 :       // Carrier
+                                                                            cellIndex === 6 ? 60 :       // Cost
+                                                                                cellIndex === 7 ? 60 :       // Quoted
+                                                                                    cellIndex === 8 ? 60 :       // Actual
+                                                                                        cellIndex === 9 ? 60 :       // Profit
+                                                                                            80                            // Default
+                                                            }
+                                                            height={16}
+                                                        />
+                                                    )}
                                                 </TableCell>
                                             ))}
                                         </TableRow>
@@ -1818,7 +1866,7 @@ const ChargesTab = () => {
 
                                             {/* Lazy-loaded expanded content */}
                                             <TableRow>
-                                                <TableCell colSpan={11} sx={{ paddingBottom: 0, paddingTop: 0, borderBottom: expandedShipments.has(charge.id) ? '1px solid #e2e8f0' : 'none' }}>
+                                                <TableCell colSpan={13} sx={{ paddingBottom: 0, paddingTop: 0, borderBottom: expandedShipments.has(charge.id) ? '1px solid #e2e8f0' : 'none' }}>
                                                     <Collapse in={expandedShipments.has(charge.id)} timeout="auto" unmountOnExit>
                                                         {renderExpandedContent(charge)}
                                                     </Collapse>
@@ -1828,7 +1876,7 @@ const ChargesTab = () => {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={11} align="center">
+                                        <TableCell colSpan={13} align="center">
                                             <Box sx={{ py: 6, textAlign: 'center' }}>
                                                 <BusinessIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
                                                 <Typography variant="body1" sx={{ fontSize: '14px', color: '#374151', mb: 1 }}>

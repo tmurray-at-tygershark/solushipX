@@ -20,12 +20,13 @@ const PdfViewerDialog = ({ open, onClose, pdfUrl, title }) => {
         <Dialog
             open={open}
             onClose={onClose}
-            maxWidth="md"
-            fullWidth
+            maxWidth={false}
             PaperProps={{
                 sx: {
-                    width: '50%',
-                    height: '90vh',
+                    width: '75vw',
+                    height: '75vh',
+                    maxWidth: '75vw',
+                    maxHeight: '75vh',
                     borderRadius: 2,
                     zIndex: 1600
                 }

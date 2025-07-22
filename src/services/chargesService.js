@@ -933,6 +933,8 @@ async function processShipmentCharge(shipment, shipmentCharges, companyMap, getS
     }
 }
 
+
+
 const chargesService = {
     updateChargeInvoiceNumber,
     updateChargeEdiNumber,
