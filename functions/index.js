@@ -371,8 +371,17 @@ exports.processBulkPdfFile = processBulkPdfFile;
 // AP Processing functions
 const { matchInvoiceToShipment } = require('./src/matchInvoiceToShipment');
 const { createShipmentCharge } = require('./src/createShipmentCharge');
+const { updateActualCosts } = require('./src/billing/updateActualCosts');
+const { detectExceptions } = require('./src/billing/detectExceptions');
+const { approveCharges, rejectCharges } = require('./src/billing/approveCharges');
+const { processAPApproval } = require('./src/billing/processAPApproval');
 exports.matchInvoiceToShipment = matchInvoiceToShipment;
 exports.createShipmentCharge = createShipmentCharge;
+exports.updateActualCosts = updateActualCosts;
+exports.detectExceptions = detectExceptions;
+exports.approveCharges = approveCharges;
+exports.rejectCharges = rejectCharges;
+exports.processAPApproval = processAPApproval;
 
 // Export file upload functions
 exports.uploadFile = uploadFile;

@@ -1053,7 +1053,7 @@ const processPdfFile = onCall(async (request) => {
             } else {
                 // Enhanced AI-powered carrier detection with multi-document support
                 console.log('Using AI-powered auto-detection with multi-document parsing...');
-                carrierInfo = await enhancedCarrierDetection(uploadUrl, fileName);
+                carrierInfo = await enhancedCarrierDetection(uploadUrl, fileName, pdfAnalysis);
                 console.log(`Auto-detected carrier: ${carrierInfo.name} (confidence: ${carrierInfo.confidence})`);
             }
             
@@ -1342,24 +1342,57 @@ async function detectCarrierFromPdfSample(pdfBuffer, fileName) {
     }
 }
 
-// Enhanced PDF file analysis
+// Enhanced PDF file analysis with actual page count extraction
 async function analyzePdfFile(pdfUrl) {
     try {
-        console.log('Analyzing PDF file structure:', pdfUrl);
+        console.log('Analyzing PDF file structure and extracting page count:', pdfUrl);
         
         // Download file to analyze
         const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
         
-        // Basic PDF analysis
+        // Extract actual page count using Cloud Vision
+        let actualPageCount = 1; // Default fallback
+        
+        try {
+            console.log('Extracting actual page count from PDF...');
+            
+            // Use Cloud Vision to get page count
+            const request = {
+                requests: [{
+                    inputConfig: {
+                        content: buffer.toString('base64'),
+                        mimeType: 'application/pdf'
+                    },
+                    features: [
+                        { type: 'DOCUMENT_TEXT_DETECTION' }
+                    ]
+                }]
+            };
+
+            const [result] = await vision.batchAnnotateFiles(request);
+            
+            if (result.responses && result.responses.length > 0) {
+                const response = result.responses[0];
+                if (response.responses) {
+                    actualPageCount = response.responses.length;
+                    console.log(`✅ Extracted actual page count: ${actualPageCount} pages`);
+                }
+            }
+        } catch (pageCountError) {
+            console.warn('Could not extract page count, using default:', pageCountError.message);
+        }
+        
+        // Basic PDF analysis with actual page count
         const analysis = {
             fileSize: buffer.length,
-            pageCount: 1, // Would be calculated from actual PDF parsing
+            pageCount: actualPageCount,
             contentType: 'application/pdf',
             isValid: buffer.length > 0,
             timestamp: new Date().toISOString()
         };
         
+        console.log(`📄 PDF Analysis Complete: ${analysis.fileSize} bytes, ${analysis.pageCount} pages`);
         return analysis;
         
     } catch (error) {
@@ -4273,7 +4306,7 @@ const retryPdfProcessing = onCall(async (request) => {
  * Enhanced AI-powered carrier detection with multi-document support
  * Detects carrier and document types from complex PDFs
  */
-async function enhancedCarrierDetection(pdfUrl, fileName) {
+async function enhancedCarrierDetection(pdfUrl, fileName, pdfAnalysis = null) {
     try {
         console.log('🔍 Starting enhanced carrier detection...');
         
@@ -4424,7 +4457,7 @@ Return ONLY a JSON object with this structure:
             documentTypes: detectionResult.documentTypes || ['invoice'],
             identifiers: detectionResult.identifiers || {},
             multiDocument: detectionResult.multiDocument || false,
-            pages: detectionResult.pages || 1,
+            pages: detectionResult.pages || (pdfAnalysis?.pageCount) || 1,
             evidence: detectionResult.carrier.evidence || []
         };
         
@@ -4434,7 +4467,12 @@ Return ONLY a JSON object with this structure:
         // Fallback to basic detection
         try {
             const pdfBuffer = await downloadPdfSample(pdfUrl);
-            return await detectCarrierFromPdfSample(pdfBuffer, fileName);
+            const fallbackResult = await detectCarrierFromPdfSample(pdfBuffer, fileName);
+            // Add page count to fallback result
+            if (pdfAnalysis?.pageCount) {
+                fallbackResult.pages = pdfAnalysis.pageCount;
+            }
+            return fallbackResult;
         } catch (fallbackError) {
             console.error('Fallback detection also failed:', fallbackError);
             return {
@@ -4442,7 +4480,8 @@ Return ONLY a JSON object with this structure:
                 name: 'Unknown Carrier',
                 format: 'invoice',
                 confidence: 0.3,
-                detectedFrom: 'fallback'
+                detectedFrom: 'fallback',
+                pages: pdfAnalysis?.pageCount || 1
             };
         }
     }

@@ -91,6 +91,9 @@ async function bookQuickShipmentInternal(data, auth = null) {
             status: 'pending', // Ensure status is set to pending
             bookingTimestamp: new Date().toISOString(), // Add booking timestamp
             
+            // CRITICAL: Always set QuickShip shipments to not_invoiced status
+            invoiceStatus: 'not_invoiced',
+            
             // Store carrier details for document generation
             quickShipCarrierDetails: carrierDetails,
             

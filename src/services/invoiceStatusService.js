@@ -106,9 +106,9 @@ class InvoiceStatusService {
     getDefaultStatuses() {
         return [
             {
-                id: 'default-uninvoiced',
-                statusCode: 'uninvoiced',
-                statusLabel: 'Uninvoiced',
+                id: 'default-not-invoiced',
+                statusCode: 'not_invoiced',
+                statusLabel: 'Not Invoiced',
                 statusDescription: 'Shipment has not been invoiced yet',
                 color: '#f59e0b',
                 fontColor: '#ffffff',

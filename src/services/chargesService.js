@@ -670,10 +670,11 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
             // Super admin: Fetch ALL shipments (like BillingDashboard logic)
             console.log('🔒 Super admin mode: Fetching ALL shipments');
             
+            // CRITICAL: Only show AP-approved charges
             let q = query(
                 shipmentsRef,
                 where('status', '!=', 'draft'),
-                orderBy('status'),
+                where('chargeStatus.status', '==', 'approved'),
                 orderBy('createdAt', 'desc')
             );
 
@@ -682,6 +683,7 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
                 q = query(
                     shipmentsRef,
                     where('status', '!=', 'draft'),
+                    where('chargeStatus.status', '==', 'approved'),
                     where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
                     orderBy('createdAt', 'desc')
                 );
@@ -716,10 +718,12 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
             const batches = [];
             for (let i = 0; i < companyIDs.length; i += 10) {
                 const batch = companyIDs.slice(i, i + 10);
+                // CRITICAL: Only show AP-approved charges
                 let q = query(
                     shipmentsRef,
                     where('companyID', 'in', batch),
                     where('status', '!=', 'draft'),
+                    where('chargeStatus.status', '==', 'approved'),
                     orderBy('createdAt', 'desc')
                 );
 
@@ -729,6 +733,7 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
                         shipmentsRef,
                         where('companyID', 'in', batch),
                         where('status', '!=', 'draft'),
+                        where('chargeStatus.status', '==', 'approved'),
                         where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
                         orderBy('createdAt', 'desc')
                     );

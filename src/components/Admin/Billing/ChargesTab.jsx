@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import chargesService from '../../../services/chargesService';
+import chargeTypeService from '../../../services/chargeTypeService';
+import ChargeTypeDetailDialog from './ChargeTypeDetailDialog';
 import {
     Box,
     Grid,
@@ -101,6 +103,8 @@ import { useSnackbar } from 'notistack';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import { useNavigate } from 'react-router-dom';
 import invoiceStatusService from '../../../services/invoiceStatusService';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../firebase/firebase';
 
 const ChargesTab = () => {
     const { currentUser, userRole } = useAuth();
@@ -168,7 +172,17 @@ const ChargesTab = () => {
     const [statusPopoverAnchor, setStatusPopoverAnchor] = useState(null);
     const [popoverChargeId, setPopoverChargeId] = useState(null);
 
+    // Charge Type Detail Dialog
+    const [chargeTypeDialogOpen, setChargeTypeDialogOpen] = useState(false);
+    const [selectedChargeShipment, setSelectedChargeShipment] = useState(null);
+
     const navigate = useNavigate();
+
+    // Handler for charge type detail dialog
+    const handleChargeTypeClick = useCallback((charge) => {
+        setSelectedChargeShipment(charge);
+        setChargeTypeDialogOpen(true);
+    }, []);
 
     // Debounce search input
     useEffect(() => {
@@ -526,7 +540,7 @@ const ChargesTab = () => {
             // Fallback to basic options if loading fails
             setInvoiceStatusOptions([
                 { value: '', label: 'All Statuses' },
-                { value: 'uninvoiced', label: 'Uninvoiced' },
+                { value: 'not_invoiced', label: 'Not Invoiced' },
                 { value: 'invoiced', label: 'Invoiced' },
                 { value: 'paid', label: 'Paid' }
             ]);
@@ -736,6 +750,14 @@ const ChargesTab = () => {
             'Customer': charge.customerName,
             'Route': charge.route.replace('\n', ' '),
             'Carrier': charge.carrierName,
+            'Charge Types': (() => {
+                const charges = charge.chargesBreakdown || charge.actualCharges || [];
+                const chargeCodes = Array.isArray(charges) ? charges.map(c => c.code || c.chargeCode).filter(Boolean) : [];
+                if (chargeCodes.length === 0) return 'No breakdown';
+                const classifiedCharges = chargeCodes.map(code => chargeTypeService.getChargeType(code));
+                const categories = [...new Set(classifiedCharges.map(c => c.category))];
+                return categories.map(cat => chargeTypeService.getCategoryInfo(cat).label).join(', ');
+            })(),
             'Service': charge.serviceName,
             'Actual Cost': charge.actualCost.toFixed(2),
             'Customer Charge': charge.customerCharge.toFixed(2),
@@ -763,6 +785,121 @@ const ChargesTab = () => {
         window.URL.revokeObjectURL(url);
 
         enqueueSnackbar(`Charges exported successfully (Page ${page + 1})`, { variant: 'success' });
+    };
+
+    // Bulk approval functions
+    const handleBulkApprove = async (overrideExceptions = false) => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('Please select charges to approve', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            const approveChargesFunc = httpsCallable(functions, 'approveCharges');
+            const shipmentIds = Array.from(selectedCharges);
+
+            enqueueSnackbar(`Approving ${shipmentIds.length} charge(s)...`, { variant: 'info' });
+
+            const result = await approveChargesFunc({
+                shipmentIds: shipmentIds,
+                approvalType: 'bulk',
+                overrideExceptions: overrideExceptions,
+                approvalNotes: overrideExceptions ? 'Bulk approval with exception override' : 'Bulk approval'
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Successfully approved ${result.data.successCount}/${result.data.processedCount} charges`,
+                    { variant: 'success' }
+                );
+
+                // Clear selection and refresh data
+                setSelectedCharges(new Set());
+                fetchChargesPage(0, true);
+            } else {
+                enqueueSnackbar('Bulk approval failed: ' + result.data.error, { variant: 'error' });
+            }
+        } catch (error) {
+            console.error('Bulk approval error:', error);
+            enqueueSnackbar('Failed to approve charges: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    const handleBulkReject = async () => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('Please select charges to reject', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            const rejectChargesFunc = httpsCallable(functions, 'rejectCharges');
+            const shipmentIds = Array.from(selectedCharges);
+
+            enqueueSnackbar(`Rejecting ${shipmentIds.length} charge(s)...`, { variant: 'info' });
+
+            const result = await rejectChargesFunc({
+                shipmentIds: shipmentIds,
+                rejectionReason: 'Bulk rejection - requires review',
+                requiresReview: true
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Successfully rejected ${result.data.successCount}/${result.data.processedCount} charges`,
+                    { variant: 'success' }
+                );
+
+                // Clear selection and refresh data
+                setSelectedCharges(new Set());
+                fetchChargesPage(0, true);
+            } else {
+                enqueueSnackbar('Bulk rejection failed: ' + result.data.error, { variant: 'error' });
+            }
+        } catch (error) {
+            console.error('Bulk rejection error:', error);
+            enqueueSnackbar('Failed to reject charges: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    const handleRunExceptionDetection = async () => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('Please select charges to check for exceptions', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            const detectExceptionsFunc = httpsCallable(functions, 'detectExceptions');
+            const shipmentIds = Array.from(selectedCharges);
+
+            enqueueSnackbar(`Checking ${shipmentIds.length} charge(s) for exceptions...`, { variant: 'info' });
+
+            let totalExceptions = 0;
+            for (const shipmentId of shipmentIds) {
+                try {
+                    const result = await detectExceptionsFunc({
+                        shipmentId: shipmentId,
+                        triggerFrom: 'manual_bulk_check'
+                    });
+
+                    if (result.data.hasExceptions) {
+                        totalExceptions += result.data.exceptionCount;
+                    }
+                } catch (error) {
+                    console.warn(`Exception detection failed for ${shipmentId}:`, error);
+                }
+            }
+
+            enqueueSnackbar(
+                `Exception detection complete. Found ${totalExceptions} total exception(s) across ${shipmentIds.length} charges.`,
+                { variant: totalExceptions > 0 ? 'warning' : 'success' }
+            );
+
+            // Refresh data to show updated exception status
+            fetchChargesPage(0, true);
+        } catch (error) {
+            console.error('Exception detection error:', error);
+            enqueueSnackbar('Failed to run exception detection: ' + error.message, { variant: 'error' });
+        }
     };
 
     // Inline editing handlers
@@ -883,7 +1020,52 @@ const ChargesTab = () => {
         return sortDirection === 'asc' ? '↑' : '↓';
     };
 
+    // Helper function to render charge status chips
+    const getChargeStatusChip = (status) => {
+        const statusConfig = {
+            'pending_review': {
+                label: 'Pending Review',
+                backgroundColor: '#fef7ed',
+                color: '#f59e0b',
+                border: '1px solid #fed7aa'
+            },
+            'approved': {
+                label: 'Approved',
+                backgroundColor: '#ecfdf5',
+                color: '#059669',
+                border: '1px solid #a7f3d0'
+            },
+            'exception': {
+                label: 'Exception',
+                backgroundColor: '#fef2f2',
+                color: '#dc2626',
+                border: '1px solid #fecaca'
+            },
+            'rejected': {
+                label: 'Rejected',
+                backgroundColor: '#f3f4f6',
+                color: '#6b7280',
+                border: '1px solid #d1d5db'
+            }
+        };
 
+        const config = statusConfig[status] || statusConfig['pending_review'];
+
+        return (
+            <Chip
+                size="small"
+                label={config.label}
+                sx={{
+                    fontSize: '10px',
+                    height: '20px',
+                    fontWeight: 600,
+                    backgroundColor: config.backgroundColor,
+                    color: config.color,
+                    border: config.border
+                }}
+            />
+        );
+    };
 
     // Helper function to extract service name from shipment data
     const getServiceName = (shipmentData) => {
@@ -1160,6 +1342,48 @@ const ChargesTab = () => {
                         >
                             Export Page
                         </Button>
+
+                        {/* Bulk Action Buttons */}
+                        {selectedCharges.size > 0 && (
+                            <>
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    onClick={() => handleBulkApprove(false)}
+                                    sx={{ fontSize: '11px', ml: 1 }}
+                                >
+                                    Approve {selectedCharges.size}
+                                </Button>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="success"
+                                    onClick={() => handleBulkApprove(true)}
+                                    sx={{ fontSize: '11px', ml: 1 }}
+                                >
+                                    Force Approve {selectedCharges.size}
+                                </Button>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={handleBulkReject}
+                                    sx={{ fontSize: '11px', ml: 1 }}
+                                >
+                                    Reject {selectedCharges.size}
+                                </Button>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="warning"
+                                    onClick={handleRunExceptionDetection}
+                                    sx={{ fontSize: '11px', ml: 1 }}
+                                >
+                                    Check Exceptions
+                                </Button>
+                            </>
+                        )}
                     </Box>
                 </Box>
 
@@ -1489,10 +1713,14 @@ const ChargesTab = () => {
                                     <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc' }}>
                                         Carrier
                                     </TableCell>
-                                    <SortableTableCell field="actualCost">Cost</SortableTableCell>
-                                    <SortableTableCell field="customerCharge">Quoted</SortableTableCell>
-                                    <SortableTableCell field="actualCharge">Actual</SortableTableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc' }}>
+                                        Charge Type
+                                    </TableCell>
+                                    <SortableTableCell field="actualCost">Quoted Cost</SortableTableCell>
+                                    <SortableTableCell field="customerCharge">Quoted Charge</SortableTableCell>
+                                    <SortableTableCell field="actualCharge">Actual Charge</SortableTableCell>
                                     <SortableTableCell field="margin">Profit</SortableTableCell>
+                                    <SortableTableCell field="chargeStatus">Charge Status</SortableTableCell>
                                     <SortableTableCell field="status">Shipment Status</SortableTableCell>
                                     <SortableTableCell field="invoiceStatus">Invoice Status</SortableTableCell>
                                     <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc', width: 40 }}>
@@ -1504,7 +1732,7 @@ const ChargesTab = () => {
                                     // Optimized skeleton loading
                                     Array.from({ length: rowsPerPage }).map((_, index) => (
                                         <TableRow key={`skeleton-${index}`}>
-                                            {Array.from({ length: 13 }).map((_, cellIndex) => (
+                                            {Array.from({ length: 14 }).map((_, cellIndex) => (
                                                 <TableCell
                                                     key={cellIndex}
                                                     sx={{
@@ -1513,8 +1741,8 @@ const ChargesTab = () => {
                                                         // Match actual column constraints exactly
                                                         ...(cellIndex === 0 && { padding: 'checkbox' }), // Checkbox column
                                                         ...(cellIndex === 4 && { minWidth: '160px' }), // Customer column
-                                                        ...(cellIndex === 11 && { maxWidth: '130px' }), // Invoice Status column
-                                                        ...(cellIndex === 12 && { width: 40 }) // Actions column
+                                                        ...(cellIndex === 12 && { maxWidth: '130px' }), // Invoice Status column
+                                                        ...(cellIndex === 13 && { width: 40 }) // Actions column
                                                     }}
                                                 >
                                                     {cellIndex === 0 ? (
@@ -1526,16 +1754,22 @@ const ChargesTab = () => {
                                                             <Skeleton variant="rectangular" width={20} height={20} sx={{ borderRadius: '4px' }} />
                                                             <Skeleton variant="text" width={cellIndex === 4 ? 120 : 100} height={16} />
                                                         </Box>
-                                                    ) : cellIndex === 10 ? (
+                                                    ) : cellIndex === 6 ? (
+                                                        // Charge Type column with chip-like skeleton
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                            <Skeleton variant="rectangular" width={60} height={18} sx={{ borderRadius: '12px' }} />
+                                                            <Skeleton variant="rectangular" width={50} height={18} sx={{ borderRadius: '12px' }} />
+                                                        </Box>
+                                                    ) : cellIndex === 11 ? (
                                                         // Shipment Status column with chip-like skeleton
                                                         <Skeleton variant="rectangular" width={80} height={18} sx={{ borderRadius: '12px' }} />
-                                                    ) : cellIndex === 11 ? (
+                                                    ) : cellIndex === 12 ? (
                                                         // Invoice Status column with chip + icon
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                             <Skeleton variant="rectangular" width={70} height={20} sx={{ borderRadius: '12px' }} />
                                                             <Skeleton variant="circular" width={16} height={16} />
                                                         </Box>
-                                                    ) : cellIndex === 12 ? (
+                                                    ) : cellIndex === 13 ? (
                                                         // Actions column with icon
                                                         <Skeleton variant="circular" width={16} height={16} />
                                                     ) : (
@@ -1703,23 +1937,124 @@ const ChargesTab = () => {
                                                         {charge.carrierName}
                                                     </Typography>
                                                 </TableCell>
+                                                <TableCell
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        verticalAlign: 'top',
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            backgroundColor: '#f9fafb'
+                                                        }
+                                                    }}
+                                                    onClick={() => handleChargeTypeClick(charge)}
+                                                >
+                                                    {(() => {
+                                                        // Extract charge codes from charge breakdown or actual charges
+                                                        const charges = charge.chargesBreakdown || charge.actualCharges || [];
+                                                        const chargeCodes = Array.isArray(charges) ? charges.map(c => c.code || c.chargeCode).filter(Boolean) : [];
+
+                                                        if (chargeCodes.length === 0) {
+                                                            return (
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                    No breakdown
+                                                                </Typography>
+                                                            );
+                                                        }
+
+                                                        // Classify and group charges by category
+                                                        const classifiedCharges = chargeCodes.map(code => chargeTypeService.getChargeType(code));
+                                                        const categories = [...new Set(classifiedCharges.map(c => c.category))];
+
+                                                        return (
+                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                                                {categories.slice(0, 2).map((category, index) => {
+                                                                    const categoryInfo = chargeTypeService.getCategoryInfo(category);
+                                                                    const categoryCharges = classifiedCharges.filter(c => c.category === category);
+
+                                                                    return (
+                                                                        <Chip
+                                                                            key={index}
+                                                                            size="small"
+                                                                            label={`${categoryInfo.icon} ${categoryInfo.label} (${categoryCharges.length})`}
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: '18px',
+                                                                                backgroundColor: categoryInfo.color + '20',
+                                                                                color: categoryInfo.color,
+                                                                                border: `1px solid ${categoryInfo.color}40`,
+                                                                                '& .MuiChip-label': {
+                                                                                    px: 0.5
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    );
+                                                                })}
+                                                                {categories.length > 2 && (
+                                                                    <Typography sx={{ fontSize: '9px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                        +{categories.length - 2} more
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        );
+                                                    })()}
+                                                </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#059669' }}>
                                                     {charge.actualCost > 0 ? formatCurrency(charge.actualCost, charge.currency) : '$0.00'}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#000000' }}>
                                                     {charge.customerCharge > 0 ? formatCurrency(charge.customerCharge, charge.currency) : '$0.00'}
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#dc2626' }}>
-                                                    {charge.actualCharge > 0 ? formatCurrency(charge.actualCharge, charge.currency) : (
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                    {charge.actualCharges && charge.actualCharges > 0 ? (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                            <Typography sx={{ fontSize: '12px', color: '#000000', fontWeight: 600 }}>
+                                                                {formatCurrency(charge.actualCharges, charge.currency)}
+                                                            </Typography>
+                                                            {charge.costComparison?.variance && (
+                                                                <Typography sx={{
+                                                                    fontSize: '10px',
+                                                                    color: charge.costComparison.variance > 0 ? '#dc2626' : '#059669',
+                                                                    fontStyle: 'italic'
+                                                                }}>
+                                                                    {charge.costComparison.variance > 0 ? '+' : ''}{formatCurrency(charge.costComparison.variance, charge.currency)}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
+                                                    ) : (
                                                         <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                             TBD
                                                         </Typography>
                                                     )}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
-                                                    <Typography sx={{ fontSize: '12px', color: charge.margin > 0 ? '#228B22' : '#6b7280', fontWeight: 600 }}>
-                                                        {charge.margin !== 0 ? formatCurrency(charge.margin, charge.currency) : '$0.00'}
-                                                    </Typography>
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                        <Typography sx={{ fontSize: '12px', color: charge.margin > 0 ? '#228B22' : '#6b7280', fontWeight: 600 }}>
+                                                            {charge.margin !== 0 ? formatCurrency(charge.margin, charge.currency) : '$0.00'}
+                                                        </Typography>
+                                                        {charge.marginPercent !== undefined && (
+                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                {charge.marginPercent.toFixed(1)}%
+                                                            </Typography>
+                                                        )}
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5 }}>
+                                                        {getChargeStatusChip(charge.chargeStatus?.status || 'pending_review')}
+                                                        {charge.exceptionStatus?.hasExceptions && (
+                                                            <Chip
+                                                                size="small"
+                                                                label={`${charge.exceptionStatus.exceptionCount} Exception${charge.exceptionStatus.exceptionCount > 1 ? 's' : ''}`}
+                                                                sx={{
+                                                                    fontSize: '10px',
+                                                                    height: '18px',
+                                                                    backgroundColor: charge.exceptionStatus.exceptions?.some(ex => ex.severity === 'HIGH') ? '#fef2f2' : '#fef7ed',
+                                                                    color: charge.exceptionStatus.exceptions?.some(ex => ex.severity === 'HIGH') ? '#dc2626' : '#f59e0b',
+                                                                    border: charge.exceptionStatus.exceptions?.some(ex => ex.severity === 'HIGH') ? '1px solid #fecaca' : '1px solid #fed7aa'
+                                                                }}
+                                                            />
+                                                        )}
+                                                    </Box>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -2027,6 +2362,14 @@ const ChargesTab = () => {
                     </Box>
                 </Popover>
             </Box>
+
+            {/* Charge Type Detail Dialog */}
+            <ChargeTypeDetailDialog
+                open={chargeTypeDialogOpen}
+                onClose={() => setChargeTypeDialogOpen(false)}
+                shipment={selectedChargeShipment}
+                charges={selectedChargeShipment?.chargesBreakdown || selectedChargeShipment?.actualCharges || []}
+            />
         </LocalizationProvider>
     );
 };

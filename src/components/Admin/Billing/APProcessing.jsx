@@ -69,7 +69,8 @@ import {
     Visibility as ViewIcon,
     Download as DownloadIcon,
     LocalShipping as LocalShippingIcon,
-    MoreVert as MoreVertIcon
+    MoreVert as MoreVertIcon,
+    Warning as WarningIcon
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useSnackbar } from 'notistack';
@@ -100,7 +101,7 @@ import MatchReviewDialog from './MatchReviewDialog';
 
 
 // PDF Results Table Component - Standardized across all carriers
-const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfViewer }) => {
+const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfViewer, onApproveAPResults, onRejectAPResults }) => {
     const [selectedRows, setSelectedRows] = useState([]);
     const [isExporting, setIsExporting] = useState(false);
     const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
@@ -542,6 +543,38 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
                         sx={{ fontSize: '11px' }}
                     >
                         View Invoice
+                    </Button>
+
+                    {/* AP Approval Actions */}
+                    <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        startIcon={<CheckIcon />}
+                        onClick={() => onApproveAPResults(false)}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Approve for Billing
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="warning"
+                        size="small"
+                        startIcon={<WarningIcon />}
+                        onClick={() => onApproveAPResults(true)}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Approve with Exceptions
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        startIcon={<CloseIcon />}
+                        onClick={onRejectAPResults}
+                        sx={{ fontSize: '11px' }}
+                    >
+                        Reject
                     </Button>
 
                     {/* CSV Export Button */}
@@ -2148,6 +2181,115 @@ const APProcessing = () => {
         setSelectedShipmentDetail(null);
     };
 
+    // AP Approval Workflow Handlers
+    const handleApproveAPResults = async (overrideExceptions = false) => {
+        if (!selectedUpload || !selectedUpload.extractedResults) {
+            enqueueSnackbar('No AP results to approve', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            console.log('🔍 Approving AP results:', selectedUpload.id);
+
+            // Get all matched shipments from the results
+            const extractedShipments = selectedUpload.extractedResults;
+            const matchedShipments = extractedShipments.filter(shipment =>
+                shipment.matchResult?.bestMatch && shipment.matchResult.confidence >= 0.8
+            );
+
+            if (matchedShipments.length === 0) {
+                enqueueSnackbar('No matched shipments found to approve', { variant: 'warning' });
+                return;
+            }
+
+            console.log(`📋 Found ${matchedShipments.length} matched shipments to approve`);
+
+            const processAPApprovalFunc = httpsCallable(functions, 'processAPApproval');
+            const shipmentIds = matchedShipments.map(shipment =>
+                shipment.matchResult.bestMatch.shipment.id
+            );
+
+            enqueueSnackbar(`Approving ${shipmentIds.length} AP-matched charge(s)...`, { variant: 'info' });
+
+            const result = await processAPApprovalFunc({
+                shipmentIds: shipmentIds,
+                apProcessingId: selectedUpload.id,
+                carrierInvoiceRef: selectedUpload.fileName,
+                overrideExceptions: overrideExceptions,
+                approvalNotes: overrideExceptions ?
+                    `AP Processing approval with exception override - Upload: ${selectedUpload.fileName}` :
+                    `AP Processing approval - Upload: ${selectedUpload.fileName}`
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `✅ Successfully approved ${result.data.successCount}/${result.data.processedCount} AP charges for billing`,
+                    { variant: 'success' }
+                );
+
+                // Update the upload status to mark as approved
+                const updateData = {
+                    apStatus: 'approved',
+                    approvedAt: new Date(),
+                    approvedBy: currentUser.email,
+                    approvedChargesCount: result.data.successCount,
+                    overrideExceptions: overrideExceptions
+                };
+
+                // Update the upload record in the appropriate collection
+                const uploadRef = doc(db, 'apUploads', selectedUpload.id);
+                await updateDoc(uploadRef, updateData);
+
+                // Refresh the upload data to show updated status
+                setSelectedUpload(prev => ({
+                    ...prev,
+                    ...updateData
+                }));
+
+                console.log(`✅ AP approval completed for upload ${selectedUpload.id}`);
+            } else {
+                enqueueSnackbar(`❌ AP approval failed: ${result.data.error}`, { variant: 'error' });
+            }
+        } catch (error) {
+            console.error('❌ AP approval error:', error);
+            enqueueSnackbar(`Failed to approve AP results: ${error.message}`, { variant: 'error' });
+        }
+    };
+
+    const handleRejectAPResults = async () => {
+        if (!selectedUpload) {
+            enqueueSnackbar('No AP results to reject', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            console.log('❌ Rejecting AP results:', selectedUpload.id);
+
+            // Update the upload status to mark as rejected
+            const updateData = {
+                apStatus: 'rejected',
+                rejectedAt: new Date(),
+                rejectedBy: currentUser.email,
+                rejectionReason: 'Manual rejection from AP Processing review'
+            };
+
+            const uploadRef = doc(db, 'apUploads', selectedUpload.id);
+            await updateDoc(uploadRef, updateData);
+
+            // Update local state
+            setSelectedUpload(prev => ({
+                ...prev,
+                ...updateData
+            }));
+
+            enqueueSnackbar('❌ AP results rejected', { variant: 'info' });
+            console.log(`❌ AP rejection completed for upload ${selectedUpload.id}`);
+        } catch (error) {
+            console.error('❌ AP rejection error:', error);
+            enqueueSnackbar(`Failed to reject AP results: ${error.message}`, { variant: 'error' });
+        }
+    };
+
     // Helper function for currency formatting in dialogs
     const formatCurrency = (amount) => {
         const numAmount = parseFloat(amount) || 0;
@@ -2308,9 +2450,29 @@ const APProcessing = () => {
             if (result.data.success) {
                 const matchData = result.data.matchResult;
 
-                // If high confidence match, create charge automatically
+                // If high confidence match, update actual costs and create charge automatically
                 if (matchData.confidence >= 0.95 && matchData.bestMatch) {
                     try {
+                        // First, update actual costs from the invoice data
+                        const updateActualCostsFunc = httpsCallable(functions, 'updateActualCosts');
+                        const actualCostsResult = await updateActualCostsFunc({
+                            shipmentId: matchData.bestMatch.shipment.id,
+                            actualCosts: {
+                                totalCharges: shipment.totalAmount || 0,
+                                currency: shipment.currency || 'CAD',
+                                charges: shipment.charges || []
+                            },
+                            invoiceData: {
+                                invoiceNumber: shipment.references?.invoiceRef || shipment.shipmentId,
+                                carrierReference: shipment.references?.carrierRef || shipment.trackingNumber
+                            },
+                            processingId: selectedUpload?.id || 'manual',
+                            autoUpdate: true
+                        });
+
+                        console.log('💰 Actual costs updated:', actualCostsResult.data);
+
+                        // Then create the charge record
                         const createChargeFunc = httpsCallable(functions, 'createShipmentCharge');
                         const chargeResult = await createChargeFunc({
                             shipmentId: matchData.bestMatch.shipment.id,
@@ -2322,14 +2484,29 @@ const APProcessing = () => {
                         return {
                             shipmentId: shipment.shipmentId,
                             matched: true,
+                            costsUpdated: actualCostsResult.data?.success || false,
                             chargeCreated: chargeResult.data.success,
                             matchConfidence: matchData.confidence,
                             carrier: carrier?.name || 'Unknown',
                             matchedShipmentId: matchData.bestMatch.shipment.shipmentID,
-                            chargeId: chargeResult.data.chargeId
+                            chargeId: chargeResult.data.chargeId,
+                            actualTotal: shipment.totalAmount || 0,
+                            quotedTotal: actualCostsResult.data?.costComparison?.quotedTotal || 0,
+                            variance: actualCostsResult.data?.costComparison?.variance || 0
                         };
-                    } catch (chargeError) {
-                        console.error('❌ Charge creation error:', chargeError);
+                    } catch (error) {
+                        console.error('❌ Cost update/charge creation error:', error);
+                        // Return partial success if matching worked but updates failed
+                        return {
+                            shipmentId: shipment.shipmentId,
+                            matched: true,
+                            costsUpdated: false,
+                            chargeCreated: false,
+                            matchConfidence: matchData.confidence,
+                            carrier: carrier?.name || 'Unknown',
+                            matchedShipmentId: matchData.bestMatch.shipment.shipmentID,
+                            error: error.message
+                        };
                     }
                 }
 
@@ -3292,6 +3469,8 @@ const APProcessing = () => {
                                         onClose={handleClosePdfResults}
                                         onViewShipmentDetail={handleViewShipmentDetail}
                                         onOpenPdfViewer={handleOpenPdfViewer}
+                                        onApproveAPResults={handleApproveAPResults}
+                                        onRejectAPResults={handleRejectAPResults}
                                     />
                                 ) : selectedUpload.processingStatus === 'failed' ? (
                                     <Box sx={{ textAlign: 'center', py: 4 }}>
