@@ -73,8 +73,9 @@ async function prepopulateChargeTypes() {
     console.log('🚀 Starting charge types pre-population...');
     
     try {
-        const batch = db.batch();
+        let batch = db.batch();
         let processed = 0;
+        let batchCount = 0;
         
         for (const chargeType of EXISTING_CHARGE_TYPES) {
             const docRef = db.collection('chargeTypes').doc(chargeType.code);
@@ -111,20 +112,24 @@ async function prepopulateChargeTypes() {
             
             batch.set(docRef, chargeTypeDoc);
             processed++;
+            batchCount++;
             
             console.log(`✅ Prepared charge type: ${chargeType.code} - ${chargeType.label}`);
             
             // Commit in batches of 25 (Firestore limit is 500, but being conservative)
-            if (processed % 25 === 0) {
+            if (batchCount === 25) {
                 await batch.commit();
-                console.log(`📦 Committed batch of ${processed} charge types`);
+                console.log(`📦 Committed batch of 25 charge types`);
+                // Create new batch for remaining items
+                batch = db.batch();
+                batchCount = 0;
             }
         }
         
         // Commit any remaining charge types
-        if (processed % 25 !== 0) {
+        if (batchCount > 0) {
             await batch.commit();
-            console.log(`📦 Committed final batch`);
+            console.log(`📦 Committed final batch with ${batchCount} charge types`);
         }
         
         console.log(`\n🎉 Successfully pre-populated ${processed} charge types!`);

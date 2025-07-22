@@ -375,6 +375,13 @@ const { updateActualCosts } = require('./src/billing/updateActualCosts');
 const { detectExceptions } = require('./src/billing/detectExceptions');
 const { approveCharges, rejectCharges } = require('./src/billing/approveCharges');
 const { processAPApproval } = require('./src/billing/processAPApproval');
+const { 
+    getChargeTypes, 
+    createChargeType, 
+    updateChargeType, 
+    deleteChargeType, 
+    getChargeTypeStats 
+} = require('./src/admin-charge-types');
 exports.matchInvoiceToShipment = matchInvoiceToShipment;
 exports.createShipmentCharge = createShipmentCharge;
 exports.updateActualCosts = updateActualCosts;
@@ -382,6 +389,13 @@ exports.detectExceptions = detectExceptions;
 exports.approveCharges = approveCharges;
 exports.rejectCharges = rejectCharges;
 exports.processAPApproval = processAPApproval;
+
+// Charge Type Management Functions
+exports.getChargeTypes = getChargeTypes;
+exports.createChargeType = createChargeType;
+exports.updateChargeType = updateChargeType;
+exports.deleteChargeType = deleteChargeType;
+exports.getChargeTypeStats = getChargeTypeStats;
 
 // Export file upload functions
 exports.uploadFile = uploadFile;

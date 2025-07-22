@@ -76,6 +76,7 @@ import { app } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import InvoiceStatusDialog from '../Configuration/dialogs/InvoiceStatusDialog';
 import NotificationSettings from '../Configuration/NotificationSettings';
+import ChargeTypesConfiguration from '../Configuration/ChargeTypesConfiguration';
 
 const SystemConfiguration = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -1542,21 +1543,19 @@ const SystemConfiguration = () => {
                     </Accordion>
                 </Grid>
 
-                {/* Future Configuration Sections */}
+                {/* Charge Types Section */}
                 <Grid item xs={12}>
                     <Accordion>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <SettingsIcon sx={{ color: '#6b7280' }} />
+                                <ReceiptIcon sx={{ color: '#6b7280' }} />
                                 <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                    Future Configuration Options
+                                    Charge Types
                                 </Typography>
                             </Box>
                         </AccordionSummary>
                         <AccordionDetails>
-                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
-                                Additional system configuration options will be added here in future updates.
-                            </Typography>
+                            <ChargeTypesConfiguration />
                         </AccordionDetails>
                     </Accordion>
                 </Grid>

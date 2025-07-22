@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import chargesService from '../../../services/chargesService';
-import chargeTypeService from '../../../services/chargeTypeService';
+import dynamicChargeTypeService from '../../../services/dynamicChargeTypeService';
 import ChargeTypeDetailDialog from './ChargeTypeDetailDialog';
 import {
     Box,
@@ -148,6 +148,10 @@ const ChargesTab = () => {
         totalRevenue: { USD: 0, CAD: 0 },
         totalCosts: { USD: 0, CAD: 0 }
     });
+
+    // Dynamic charge types state
+    const [chargeTypesCache, setChargeTypesCache] = useState(new Map());
+    const [loadingChargeTypes, setLoadingChargeTypes] = useState(false);
     const [loadingMetrics, setLoadingMetrics] = useState(false);
 
     // Dialog states
@@ -183,6 +187,49 @@ const ChargesTab = () => {
         setSelectedChargeShipment(charge);
         setChargeTypeDialogOpen(true);
     }, []);
+
+    // Load charge type information for display
+    const loadChargeType = useCallback(async (code) => {
+        if (!code) return null;
+
+        // Check cache first
+        if (chargeTypesCache.has(code)) {
+            return chargeTypesCache.get(code);
+        }
+
+        try {
+            const chargeType = await dynamicChargeTypeService.getChargeType(code);
+
+            // Cache the result
+            setChargeTypesCache(prev => new Map(prev.set(code, chargeType)));
+
+            return chargeType;
+        } catch (error) {
+            console.error(`Error loading charge type ${code}:`, error);
+            return {
+                code: code,
+                label: `Unknown (${code})`,
+                category: 'miscellaneous',
+                isUnknown: true
+            };
+        }
+    }, [chargeTypesCache]);
+
+    // Load multiple charge types efficiently
+    const loadChargeTypes = useCallback(async (codes) => {
+        if (!codes || codes.length === 0) return [];
+
+        try {
+            const chargeTypes = await Promise.all(
+                codes.map(code => loadChargeType(code))
+            );
+
+            return chargeTypes.filter(Boolean);
+        } catch (error) {
+            console.error('Error loading charge types:', error);
+            return [];
+        }
+    }, [loadChargeType]);
 
     // Debounce search input
     useEffect(() => {
@@ -754,9 +801,8 @@ const ChargesTab = () => {
                 const charges = charge.chargesBreakdown || charge.actualCharges || [];
                 const chargeCodes = Array.isArray(charges) ? charges.map(c => c.code || c.chargeCode).filter(Boolean) : [];
                 if (chargeCodes.length === 0) return 'No breakdown';
-                const classifiedCharges = chargeCodes.map(code => chargeTypeService.getChargeType(code));
-                const categories = [...new Set(classifiedCharges.map(c => c.category))];
-                return categories.map(cat => chargeTypeService.getCategoryInfo(cat).label).join(', ');
+                // Note: CSV export will use async resolution in exportChargesData function
+                return chargeCodes.join(', ');
             })(),
             'Service': charge.serviceName,
             'Actual Cost': charge.actualCost.toFixed(2),
@@ -1961,27 +2007,30 @@ const ChargesTab = () => {
                                                             );
                                                         }
 
-                                                        // Classify and group charges by category
-                                                        const classifiedCharges = chargeCodes.map(code => chargeTypeService.getChargeType(code));
-                                                        const categories = [...new Set(classifiedCharges.map(c => c.category))];
-
+                                                        // Display charge codes directly with async classification
                                                         return (
-                                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                                                {categories.slice(0, 2).map((category, index) => {
-                                                                    const categoryInfo = chargeTypeService.getCategoryInfo(category);
-                                                                    const categoryCharges = classifiedCharges.filter(c => c.category === category);
+                                                            <Box
+                                                                sx={{
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    gap: 0.25,
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                onClick={() => handleChargeTypeClick(charge)}
+                                                            >
+                                                                {chargeCodes.slice(0, 3).map((code, index) => {
 
                                                                     return (
                                                                         <Chip
                                                                             key={index}
                                                                             size="small"
-                                                                            label={`${categoryInfo.icon} ${categoryInfo.label} (${categoryCharges.length})`}
+                                                                            label={code}
                                                                             sx={{
                                                                                 fontSize: '10px',
                                                                                 height: '18px',
-                                                                                backgroundColor: categoryInfo.color + '20',
-                                                                                color: categoryInfo.color,
-                                                                                border: `1px solid ${categoryInfo.color}40`,
+                                                                                backgroundColor: '#f3f4f6',
+                                                                                color: '#374151',
+                                                                                border: `1px solid #d1d5db`,
                                                                                 '& .MuiChip-label': {
                                                                                     px: 0.5
                                                                                 }
@@ -1989,9 +2038,9 @@ const ChargesTab = () => {
                                                                         />
                                                                     );
                                                                 })}
-                                                                {categories.length > 2 && (
+                                                                {chargeCodes.length > 3 && (
                                                                     <Typography sx={{ fontSize: '9px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                        +{categories.length - 2} more
+                                                                        +{chargeCodes.length - 3} more
                                                                     </Typography>
                                                                 )}
                                                             </Box>
