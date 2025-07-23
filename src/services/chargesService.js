@@ -461,47 +461,102 @@ export const generateInvoiceEdiReport = async (companyId, startDate, endDate) =>
  */
 export const calculateMetrics = async ({ filters, userRole, connectedCompanies }) => {
     try {
-        // Build Firestore query based on user role and filters
-        let shipmentsQuery = collection(db, 'shipments');
-        const queryConstraints = [where('status', '!=', 'draft')];
+        console.log('📊 Calculating metrics for approved charges only');
+        
+        // 🔧 CRITICAL FIX: Only calculate metrics for AP-approved charges
+        // This ensures scorecard shows same data as the charges table
+        
+        const shipmentsRef = collection(db, 'shipments');
+        let shipmentsData = [];
 
-        // Apply date filters
-        if (filters.startDate) {
-            queryConstraints.push(where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))));
-        }
-        if (filters.endDate) {
-            queryConstraints.push(where('createdAt', '<=', Timestamp.fromDate(new Date(filters.endDate))));
-        }
-
-        // Apply company filtering based on user role
-        if (userRole !== 'superadmin' && connectedCompanies && connectedCompanies.length > 0) {
-            // Regular admin: filter by connected companies
-            const companyBatches = [];
-            for (let i = 0; i < connectedCompanies.length; i += 10) {
-                const batch = connectedCompanies.slice(i, i + 10);
-                companyBatches.push(batch);
-            }
+        if (userRole === 'superadmin') {
+            // Super admin: Query ALL approved charges
+            console.log('🔒 Super admin metrics: Including ALL approved charges');
             
-            // For simplicity, take first batch (can be enhanced for multiple batches)
-            if (companyBatches.length > 0) {
-                queryConstraints.push(where('companyID', 'in', companyBatches[0]));
+            let queryConstraints = [
+                where('status', '!=', 'draft'),
+                where('chargeStatus.status', '==', 'approved'), // 🔧 CRITICAL: Only approved charges
+                orderBy('createdAt', 'desc')
+            ];
+
+            // Apply date filters
+            if (filters.startDate) {
+                queryConstraints = [
+                    where('status', '!=', 'draft'),
+                    where('chargeStatus.status', '==', 'approved'),
+                    where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
+                    orderBy('createdAt', 'desc')
+                ];
+            }
+            if (filters.endDate) {
+                // Add end date to existing constraints
+                queryConstraints.push(where('createdAt', '<=', Timestamp.fromDate(new Date(filters.endDate))));
+            }
+
+            // Apply specific company filter if selected
+            if (filters.companyId) {
+                queryConstraints.push(where('companyID', '==', filters.companyId));
+            }
+
+            const snapshot = await getDocs(query(shipmentsRef, ...queryConstraints));
+            shipmentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+        } else {
+            // Regular admin: Filter by connected companies AND approved status
+            const companyIDs = connectedCompanies.map(company => company.companyID).filter(Boolean);
+            
+            if (companyIDs.length === 0) {
+                return {
+                    totalShipments: { USD: 0, CAD: 0 },
+                    totalRevenue: { USD: 0, CAD: 0 },
+                    totalCosts: { USD: 0, CAD: 0 }
+                };
+            }
+
+            console.log('👤 Regular admin metrics: Including approved charges from connected companies:', companyIDs.length);
+
+            // Fetch approved shipments in batches (Firestore 'in' limit is 10)
+            const batches = [];
+            for (let i = 0; i < companyIDs.length; i += 10) {
+                const batch = companyIDs.slice(i, i + 10);
+                
+                let queryConstraints = [
+                    where('companyID', 'in', batch),
+                    where('status', '!=', 'draft'),
+                    where('chargeStatus.status', '==', 'approved'), // 🔧 CRITICAL: Only approved charges
+                    orderBy('createdAt', 'desc')
+                ];
+
+                // Apply date filters
+                if (filters.startDate) {
+                    queryConstraints = [
+                        where('companyID', 'in', batch),
+                        where('status', '!=', 'draft'),
+                        where('chargeStatus.status', '==', 'approved'),
+                        where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
+                        orderBy('createdAt', 'desc')
+                    ];
+                }
+                if (filters.endDate) {
+                    queryConstraints.push(where('createdAt', '<=', Timestamp.fromDate(new Date(filters.endDate))));
+                }
+
+                batches.push(getDocs(query(shipmentsRef, ...queryConstraints)));
+            }
+
+            const results = await Promise.all(batches);
+            
+            for (const snapshot of results) {
+                for (const doc of snapshot.docs) {
+                    shipmentsData.push({ id: doc.id, ...doc.data() });
+                }
+            }
+
+            // Apply specific company filter if selected
+            if (filters.companyId) {
+                shipmentsData = shipmentsData.filter(shipment => shipment.companyID === filters.companyId);
             }
         }
-
-        // Apply specific company filter if selected
-        if (filters.companyId) {
-            queryConstraints.push(where('companyID', '==', filters.companyId));
-        }
-
-        // Add orderBy for consistent results
-        queryConstraints.push(orderBy('createdAt', 'desc'));
-
-        // Execute query
-        const shipmentsSnapshot = await getDocs(query(shipmentsQuery, ...queryConstraints));
-        const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
 
         // Helper function to get shipment currency
         const getShipmentCurrency = (shipment) => {
@@ -554,6 +609,12 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
                        shipment.selectedRate?.totalCharges || 0;
             }
             metrics.totalCosts[currency] = (metrics.totalCosts[currency] || 0) + cost;
+        });
+
+        console.log(`📊 Scorecard metrics calculated from ${shipmentsData.length} AP-approved shipments:`, {
+            totalShipments: metrics.totalShipments,
+            totalRevenue: metrics.totalRevenue,
+            totalCosts: metrics.totalCosts
         });
 
         return metrics;
