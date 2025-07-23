@@ -26,38 +26,23 @@ const updateActualCosts = onCall({
             throw new Error('Shipment ID and actual costs are required');
         }
 
-        logger.info('💰 Updating actual costs for shipment', {
-            shipmentId,
-            totalActualCost: actualCosts.totalCharges,
-            userId,
-            autoUpdate,
-            processingId
-        });
-
-        // Find shipment document (handle both document ID and shipmentID field)
-        let shipmentDoc;
-        try {
-            // Try direct document lookup first
-            shipmentDoc = await db.collection('shipments').doc(shipmentId).get();
-            if (!shipmentDoc.exists) {
-                // Fallback to shipmentID field query
-                const query = await db.collection('shipments')
-                    .where('shipmentID', '==', shipmentId)
-                    .limit(1)
-                    .get();
-                
-                if (!query.empty) {
-                    shipmentDoc = query.docs[0];
-                } else {
-                    throw new Error(`Shipment ${shipmentId} not found`);
-                }
-            }
-        } catch (error) {
-            throw new Error(`Failed to find shipment ${shipmentId}: ${error.message}`);
+        // 🔧 CRITICAL FIX: ALWAYS query by shipmentID field, NEVER use document ID
+        logger.info(`💰 Updating actual costs for shipment by shipmentID field: ${shipmentId}`);
+        
+        const shipmentQuery = await db.collection('shipments')
+            .where('shipmentID', '==', shipmentId)
+            .limit(1)
+            .get();
+            
+        if (shipmentQuery.empty) {
+            throw new Error(`Shipment ${shipmentId} not found in database`);
         }
+        
+        const shipmentDoc = shipmentQuery.docs[0];
+        const documentId = shipmentDoc.id;
+        logger.info(`✅ Found shipment by shipmentID field. Document ID: ${documentId}`);
 
         const shipmentData = shipmentDoc.data();
-        const documentId = shipmentDoc.id;
 
         // Validate shipment status
         if (shipmentData.status === 'cancelled' || shipmentData.status === 'canceled') {
@@ -101,14 +86,14 @@ const updateActualCosts = onCall({
         };
 
         // Prepare shipment update
-        const updateData = {
+        let updateData = {
             actualRates: actualRatesUpdate,
             costComparison: costComparison,
             hasActualCosts: true,
             actualCostsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            actualCostsUpdatedBy: userEmail,
+            actualCostsUpdatedBy: userEmail || 'system', // 🔧 FIXED: Handle undefined userEmail
             lastModified: admin.firestore.FieldValue.serverTimestamp(),
-            lastModifiedBy: userEmail
+            lastModifiedBy: userEmail || 'system' // 🔧 FIXED: Handle undefined userEmail
         };
 
         // Add to status history
@@ -118,7 +103,7 @@ const updateActualCosts = onCall({
             note: autoUpdate ? 
                 `Actual costs auto-updated from carrier invoice (${processingId})` :
                 `Actual costs manually updated from carrier invoice`,
-            updatedBy: userEmail,
+            updatedBy: userEmail || 'system', // 🔧 FIXED: Handle undefined userEmail
             type: 'actual_costs_update',
             changes: {
                 quotedTotal: quotedTotal,

@@ -146,7 +146,8 @@ const ChargesTab = () => {
     const [metrics, setMetrics] = useState({
         totalShipments: { USD: 0, CAD: 0 },
         totalRevenue: { USD: 0, CAD: 0 },
-        totalCosts: { USD: 0, CAD: 0 }
+        totalCosts: { USD: 0, CAD: 0 },
+        totalProfit: { USD: 0, CAD: 0 }
     });
 
     // Dynamic charge types state
@@ -231,6 +232,21 @@ const ChargesTab = () => {
         }
     }, [loadChargeType]);
 
+    // 🔧 NEW: Helper function to resolve charge codes to charge type names
+    const resolveChargeTypeName = useCallback((code) => {
+        if (!code) return 'Unknown';
+
+        // Check cache first
+        const cachedChargeType = chargeTypesCache.get(code);
+        if (cachedChargeType) {
+            return cachedChargeType.label || cachedChargeType.name || code;
+        }
+
+        // If not cached, trigger async load and return code for now
+        loadChargeType(code);
+        return code; // Will be updated when cache is populated
+    }, [chargeTypesCache, loadChargeType]);
+
     // Debounce search input
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -238,6 +254,26 @@ const ChargesTab = () => {
         }, 500);
         return () => clearTimeout(timer);
     }, [searchValue]);
+
+    // 🔧 NEW: Preload charge types when charges are loaded
+    useEffect(() => {
+        if (charges && charges.length > 0) {
+            // Extract all charge codes from charges
+            const allChargeCodes = new Set();
+            charges.forEach(charge => {
+                const chargesBreakdown = charge.chargesBreakdown || charge.actualCharges || [];
+                chargesBreakdown.forEach(c => {
+                    if (c.code) allChargeCodes.add(c.code);
+                });
+            });
+
+            // Preload charge types for all found codes
+            if (allChargeCodes.size > 0) {
+                console.log(`🔧 DEBUG: Preloading ${allChargeCodes.size} charge types:`, Array.from(allChargeCodes));
+                loadChargeTypes(Array.from(allChargeCodes));
+            }
+        }
+    }, [charges, loadChargeTypes]);
 
     // This component now relies on chargesService for all data fetching and processing.
     // The following functions are now simplified to call the service.
@@ -457,7 +493,11 @@ const ChargesTab = () => {
                 connectedCompanies
             });
 
-            // Update state with server-calculated metrics
+            // Calculate profit (revenue - costs) for each currency
+            const profitUSD = serverMetrics.totalRevenue.USD - serverMetrics.totalCosts.USD;
+            const profitCAD = serverMetrics.totalRevenue.CAD - serverMetrics.totalCosts.CAD;
+
+            // Update state with server-calculated metrics and calculated profit
             setMetrics({
                 totalShipments: {
                     USD: serverMetrics.totalShipments.USD,
@@ -470,6 +510,10 @@ const ChargesTab = () => {
                 totalCosts: {
                     USD: serverMetrics.totalCosts.USD,
                     CAD: serverMetrics.totalCosts.CAD
+                },
+                totalProfit: {
+                    USD: profitUSD,
+                    CAD: profitCAD
                 }
             });
         } catch (error) {
@@ -833,7 +877,7 @@ const ChargesTab = () => {
         enqueueSnackbar(`Charges exported successfully (Page ${page + 1})`, { variant: 'success' });
     };
 
-    // Bulk approval functions
+    // Enhanced bulk approval functions for final approval flow
     const handleBulkApprove = async (overrideExceptions = false) => {
         if (selectedCharges.size === 0) {
             enqueueSnackbar('Please select charges to approve', { variant: 'warning' });
@@ -841,13 +885,74 @@ const ChargesTab = () => {
         }
 
         try {
-            const approveChargesFunc = httpsCallable(functions, 'approveCharges');
-            const shipmentIds = Array.from(selectedCharges);
+            const chargesList = Array.from(selectedCharges);
 
-            enqueueSnackbar(`Approving ${shipmentIds.length} charge(s)...`, { variant: 'info' });
+            // Check if these are AP-processed charges that need final approval
+            const selectedChargeData = charges.filter(charge => chargesList.includes(charge.id));
+            const apProcessedCharges = selectedChargeData.filter(charge =>
+                charge.chargeStatus === 'ap_processed' || charge.status === 'ap_processed'
+            );
+
+            if (apProcessedCharges.length > 0) {
+                // Handle final approval for AP-processed charges
+                await handleFinalApprovalForAPCharges(chargesList, overrideExceptions);
+            } else {
+                // Handle regular charge approval
+                await handleRegularChargeApproval(chargesList, overrideExceptions);
+            }
+
+        } catch (error) {
+            console.error('Bulk approval error:', error);
+            enqueueSnackbar('Failed to approve charges: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // New function to handle final approval for AP-processed charges
+    const handleFinalApprovalForAPCharges = async (chargeIds, overrideExceptions = false) => {
+        try {
+            enqueueSnackbar(`Processing final approval for ${chargeIds.length} AP-processed charge(s)...`, { variant: 'info' });
+
+            // Step 1: Generate EDI numbers for final approval
+            const ediNumbers = chargeIds.map((_, index) => `EDI-${Date.now()}-${String(index + 1).padStart(3, '0')}`);
+
+            // Step 2: Call enhanced approval function that handles EDI assignment
+            const finalApproveChargesFunc = httpsCallable(functions, 'finalApproveAPCharges');
+
+            const result = await finalApproveChargesFunc({
+                shipmentIds: chargeIds,
+                ediNumbers: ediNumbers,
+                overrideExceptions: overrideExceptions,
+                approvalNotes: `Final approval from charges table - EDI numbers assigned`,
+                finalApproval: true
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `✅ Successfully completed final approval for ${result.data.successCount}/${result.data.processedCount} charges. EDI numbers assigned and charges applied to shipments.`,
+                    { variant: 'success' }
+                );
+
+                // Clear selection and refresh data
+                setSelectedCharges(new Set());
+                fetchChargesPage(0, true);
+            } else {
+                enqueueSnackbar('Final approval failed: ' + result.data.error, { variant: 'error' });
+            }
+        } catch (error) {
+            console.error('Final approval error:', error);
+            enqueueSnackbar('Failed to complete final approval: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // Regular charge approval for non-AP-processed charges
+    const handleRegularChargeApproval = async (chargeIds, overrideExceptions = false) => {
+        try {
+            const approveChargesFunc = httpsCallable(functions, 'approveCharges');
+
+            enqueueSnackbar(`Approving ${chargeIds.length} charge(s)...`, { variant: 'info' });
 
             const result = await approveChargesFunc({
-                shipmentIds: shipmentIds,
+                shipmentIds: chargeIds,
                 approvalType: 'bulk',
                 overrideExceptions: overrideExceptions,
                 approvalNotes: overrideExceptions ? 'Bulk approval with exception override' : 'Bulk approval'
@@ -866,7 +971,7 @@ const ChargesTab = () => {
                 enqueueSnackbar('Bulk approval failed: ' + result.data.error, { variant: 'error' });
             }
         } catch (error) {
-            console.error('Bulk approval error:', error);
+            console.error('Regular approval error:', error);
             enqueueSnackbar('Failed to approve charges: ' + error.message, { variant: 'error' });
         }
     };
@@ -1074,6 +1179,12 @@ const ChargesTab = () => {
                 backgroundColor: '#fef7ed',
                 color: '#f59e0b',
                 border: '1px solid #fed7aa'
+            },
+            'ap_processed': {
+                label: 'Ready for Final Approval',
+                backgroundColor: '#e0f2fe',
+                color: '#0277bd',
+                border: '1px solid #b3e5fc'
             },
             'approved': {
                 label: 'Approved',
@@ -1389,27 +1500,64 @@ const ChargesTab = () => {
                             Export Page
                         </Button>
 
-                        {/* Bulk Action Buttons */}
+                        {/* Enhanced Bulk Action Buttons with AP Processing Support */}
                         {selectedCharges.size > 0 && (
                             <>
-                                <Button
-                                    size="small"
-                                    variant="contained"
-                                    color="success"
-                                    onClick={() => handleBulkApprove(false)}
-                                    sx={{ fontSize: '11px', ml: 1 }}
-                                >
-                                    Approve {selectedCharges.size}
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="success"
-                                    onClick={() => handleBulkApprove(true)}
-                                    sx={{ fontSize: '11px', ml: 1 }}
-                                >
-                                    Force Approve {selectedCharges.size}
-                                </Button>
+                                {(() => {
+                                    // Check if selected charges include AP-processed charges
+                                    const selectedChargeData = charges.filter(charge => selectedCharges.has(charge.id));
+                                    const hasAPProcessedCharges = selectedChargeData.some(charge =>
+                                        charge.chargeStatus === 'ap_processed' || charge.status === 'ap_processed'
+                                    );
+
+                                    if (hasAPProcessedCharges) {
+                                        return (
+                                            <>
+                                                <Button
+                                                    size="small"
+                                                    variant="contained"
+                                                    color="success"
+                                                    onClick={() => handleBulkApprove(false)}
+                                                    sx={{ fontSize: '11px', ml: 1 }}
+                                                >
+                                                    Final Approve {selectedCharges.size} (Set EDI)
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="success"
+                                                    onClick={() => handleBulkApprove(true)}
+                                                    sx={{ fontSize: '11px', ml: 1 }}
+                                                >
+                                                    Force Final Approve {selectedCharges.size}
+                                                </Button>
+                                            </>
+                                        );
+                                    } else {
+                                        return (
+                                            <>
+                                                <Button
+                                                    size="small"
+                                                    variant="contained"
+                                                    color="success"
+                                                    onClick={() => handleBulkApprove(false)}
+                                                    sx={{ fontSize: '11px', ml: 1 }}
+                                                >
+                                                    Approve {selectedCharges.size}
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="success"
+                                                    onClick={() => handleBulkApprove(true)}
+                                                    sx={{ fontSize: '11px', ml: 1 }}
+                                                >
+                                                    Force Approve {selectedCharges.size}
+                                                </Button>
+                                            </>
+                                        );
+                                    }
+                                })()}
                                 <Button
                                     size="small"
                                     variant="outlined"
@@ -1691,6 +1839,92 @@ const ChargesTab = () => {
                     </Grid>
                 </Grid>
 
+                {/* Profit Summary Cards */}
+                <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={12} md={6}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#f8fffe' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
+                                    Total Profit (USD)
+                                </Typography>
+                                {loadingMetrics ? (
+                                    <Skeleton variant="text" width={120} height={24} />
+                                ) : (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <Box>
+                                            <Typography variant="h5" sx={{
+                                                fontSize: '24px',
+                                                fontWeight: 'bold',
+                                                color: metrics.totalProfit.USD >= 0 ? '#059669' : '#dc2626'
+                                            }}>
+                                                ${(metrics.totalProfit.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                                                Revenue: ${(metrics.totalRevenue.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Costs: ${(metrics.totalCosts.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            color: metrics.totalProfit.USD >= 0 ? '#059669' : '#dc2626'
+                                        }}>
+                                            {metrics.totalProfit.USD >= 0 ? (
+                                                <TrendingUpIcon sx={{ fontSize: '32px' }} />
+                                            ) : (
+                                                <TrendingDownIcon sx={{ fontSize: '32px' }} />
+                                            )}
+                                        </Box>
+                                    </Box>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#fef7f0' }}>
+                            <CardContent sx={{ p: 2 }}>
+                                <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
+                                    Total Profit (CAD)
+                                </Typography>
+                                {loadingMetrics ? (
+                                    <Skeleton variant="text" width={120} height={24} />
+                                ) : (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <Box>
+                                            <Typography variant="h5" sx={{
+                                                fontSize: '24px',
+                                                fontWeight: 'bold',
+                                                color: metrics.totalProfit.CAD >= 0 ? '#059669' : '#dc2626'
+                                            }}>
+                                                ${(metrics.totalProfit.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                                                Revenue: ${(metrics.totalRevenue.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Costs: ${(metrics.totalCosts.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </Typography>
+                                        </Box>
+                                        <Box sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            color: metrics.totalProfit.CAD >= 0 ? '#059669' : '#dc2626'
+                                        }}>
+                                            {metrics.totalProfit.CAD >= 0 ? (
+                                                <TrendingUpIcon sx={{ fontSize: '32px' }} />
+                                            ) : (
+                                                <TrendingDownIcon sx={{ fontSize: '32px' }} />
+                                            )}
+                                        </Box>
+                                    </Box>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                </Grid>
+
                 {/* Status/Count Display and Bulk Actions */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1764,6 +1998,7 @@ const ChargesTab = () => {
                                     </TableCell>
                                     <SortableTableCell field="actualCost">Quoted Cost</SortableTableCell>
                                     <SortableTableCell field="customerCharge">Quoted Charge</SortableTableCell>
+                                    <SortableTableCell field="carrierInvoiceAmount">Actual Cost</SortableTableCell>
                                     <SortableTableCell field="actualCharge">Actual Charge</SortableTableCell>
                                     <SortableTableCell field="margin">Profit</SortableTableCell>
                                     <SortableTableCell field="chargeStatus">Charge Status</SortableTableCell>
@@ -1778,7 +2013,7 @@ const ChargesTab = () => {
                                     // Optimized skeleton loading
                                     Array.from({ length: rowsPerPage }).map((_, index) => (
                                         <TableRow key={`skeleton-${index}`}>
-                                            {Array.from({ length: 14 }).map((_, cellIndex) => (
+                                            {Array.from({ length: 15 }).map((_, cellIndex) => (
                                                 <TableCell
                                                     key={cellIndex}
                                                     sx={{
@@ -1787,8 +2022,8 @@ const ChargesTab = () => {
                                                         // Match actual column constraints exactly
                                                         ...(cellIndex === 0 && { padding: 'checkbox' }), // Checkbox column
                                                         ...(cellIndex === 4 && { minWidth: '160px' }), // Customer column
-                                                        ...(cellIndex === 12 && { maxWidth: '130px' }), // Invoice Status column
-                                                        ...(cellIndex === 13 && { width: 40 }) // Actions column
+                                                        ...(cellIndex === 13 && { maxWidth: '130px' }), // Invoice Status column
+                                                        ...(cellIndex === 14 && { width: 40 }) // Actions column
                                                     }}
                                                 >
                                                     {cellIndex === 0 ? (
@@ -1806,16 +2041,16 @@ const ChargesTab = () => {
                                                             <Skeleton variant="rectangular" width={60} height={18} sx={{ borderRadius: '12px' }} />
                                                             <Skeleton variant="rectangular" width={50} height={18} sx={{ borderRadius: '12px' }} />
                                                         </Box>
-                                                    ) : cellIndex === 11 ? (
+                                                    ) : cellIndex === 12 ? (
                                                         // Shipment Status column with chip-like skeleton
                                                         <Skeleton variant="rectangular" width={80} height={18} sx={{ borderRadius: '12px' }} />
-                                                    ) : cellIndex === 12 ? (
+                                                    ) : cellIndex === 13 ? (
                                                         // Invoice Status column with chip + icon
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                             <Skeleton variant="rectangular" width={70} height={20} sx={{ borderRadius: '12px' }} />
                                                             <Skeleton variant="circular" width={16} height={16} />
                                                         </Box>
-                                                    ) : cellIndex === 13 ? (
+                                                    ) : cellIndex === 14 ? (
                                                         // Actions column with icon
                                                         <Skeleton variant="circular" width={16} height={16} />
                                                     ) : (
@@ -1826,11 +2061,12 @@ const ChargesTab = () => {
                                                                 cellIndex === 1 ? 100 :      // Shipment ID
                                                                     cellIndex === 2 ? 70 :       // Date
                                                                         cellIndex === 5 ? 80 :       // Carrier
-                                                                            cellIndex === 6 ? 60 :       // Cost
-                                                                                cellIndex === 7 ? 60 :       // Quoted
-                                                                                    cellIndex === 8 ? 60 :       // Actual
-                                                                                        cellIndex === 9 ? 60 :       // Profit
-                                                                                            80                            // Default
+                                                                            cellIndex === 7 ? 60 :       // Quoted Cost
+                                                                                cellIndex === 8 ? 60 :       // Quoted Charge
+                                                                                    cellIndex === 9 ? 60 :       // Actual Cost (NEW)
+                                                                                        cellIndex === 10 ? 60 :      // Actual Charge
+                                                                                            cellIndex === 11 ? 60 :      // Profit
+                                                                                                80                            // Default
                                                             }
                                                             height={16}
                                                         />
@@ -2019,18 +2255,21 @@ const ChargesTab = () => {
                                                                 onClick={() => handleChargeTypeClick(charge)}
                                                             >
                                                                 {chargeCodes.slice(0, 3).map((code, index) => {
+                                                                    // 🔧 NEW: Resolve charge code to charge type name
+                                                                    const chargeTypeName = resolveChargeTypeName(code);
+                                                                    const isResolved = chargeTypeName !== code; // Check if name was resolved
 
                                                                     return (
                                                                         <Chip
                                                                             key={index}
                                                                             size="small"
-                                                                            label={code}
+                                                                            label={chargeTypeName}
                                                                             sx={{
                                                                                 fontSize: '10px',
                                                                                 height: '18px',
-                                                                                backgroundColor: '#f3f4f6',
-                                                                                color: '#374151',
-                                                                                border: `1px solid #d1d5db`,
+                                                                                backgroundColor: isResolved ? '#e0f2fe' : '#f3f4f6',
+                                                                                color: isResolved ? '#0277bd' : '#374151',
+                                                                                border: `1px solid ${isResolved ? '#b3e5fc' : '#d1d5db'}`,
                                                                                 '& .MuiChip-label': {
                                                                                     px: 0.5
                                                                                 }
@@ -2053,27 +2292,68 @@ const ChargesTab = () => {
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#000000' }}>
                                                     {charge.customerCharge > 0 ? formatCurrency(charge.customerCharge, charge.currency) : '$0.00'}
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
-                                                    {charge.actualCharges && charge.actualCharges > 0 ? (
-                                                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <Typography sx={{ fontSize: '12px', color: '#000000', fontWeight: 600 }}>
-                                                                {formatCurrency(charge.actualCharges, charge.currency)}
-                                                            </Typography>
-                                                            {charge.costComparison?.variance && (
-                                                                <Typography sx={{
-                                                                    fontSize: '10px',
-                                                                    color: charge.costComparison.variance > 0 ? '#dc2626' : '#059669',
-                                                                    fontStyle: 'italic'
-                                                                }}>
-                                                                    {charge.costComparison.variance > 0 ? '+' : ''}{formatCurrency(charge.costComparison.variance, charge.currency)}
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#dc2626' }}>
+                                                    {(() => {
+                                                        // Get actual cost from actualRates (carrier invoice amount)
+                                                        const actualCostAmount = charge.shipmentData?.actualRates?.totalCharges ||
+                                                            charge.actualRates?.totalCharges ||
+                                                            charge.shipmentData?.apExtractedCosts?.totalAmount ||
+                                                            null;
+
+                                                        if (actualCostAmount && actualCostAmount > 0) {
+                                                            return formatCurrency(actualCostAmount, charge.currency);
+                                                        } else {
+                                                            return (
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                    TBD
                                                                 </Typography>
-                                                            )}
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                            TBD
-                                                        </Typography>
-                                                    )}
+                                                            );
+                                                        }
+                                                    })()}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
+                                                    {(() => {
+                                                        // 🔧 NEW: Smart actual charge logic
+                                                        // If actualCharge is set (costs match) → show the amount
+                                                        // If actualCharge is null (costs differ) → show TBD
+                                                        if (charge.actualCharge !== null && charge.actualCharge !== undefined && charge.actualCharge > 0) {
+                                                            const variance = charge.actualCharge - charge.customerCharge;
+                                                            return (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                                    <Typography sx={{ fontSize: '12px', color: '#000000', fontWeight: 600 }}>
+                                                                        {formatCurrency(charge.actualCharge, charge.currency)}
+                                                                    </Typography>
+                                                                    {Math.abs(variance) > 0.01 && (
+                                                                        <Typography sx={{
+                                                                            fontSize: '10px',
+                                                                            color: variance > 0 ? '#dc2626' : '#059669',
+                                                                            fontStyle: 'italic'
+                                                                        }}>
+                                                                            {variance > 0 ? '+' : ''}{formatCurrency(variance, charge.currency)}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            );
+                                                        } else {
+                                                            // Show TBD when manual adjustment is needed
+                                                            return (
+                                                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                        TBD
+                                                                    </Typography>
+                                                                    {charge.quotedCost && charge.actualCost && Math.abs(charge.quotedCost - charge.actualCost) > 0.01 && (
+                                                                        <Typography sx={{
+                                                                            fontSize: '9px',
+                                                                            color: '#ef4444',
+                                                                            fontStyle: 'italic'
+                                                                        }}>
+                                                                            Cost variance: {formatCurrency(charge.actualCost - charge.quotedCost, charge.currency)}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+                                                            );
+                                                        }
+                                                    })()}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>

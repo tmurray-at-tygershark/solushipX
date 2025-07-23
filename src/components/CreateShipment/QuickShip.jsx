@@ -79,7 +79,7 @@ import shipmentChargeTypeService from '../../services/shipmentChargeTypeService'
 import { validateManualRates, getAutoPopulatedChargeName } from '../../utils/shipmentValidation';
 import { migrateShipmentChargeCodes } from '../../utils/chargeTypeCompatibility';
 import { recalculateShipmentTaxes, updateRateAndRecalculateTaxes, addRateAndRecalculateTaxes, removeRateAndRecalculateTaxes } from '../../utils/taxCalculator';
-import { isCanadianDomesticShipment } from '../../services/canadianTaxService';
+import { isCanadianDomesticShipment, isTaxCharge } from '../../services/canadianTaxService';
 
 
 // Lazy load other components
@@ -1544,27 +1544,12 @@ const QuickShip = ({
         };
 
         setManualRates(prev => {
-            // Add the new rate and recalculate taxes if this is a Canadian domestic shipment
-            if (availableChargeTypes && availableChargeTypes.length > 0 &&
-                shipFromAddress && shipToAddress &&
-                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
-                const province = shipToAddress?.state;
-                if (province) {
-                    console.log('🍁 Canadian Tax: Adding rate and recalculating taxes', {
-                        newRateCode: newRate.code,
-                        province: province,
-                        previousRatesCount: prev.length
-                    });
-                    return addRateAndRecalculateTaxes(prev, newRate, province, availableChargeTypes);
-                }
-            }
-
-            // Otherwise just add the rate normally
-            console.log('🍁 Canadian Tax: Adding rate without tax calculation', {
-                isCanadianDomestic: isCanadianDomesticShipment(shipFromAddress, shipToAddress),
-                hasChargeTypes: availableChargeTypes && availableChargeTypes.length > 0,
-                hasAddresses: !!(shipFromAddress && shipToAddress),
-                province: shipToAddress?.state
+            // 🔧 FIXED: Don't recalculate taxes when adding new rate (let user set code first)
+            // The tax recalculation will happen when they set the code via updateRateLineItem
+            console.log('🍁 HST: Adding new rate line item', {
+                newRateId: newId,
+                previousRatesCount: prev.length,
+                willRecalculateTaxes: false // Changed to false - let user set code first
             });
             return [...prev, newRate];
         });
@@ -1572,14 +1557,34 @@ const QuickShip = ({
 
     const removeRateLineItem = (id) => {
         setManualRates(prev => {
+            const rateToRemove = prev.find(rate => rate.id === id);
+            const isRemovingTaxCharge = rateToRemove && (rateToRemove.isTax || isTaxCharge(rateToRemove.code));
+
+            console.log('🍁 HST: removeRateLineItem called', {
+                rateId: id,
+                rateCode: rateToRemove?.code,
+                isRemovingTaxCharge: isRemovingTaxCharge,
+                isCanadianDomestic: shipFromAddress && shipToAddress ? isCanadianDomesticShipment(shipFromAddress, shipToAddress) : false
+            });
+
             // Remove the rate and recalculate taxes if this is a Canadian domestic shipment
+            // AND we're not removing a tax charge (manual tax charges should be removable without recalculation)
             if (availableChargeTypes && availableChargeTypes.length > 0 &&
                 shipFromAddress && shipToAddress &&
-                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                isCanadianDomesticShipment(shipFromAddress, shipToAddress) &&
+                !isRemovingTaxCharge) { // 🔧 NEW: Don't recalculate when removing tax charges
                 const province = shipToAddress?.state;
                 if (province) {
+                    console.log('🍁 HST: Recalculating taxes after non-tax rate removal', {
+                        removedRateCode: rateToRemove?.code,
+                        province: province
+                    });
                     return removeRateAndRecalculateTaxes(prev, id, province, availableChargeTypes);
                 }
+            } else if (isRemovingTaxCharge) {
+                console.log('🍁 HST: Removing manual tax charge without recalculation', {
+                    rateCode: rateToRemove?.code
+                });
             }
 
             // Otherwise just remove the rate normally
@@ -1605,12 +1610,18 @@ const QuickShip = ({
                                             : currentRate
                                     );
 
-                                    // Recalculate taxes after auto-population if Canadian domestic shipment
+                                    // Only recalculate taxes if this is NOT a tax charge being updated
                                     if (availableChargeTypes && availableChargeTypes.length > 0 &&
                                         shipFromAddress && shipToAddress &&
-                                        isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                                        isCanadianDomesticShipment(shipFromAddress, shipToAddress) &&
+                                        !isTaxCharge(value)) { // 🔧 NEW: Don't recalculate if updating tax charge
                                         const province = shipToAddress?.state;
                                         if (province) {
+                                            console.log('🍁 HST: Recalculating taxes after charge name auto-population', {
+                                                chargeCode: value,
+                                                chargeName: newChargeName,
+                                                province: province
+                                            });
                                             return updateRateAndRecalculateTaxes(ratesWithNewName, { id, chargeName: newChargeName }, province, availableChargeTypes);
                                         }
                                     }
@@ -1629,14 +1640,46 @@ const QuickShip = ({
                 return rate;
             });
 
-            // Recalculate taxes if this is a Canadian domestic shipment
+            // 🔧 CRITICAL FIX: Only recalculate taxes if this is NOT a tax charge being updated
+            const updatedRate = updatedRates.find(rate => rate.id === id);
+            const isUpdatingTaxCharge = updatedRate && (updatedRate.isTax || isTaxCharge(updatedRate.code));
+
+            console.log('🍁 HST: updateRateLineItem called', {
+                rateId: id,
+                field: field,
+                value: value,
+                rateCode: updatedRate?.code,
+                isUpdatingTaxCharge: isUpdatingTaxCharge,
+                isCanadianDomestic: shipFromAddress && shipToAddress ? isCanadianDomesticShipment(shipFromAddress, shipToAddress) : false,
+                province: shipToAddress?.state,
+                chargeTypesAvailable: availableChargeTypes && availableChargeTypes.length > 0
+            });
+
+            // Only recalculate taxes if:
+            // 1. We have charge types available
+            // 2. This is a Canadian domestic shipment  
+            // 3. We're NOT updating a tax charge (preserve manual tax entries)
             if (availableChargeTypes && availableChargeTypes.length > 0 &&
                 shipFromAddress && shipToAddress &&
-                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                isCanadianDomesticShipment(shipFromAddress, shipToAddress) &&
+                !isUpdatingTaxCharge) { // 🔧 NEW: Don't recalculate when updating tax charges
                 const province = shipToAddress?.state;
                 if (province) {
+                    console.log('🍁 HST: Recalculating taxes for rate update', {
+                        updatingField: field,
+                        rateCode: updatedRate?.code,
+                        province: province,
+                        totalRates: updatedRates.length
+                    });
                     return updateRateAndRecalculateTaxes(updatedRates, { id, [field]: value }, province, availableChargeTypes);
                 }
+            } else if (isUpdatingTaxCharge) {
+                console.log('🍁 HST: Preserving manual tax charge update', {
+                    rateId: id,
+                    field: field,
+                    value: value,
+                    rateCode: updatedRate?.code
+                });
             }
 
             return updatedRates;
@@ -4308,24 +4351,59 @@ const QuickShip = ({
         // Only run when selectedCarrier, selectedCarrierContactId, or quickShipCarriers change
     }, [selectedCarrier, selectedCarrierContactId, quickShipCarriers]);
 
-    // Canadian Tax Calculation - Recalculate taxes when destination province changes
+    // 🔧 ENHANCED: Canadian Tax Calculation - Better debugging and logic
     useEffect(() => {
-        if (!availableChargeTypes || availableChargeTypes.length === 0) return;
-        if (!shipFromAddress || !shipToAddress) return;
+        if (!availableChargeTypes || availableChargeTypes.length === 0) {
+            console.log('🍁 HST: Tax calculation skipped - no charge types available', {
+                chargeTypesCount: availableChargeTypes?.length || 0
+            });
+            return;
+        }
+        if (!shipFromAddress || !shipToAddress) {
+            console.log('🍁 HST: Tax calculation skipped - missing addresses', {
+                hasShipFrom: !!shipFromAddress,
+                hasShipTo: !!shipToAddress
+            });
+            return;
+        }
 
-        console.log('🍁 Canadian Tax: Checking tax calculation trigger', {
-            shipFrom: shipFromAddress?.country,
-            shipTo: shipToAddress?.country,
-            province: shipToAddress?.state,
-            isCanadian: isCanadianDomesticShipment(shipFromAddress, shipToAddress),
-            chargeTypesLoaded: availableChargeTypes.length > 0,
+        const isCanadian = isCanadianDomesticShipment(shipFromAddress, shipToAddress);
+        const province = shipToAddress?.state;
+
+        console.log('🍁 HST: Tax calculation trigger check', {
+            shipFromCountry: shipFromAddress?.country,
+            shipToCountry: shipToAddress?.country,
+            province: province,
+            isCanadianDomestic: isCanadian,
+            chargeTypesLoaded: availableChargeTypes.length,
             manualRatesCount: manualRates.length,
             isDraftLoading: isDraftLoading,
-            isEditingDraft: isEditingDraft
+            isEditingDraft: isEditingDraft,
+            // Enhanced debugging for charge types
+            chargeTypesCodes: availableChargeTypes.map(ct => ct.code || ct.value).slice(0, 5), // First 5 codes
+            hasTaxChargeTypes: availableChargeTypes.some(ct => {
+                const code = ct.code || ct.value;
+                return code && isTaxCharge(code);
+            })
         });
 
+        // Skip if not Canadian domestic
+        if (!isCanadian) {
+            console.log('🍁 HST: Not a Canadian domestic shipment');
+            return;
+        }
+
+        // Skip if no province
+        if (!province) {
+            console.log('🍁 HST: No destination province for tax calculation');
+            return;
+        }
+
         // Skip if currently loading draft to avoid conflicts
-        if (isDraftLoading) return;
+        if (isDraftLoading) {
+            console.log('🍁 HST: Skipping tax calculation during draft loading');
+            return;
+        }
 
         // Create shipment data structure for tax calculation
         const shipmentData = {
@@ -4334,19 +4412,42 @@ const QuickShip = ({
             manualRates: manualRates
         };
 
+        // Detailed debugging before tax calculation
+        console.log('🍁 HST: About to calculate taxes', {
+            province: province,
+            nonTaxRatesCount: manualRates.filter(r => !isTaxCharge(r.code)).length,
+            existingTaxRatesCount: manualRates.filter(r => isTaxCharge(r.code)).length,
+            existingTaxCodes: manualRates.filter(r => isTaxCharge(r.code)).map(r => r.code),
+            taxableRates: manualRates.filter(r => !isTaxCharge(r.code)).map(r => ({
+                code: r.code,
+                charge: r.charge,
+                cost: r.cost
+            }))
+        });
+
         // Recalculate taxes (this handles empty manual rates gracefully)
         const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
 
         // Update manual rates if taxes changed
         if (JSON.stringify(updatedShipmentData.manualRates) !== JSON.stringify(manualRates)) {
-            console.log('🍁 Canadian Tax: Updating manual rates with taxes', {
+            console.log('🍁 HST: Updating manual rates with calculated taxes', {
                 originalCount: manualRates.length,
                 updatedCount: updatedShipmentData.manualRates.length,
+                newTaxRates: updatedShipmentData.manualRates.filter(r => isTaxCharge(r.code)).map(r => ({
+                    code: r.code,
+                    charge: r.charge,
+                    chargeName: r.chargeName
+                })),
                 context: isEditingDraft ? 'editing-draft' : 'new-shipment'
             });
             setManualRates(updatedShipmentData.manualRates);
+        } else {
+            console.log('🍁 HST: No tax changes needed', {
+                manualRatesCount: manualRates.length,
+                existingTaxCount: manualRates.filter(r => isTaxCharge(r.code)).length
+            });
         }
-    }, [shipFromAddress, shipToAddress, availableChargeTypes, manualRates, isDraftLoading, isEditingDraft]);
+    }, [shipFromAddress, shipToAddress, availableChargeTypes, isDraftLoading, isEditingDraft]);
 
     // Additional tax calculation trigger specifically for when draft loading is complete
     useEffect(() => {
@@ -4412,6 +4513,89 @@ const QuickShip = ({
                 }
             }
         }
+    };
+
+    // 🔧 DEBUG: HST Diagnosis Function (can be called from browser console)
+    window.debugQuickShipHST = () => {
+        console.log('🔧 DEBUG: QuickShip HST Diagnosis');
+        console.log('===================================');
+
+        console.log('📍 Addresses:');
+        console.log('  Ship From:', {
+            country: shipFromAddress?.country,
+            state: shipFromAddress?.state,
+            city: shipFromAddress?.city
+        });
+        console.log('  Ship To:', {
+            country: shipToAddress?.country,
+            state: shipToAddress?.state,
+            city: shipToAddress?.city
+        });
+
+        console.log('🍁 Canadian Tax Check:');
+        const isCanadian = shipFromAddress && shipToAddress ? isCanadianDomesticShipment(shipFromAddress, shipToAddress) : false;
+        console.log('  Is Canadian Domestic:', isCanadian);
+        console.log('  Destination Province:', shipToAddress?.state);
+
+        console.log('📦 Charge Types:');
+        console.log('  Available Count:', availableChargeTypes?.length || 0);
+        console.log('  Has Tax Charge Types:', availableChargeTypes?.some(ct => {
+            const code = ct.code || ct.value;
+            return code && isTaxCharge(code);
+        }));
+        console.log('  Tax Charge Types:', availableChargeTypes?.filter(ct => {
+            const code = ct.code || ct.value;
+            return code && isTaxCharge(code);
+        }).map(ct => ({
+            code: ct.code || ct.value,
+            name: ct.label || ct.description,
+            taxable: ct.taxable
+        })));
+
+        console.log('💰 Manual Rates:');
+        console.log('  Total Count:', manualRates.length);
+        console.log('  Non-Tax Rates:', manualRates.filter(r => !isTaxCharge(r.code)).map(r => ({
+            id: r.id,
+            code: r.code,
+            name: r.chargeName,
+            charge: r.charge,
+            cost: r.cost
+        })));
+        console.log('  Tax Rates:', manualRates.filter(r => isTaxCharge(r.code)).map(r => ({
+            id: r.id,
+            code: r.code,
+            name: r.chargeName,
+            charge: r.charge,
+            cost: r.cost
+        })));
+
+        console.log('🔧 State Flags:');
+        console.log('  isDraftLoading:', isDraftLoading);
+        console.log('  isEditingDraft:', isEditingDraft);
+        console.log('  loadingChargeTypes:', loadingChargeTypes);
+
+        // Test tax calculation manually
+        if (isCanadian && shipToAddress?.state && availableChargeTypes?.length > 0) {
+            console.log('🧪 Manual Tax Calculation Test:');
+            try {
+                const testShipmentData = {
+                    shipFrom: shipFromAddress,
+                    shipTo: shipToAddress,
+                    manualRates: manualRates
+                };
+                const result = recalculateShipmentTaxes(testShipmentData, availableChargeTypes);
+                console.log('  Test Result:', {
+                    originalRatesCount: manualRates.length,
+                    resultRatesCount: result.manualRates.length,
+                    newTaxRates: result.manualRates.filter(r => isTaxCharge(r.code))
+                });
+            } catch (error) {
+                console.error('  Test Failed:', error);
+            }
+        }
+
+        console.log('===================================');
+        console.log('💡 To manually trigger HST calculation, add a freight charge with amount > 0');
     };
 
     // Calculate base tab index for each package (100 per package)

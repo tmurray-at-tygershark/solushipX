@@ -231,9 +231,9 @@ async function bookQuickShipmentInternal(data, auth = null) {
                 // Check for contactTypes structure (expected)
                 if (terminal.contactTypes) {
                     const contactTypes = terminal.contactTypes;
-                    return Object.values(contactTypes).some(emails => 
-                        Array.isArray(emails) && emails.length > 0 && emails.some(email => email && email.trim())
-                    );
+                return Object.values(contactTypes).some(emails => 
+                    Array.isArray(emails) && emails.length > 0 && emails.some(email => email && email.trim())
+                );
                 }
                 
                 // Check for contacts array structure (actual database format)

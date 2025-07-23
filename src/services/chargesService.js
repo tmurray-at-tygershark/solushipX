@@ -470,12 +470,12 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
         let shipmentsData = [];
 
         if (userRole === 'superadmin') {
-            // Super admin: Query ALL approved charges
-            console.log('🔒 Super admin metrics: Including ALL approved charges');
+            // Super admin: Query ALL approved and ap_processed charges
+            console.log('🔒 Super admin metrics: Including ALL approved and ap_processed charges');
             
             let queryConstraints = [
                 where('status', '!=', 'draft'),
-                where('chargeStatus.status', '==', 'approved'), // 🔧 CRITICAL: Only approved charges
+                where('chargeStatus.status', 'in', ['ap_processed', 'approved']), // 🔧 FIXED: Include both statuses
                 orderBy('createdAt', 'desc')
             ];
 
@@ -483,7 +483,7 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
             if (filters.startDate) {
                 queryConstraints = [
                     where('status', '!=', 'draft'),
-                    where('chargeStatus.status', '==', 'approved'),
+                    where('chargeStatus.status', 'in', ['ap_processed', 'approved']),
                     where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
                     orderBy('createdAt', 'desc')
                 ];
@@ -523,7 +523,7 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
                 let queryConstraints = [
                     where('companyID', 'in', batch),
                     where('status', '!=', 'draft'),
-                    where('chargeStatus.status', '==', 'approved'), // 🔧 CRITICAL: Only approved charges
+                    where('chargeStatus.status', 'in', ['ap_processed', 'approved']), // 🔧 FIXED: Include both statuses
                     orderBy('createdAt', 'desc')
                 ];
 
@@ -532,7 +532,7 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
                     queryConstraints = [
                         where('companyID', 'in', batch),
                         where('status', '!=', 'draft'),
-                        where('chargeStatus.status', '==', 'approved'),
+                        where('chargeStatus.status', 'in', ['ap_processed', 'approved']),
                         where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
                         orderBy('createdAt', 'desc')
                     ];
@@ -560,10 +560,50 @@ export const calculateMetrics = async ({ filters, userRole, connectedCompanies }
 
         // Helper function to get shipment currency
         const getShipmentCurrency = (shipment) => {
-            return shipment.currency || 
-                   shipment.selectedRate?.currency || 
-                   shipment.manualRates?.[0]?.currency || 
-                   'USD';
+            // 🔧 ENHANCED CURRENCY DETECTION: Check multiple sources in priority order
+            
+            // 1. Check explicit currency field
+            if (shipment.currency) {
+                console.log(`🔧 DEBUG: Currency from shipment.currency: ${shipment.currency}`);
+                return shipment.currency;
+            }
+            
+            // 2. Check selected rate currency
+            if (shipment.selectedRate?.currency) {
+                console.log(`🔧 DEBUG: Currency from selectedRate: ${shipment.selectedRate.currency}`);
+                return shipment.selectedRate.currency;
+            }
+            
+            // 3. Check markup rates currency
+            if (shipment.markupRates?.currency) {
+                console.log(`🔧 DEBUG: Currency from markupRates: ${shipment.markupRates.currency}`);
+                return shipment.markupRates.currency;
+            }
+            
+            // 4. Check actual rates currency
+            if (shipment.actualRates?.currency) {
+                console.log(`🔧 DEBUG: Currency from actualRates: ${shipment.actualRates.currency}`);
+                return shipment.actualRates.currency;
+            }
+            
+            // 5. Check manual rates currency (for QuickShip)
+            if (shipment.manualRates?.length > 0 && shipment.manualRates[0].currency) {
+                console.log(`🔧 DEBUG: Currency from manualRates: ${shipment.manualRates[0].currency}`);
+                return shipment.manualRates[0].currency;
+            }
+            
+            // 6. Infer from addresses - Canada = CAD, others = USD
+            const shipFromCountry = shipment.shipFrom?.country || shipment.origin?.country;
+            const shipToCountry = shipment.shipTo?.country || shipment.destination?.country;
+            
+            if (shipFromCountry === 'CA' || shipToCountry === 'CA') {
+                console.log(`🔧 DEBUG: Currency inferred from addresses (CA found): CAD`);
+                return 'CAD';
+            }
+            
+            // 7. Final fallback to USD
+            console.log(`🔧 DEBUG: Currency defaulted to USD for shipment ${shipment.shipmentID || shipment.id}`);
+            return 'USD';
         };
 
         // Initialize metrics by currency
@@ -731,33 +771,50 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
             // Super admin: Fetch ALL shipments (like BillingDashboard logic)
             console.log('🔒 Super admin mode: Fetching ALL shipments');
             
-            // CRITICAL: Only show AP-approved charges
-            let q = query(
+            // 🔧 SIMPLIFIED QUERY: Avoid composite index issues by fetching all non-draft and filtering locally
+            console.log('🔍 DEBUG: Using simplified query to avoid composite index issues');
+            let simpleQuery = query(
                 shipmentsRef,
                 where('status', '!=', 'draft'),
-                where('chargeStatus.status', '==', 'approved'),
                 orderBy('createdAt', 'desc')
             );
+            
+            const simpleSnapshot = await getDocs(simpleQuery);
+            console.log('🔍 DEBUG: Simple query found', simpleSnapshot.docs.length, 'total non-draft shipments');
+            
+            // Filter locally for ap_processed and approved charges
+            const allShipments = simpleSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(shipment => {
+                    const chargeStatus = shipment.chargeStatus?.status;
+                    const hasValidChargeStatus = chargeStatus === 'ap_processed' || chargeStatus === 'approved';
+                    
+                    if (hasValidChargeStatus) {
+                        console.log(`🔍 DEBUG: Found valid charge shipment ${shipment.shipmentID || shipment.id} with status: ${chargeStatus}`);
+                    }
+                    
+                    return hasValidChargeStatus;
+                });
 
+            console.log('📦 Super admin: Found', allShipments.length, 'shipments with ap_processed/approved charges after local filtering');
+            
             // Apply time range filters if provided
+            let filteredShipments = allShipments;
             if (filters.startDate) {
-                q = query(
-                    shipmentsRef,
-                    where('status', '!=', 'draft'),
-                    where('chargeStatus.status', '==', 'approved'),
-                    where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
-                    orderBy('createdAt', 'desc')
-                );
+                const startDate = new Date(filters.startDate);
+                filteredShipments = filteredShipments.filter(shipment => {
+                    const shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
+                    return shipmentDate >= startDate;
+                });
+                console.log('🔍 DEBUG: After start date filter:', filteredShipments.length, 'shipments');
             }
 
-            const snapshot = await getDocs(q);
-            const allShipments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            console.log('📦 Super admin: Found', allShipments.length, 'total shipments');
-
-            // Process all shipments for super admin
-            for (const shipment of allShipments) {
+            console.log('🔧 DEBUG: Starting to process shipments for charges table...');
+            
+            // Process all filtered shipments for super admin
+            for (const shipment of filteredShipments) {
+                console.log(`🔧 DEBUG: Processing shipment ${shipment.shipmentID || shipment.id} for charges table`);
                 await processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute);
+                console.log(`🔧 DEBUG: After processing ${shipment.shipmentID || shipment.id}, shipmentCharges length:`, shipmentCharges.length);
             }
 
         } else {
@@ -779,12 +836,12 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
             const batches = [];
             for (let i = 0; i < companyIDs.length; i += 10) {
                 const batch = companyIDs.slice(i, i + 10);
-                // CRITICAL: Only show AP-approved charges
+                // 🔧 CRITICAL FIX: Show AP-processed charges that need final approval
                 let q = query(
                     shipmentsRef,
                     where('companyID', 'in', batch),
                     where('status', '!=', 'draft'),
-                    where('chargeStatus.status', '==', 'approved'),
+                    where('chargeStatus.status', 'in', ['ap_processed', 'approved']), // 🔧 FIXED: Include both ap_processed and approved
                     orderBy('createdAt', 'desc')
                 );
 
@@ -794,7 +851,7 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
                         shipmentsRef,
                         where('companyID', 'in', batch),
                         where('status', '!=', 'draft'),
-                        where('chargeStatus.status', '==', 'approved'),
+                        where('chargeStatus.status', 'in', ['ap_processed', 'approved']),
                         where('createdAt', '>=', Timestamp.fromDate(new Date(filters.startDate))),
                         orderBy('createdAt', 'desc')
                     );
@@ -864,6 +921,14 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
         const endIndex = startIndex + pageSize;
         const paginatedCharges = filteredCharges.slice(startIndex, endIndex);
 
+        console.log('🔧 DEBUG: Final fetchCharges results:', {
+            totalFoundCharges: shipmentCharges.length,
+            filteredCharges: filteredCharges.length,
+            paginatedCharges: paginatedCharges.length,
+            sampleCharge: paginatedCharges[0] || 'none',
+            filters: filters
+        });
+
         return {
             charges: paginatedCharges,
             totalCount: filteredCharges.length,
@@ -885,118 +950,277 @@ export const fetchCharges = async ({ page = 0, pageSize = 10, filters = {}, user
 
 // Helper function to process individual shipment charges (extracted from BillingDashboard)
 async function processShipmentCharge(shipment, shipmentCharges, companyMap, getShipmentCurrency, formatRoute) {
+    console.log(`🔧 DEBUG: processShipmentCharge called for shipment ${shipment.shipmentID || shipment.id}`);
+    
     let actualCost = 0;
     let customerCharge = 0;
 
     // Enhanced charge extraction to handle QuickShip orders (from BillingDashboard logic)
     if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+        console.log(`🔧 DEBUG: Processing QuickShip shipment ${shipment.shipmentID}`);
+        
         // Sum up actual costs from manual rates
         actualCost = shipment.manualRates.reduce((sum, rate) => {
             return sum + (parseFloat(rate.cost) || 0);
         }, 0);
 
-        // Sum up customer charges from manual rates
+        // For customer charge, use the charge field from manual rates (what customer pays)
         customerCharge = shipment.manualRates.reduce((sum, rate) => {
             return sum + (parseFloat(rate.charge) || 0);
         }, 0);
-
     } else {
-        // Use dual rate system for regular shipments
-        actualCost = shipment.actualRates?.totalCharges ||
-                    shipment.totalCosts ||
-                    shipment.selectedRate?.totalCharges || 0;
+        // Regular shipment processing
+        actualCost = shipment.actualRates?.totalCharges || 
+                    shipment.totalCharges ||
+                    shipment.selectedRate?.totalCharges ||
+                    shipment.selectedRate?.pricing?.total || 0;
 
         customerCharge = shipment.markupRates?.totalCharges ||
-                        shipment.totalCharges ||
-                        shipment.selectedRate?.totalCharges || 0;
+                        shipment.quotedRates?.totalCharges ||
+                        actualCost; // Fallback to actual cost if no markup
     }
 
-    // Only include shipments with positive charges
-    if (customerCharge > 0) {
-        const company = companyMap[shipment.companyID];
+    // Get company info
+    const company = companyMap[shipment.companyID];
+    console.log(`🔧 DEBUG: Company info for ${shipment.companyID}:`, company ? 'found' : 'not found');
 
-        let shipmentDate;
-        if (shipment.creationMethod === 'quickship' && shipment.bookedAt) {
-            shipmentDate = shipment.bookedAt.toDate ? shipment.bookedAt.toDate() : new Date(shipment.bookedAt);
-        } else {
-            shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt);
-        }
+    // 🔧 CRITICAL FIX: Implement proper customer data lookup with dual-lookup strategy
+    let customerId = 'N/A';
+    let customerName = 'N/A';
+    let customerLogo = null;
+    
+    // Get the customer ID from multiple possible sources (like ShipmentInformation.jsx)
+    customerId = shipment.customerId ||
+                shipment.customerID ||
+                shipment.shipFrom?.customerID ||
+                shipment.origin?.customerID ||
+                shipment.shipTo?.customerID ||
+                shipment.destination?.customerID;
 
-        // Extract currency from shipment data
-        const currency = getShipmentCurrency(shipment);
+    console.log(`🔍 DEBUG: Customer ID lookup for shipment ${shipment.shipmentID}:`, {
+        shipmentCustomerId: shipment.customerId,
+        shipmentCustomerID: shipment.customerID,
+        shipFromCustomerID: shipment.shipFrom?.customerID,
+        originCustomerID: shipment.origin?.customerID,
+        shipToCustomerID: shipment.shipTo?.customerID,
+        destinationCustomerID: shipment.destination?.customerID,
+        resolvedCustomerId: customerId
+    });
 
-        // CUSTOMER ID EXTRACTION (using ShipmentDetailX logic)
-        const customerId = shipment.customerId ||
-            shipment.customerID ||
-            shipment.customer?.id ||
-            shipment.customer?.customerID ||
-            null;
+    // 🔧 IMPLEMENT DUAL-LOOKUP STRATEGY (same as ShipmentInformation.jsx)
+    if (customerId && customerId !== 'N/A') {
+        try {
+            console.log(`🔍 DEBUG: Loading customer data for ID: ${customerId}`);
 
-        // LOAD ACTUAL CUSTOMER DATA FROM DATABASE (like ShipmentDetailX does)
-        let customerData = null;
-        if (customerId) {
-            try {
-                // FIRST: Try to get customer by document ID (direct lookup)
-                const customerDocRef = doc(db, 'customers', customerId);
-                const customerDocSnapshot = await getDoc(customerDocRef);
+            // FIRST: Try to get customer by document ID (direct lookup)
+            const customerDocRef = doc(db, 'customers', customerId);
+            const customerDocSnapshot = await getDoc(customerDocRef);
 
-                if (customerDocSnapshot.exists()) {
-                    customerData = { id: customerDocSnapshot.id, ...customerDocSnapshot.data() };
+            if (customerDocSnapshot.exists()) {
+                const customerData = { id: customerDocSnapshot.id, ...customerDocSnapshot.data() };
+                console.log(`✅ DEBUG: Customer found by document ID for ${shipment.shipmentID}:`, customerData);
+                customerName = customerData.companyName || customerData.name || 'Unknown Customer';
+                customerLogo = customerData.logo || customerData.logoUrl || customerData.logoURL || null;
+            } else {
+                // SECOND: Try to query by customerID field
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', customerId),
+                    limit(1)
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (!customerSnapshot.empty) {
+                    const customerDoc = customerSnapshot.docs[0];
+                    const customerData = { id: customerDoc.id, ...customerDoc.data() };
+                    console.log(`✅ DEBUG: Customer found by customerID field for ${shipment.shipmentID}:`, customerData);
+                    customerName = customerData.companyName || customerData.name || 'Unknown Customer';
+                    customerLogo = customerData.logo || customerData.logoUrl || customerData.logoURL || null;
                 } else {
-                    // SECOND: Try to query by customerID field
-                    const customerQuery = query(
-                        collection(db, 'customers'),
-                        where('customerID', '==', customerId),
-                        limit(1)
-                    );
-                    const customerSnapshot = await getDocs(customerQuery);
-
-                    if (!customerSnapshot.empty) {
-                        const customerDoc = customerSnapshot.docs[0];
-                        customerData = { id: customerDoc.id, ...customerDoc.data() };
-                    }
+                    console.log(`❌ DEBUG: Customer not found in database for ${shipment.shipmentID}, ID: ${customerId}`);
+                    // Fallback to shipment data if available
+                    customerName = shipment.customerName || 
+                                 shipment.customer?.name || 
+                                 shipment.shipTo?.customerName || 
+                                 shipment.shipTo?.companyName || 
+                                 shipment.shipTo?.company || 
+                                 'Customer Not Found';
                 }
-            } catch (error) {
-                console.error('Error loading customer data for', customerId, ':', error);
             }
+        } catch (error) {
+            console.error(`❌ DEBUG: Error loading customer for ${shipment.shipmentID}:`, error);
+            // Fallback to shipment data if database lookup fails
+            customerName = shipment.customerName || 
+                         shipment.customer?.name || 
+                         shipment.shipTo?.customerName || 
+                         shipment.shipTo?.companyName || 
+                         shipment.shipTo?.company || 
+                         'Error Loading Customer';
         }
-
-        // USE LOADED CUSTOMER DATA (like ShipmentDetailX does)
-        const customerName = customerData?.companyName || customerData?.name || 
-            shipment.customerName || shipment.customer?.name || 'Unknown Customer';
-        const customerLogo = customerData?.logoUrl || customerData?.logo || null;
-
-        shipmentCharges.push({
-            id: shipment.id,
-            shipmentID: shipment.shipmentID || shipment.id,
-            companyID: shipment.companyID,
-            customerId: customerId,
-            customerName: customerName,
-            companyName: company?.name || shipment.companyName || shipment.companyID || 'Unknown Company',
-            companyLogo: company?.logoUrl || company?.logo || shipment.companyLogo || null,
-            customerLogo: customerLogo,
-            company: company,
-            actualCost: actualCost,
-            customerCharge: customerCharge,
-            margin: customerCharge - actualCost,
-            marginPercent: customerCharge > 0 ? ((customerCharge - actualCost) / customerCharge) * 100 : 0,
-            currency: currency,
-            actualRates: shipment.actualRates,
-            markupRates: shipment.markupRates,
-            manualRates: shipment.manualRates,
-            isQuickShip: shipment.creationMethod === 'quickship',
-            status: shipment.invoiceStatus || 'uninvoiced',
-            shipmentStatus: shipment.status, // Shipment delivery status for status chips
-            shipmentSubStatus: shipment.subStatus, // Sub-status for enhanced status chips
-            hasManualOverride: shipment.statusOverride?.isManual || false, // Manual override indicator
-            shipmentDate: shipmentDate,
-            route: formatRoute(shipment),
-            carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
-            carrierName: shipment.selectedCarrier || shipment.carrier || 'N/A', // Add carrierName field
-            trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
-            shipmentData: shipment
-        });
+    } else {
+        // No customer ID found, use fallback data from shipment
+        console.log(`⚠️ DEBUG: No customer ID found for ${shipment.shipmentID}, using fallback data`);
+        customerName = shipment.customerName || 
+                      shipment.customer?.name || 
+                      shipment.shipTo?.customerName || 
+                      shipment.shipTo?.companyName || 
+                      shipment.shipTo?.company || 
+                      'Customer Not Available';
     }
+
+    // Get currency for this shipment
+    const currency = getShipmentCurrency(shipment);
+    console.log(`🔧 DEBUG: Currency detected for ${shipment.shipmentID}: ${currency}`);
+
+    // Get shipment date
+    const shipmentDate = shipment.shipmentInfo?.shipmentDate ||
+                        shipment.shipmentDate ||
+                        shipment.scheduledDate ||
+                        shipment.bookedAt ||
+                        shipment.createdAt;
+
+    console.log(`🔧 DEBUG: Shipment date for ${shipment.shipmentID}: ${shipmentDate}`);
+
+    // 🔧 NEW: Extract charge breakdown for charge type display
+    let chargesBreakdown = [];
+    
+    // Extract charges from different possible sources
+    if (shipment.creationMethod === 'quickship' && shipment.manualRates) {
+        // QuickShip charges
+        chargesBreakdown = shipment.manualRates.map(rate => ({
+            code: rate.code || rate.chargeCode || 'FRT',
+            name: rate.name || rate.chargeName || rate.description || 'Freight',
+            amount: parseFloat(rate.amount) || 0,
+            currency: rate.currency || currency
+        }));
+    } else if (shipment.actualRates?.charges) {
+        // Regular shipment actual charges
+        chargesBreakdown = shipment.actualRates.charges.map(charge => ({
+            code: charge.code || charge.chargeCode || 'FRT',
+            name: charge.name || charge.chargeName || charge.description || 'Freight',
+            amount: parseFloat(charge.amount) || 0,
+            currency: charge.currency || currency
+        }));
+    } else if (shipment.selectedRate?.charges) {
+        // Selected rate charges
+        chargesBreakdown = shipment.selectedRate.charges.map(charge => ({
+            code: charge.code || charge.chargeCode || 'FRT', 
+            name: charge.name || charge.chargeName || charge.description || 'Freight',
+            amount: parseFloat(charge.amount) || 0,
+            currency: charge.currency || currency
+        }));
+    } else if (shipment.markupRates?.charges) {
+        // Markup rate charges
+        chargesBreakdown = shipment.markupRates.charges.map(charge => ({
+            code: charge.code || charge.chargeCode || 'FRT',
+            name: charge.name || charge.chargeName || charge.description || 'Freight', 
+            amount: parseFloat(charge.amount) || 0,
+            currency: charge.currency || currency
+        }));
+    } else if (shipment.billingDetails?.charges) {
+        // Billing details charges
+        chargesBreakdown = shipment.billingDetails.charges.map(charge => ({
+            code: charge.code || charge.chargeCode || 'FRT',
+            name: charge.name || charge.chargeName || charge.description || 'Freight',
+            amount: parseFloat(charge.amount) || 0, 
+            currency: charge.currency || currency
+        }));
+    }
+    
+    // Fallback: if no charges found, create a basic freight charge
+    if (chargesBreakdown.length === 0 && (actualCost > 0 || customerCharge > 0)) {
+        chargesBreakdown = [{
+            code: 'FRT',
+            name: 'Freight',
+            amount: actualCost || customerCharge || 0,
+            currency: currency
+        }];
+    }
+    
+    console.log(`🔧 DEBUG: Extracted ${chargesBreakdown.length} charge codes for ${shipment.shipmentID}:`, 
+        chargesBreakdown.map(c => c.code));
+
+    // 🔧 NEW: Calculate smart actual charge based on cost comparison
+    let actualCharge = null;
+    let quotedCost = 0;
+
+    // Get the original quoted cost for comparison
+    if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+        // For QuickShip: sum up cost from manual rates
+        quotedCost = shipment.manualRates.reduce((sum, rate) => {
+            return sum + (parseFloat(rate.cost) || 0);
+        }, 0);
+    } else {
+        // For regular shipments: use original rate cost
+        quotedCost = shipment.selectedRate?.totalCharges ||
+                    shipment.selectedRate?.pricing?.total ||
+                    shipment.totalCharges ||
+                    actualCost; // Fallback to actual cost if no quoted cost available
+    }
+
+    // Smart actual charge logic:
+    // If carrier invoice (actualCost) matches quoted cost → carry over customer charge
+    // If they differ → needs manual adjustment (TBD)
+    const costDifference = Math.abs(actualCost - quotedCost);
+    const costThreshold = 0.01; // Allow for small rounding differences
+
+    if (costDifference <= costThreshold) {
+        // Costs match → no adjustment needed → actual charge = quoted charge
+        actualCharge = customerCharge;
+        console.log(`💰 Smart Actual Charge: Costs match (diff: $${costDifference.toFixed(2)}) → actualCharge = quotedCharge ($${customerCharge})`);
+    } else {
+        // Costs differ → manual adjustment needed → actual charge = null (TBD)
+        actualCharge = null;
+        console.log(`⚠️ Smart Actual Charge: Costs differ (quoted: $${quotedCost}, actual: $${actualCost}, diff: $${costDifference.toFixed(2)}) → actualCharge = TBD`);
+    }
+
+    const chargeData = {
+        id: shipment.id,
+        shipmentID: shipment.shipmentID || shipment.id,
+        companyID: shipment.companyID,
+        customerId: customerId,
+        customerName: customerName, // 🔧 FIXED: Now properly fetched from database
+        companyName: company?.name || shipment.companyName || shipment.companyID || 'Unknown Company',
+        companyLogo: company?.logoUrl || company?.logo || shipment.companyLogo || null,
+        customerLogo: customerLogo, // 🔧 FIXED: Now properly fetched from database
+        company: company,
+        actualCost: actualCost,
+        customerCharge: customerCharge,
+        actualCharge: actualCharge, // 🔧 NEW: Smart actual charge calculation
+        quotedCost: quotedCost, // 🔧 NEW: For debugging and reference
+        margin: customerCharge - actualCost,
+        marginPercent: customerCharge > 0 ? ((customerCharge - actualCost) / customerCharge) * 100 : 0,
+        currency: currency,
+        chargesBreakdown: chargesBreakdown, // 🔧 NEW: Add charge breakdown for charge type display
+        actualCharges: chargesBreakdown, // 🔧 NEW: Also add as actualCharges for compatibility
+        actualRates: shipment.actualRates,
+        markupRates: shipment.markupRates,
+        manualRates: shipment.manualRates,
+        isQuickShip: shipment.creationMethod === 'quickship',
+        status: shipment.invoiceStatus || 'uninvoiced',
+        shipmentStatus: shipment.status, // Shipment delivery status for status chips
+        shipmentSubStatus: shipment.subStatus, // Sub-status for enhanced status chips
+        hasManualOverride: shipment.statusOverride?.isManual || false, // Manual override indicator
+        shipmentDate: shipmentDate,
+        route: formatRoute(shipment),
+        carrier: shipment.selectedCarrier || shipment.carrier || 'N/A',
+        carrierName: shipment.selectedCarrier || shipment.carrier || 'N/A', // Add carrierName field
+        trackingNumber: shipment.trackingNumber || shipment.carrierBookingConfirmation?.trackingNumber || 'N/A',
+        shipmentData: shipment
+    };
+
+    console.log(`🔧 DEBUG: About to push charge data for ${shipment.shipmentID}:`, {
+        id: chargeData.id,
+        shipmentID: chargeData.shipmentID,
+        actualCost: chargeData.actualCost,
+        customerCharge: chargeData.customerCharge,
+        currency: chargeData.currency,
+        status: chargeData.status
+    });
+
+    shipmentCharges.push(chargeData);
+    
+    console.log(`🔧 DEBUG: Successfully pushed charge for ${shipment.shipmentID}. Total charges now: ${shipmentCharges.length}`);
 }
 
 

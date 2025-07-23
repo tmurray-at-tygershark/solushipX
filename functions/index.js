@@ -375,6 +375,7 @@ const { updateActualCosts } = require('./src/billing/updateActualCosts');
 const { detectExceptions } = require('./src/billing/detectExceptions');
 const { approveCharges, rejectCharges } = require('./src/billing/approveCharges');
 const { processAPApproval } = require('./src/billing/processAPApproval');
+const { finalApproveAPCharges } = require('./src/billing/finalApproveAPCharges');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -389,6 +390,7 @@ exports.detectExceptions = detectExceptions;
 exports.approveCharges = approveCharges;
 exports.rejectCharges = rejectCharges;
 exports.processAPApproval = processAPApproval;
+exports.finalApproveAPCharges = finalApproveAPCharges;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;
