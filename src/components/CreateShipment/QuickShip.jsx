@@ -78,6 +78,8 @@ import { convertDraftInDatabase } from '../../utils/draftConversion';
 import shipmentChargeTypeService from '../../services/shipmentChargeTypeService';
 import { validateManualRates, getAutoPopulatedChargeName } from '../../utils/shipmentValidation';
 import { migrateShipmentChargeCodes } from '../../utils/chargeTypeCompatibility';
+import { recalculateShipmentTaxes, updateRateAndRecalculateTaxes, addRateAndRecalculateTaxes, removeRateAndRecalculateTaxes } from '../../utils/taxCalculator';
+import { isCanadianDomesticShipment } from '../../services/canadianTaxService';
 
 
 // Lazy load other components
@@ -1542,41 +1544,103 @@ const QuickShip = ({
         };
 
         setManualRates(prev => {
-            const updatedRates = [...prev, newRate];
-            return updatedRates; // No deduplication - allow multiple same codes
+            // Add the new rate and recalculate taxes if this is a Canadian domestic shipment
+            if (availableChargeTypes && availableChargeTypes.length > 0 &&
+                shipFromAddress && shipToAddress &&
+                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                const province = shipToAddress?.state;
+                if (province) {
+                    console.log('🍁 Canadian Tax: Adding rate and recalculating taxes', {
+                        newRateCode: newRate.code,
+                        province: province,
+                        previousRatesCount: prev.length
+                    });
+                    return addRateAndRecalculateTaxes(prev, newRate, province, availableChargeTypes);
+                }
+            }
+
+            // Otherwise just add the rate normally
+            console.log('🍁 Canadian Tax: Adding rate without tax calculation', {
+                isCanadianDomestic: isCanadianDomesticShipment(shipFromAddress, shipToAddress),
+                hasChargeTypes: availableChargeTypes && availableChargeTypes.length > 0,
+                hasAddresses: !!(shipFromAddress && shipToAddress),
+                province: shipToAddress?.state
+            });
+            return [...prev, newRate];
         });
     };
 
     const removeRateLineItem = (id) => {
-        setManualRates(prev => prev.filter(rate => rate.id !== id));
+        setManualRates(prev => {
+            // Remove the rate and recalculate taxes if this is a Canadian domestic shipment
+            if (availableChargeTypes && availableChargeTypes.length > 0 &&
+                shipFromAddress && shipToAddress &&
+                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                const province = shipToAddress?.state;
+                if (province) {
+                    return removeRateAndRecalculateTaxes(prev, id, province, availableChargeTypes);
+                }
+            }
+
+            // Otherwise just remove the rate normally
+            return prev.filter(rate => rate.id !== id);
+        });
     };
 
     const updateRateLineItem = (id, field, value) => {
-        setManualRates(prev => prev.map(rate => {
-            if (rate.id === id) {
-                const updatedRate = { ...rate, [field]: value };
+        setManualRates(prev => {
+            const updatedRates = prev.map(rate => {
+                if (rate.id === id) {
+                    const updatedRate = { ...rate, [field]: value };
 
-                // Auto-populate charge name when code is selected using dynamic charge types
-                if (field === 'code' && value) {
-                    // Use async auto-population with dynamic charge types
-                    getAutoPopulatedChargeName(value, rate.chargeName || '').then(newChargeName => {
-                        if (newChargeName !== (rate.chargeName || '')) {
-                            setManualRates(currentRates => currentRates.map(currentRate =>
-                                currentRate.id === id
-                                    ? { ...currentRate, chargeName: newChargeName }
-                                    : currentRate
-                            ));
-                        }
-                    }).catch(error => {
-                        console.error('Error auto-populating charge name:', error);
-                        // Continue without auto-population on error
-                    });
+                    // Auto-populate charge name when code is selected using dynamic charge types
+                    if (field === 'code' && value) {
+                        // Use async auto-population with dynamic charge types
+                        getAutoPopulatedChargeName(value, rate.chargeName || '').then(newChargeName => {
+                            if (newChargeName !== (rate.chargeName || '')) {
+                                setManualRates(currentRates => {
+                                    const ratesWithNewName = currentRates.map(currentRate =>
+                                        currentRate.id === id
+                                            ? { ...currentRate, chargeName: newChargeName }
+                                            : currentRate
+                                    );
+
+                                    // Recalculate taxes after auto-population if Canadian domestic shipment
+                                    if (availableChargeTypes && availableChargeTypes.length > 0 &&
+                                        shipFromAddress && shipToAddress &&
+                                        isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                                        const province = shipToAddress?.state;
+                                        if (province) {
+                                            return updateRateAndRecalculateTaxes(ratesWithNewName, { id, chargeName: newChargeName }, province, availableChargeTypes);
+                                        }
+                                    }
+
+                                    return ratesWithNewName;
+                                });
+                            }
+                        }).catch(error => {
+                            console.error('Error auto-populating charge name:', error);
+                            // Continue without auto-population on error
+                        });
+                    }
+
+                    return updatedRate;
                 }
+                return rate;
+            });
 
-                return updatedRate;
+            // Recalculate taxes if this is a Canadian domestic shipment
+            if (availableChargeTypes && availableChargeTypes.length > 0 &&
+                shipFromAddress && shipToAddress &&
+                isCanadianDomesticShipment(shipFromAddress, shipToAddress)) {
+                const province = shipToAddress?.state;
+                if (province) {
+                    return updateRateAndRecalculateTaxes(updatedRates, { id, [field]: value }, province, availableChargeTypes);
+                }
             }
-            return rate;
-        }));
+
+            return updatedRates;
+        });
     };
 
     // Enhanced deduplication helper for rate line items
@@ -1954,9 +2018,15 @@ const QuickShip = ({
 
     // Handle address creation callback
     const handleAddressCreated = async (newAddressId) => {
-        console.log('Address created with ID:', newAddressId);
+        console.log('🏠 QuickShip: Address created with ID:', newAddressId);
+        console.log('🏠 QuickShip: Current context:', {
+            companyIdForAddress,
+            selectedCustomerId,
+            addressEditMode
+        });
 
         // Reload addresses to include the new one
+        console.log('🏠 QuickShip: Reloading addresses...');
         await loadAddresses();
 
         // Small delay to ensure state is updated, then find and select the new address
@@ -1964,6 +2034,7 @@ const QuickShip = ({
             // Re-fetch the updated addresses to ensure we have the latest data
             const fetchAndSelectAddress = async () => {
                 try {
+                    console.log('🏠 QuickShip: Re-fetching addresses to find new one...');
                     const addressQuery = query(
                         collection(db, 'addressBook'),
                         where('companyID', '==', companyIdForAddress),
@@ -1974,15 +2045,34 @@ const QuickShip = ({
                         id: doc.id,
                         ...doc.data()
                     }));
+
+                    console.log('🏠 QuickShip: Found addresses after creation:', {
+                        totalCount: updatedAddresses.length,
+                        newAddressFound: updatedAddresses.some(addr => addr.id === newAddressId),
+                        addresses: updatedAddresses.map(addr => ({
+                            id: addr.id,
+                            name: addr.name || addr.nickname,
+                            companyID: addr.companyID,
+                            customerID: addr.customerID,
+                            addressClassID: addr.addressClassID
+                        }))
+                    });
+
                     setAvailableAddresses(updatedAddresses);
 
                     // Find and select the new address
                     const newAddress = updatedAddresses.find(addr => addr.id === newAddressId);
                     if (newAddress) {
+                        console.log('🏠 QuickShip: Found and selecting new address:', newAddress);
                         handleAddressSelect(newAddress, addressEditMode);
+                    } else {
+                        console.error('🏠 QuickShip: New address not found in updated list!', {
+                            newAddressId,
+                            availableIds: updatedAddresses.map(addr => addr.id)
+                        });
                     }
                 } catch (error) {
-                    console.error('Error fetching updated addresses:', error);
+                    console.error('🏠 QuickShip: Error fetching updated addresses:', error);
                 }
             };
 
@@ -2899,31 +2989,46 @@ const QuickShip = ({
                     setPackages(validatedPackages);
                 }
 
-                // Load manual rates with migration support
-                if (editShipment.manualRates && editShipment.manualRates.length > 0) {
-                    console.log('🔧 Loading manual rates from edit shipment:', editShipment.manualRates.length);
-                    // Format rates to 2 decimal places
-                    const formattedRates = editShipment.manualRates.map(rate => ({
+                // 🔧 CRITICAL FIX: Load rates with priority order - updatedCharges first, then manualRates
+                let ratesToLoad = null;
+                let rateSource = '';
+
+                // Priority 1: Check for saved inline edits in updatedCharges
+                if (editShipment.updatedCharges && Array.isArray(editShipment.updatedCharges) && editShipment.updatedCharges.length > 0) {
+                    console.log('🔧 QuickShip edit: Loading from updatedCharges (inline edits):', editShipment.updatedCharges.length);
+                    rateSource = 'updatedCharges';
+                    ratesToLoad = editShipment.updatedCharges.map(charge => ({
+                        id: charge.id || Math.random(),
+                        carrier: charge.carrier || '',
+                        code: charge.code || 'FRT',
+                        chargeName: charge.description || 'Freight',
+                        cost: charge.quotedCost || charge.cost || '',
+                        charge: charge.quotedCharge || charge.amount || '',
+                        actualCost: charge.actualCost || '',
+                        actualCharge: charge.actualCharge || '',
+                        currency: charge.currency || 'CAD',
+                        invoiceNumber: charge.invoiceNumber || '',
+                        ediNumber: charge.ediNumber || '',
+                        commissionable: charge.commissionable || false,
+                        isTax: charge.isTax || false,
+                        isMarkup: charge.isMarkup || false
+                    }));
+                }
+                // Priority 2: Fallback to manualRates if no inline edits exist
+                else if (editShipment.manualRates && editShipment.manualRates.length > 0) {
+                    console.log('🔧 QuickShip edit: Loading from manualRates (original data):', editShipment.manualRates.length);
+                    rateSource = 'manualRates';
+                    ratesToLoad = editShipment.manualRates.map(rate => ({
                         ...rate,
                         cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
                         charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
                     }));
-
-                    // Check if rates need migration to dynamic charge types
-                    migrateShipmentChargeCodes(formattedRates).then(migrationResult => {
-                        if (migrationResult.changes.length > 0) {
-                            console.log('🔄 Migrated charge codes in edit shipment:', migrationResult.changes);
-                            setManualRates(migrationResult.migratedRates);
-                        } else {
-                            setManualRates(formattedRates);
-                        }
-                    }).catch(error => {
-                        console.error('⚠️  Error migrating charge codes, using original rates:', error);
-                        setManualRates(formattedRates); // Use original rates if migration fails
-                    });
-                } else if (editShipment.rates && editShipment.rates.length > 0) {
-                    // Convert from stored rates format if needed
-                    const convertedRates = editShipment.rates.map((rate, index) => ({
+                }
+                // Priority 3: Legacy rates format
+                else if (editShipment.rates && editShipment.rates.length > 0) {
+                    console.log('🔧 QuickShip edit: Loading from legacy rates format:', editShipment.rates.length);
+                    rateSource = 'legacy rates';
+                    ratesToLoad = editShipment.rates.map((rate, index) => ({
                         id: rate.id || index + 1,
                         carrier: rate.carrier || '',
                         code: rate.code || 'FRT',
@@ -2933,20 +3038,29 @@ const QuickShip = ({
                         charge: (rate.charge || rate.amount) ? parseFloat(rate.charge || rate.amount).toFixed(2) : '',
                         chargeCurrency: rate.chargeCurrency || rate.currency || 'CAD'
                     }));
-                    console.log('🔧 Converting rates from edit shipment:', convertedRates.length);
+                }
 
-                    // Also migrate converted rates
-                    migrateShipmentChargeCodes(convertedRates).then(migrationResult => {
-                        if (migrationResult.changes.length > 0) {
-                            console.log('🔄 Migrated charge codes in converted rates:', migrationResult.changes);
-                            setManualRates(migrationResult.migratedRates);
-                        } else {
-                            setManualRates(convertedRates);
-                        }
-                    }).catch(error => {
-                        console.error('⚠️  Error migrating converted charge codes, using original rates:', error);
-                        setManualRates(convertedRates); // Use original rates if migration fails
-                    });
+                // Apply rates if any were found
+                if (ratesToLoad && ratesToLoad.length > 0) {
+                    console.log(`🔧 QuickShip edit: Applying rates from ${rateSource}:`, ratesToLoad);
+
+                    // Check if rates need migration to dynamic charge types (unless already from updatedCharges)
+                    if (rateSource !== 'updatedCharges') {
+                        migrateShipmentChargeCodes(ratesToLoad).then(migrationResult => {
+                            if (migrationResult.changes.length > 0) {
+                                console.log('🔄 Migrated charge codes in edit shipment:', migrationResult.changes);
+                                setManualRates(migrationResult.migratedRates);
+                            } else {
+                                setManualRates(ratesToLoad);
+                            }
+                        }).catch(error => {
+                            console.error('⚠️  Error migrating charge codes, using original rates:', error);
+                            setManualRates(ratesToLoad); // Use original rates if migration fails
+                        });
+                    } else {
+                        // updatedCharges already have the correct format, no migration needed
+                        setManualRates(ratesToLoad);
+                    }
                 }
 
                 // Load carrier
@@ -4193,6 +4307,86 @@ const QuickShip = ({
         }
         // Only run when selectedCarrier, selectedCarrierContactId, or quickShipCarriers change
     }, [selectedCarrier, selectedCarrierContactId, quickShipCarriers]);
+
+    // Canadian Tax Calculation - Recalculate taxes when destination province changes
+    useEffect(() => {
+        if (!availableChargeTypes || availableChargeTypes.length === 0) return;
+        if (!shipFromAddress || !shipToAddress) return;
+
+        console.log('🍁 Canadian Tax: Checking tax calculation trigger', {
+            shipFrom: shipFromAddress?.country,
+            shipTo: shipToAddress?.country,
+            province: shipToAddress?.state,
+            isCanadian: isCanadianDomesticShipment(shipFromAddress, shipToAddress),
+            chargeTypesLoaded: availableChargeTypes.length > 0,
+            manualRatesCount: manualRates.length,
+            isDraftLoading: isDraftLoading,
+            isEditingDraft: isEditingDraft
+        });
+
+        // Skip if currently loading draft to avoid conflicts
+        if (isDraftLoading) return;
+
+        // Create shipment data structure for tax calculation
+        const shipmentData = {
+            shipFrom: shipFromAddress,
+            shipTo: shipToAddress,
+            manualRates: manualRates
+        };
+
+        // Recalculate taxes (this handles empty manual rates gracefully)
+        const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
+
+        // Update manual rates if taxes changed
+        if (JSON.stringify(updatedShipmentData.manualRates) !== JSON.stringify(manualRates)) {
+            console.log('🍁 Canadian Tax: Updating manual rates with taxes', {
+                originalCount: manualRates.length,
+                updatedCount: updatedShipmentData.manualRates.length,
+                context: isEditingDraft ? 'editing-draft' : 'new-shipment'
+            });
+            setManualRates(updatedShipmentData.manualRates);
+        }
+    }, [shipFromAddress, shipToAddress, availableChargeTypes, manualRates, isDraftLoading, isEditingDraft]);
+
+    // Additional tax calculation trigger specifically for when draft loading is complete
+    useEffect(() => {
+        // Only trigger when draft loading just completed
+        if (isDraftLoading) return;
+        if (!isEditingDraft && !editShipment) return; // Only for editing scenarios
+        if (!availableChargeTypes || availableChargeTypes.length === 0) return;
+        if (!shipFromAddress || !shipToAddress) return;
+
+        // Check if this is a Canadian domestic shipment that needs taxes
+        if (!isCanadianDomesticShipment(shipFromAddress, shipToAddress)) return;
+
+        console.log('🍁 Canadian Tax: Post-draft-loading tax calculation trigger', {
+            province: shipToAddress?.state,
+            manualRatesCount: manualRates.length,
+            isEditingDraft: isEditingDraft,
+            hasEditShipment: !!editShipment
+        });
+
+        // Small delay to ensure all state is settled after draft loading
+        const timeoutId = setTimeout(() => {
+            const shipmentData = {
+                shipFrom: shipFromAddress,
+                shipTo: shipToAddress,
+                manualRates: manualRates
+            };
+
+            const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
+
+            if (JSON.stringify(updatedShipmentData.manualRates) !== JSON.stringify(manualRates)) {
+                console.log('🍁 Canadian Tax: Applying taxes to loaded draft/shipment', {
+                    originalCount: manualRates.length,
+                    updatedCount: updatedShipmentData.manualRates.length
+                });
+                setManualRates(updatedShipmentData.manualRates);
+            }
+        }, 100); // Small delay to ensure state consistency
+
+        return () => clearTimeout(timeoutId);
+    }, [isDraftLoading, isEditingDraft, editShipment, availableChargeTypes, shipFromAddress, shipToAddress]);
 
     // Add keyboard navigation helpers
     const handleKeyDown = (e, action) => {
@@ -7313,6 +7507,8 @@ const QuickShip = ({
                             isModal={true}
                             onCancel={handleBackToQuickShip}
                             onSuccess={handleAddressCreated}
+                            companyId={companyIdForAddress}
+                            customerId={selectedCustomerId !== 'all' ? selectedCustomerId : null}
                         />
                     )}
                 </Box>

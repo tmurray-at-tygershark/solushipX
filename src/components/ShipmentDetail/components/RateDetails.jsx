@@ -37,6 +37,8 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { canSeeActualRates, getMarkupSummary } from '../../../utils/markupEngine';
 import shipmentChargeTypeService from '../../../services/shipmentChargeTypeService';
 import { getAutoPopulatedChargeName } from '../../../utils/shipmentValidation';
+import { updateRateAndRecalculateTaxes, addRateAndRecalculateTaxes, removeRateAndRecalculateTaxes, recalculateShipmentTaxes } from '../../../utils/taxCalculator';
+import { isCanadianDomesticShipment, isTaxCharge } from '../../../services/canadianTaxService';
 
 // Rate code options - DEPRECATED: Now using dynamic charge types from database
 // Kept as fallback for when dynamic loading fails
@@ -115,6 +117,9 @@ const RateDetails = ({
     // State for action menu
     const [anchorEl, setAnchorEl] = useState(null);
     const [menuRowIndex, setMenuRowIndex] = useState(null);
+
+    // State for tax calculation
+    const [isCalculatingTaxes, setIsCalculatingTaxes] = useState(false);
 
     // Enhanced admin check using the userRole from AuthContext
     const enhancedIsAdmin = userRole && (
@@ -226,8 +231,8 @@ const RateDetails = ({
         // Save original state for potential revert
         const originalBreakdown = [...localRateBreakdown];
 
-        const updatedBreakdown = [...localRateBreakdown];
-        updatedBreakdown[index] = {
+        let updatedBreakdown = [...localRateBreakdown];
+        const updatedItem = {
             ...updatedBreakdown[index],
             description: editingValues.description.trim(),
             quotedCost: parseFloat(editingValues.quotedCost) || 0,
@@ -239,6 +244,29 @@ const RateDetails = ({
             ediNumber: editingValues.ediNumber || '-',
             commissionable: editingValues.commissionable || false
         };
+
+        updatedBreakdown[index] = updatedItem;
+
+        // 🔧 CRITICAL FIX: Only recalculate taxes if NO taxes exist yet
+        // If taxes already exist, preserve them exactly as they are
+        const existingTaxCharges = updatedBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
+
+        if (availableChargeTypes && availableChargeTypes.length > 0 &&
+            shipment?.shipFrom && shipment?.shipTo &&
+            isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
+            const province = shipment.shipTo?.state;
+
+            if (province && existingTaxCharges.length === 0) {
+                // Only add taxes if none exist
+                console.log('🍁 Canadian Tax: Adding missing taxes after editing charge');
+                updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes);
+            } else if (existingTaxCharges.length > 0) {
+                // Taxes already exist - preserve them exactly
+                console.log('🍁 Canadian Tax: Preserving existing taxes, not recalculating', {
+                    existingTaxes: existingTaxCharges.map(tax => `${tax.code}: $${tax.quotedCharge}`)
+                });
+            }
+        }
 
         // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
         setLocalRateBreakdown(updatedBreakdown);
@@ -276,7 +304,7 @@ const RateDetails = ({
                 alert(`Failed to save charge: ${error.message}. Please try again.`);
             }
         }
-    }, [editingValues, localRateBreakdown, onChargesUpdate, availableChargeTypes]);
+    }, [editingValues, localRateBreakdown, onChargesUpdate, availableChargeTypes, shipment]);
 
     const handleAddCharge = useCallback(async () => {
         // Use first available dynamic charge type or fallback to 'FRT'
@@ -320,7 +348,26 @@ const RateDetails = ({
             commissionable: defaultCommissionable // Auto-populate based on charge type
         };
 
-        const updatedBreakdown = [...localRateBreakdown, newCharge];
+        let updatedBreakdown = [...localRateBreakdown, newCharge];
+
+        // 🔧 CRITICAL FIX: Only add taxes if none exist, preserve existing taxes
+        const existingTaxCharges = localRateBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
+
+        if (availableChargeTypes && availableChargeTypes.length > 0 &&
+            shipment?.shipFrom && shipment?.shipTo &&
+            isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
+            const province = shipment.shipTo?.state;
+
+            if (province && existingTaxCharges.length === 0) {
+                // Only add taxes if none exist
+                console.log('🍁 Canadian Tax: Adding taxes after adding first charge');
+                updatedBreakdown = addRateAndRecalculateTaxes(localRateBreakdown, newCharge, province, availableChargeTypes);
+            } else if (existingTaxCharges.length > 0) {
+                // Taxes already exist - just add the new charge without recalculating taxes
+                console.log('🍁 Canadian Tax: Preserving existing taxes when adding new charge');
+                updatedBreakdown = [...localRateBreakdown, newCharge];
+            }
+        }
 
         // Update local state immediately for UI feedback
         setLocalRateBreakdown(updatedBreakdown);
@@ -340,10 +387,31 @@ const RateDetails = ({
         // NO AUTO-SAVE: Let user edit the new charge first
         // The charge will be saved when they click the checkmark (handleEditSave)
         console.log('➕ New charge added to UI, ready for editing');
-    }, [localRateBreakdown, availableChargeTypes]);
+    }, [localRateBreakdown, availableChargeTypes, shipment]);
 
     const handleDeleteCharge = useCallback(async (index) => {
-        const updatedBreakdown = localRateBreakdown.filter((_, i) => i !== index);
+        const chargeToDelete = localRateBreakdown[index];
+        let updatedBreakdown = localRateBreakdown.filter((_, i) => i !== index);
+
+        // 🔧 CRITICAL FIX: Only recalculate taxes if we're deleting a tax charge
+        // Preserve existing taxes when deleting non-tax charges
+        const isDeletedChargeTax = chargeToDelete && (chargeToDelete.isTax || isTaxCharge(chargeToDelete.code));
+
+        if (availableChargeTypes && availableChargeTypes.length > 0 &&
+            shipment?.shipFrom && shipment?.shipTo &&
+            isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
+            const province = shipment.shipTo?.state;
+
+            if (province && chargeToDelete && isDeletedChargeTax) {
+                // Only recalculate taxes if we're deleting a tax charge
+                console.log('🍁 Canadian Tax: Recalculating taxes after deleting tax charge');
+                updatedBreakdown = removeRateAndRecalculateTaxes(localRateBreakdown, chargeToDelete.id, province, availableChargeTypes);
+            } else if (chargeToDelete && !isDeletedChargeTax) {
+                // Deleting a non-tax charge - preserve existing taxes
+                console.log('🍁 Canadian Tax: Preserving existing taxes when deleting non-tax charge');
+                updatedBreakdown = localRateBreakdown.filter((_, i) => i !== index);
+            }
+        }
 
         // Update local state first for immediate UI feedback
         setLocalRateBreakdown(updatedBreakdown);
@@ -355,7 +423,7 @@ const RateDetails = ({
                 console.error('❌ Error saving charges:', error);
             });
         }
-    }, [localRateBreakdown, onChargesUpdate]);
+    }, [localRateBreakdown, onChargesUpdate, availableChargeTypes, shipment]);
 
     // Menu handlers for action menu
     const handleMenuOpen = useCallback((event, index) => {
@@ -430,6 +498,11 @@ const RateDetails = ({
 
     // Comprehensive profit calculation logic for individual line items
     const calculateLineItemProfit = useCallback((item) => {
+        // Tax charges should not have profit calculations - they are pass-through charges
+        if (item.isTax || isTaxCharge(item.code)) {
+            return null; // Special value to indicate N/A for taxes
+        }
+
         const actualCost = parseFloat(item.actualCost) || 0;
         const quotedCost = parseFloat(item.quotedCost) || 0;
         const actualCharge = parseFloat(item.actualCharge) || 0;
@@ -476,9 +549,11 @@ const RateDetails = ({
             return sum + (actualCharge > 0 ? actualCharge : quotedCharge);
         }, 0);
 
-        // Calculate total profit using smart line-item logic
+        // Calculate total profit using smart line-item logic (excluding tax charges)
         const totalProfit = localRateBreakdown.reduce((sum, item) => {
-            return sum + calculateLineItemProfit(item);
+            const profit = calculateLineItemProfit(item);
+            // Skip tax charges (null profit) in total calculation
+            return profit !== null ? sum + profit : sum;
         }, 0);
 
         // Legacy support - keep these for backward compatibility 
@@ -532,12 +607,110 @@ const RateDetails = ({
 
         if (shouldRefresh) {
             const rateBreakdown = getRateBreakdown();
-            console.log('🔄 Smart refresh: Updating rate breakdown (safe to refresh)');
+            console.log('🔄 Smart refresh: Updating rate breakdown (safe to refresh)', {
+                shipmentId: shipment?.id,
+                isQuickShip: shipment?.creationMethod === 'quickship',
+                rateBreakdownCount: rateBreakdown?.length || 0,
+                breakdown: rateBreakdown?.map(rate => ({
+                    code: rate.code,
+                    description: rate.description,
+                    quotedCharge: rate.quotedCharge,
+                    isTax: rate.isTax || false
+                })) || []
+            });
             setLocalRateBreakdown(rateBreakdown);
         } else {
             console.log('⚠️ Skipping rate breakdown reload - user is editing');
         }
     }, [shipment?.id, shipment?.lastModified, editingIndex]);
+
+    // 🍁 CANADIAN TAX AUTO-CALCULATION - Only add taxes when missing
+    React.useEffect(() => {
+        // Don't interfere if user is actively editing or if we're already calculating taxes
+        if (editingIndex !== null || isCalculatingTaxes) return;
+
+        // Ensure we have all required data
+        if (!availableChargeTypes || availableChargeTypes.length === 0) return;
+        if (!shipment?.shipFrom || !shipment?.shipTo) return;
+        if (!localRateBreakdown || localRateBreakdown.length === 0) return;
+
+        // Only proceed for Canadian domestic shipments
+        if (!isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
+            console.log('🍁 Canadian Tax: Not a Canadian domestic shipment, skipping tax calculation');
+            return;
+        }
+
+        const province = shipment.shipTo?.state;
+        if (!province) {
+            console.log('🍁 Canadian Tax: No destination province found, skipping tax calculation');
+            return;
+        }
+
+        // 🔧 CRITICAL FIX: Check if taxes already exist - DON'T recalculate existing taxes
+        const existingTaxCharges = localRateBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
+        if (existingTaxCharges.length > 0) {
+            console.log('🍁 Canadian Tax: Taxes already exist in breakdown, skipping auto-calculation', {
+                existingTaxes: existingTaxCharges.map(tax => `${tax.code}: ${tax.description}`)
+            });
+            return;
+        }
+
+        console.log('🍁 Canadian Tax: No taxes found - checking if they need to be added', {
+            shipFrom: shipment.shipFrom?.country,
+            shipTo: shipment.shipTo?.country,
+            province: province,
+            chargesCount: localRateBreakdown.length,
+            chargeTypesLoaded: availableChargeTypes.length > 0
+        });
+
+        // Create a shipment-like data structure for tax calculation
+        const shipmentData = {
+            shipFrom: shipment.shipFrom,
+            shipTo: shipment.shipTo,
+            manualRates: localRateBreakdown // Use current local breakdown
+        };
+
+        // Calculate what the rates should be with proper taxes
+        const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
+
+        // Check if taxes were actually added
+        const newTaxCharges = updatedShipmentData.manualRates.filter(charge => charge.isTax || isTaxCharge(charge.code));
+
+        if (newTaxCharges.length > 0) {
+            console.log('🍁 Canadian Tax: Adding missing taxes to inline editor', {
+                originalCharges: localRateBreakdown.length,
+                updatedCharges: updatedShipmentData.manualRates.length,
+                taxesAdded: newTaxCharges.map(tax => `${tax.code}: ${tax.description}`)
+            });
+
+            // Set flag to prevent overlapping calculations
+            setIsCalculatingTaxes(true);
+
+            // Update the local state with proper taxes
+            setLocalRateBreakdown(updatedShipmentData.manualRates);
+
+            // Automatically save the updated charges to the database
+            if (onChargesUpdate) {
+                console.log('🍁 Canadian Tax: Auto-saving newly added taxes to database');
+                onChargesUpdate(updatedShipmentData.manualRates, false)
+                    .then(() => {
+                        console.log('🍁 Canadian Tax: Auto-save completed successfully');
+                    })
+                    .catch(error => {
+                        console.error('🍁 Canadian Tax: Failed to auto-save updated charges:', error);
+                    })
+                    .finally(() => {
+                        // Always clear the calculating flag
+                        setIsCalculatingTaxes(false);
+                    });
+            } else {
+                // Clear the flag even if no save function
+                setIsCalculatingTaxes(false);
+            }
+        } else {
+            console.log('🍁 Canadian Tax: No taxes to add for this shipment');
+        }
+    }, [shipment?.shipFrom, shipment?.shipTo, availableChargeTypes, editingIndex, isCalculatingTaxes]);
 
     if (!getBestRateInfo && !quickShipData) {
         return null;
@@ -688,9 +861,53 @@ const RateDetails = ({
         const isQuickShipShipment = shipment?.creationMethod === 'quickship' || shipment?.isQuickShip;
 
         if (isQuickShipShipment) {
-            // For QuickShip: ALWAYS use manualRates as the primary source
+            // 🔧 CRITICAL FIX: For QuickShip, check updatedCharges FIRST (saved edits), then manualRates
+
+            // Priority 1: Check for saved inline edits in updatedCharges
+            if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
+                console.log('🔧 DEBUG: QuickShip getRateBreakdown - loading from updatedCharges (inline edits):', {
+                    shipmentId: shipment.id,
+                    updatedChargesCount: shipment.updatedCharges.length,
+                    rates: shipment.updatedCharges.map(charge => ({
+                        code: charge.code,
+                        description: charge.description,
+                        quotedCharge: charge.quotedCharge || charge.amount,
+                        isTax: charge.isTax || false
+                    }))
+                });
+
+                return shipment.updatedCharges.map((charge, index) => ({
+                    id: charge.id || `quickship_updated_${index}`,
+                    description: charge.description || '',
+                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0,
+                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0,
+                    actualCost: parseFloat(charge.actualCost) || 0,
+                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0,
+                    code: charge.code || 'FRT',
+                    invoiceNumber: charge.invoiceNumber || '-',
+                    ediNumber: charge.ediNumber || '-',
+                    commissionable: charge.commissionable || false,
+                    // Preserve tax flags
+                    isTax: charge.isTax || false,
+                    isMarkup: charge.isMarkup || false
+                }));
+            }
+
+            // Priority 2: Fallback to original manualRates if no edits exist
             if (shipment?.manualRates && Array.isArray(shipment.manualRates) && shipment.manualRates.length > 0) {
-                return shipment.manualRates.map(rate => ({
+                console.log('🔧 DEBUG: QuickShip getRateBreakdown - loading from manualRates (original data):', {
+                    shipmentId: shipment.id,
+                    manualRatesCount: shipment.manualRates.length,
+                    rates: shipment.manualRates.map(rate => ({
+                        code: rate.code,
+                        description: rate.chargeName || rate.description,
+                        charge: rate.charge,
+                        isTax: rate.isTax || false
+                    }))
+                });
+
+                return shipment.manualRates.map((rate, index) => ({
+                    id: rate.id || `quickship_${index}`, // 🔧 Add unique ID
                     description: rate.chargeName || rate.description || '',
                     quotedCost: parseFloat(rate.cost) || 0,
                     quotedCharge: parseFloat(rate.charge) || 0,
@@ -699,7 +916,10 @@ const RateDetails = ({
                     code: rate.code || 'FRT',
                     invoiceNumber: rate.invoiceNumber || '-',
                     ediNumber: rate.ediNumber || '-',
-                    commissionable: rate.commissionable || false
+                    commissionable: rate.commissionable || false,
+                    // Preserve tax flags
+                    isTax: rate.isTax || false,
+                    isMarkup: rate.isMarkup || false
                 }));
             }
         } else {
@@ -707,7 +927,19 @@ const RateDetails = ({
 
             // Priority 1: Check for saved charges from database (highest priority)
             if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
-                return shipment.updatedCharges.map(charge => ({
+                console.log('🔧 DEBUG: Regular shipment getRateBreakdown - loading from updatedCharges:', {
+                    shipmentId: shipment.id,
+                    updatedChargesCount: shipment.updatedCharges.length,
+                    charges: shipment.updatedCharges.map(charge => ({
+                        code: charge.code,
+                        description: charge.description,
+                        quotedCharge: charge.quotedCharge || charge.amount,
+                        isTax: charge.isTax || false
+                    }))
+                });
+
+                return shipment.updatedCharges.map((charge, index) => ({
+                    id: charge.id || `updated_${index}`, // 🔧 Add unique ID
                     description: charge.description,
                     quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
                     quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
@@ -716,13 +948,28 @@ const RateDetails = ({
                     code: charge.code || 'FRT',
                     invoiceNumber: charge.invoiceNumber || '-',
                     ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false
+                    commissionable: charge.commissionable || false,
+                    // Preserve tax flags
+                    isTax: charge.isTax || false,
+                    isMarkup: charge.isMarkup || false
                 }));
             }
 
             // Priority 2: Check chargesBreakdown
             if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown) && shipment.chargesBreakdown.length > 0) {
-                return shipment.chargesBreakdown.map(charge => ({
+                console.log('🔧 DEBUG: Regular shipment getRateBreakdown - loading from chargesBreakdown:', {
+                    shipmentId: shipment.id,
+                    chargesBreakdownCount: shipment.chargesBreakdown.length,
+                    charges: shipment.chargesBreakdown.map(charge => ({
+                        code: charge.code,
+                        description: charge.description,
+                        quotedCharge: charge.quotedCharge || charge.amount,
+                        isTax: charge.isTax || false
+                    }))
+                });
+
+                return shipment.chargesBreakdown.map((charge, index) => ({
+                    id: charge.id || `breakdown_${index}`, // 🔧 Add unique ID
                     description: charge.description,
                     quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
                     quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
@@ -731,7 +978,10 @@ const RateDetails = ({
                     code: charge.code || 'FRT',
                     invoiceNumber: charge.invoiceNumber || '-',
                     ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false
+                    commissionable: charge.commissionable || false,
+                    // Preserve tax flags
+                    isTax: charge.isTax || false,
+                    isMarkup: charge.isMarkup || false
                 }));
             }
         }
@@ -742,6 +992,7 @@ const RateDetails = ({
             quickShipData.charges.forEach((charge, index) => {
                 const originalRate = shipment?.manualRates?.[index];
                 breakdown.push({
+                    id: charge.id || `quickship_data_${index}`, // 🔧 Add unique ID
                     description: charge.name,
                     quotedCost: charge.cost || 0, // QuickShip cost becomes quoted cost
                     quotedCharge: charge.amount || 0, // QuickShip amount becomes quoted charge
@@ -750,7 +1001,10 @@ const RateDetails = ({
                     code: originalRate?.code || 'FRT',
                     invoiceNumber: '-',
                     ediNumber: '-',
-                    commissionable: false
+                    commissionable: false,
+                    // Preserve tax flags
+                    isTax: charge.isTax || false,
+                    isMarkup: charge.isMarkup || false
                 });
             });
         } else if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
@@ -1283,11 +1537,25 @@ const RateDetails = ({
                                                         // Show calculated profit during editing using smart logic
                                                         (() => {
                                                             const profit = calculateLineItemProfit({
-                                                                quotedCost: editingValues.quotedCost,
-                                                                quotedCharge: editingValues.quotedCharge,
-                                                                actualCost: editingValues.actualCost,
-                                                                actualCharge: editingValues.actualCharge
+                                                                ...editingValues,
+                                                                code: item.code, // Include code for tax detection
+                                                                isTax: item.isTax // Include tax flag
                                                             });
+
+                                                            // Tax charges show N/A instead of profit
+                                                            if (profit === null) {
+                                                                return (
+                                                                    <Typography sx={{
+                                                                        fontSize: '12px',
+                                                                        color: '#6b7280',
+                                                                        fontWeight: 400,
+                                                                        fontStyle: 'italic'
+                                                                    }}>
+                                                                        N/A
+                                                                    </Typography>
+                                                                );
+                                                            }
+
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');
@@ -1307,6 +1575,21 @@ const RateDetails = ({
                                                         // Show calculated profit for each line item using smart logic
                                                         !item.isMarkup ? (() => {
                                                             const profit = calculateLineItemProfit(item);
+
+                                                            // Tax charges show N/A instead of profit
+                                                            if (profit === null) {
+                                                                return (
+                                                                    <Typography sx={{
+                                                                        fontSize: '12px',
+                                                                        color: '#6b7280',
+                                                                        fontWeight: 400,
+                                                                        fontStyle: 'italic'
+                                                                    }}>
+                                                                        N/A
+                                                                    </Typography>
+                                                                );
+                                                            }
+
                                                             const isProfit = profit > 0;
                                                             const isLoss = profit < 0;
                                                             const prefix = isProfit ? '+' : (isLoss ? '-' : '');

@@ -1149,23 +1149,38 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         }
 
         try {
-            console.log('💰 Saving updated charges to database:', updatedCharges);
+            console.log('💰 Saving updated charges to database:', {
+                shipmentId: shipment.id,
+                chargeCount: updatedCharges.length,
+                charges: updatedCharges.map(charge => ({
+                    id: charge.id,
+                    code: charge.code,
+                    description: charge.description,
+                    quotedCharge: charge.quotedCharge,
+                    isTax: charge.isTax || false
+                }))
+            });
 
             // Call Firebase function to update charges
             const updateShipmentCharges = httpsCallable(functions, 'updateShipmentCharges');
 
             const chargesData = {
                 shipmentId: shipment.id,
-                charges: updatedCharges.map(charge => ({
-                    code: charge.code || 'FRT',
-                    description: charge.description || '',
-                    quotedCost: parseFloat(charge.quotedCost) || 0,
-                    quotedCharge: parseFloat(charge.quotedCharge) || 0,
-                    actualCost: parseFloat(charge.actualCost) || 0,
-                    actualCharge: parseFloat(charge.actualCharge) || 0,
-                    invoiceNumber: charge.invoiceNumber || '-',
-                    ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false
+                charges: updatedCharges.map((charge, index) => ({
+                    // 🔧 CRITICAL FIX: Only use fallbacks for truly missing/null values, preserve existing data
+                    id: charge.id || `charge_${index}`, // Add unique ID for tracking
+                    code: charge.code != null ? charge.code : 'FRT', // Preserve empty strings, only fallback for null/undefined
+                    description: charge.description != null ? charge.description : '', // Preserve empty strings
+                    quotedCost: charge.quotedCost != null ? parseFloat(charge.quotedCost) || 0 : 0,
+                    quotedCharge: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) || 0 : 0,
+                    actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) || 0 : 0,
+                    actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) || 0 : 0,
+                    invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
+                    ediNumber: charge.ediNumber != null ? charge.ediNumber : '-',
+                    commissionable: charge.commissionable != null ? charge.commissionable : false,
+                    // Preserve any tax-related fields
+                    isTax: charge.isTax || false,
+                    isMarkup: charge.isMarkup || false
                 }))
             };
 
