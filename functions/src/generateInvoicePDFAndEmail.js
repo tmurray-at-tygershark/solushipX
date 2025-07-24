@@ -13,8 +13,8 @@ const storage = getStorage();
 // Configure SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// Email configuration constants
-const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
+// Email configuration constants - Updated per billing requirements
+const SEND_FROM_EMAIL = 'ap@integratedcarriers.com';
 const SEND_FROM_NAME = 'Integrated Carriers';
 
 /**
@@ -139,28 +139,60 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
             recipientEmail = testEmail;
             logger.info(`Sending test invoice to: ${testEmail}`);
         } else {
-            // Get primary contact email for production
-            recipientEmail = companyInfo.mainContact?.email;
+            // 🔧 CRITICAL: Invoices are sent to CUSTOMERS, not companies
+            // Get customer billing information from approved charges data
+            let customerBillingEmail = null;
             
-            if (!recipientEmail && companyInfo.billingAddress?.email) {
-                recipientEmail = companyInfo.billingAddress.email;
-            }
-            
-            if (!recipientEmail) {
-                // Get first user's email from the company
-                const usersSnapshot = await db.collection('users')
-                    .where('companyID', '==', companyInfo.companyID)
-                    .limit(1)
-                    .get();
-                
-                if (!usersSnapshot.empty) {
-                    recipientEmail = usersSnapshot.docs[0].data().email;
+            // First, try to get customer billing email from invoice line items
+            if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {
+                // Look for customer billing information in the line items
+                for (const lineItem of invoiceData.lineItems) {
+                    if (lineItem.customerBillingEmail) {
+                        customerBillingEmail = lineItem.customerBillingEmail;
+                        break;
+                    }
                 }
             }
             
-            if (!recipientEmail) {
-                throw new Error('No recipient email found for company');
+            // If not found in line items, query customers collection directly
+            if (!customerBillingEmail && invoiceData.customerId) {
+                const customerSnapshot = await db.collection('customers')
+                    .doc(invoiceData.customerId)
+                    .get();
+                
+                if (customerSnapshot.exists) {
+                    const customerData = customerSnapshot.data();
+                    customerBillingEmail = customerData.billingEmail || 
+                                        customerData.billing?.email || 
+                                        customerData.email;
+                }
             }
+            
+            // Fallback to company billing if customer billing not found (emergency fallback only)
+            if (!customerBillingEmail) {
+                logger.warn(`No customer billing email found for invoice ${invoiceData.invoiceNumber}, falling back to company billing`);
+                customerBillingEmail = companyInfo.billingAddress?.email || companyInfo.mainContact?.email;
+                
+                // Last resort: get first user's email from the company
+                if (!customerBillingEmail) {
+                    const usersSnapshot = await db.collection('users')
+                        .where('companyID', '==', companyInfo.companyID)
+                        .limit(1)
+                        .get();
+                    
+                    if (!usersSnapshot.empty) {
+                        customerBillingEmail = usersSnapshot.docs[0].data().email;
+                    }
+                }
+            }
+            
+            recipientEmail = customerBillingEmail;
+            
+            if (!recipientEmail) {
+                throw new Error(`No customer billing email found for invoice ${invoiceData.invoiceNumber}. Invoices must be sent to customer billing addresses.`);
+            }
+            
+            logger.info(`Invoice ${invoiceData.invoiceNumber} will be sent to customer billing email: ${recipientEmail}`);
         }
 
         // Prepare PDF attachment
@@ -190,8 +222,8 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
                 name: SEND_FROM_NAME
             },
             subject: testMode ? 
-                `[TEST] Invoice ${invoiceData.invoiceNumber} - ${companyInfo.name || invoiceData.companyName}` :
-                `Invoice ${invoiceData.invoiceNumber} - ${companyInfo.name || invoiceData.companyName}`,
+                `[TEST] Integrated Carriers - Invoice Notification` :
+                `Integrated Carriers - Invoice Notification`,
             html: generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurrency),
             text: generateInvoiceEmailText(invoiceData, companyInfo, testMode, formatCurrency),
             attachments: attachments
@@ -364,7 +396,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // ==================== INVOICE DETAILS BOX ====================
             const detailsBoxY = margin + 45;
             const detailsBoxWidth = 160;
-            const detailsBoxHeight = 70;
+            const detailsBoxHeight = 85;
 
             // Draw details box
             doc.rect(rightCol, detailsBoxY, detailsBoxWidth, detailsBoxHeight)
@@ -444,7 +476,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             doc.fillColor(colors.text)
                .fontSize(10)
                .font('Helvetica-Bold')
-               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)} ${invoiceData.currency || 'USD'}`, summaryX, currentY);
+               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, currentY);  // 🔧 FIXED: No duplicate currency
 
             currentY += 8;
             doc.fontSize(7)
@@ -621,36 +653,89 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                        width: colWidths[4] - 4
                    });
 
-                // Column 6: Fees (Wider column, no truncation)
+                // Column 6: Enhanced Fees with Professional Charge Breakdown
                 doc.font('Helvetica')
                    .fontSize(5);
+                
+                // 🔧 ENHANCED: More comprehensive charge breakdown display
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
                     let feeY = tableY + 2;
-                    item.chargeBreakdown.slice(0, 5).forEach(fee => {
-                        // Don't truncate descriptions with wider column
-                        const fullDesc = fee.description;
-                        doc.text(`${fullDesc}: ${formatCurrency(fee.amount, invoiceData.currency)}`, 
+                    let chargesDisplayed = 0;
+                    const maxCharges = 5;
+                    
+                    // Sort charges by amount (largest first) for better display
+                    const sortedCharges = [...item.chargeBreakdown].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+                    
+                    sortedCharges.slice(0, maxCharges).forEach((fee, index) => {
+                        const chargeCode = fee.code || fee.chargeCode || '';
+                        const chargeName = fee.description || fee.name || fee.chargeType || 'Miscellaneous';
+                        const amount = fee.amount || 0;
+                        
+                        // Enhanced display with charge codes and proper formatting
+                        const displayText = chargeCode ? 
+                            `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
+                            `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
+                        
+                        doc.text(displayText, colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                        feeY += 7;
+                        chargesDisplayed++;
+                    });
+                    
+                    // Show summary if more charges exist
+                    if (item.chargeBreakdown.length > maxCharges) {
+                        const remainingCharges = item.chargeBreakdown.length - maxCharges;
+                        const remainingAmount = item.chargeBreakdown
+                            .slice(maxCharges)
+                            .reduce((sum, charge) => sum + (charge.amount || 0), 0);
+                        
+                        doc.fontSize(4)
+                           .fillColor('#666666')
+                           .text(`+${remainingCharges} more charges: ${formatCurrency(remainingAmount, invoiceData.currency)}`, 
+                                 colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                    }
+                } else {
+                    // 🔧 ENHANCED: More realistic default breakdown based on industry standards
+                    const totalCharges = item.charges || 0;
+                    
+                    // Generate realistic charge breakdown
+                    const charges = [];
+                    if (totalCharges > 0) {
+                        // Base freight (70-80% of total)
+                        const freightPercent = 0.75;
+                        const fuelPercent = 0.15;
+                        const accessorialPercent = 0.10;
+                        
+                        charges.push({
+                            code: 'FRT',
+                            name: 'Freight Charges',
+                            amount: totalCharges * freightPercent
+                        });
+                        
+                        charges.push({
+                            code: 'FSC',
+                            name: 'Fuel Surcharge',
+                            amount: totalCharges * fuelPercent
+                        });
+                        
+                        if (totalCharges * accessorialPercent >= 1) {
+                            charges.push({
+                                code: 'ACC',
+                                name: 'Accessorial Charges',
+                                amount: totalCharges * accessorialPercent
+                            });
+                        }
+                    }
+                    
+                    let feeY = tableY + 2;
+                    charges.forEach(charge => {
+                        doc.text(`${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`, 
                                 colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
                         feeY += 7;
                     });
-                    if (item.chargeBreakdown.length > 5) {
-                        doc.text(`+${item.chargeBreakdown.length - 5} more`, colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
-                    }
-                } else {
-                    // Create default breakdown from base charges
-                    const totalCharges = item.charges || 0;
-                    const freight = totalCharges * 0.75;
-                    const fuel = totalCharges * 0.20;
-                    const fees = totalCharges * 0.05;
-                    let feeY = tableY + 2;
-                    doc.text(`Freight Charges: ${formatCurrency(freight, invoiceData.currency)}`, 
-                            colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
-                    feeY += 7;
-                    doc.text(`Fuel Surcharge: ${formatCurrency(fuel, invoiceData.currency)}`, 
-                            colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
-                    if (fees > 0) {
-                        feeY += 7;
-                        doc.text(`Additional Fees: ${formatCurrency(fees, invoiceData.currency)}`, 
+                    
+                    // Show total if no detailed breakdown available
+                    if (charges.length === 0 && totalCharges > 0) {
+                        doc.text(`Total Shipping Charges: ${formatCurrency(totalCharges, invoiceData.currency)}`, 
                                 colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
                     }
                 }
@@ -675,22 +760,71 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 tableY += rowHeight;
             });
 
-            // ==================== TOTALS SECTION ====================
+            // ==================== ENHANCED TOTALS SECTION WITH BREAKDOWN ====================
             const totalsStartY = tableY + 10;
             const totalsWidth = 180;
             const totalsX = leftCol + contentWidth - totalsWidth;
 
-            // Total due (removed subtotal and tax lines)
-            doc.rect(totalsX, totalsStartY, totalsWidth, 22)
+            // 🔧 ENHANCED: Professional totals breakdown with subtotal, tax, and total
+            let currentTotalY = totalsStartY;
+            const lineHeight = 18;
+            const totalLines = invoiceData.tax && invoiceData.tax > 0 ? 3 : 2; // Subtotal + Tax (if applicable) + Total
+            const totalsHeight = totalLines * lineHeight + 10;
+
+            // Background for totals section
+            doc.rect(totalsX, currentTotalY, totalsWidth, totalsHeight)
+               .fillColor('#f8f9fa')
+               .fill()
+               .strokeColor(colors.border)
+               .lineWidth(1)
+               .stroke();
+
+            // Header
+            doc.fillColor(colors.primary)
+               .fontSize(8)
+               .font('Helvetica-Bold')
+               .text('AMOUNT DUE', totalsX + 8, currentTotalY + 5);
+
+            currentTotalY += 20;
+
+            // Subtotal line
+            doc.fillColor(colors.text)
+               .fontSize(7)
+               .font('Helvetica')
+               .text('Subtotal:', totalsX + 8, currentTotalY);
+            doc.text(formatCurrency(invoiceData.subtotal || invoiceData.total, invoiceData.currency), 
+                     totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+            currentTotalY += lineHeight;
+
+            // Tax line (if applicable)
+            if (invoiceData.tax && invoiceData.tax > 0) {
+                const taxRate = invoiceData.taxRate || 0;
+                const taxLabel = taxRate > 0 ? `Tax (${(taxRate * 100).toFixed(1)}%):` : 'Tax:';
+                
+                doc.text(taxLabel, totalsX + 8, currentTotalY);
+                doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
+                         totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+                currentTotalY += lineHeight;
+            }
+
+            // Total line with emphasis
+            doc.rect(totalsX + 5, currentTotalY - 3, totalsWidth - 10, lineHeight)
                .fillColor(colors.primary)
                .fill();
 
             doc.fillColor('white')
-               .fontSize(10)
+               .fontSize(9)
                .font('Helvetica-Bold')
-               .text('TOTAL DUE:', totalsX + 8, totalsStartY + 5);
+               .text('TOTAL DUE:', totalsX + 8, currentTotalY);
             doc.text(formatCurrency(invoiceData.total, invoiceData.currency), 
-                     totalsX + 100, totalsStartY + 5, { width: 70, align: 'right' });
+                     totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+
+            // Currency notation
+            doc.fillColor(colors.textLight)
+               .fontSize(6)
+               .font('Helvetica')
+               .text(`All amounts in ${invoiceData.currency || 'USD'}`, 
+                     totalsX + 8, currentTotalY + lineHeight + 5);
 
             // ==================== PAYMENT INFORMATION (MOVED DOWN) ====================
             const paymentY = totalsStartY + 50; // Increased spacing to move it down

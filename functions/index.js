@@ -376,6 +376,11 @@ const { detectExceptions } = require('./src/billing/detectExceptions');
 const { approveCharges, rejectCharges } = require('./src/billing/approveCharges');
 const { processAPApproval } = require('./src/billing/processAPApproval');
 const { finalApproveAPCharges } = require('./src/billing/finalApproveAPCharges');
+const { overrideApprovedCharges } = require('./src/billing/overrideApprovedCharges');
+const { regenerateInvoice } = require('./src/billing/regenerateInvoice');
+const { updateInvoiceStatus: updateBillingInvoiceStatus } = require('./src/billing/updateInvoiceStatus');
+const { approveChargesWithFinalValues } = require('./src/billing/approveChargesWithFinalValues');
+const { testInvoiceGeneration } = require('./src/billing/testInvoiceGeneration');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -391,6 +396,11 @@ exports.approveCharges = approveCharges;
 exports.rejectCharges = rejectCharges;
 exports.processAPApproval = processAPApproval;
 exports.finalApproveAPCharges = finalApproveAPCharges;
+exports.overrideApprovedCharges = overrideApprovedCharges;
+exports.regenerateInvoice = regenerateInvoice;
+exports.updateBillingInvoiceStatus = updateBillingInvoiceStatus;
+exports.approveChargesWithFinalValues = approveChargesWithFinalValues;
+exports.testInvoiceGeneration = testInvoiceGeneration;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;

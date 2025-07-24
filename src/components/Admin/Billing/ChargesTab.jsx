@@ -819,18 +819,8 @@ const ChargesTab = () => {
         setSelectedCharges(newSelected);
     };
 
-    const handleBulkInvoice = async () => {
-        if (selectedCharges.size === 0) {
-            enqueueSnackbar('No charges selected', { variant: 'warning' });
-            return;
-        }
-
-        // Navigate to invoice generation with selected charges
-        const chargeIds = Array.from(selectedCharges);
-        navigate('/admin/billing/generate', {
-            state: { preSelectedCharges: chargeIds }
-        });
-    };
+    // 🚫 REMOVED: Invoice generation logic moved to dedicated Generate Invoices page
+    // Charges page should ONLY handle charge approval, not invoice generation
 
     const handleExport = () => {
         // Export current page data only for performance
@@ -944,23 +934,29 @@ const ChargesTab = () => {
         }
     };
 
-    // Regular charge approval for non-AP-processed charges
+    // Enhanced charge approval with final value calculation and persistence
     const handleRegularChargeApproval = async (chargeIds, overrideExceptions = false) => {
         try {
-            const approveChargesFunc = httpsCallable(functions, 'approveCharges');
+            enqueueSnackbar(`Processing approval for ${chargeIds.length} charge(s)...`, { variant: 'info' });
 
-            enqueueSnackbar(`Approving ${chargeIds.length} charge(s)...`, { variant: 'info' });
+            // Step 1: Calculate and finalize actual charge values
+            const selectedChargeData = charges.filter(charge => chargeIds.includes(charge.id));
+            const finalizedCharges = await calculateFinalChargeValues(selectedChargeData);
+
+            // Step 2: Call enhanced approval function with finalized values
+            const approveChargesFunc = httpsCallable(functions, 'approveChargesWithFinalValues');
 
             const result = await approveChargesFunc({
                 shipmentIds: chargeIds,
+                finalizedCharges: finalizedCharges,
                 approvalType: 'bulk',
                 overrideExceptions: overrideExceptions,
-                approvalNotes: overrideExceptions ? 'Bulk approval with exception override' : 'Bulk approval'
+                approvalNotes: overrideExceptions ? 'Bulk approval with exception override and finalized values' : 'Bulk approval with finalized charge values'
             });
 
             if (result.data.success) {
                 enqueueSnackbar(
-                    `Successfully approved ${result.data.successCount}/${result.data.processedCount} charges`,
+                    `✅ Successfully approved ${result.data.successCount}/${result.data.processedCount} charges with finalized values`,
                     { variant: 'success' }
                 );
 
@@ -971,8 +967,213 @@ const ChargesTab = () => {
                 enqueueSnackbar('Bulk approval failed: ' + result.data.error, { variant: 'error' });
             }
         } catch (error) {
-            console.error('Regular approval error:', error);
+            console.error('Enhanced approval error:', error);
             enqueueSnackbar('Failed to approve charges: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // Calculate final charge values using smart actualCharge logic
+    const calculateFinalChargeValues = async (selectedCharges) => {
+        const finalizedCharges = [];
+
+        for (const charge of selectedCharges) {
+            try {
+                // Get original quoted costs for comparison
+                let quotedCost = 0;
+                let actualCost = charge.actualCost || 0;
+                let customerCharge = charge.customerCharge || 0;
+
+                // Calculate quoted cost based on shipment type
+                if (charge.isQuickShip && charge.manualRates && Array.isArray(charge.manualRates)) {
+                    // For QuickShip: sum up cost from manual rates
+                    quotedCost = charge.manualRates.reduce((sum, rate) => {
+                        return sum + (parseFloat(rate.cost) || 0);
+                    }, 0);
+                } else {
+                    // For regular shipments: use original rate cost
+                    const shipmentData = charge.shipmentData;
+                    quotedCost = shipmentData?.selectedRate?.totalCharges ||
+                        shipmentData?.selectedRate?.pricing?.total ||
+                        shipmentData?.totalCharges ||
+                        actualCost; // Fallback to actual cost if no quoted cost available
+                }
+
+                // Apply smart actual charge logic
+                const costDifference = Math.abs(actualCost - quotedCost);
+                const costThreshold = 0.01; // Allow for small rounding differences
+
+                let finalActualCharge = null;
+                if (costDifference <= costThreshold) {
+                    // Costs match → no adjustment needed → actual charge = quoted charge
+                    finalActualCharge = customerCharge;
+                } else {
+                    // Costs differ → manual adjustment was needed
+                    // Check if user has already set an actualCharge value
+                    finalActualCharge = charge.actualCharge || customerCharge; // Use existing actualCharge or fall back to customerCharge
+                }
+
+                finalizedCharges.push({
+                    shipmentId: charge.id,
+                    shipmentID: charge.shipmentID,
+                    finalValues: {
+                        quotedCost: quotedCost,
+                        actualCost: actualCost,
+                        quotedCharge: customerCharge,
+                        actualCharge: finalActualCharge,
+                        margin: finalActualCharge - actualCost,
+                        marginPercent: finalActualCharge > 0 ? ((finalActualCharge - actualCost) / finalActualCharge) * 100 : 0,
+                        currency: charge.currency || 'USD',
+                        approvedAt: new Date().toISOString(),
+                        approvalStatus: 'approved'
+                    },
+                    costVariance: costDifference,
+                    requiresAdjustment: costDifference > costThreshold
+                });
+
+                console.log(`💰 Finalized charges for ${charge.shipmentID}:`, {
+                    quotedCost,
+                    actualCost,
+                    quotedCharge: customerCharge,
+                    actualCharge: finalActualCharge,
+                    costVariance: costDifference,
+                    requiresAdjustment: costDifference > costThreshold
+                });
+
+            } catch (error) {
+                console.error(`Error calculating final values for charge ${charge.id}:`, error);
+                // Add charge with current values as fallback
+                finalizedCharges.push({
+                    shipmentId: charge.id,
+                    shipmentID: charge.shipmentID,
+                    finalValues: {
+                        quotedCost: charge.actualCost || 0,
+                        actualCost: charge.actualCost || 0,
+                        quotedCharge: charge.customerCharge || 0,
+                        actualCharge: charge.actualCharge || charge.customerCharge || 0,
+                        margin: (charge.actualCharge || charge.customerCharge || 0) - (charge.actualCost || 0),
+                        marginPercent: 0,
+                        currency: charge.currency || 'USD',
+                        approvedAt: new Date().toISOString(),
+                        approvalStatus: 'approved'
+                    },
+                    costVariance: 0,
+                    requiresAdjustment: false,
+                    error: error.message
+                });
+            }
+        }
+
+        return finalizedCharges;
+    };
+
+    // Helper functions for status-based button enabling
+    const getSelectedChargesData = () => {
+        return charges.filter(charge => selectedCharges.has(charge.id));
+    };
+
+    const getChargeApprovalStatus = () => {
+        if (selectedCharges.size === 0) {
+            return {
+                canApprove: false,
+                approvedCount: 0,
+                pendingCount: 0,
+                totalSelected: 0,
+                statusSummary: 'No charges selected'
+            };
+        }
+
+        const selectedChargesData = getSelectedChargesData();
+        const approvedCharges = selectedChargesData.filter(charge =>
+            charge.status === 'approved' ||
+            charge.chargeStatus === 'approved' ||
+            charge.approvalStatus === 'approved'
+        );
+        const pendingCharges = selectedChargesData.filter(charge =>
+            charge.status !== 'approved' &&
+            charge.chargeStatus !== 'approved' &&
+            charge.approvalStatus !== 'approved'
+        );
+
+        return {
+            canApprove: pendingCharges.length > 0, // Can approve if any are pending
+            approvedCount: approvedCharges.length,
+            pendingCount: pendingCharges.length,
+            totalSelected: selectedChargesData.length,
+            statusSummary: `${approvedCharges.length} approved, ${pendingCharges.length} pending`
+        };
+    };
+
+    // 🔄 NEW: Handle charge override - revert approved charges back to pending
+    const handleChargeOverride = async () => {
+        if (selectedCharges.size === 0) {
+            enqueueSnackbar('No charges selected', { variant: 'warning' });
+            return;
+        }
+
+        const approvalStatus = getChargeApprovalStatus();
+        if (approvalStatus.approvedCount === 0) {
+            enqueueSnackbar('No approved charges selected to revert', { variant: 'warning' });
+            return;
+        }
+
+        // Get only approved charges for override
+        const selectedChargesData = getSelectedChargesData();
+        const approvedCharges = selectedChargesData.filter(charge =>
+            charge.status === 'approved' ||
+            charge.chargeStatus === 'approved' ||
+            charge.approvalStatus === 'approved'
+        );
+
+        if (approvedCharges.length === 0) {
+            enqueueSnackbar('No approved charges found for override', { variant: 'warning' });
+            return;
+        }
+
+        // Confirmation dialog for charge override
+        const confirmOverride = window.confirm(
+            `⚠️ CHARGE OVERRIDE CONFIRMATION\n\n` +
+            `You are about to revert ${approvedCharges.length} approved charges back to PENDING status.\n\n` +
+            `This action will:\n` +
+            `• Remove approval status from selected charges\n` +
+            `• Reset actual charge values to require re-review\n` +
+            `• Make charges ineligible for invoice generation\n` +
+            `• Require re-approval before invoicing\n\n` +
+            `Are you sure you want to proceed with this charge override?`
+        );
+
+        if (!confirmOverride) {
+            return;
+        }
+
+        try {
+            // Call cloud function to override charges
+            const overrideChargesFunc = httpsCallable(functions, 'overrideApprovedCharges');
+
+            enqueueSnackbar(`Reverting ${approvedCharges.length} approved charges to pending...`, { variant: 'info' });
+
+            const result = await overrideChargesFunc({
+                shipmentIds: approvedCharges.map(charge => charge.id),
+                overrideReason: 'Bulk charge override - manual revert to pending for re-review',
+                overrideType: 'revert_to_pending',
+                overriddenBy: currentUser?.email || 'Unknown User'
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Successfully reverted ${result.data.successCount}/${approvedCharges.length} charges to pending status`,
+                    { variant: 'success' }
+                );
+
+                // Clear selection and refresh data
+                setSelectedCharges(new Set());
+                await fetchChargesPage(0, true);
+            } else {
+                throw new Error(result.data.error || 'Failed to override charges');
+            }
+
+        } catch (error) {
+            console.error('Error overriding approved charges:', error);
+            enqueueSnackbar(`Failed to override charges: ${error.message}`, { variant: 'error' });
         }
     };
 
@@ -1500,83 +1701,17 @@ const ChargesTab = () => {
                             Export Page
                         </Button>
 
-                        {/* Enhanced Bulk Action Buttons with AP Processing Support */}
+                        {/* Selection counter for header */}
                         {selectedCharges.size > 0 && (
-                            <>
-                                {(() => {
-                                    // Check if selected charges include AP-processed charges
-                                    const selectedChargeData = charges.filter(charge => selectedCharges.has(charge.id));
-                                    const hasAPProcessedCharges = selectedChargeData.some(charge =>
-                                        charge.chargeStatus === 'ap_processed' || charge.status === 'ap_processed'
-                                    );
-
-                                    if (hasAPProcessedCharges) {
-                                        return (
-                                            <>
-                                                <Button
-                                                    size="small"
-                                                    variant="contained"
-                                                    color="success"
-                                                    onClick={() => handleBulkApprove(false)}
-                                                    sx={{ fontSize: '11px', ml: 1 }}
-                                                >
-                                                    Final Approve {selectedCharges.size} (Set EDI)
-                                                </Button>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    color="success"
-                                                    onClick={() => handleBulkApprove(true)}
-                                                    sx={{ fontSize: '11px', ml: 1 }}
-                                                >
-                                                    Force Final Approve {selectedCharges.size}
-                                                </Button>
-                                            </>
-                                        );
-                                    } else {
-                                        return (
-                                            <>
-                                                <Button
-                                                    size="small"
-                                                    variant="contained"
-                                                    color="success"
-                                                    onClick={() => handleBulkApprove(false)}
-                                                    sx={{ fontSize: '11px', ml: 1 }}
-                                                >
-                                                    Approve {selectedCharges.size}
-                                                </Button>
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    color="success"
-                                                    onClick={() => handleBulkApprove(true)}
-                                                    sx={{ fontSize: '11px', ml: 1 }}
-                                                >
-                                                    Force Approve {selectedCharges.size}
-                                                </Button>
-                                            </>
-                                        );
-                                    }
-                                })()}
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="error"
-                                    onClick={handleBulkReject}
-                                    sx={{ fontSize: '11px', ml: 1 }}
-                                >
-                                    Reject {selectedCharges.size}
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="warning"
-                                    onClick={handleRunExceptionDetection}
-                                    sx={{ fontSize: '11px', ml: 1 }}
-                                >
-                                    Check Exceptions
-                                </Button>
-                            </>
+                            <Chip
+                                label={`${selectedCharges.size} selected`}
+                                size="small"
+                                sx={{
+                                    bgcolor: '#e0f2fe',
+                                    color: '#0277bd',
+                                    fontSize: '11px'
+                                }}
+                            />
                         )}
                     </Box>
                 </Box>
@@ -1742,9 +1877,9 @@ const ChargesTab = () => {
                     </Grid>
                 </Paper>
 
-                {/* Summary Cards with Currency Breakdown */}
+                {/* Summary Cards with Currency Breakdown - All 4 on One Row */}
                 <Grid container spacing={2} sx={{ mb: 3 }}>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                             <CardContent sx={{ p: 2 }}>
                                 <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
@@ -1775,7 +1910,7 @@ const ChargesTab = () => {
                             </CardContent>
                         </Card>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                             <CardContent sx={{ p: 2 }}>
                                 <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
@@ -1806,7 +1941,7 @@ const ChargesTab = () => {
                             </CardContent>
                         </Card>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid item xs={12} md={3}>
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                             <CardContent sx={{ p: 2 }}>
                                 <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
@@ -1837,86 +1972,39 @@ const ChargesTab = () => {
                             </CardContent>
                         </Card>
                     </Grid>
-                </Grid>
-
-                {/* Profit Summary Cards */}
-                <Grid container spacing={2} sx={{ mb: 3 }}>
-                    <Grid item xs={12} md={6}>
-                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#f8fffe' }}>
+                    <Grid item xs={12} md={3}>
+                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                             <CardContent sx={{ p: 2 }}>
                                 <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
-                                    Total Profit (USD)
+                                    Total Profit
                                 </Typography>
                                 {loadingMetrics ? (
                                     <Skeleton variant="text" width={120} height={24} />
                                 ) : (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <Box>
-                                            <Typography variant="h5" sx={{
-                                                fontSize: '24px',
-                                                fontWeight: 'bold',
-                                                color: metrics.totalProfit.USD >= 0 ? '#059669' : '#dc2626'
+                                    <Box>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                                            <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 'bold', color: '#000000', mr: 1 }}>
+                                                USD:
+                                            </Typography>
+                                            <Typography variant="body2" sx={{
+                                                fontSize: '14px',
+                                                color: metrics.totalProfit.USD >= 0 ? '#059669' : '#dc2626',
+                                                fontWeight: 'bold'
                                             }}>
                                                 ${(metrics.totalProfit.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
-                                                Revenue: ${(metrics.totalRevenue.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                Costs: ${(metrics.totalCosts.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </Typography>
                                         </Box>
-                                        <Box sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            color: metrics.totalProfit.USD >= 0 ? '#059669' : '#dc2626'
-                                        }}>
-                                            {metrics.totalProfit.USD >= 0 ? (
-                                                <TrendingUpIcon sx={{ fontSize: '32px' }} />
-                                            ) : (
-                                                <TrendingDownIcon sx={{ fontSize: '32px' }} />
-                                            )}
-                                        </Box>
-                                    </Box>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#fef7f0' }}>
-                            <CardContent sx={{ p: 2 }}>
-                                <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', mb: 1 }}>
-                                    Total Profit (CAD)
-                                </Typography>
-                                {loadingMetrics ? (
-                                    <Skeleton variant="text" width={120} height={24} />
-                                ) : (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <Box>
-                                            <Typography variant="h5" sx={{
-                                                fontSize: '24px',
-                                                fontWeight: 'bold',
-                                                color: metrics.totalProfit.CAD >= 0 ? '#059669' : '#dc2626'
+                                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                            <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 'bold', color: '#000000', mr: 1 }}>
+                                                CAD:
+                                            </Typography>
+                                            <Typography variant="body2" sx={{
+                                                fontSize: '14px',
+                                                color: metrics.totalProfit.CAD >= 0 ? '#059669' : '#dc2626',
+                                                fontWeight: 'bold'
                                             }}>
                                                 ${(metrics.totalProfit.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
-                                                Revenue: ${(metrics.totalRevenue.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                Costs: ${(metrics.totalCosts.CAD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            color: metrics.totalProfit.CAD >= 0 ? '#059669' : '#dc2626'
-                                        }}>
-                                            {metrics.totalProfit.CAD >= 0 ? (
-                                                <TrendingUpIcon sx={{ fontSize: '32px' }} />
-                                            ) : (
-                                                <TrendingDownIcon sx={{ fontSize: '32px' }} />
-                                            )}
                                         </Box>
                                     </Box>
                                 )}
@@ -1932,38 +2020,75 @@ const ChargesTab = () => {
                             Showing {Math.min(page * rowsPerPage + 1, totalCount || 0)} - {Math.min((page + 1) * rowsPerPage, totalCount || 0)} of {(totalCount || 0).toLocaleString()} total charges
                         </Typography>
                         {selectedCharges.size > 0 && (
-                            <Chip
-                                label={`${selectedCharges.size} selected`}
-                                size="small"
-                                color="primary"
-                                onDelete={() => setSelectedCharges(new Set())}
-                            />
+                            <>
+                                {(() => {
+                                    const approvalStatus = getChargeApprovalStatus();
+                                    return (
+                                        <>
+                                            <Chip
+                                                label={`${selectedCharges.size} selected`}
+                                                size="small"
+                                                color="primary"
+                                                onDelete={() => setSelectedCharges(new Set())}
+                                            />
+                                            {/* Status Breakdown Chips */}
+                                            {approvalStatus.approvedCount > 0 && (
+                                                <Chip
+                                                    label={`${approvalStatus.approvedCount} approved`}
+                                                    size="small"
+                                                    color="success"
+                                                    variant="outlined"
+                                                    sx={{ fontSize: '11px' }}
+                                                />
+                                            )}
+                                            {approvalStatus.pendingCount > 0 && (
+                                                <Chip
+                                                    label={`${approvalStatus.pendingCount} pending approval`}
+                                                    size="small"
+                                                    color="warning"
+                                                    variant="outlined"
+                                                    sx={{ fontSize: '11px' }}
+                                                />
+                                            )}
+                                            {/* Workflow Status Indicator */}
+                                            <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mr: 1 }}>
+                                                    Workflow:
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <Typography variant="body2" sx={{
+                                                        fontSize: '11px',
+                                                        color: selectedCharges.size > 0 ? '#059669' : '#6b7280',
+                                                        fontWeight: selectedCharges.size > 0 ? 600 : 400
+                                                    }}>
+                                                        Select
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>→</Typography>
+                                                    <Typography variant="body2" sx={{
+                                                        fontSize: '11px',
+                                                        color: approvalStatus.pendingCount > 0 ? '#f59e0b' : approvalStatus.approvedCount > 0 ? '#059669' : '#6b7280',
+                                                        fontWeight: approvalStatus.pendingCount > 0 ? 600 : 400
+                                                    }}>
+                                                        Approve
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>→</Typography>
+                                                    <Typography variant="body2" sx={{
+                                                        fontSize: '11px',
+                                                        color: approvalStatus.approvedCount > 0 ? '#3b82f6' : '#6b7280',
+                                                        fontWeight: approvalStatus.approvedCount > 0 ? 600 : 400
+                                                    }}>
+                                                        Ready for Invoicing
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        </>
+                                    );
+                                })()}
+                            </>
                         )}
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {selectedCharges.size > 0 && (
-                            <>
-                                <Button
-                                    size="small"
-                                    variant="contained"
-                                    color="primary"
-                                    startIcon={<ReceiptIcon />}
-                                    onClick={handleBulkInvoice}
-                                    sx={{ fontSize: '11px' }}
-                                >
-                                    Generate Invoice
-                                </Button>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<EditIcon />}
-                                    onClick={() => enqueueSnackbar('Bulk edit coming soon', { variant: 'info' })}
-                                    sx={{ fontSize: '11px' }}
-                                >
-                                    Update Status
-                                </Button>
-                            </>
-                        )}
+
                         {debouncedSearchValue && (
                             <Typography variant="body2" sx={{ fontSize: '12px', color: '#6366f1' }}>
                                 Search: "{debouncedSearchValue}"
@@ -1971,6 +2096,155 @@ const ChargesTab = () => {
                         )}
                     </Box>
                 </Box>
+
+                {/* 🔧 ENHANCED: Bulk Actions Toolbar - Prominently placed above table */}
+                {selectedCharges.size > 0 && (
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            border: '2px solid #3b82f6',
+                            borderRadius: '8px',
+                            mx: 2,
+                            mb: 2,
+                            bgcolor: '#eff6ff',
+                            p: 2
+                        }}
+                    >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                            {/* Selection Summary */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Typography variant="body1" sx={{ fontSize: '14px', fontWeight: 600, color: '#1e40af' }}>
+                                    {selectedCharges.size} charge{selectedCharges.size !== 1 ? 's' : ''} selected
+                                </Typography>
+                                {(() => {
+                                    const approvalStatus = getChargeApprovalStatus();
+                                    return (
+                                        <Chip
+                                            label={approvalStatus.statusSummary}
+                                            size="small"
+                                            sx={{
+                                                bgcolor: '#dbeafe',
+                                                color: '#1e40af',
+                                                fontSize: '11px'
+                                            }}
+                                        />
+                                    );
+                                })()}
+                            </Box>
+
+                            {/* Action Buttons */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                {(() => {
+                                    const approvalStatus = getChargeApprovalStatus();
+                                    const selectedChargeData = getSelectedChargesData();
+                                    const hasAPProcessedCharges = selectedChargeData.some(charge =>
+                                        charge.chargeStatus === 'ap_processed' || charge.status === 'ap_processed'
+                                    );
+
+                                    return (
+                                        <>
+                                            {/* 🎯 PROMINENT APPROVAL BUTTONS */}
+                                            {approvalStatus.canApprove && (
+                                                <>
+                                                    {hasAPProcessedCharges ? (
+                                                        <>
+                                                            <Button
+                                                                size="small"
+                                                                variant="contained"
+                                                                color="success"
+                                                                onClick={() => handleBulkApprove(false)}
+                                                                sx={{ fontSize: '12px', fontWeight: 600 }}
+                                                                startIcon={<CheckIcon />}
+                                                            >
+                                                                Final Approve {approvalStatus.pendingCount} (Set EDI)
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="success"
+                                                                onClick={() => handleBulkApprove(true)}
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                Force Final Approve
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Button
+                                                                size="small"
+                                                                variant="contained"
+                                                                color="success"
+                                                                onClick={() => handleBulkApprove(false)}
+                                                                sx={{ fontSize: '12px', fontWeight: 600 }}
+                                                                startIcon={<CheckIcon />}
+                                                            >
+                                                                Approve {approvalStatus.pendingCount} Charges
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="success"
+                                                                onClick={() => handleBulkApprove(true)}
+                                                                sx={{ fontSize: '12px' }}
+                                                            >
+                                                                Force Approve
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {/* 🚫 REMOVED: Generate Invoice button - moved to dedicated Generate Invoices page */}
+
+                                            {/* Override Button */}
+                                            {(() => {
+                                                const approvalStatus = getChargeApprovalStatus();
+                                                if (approvalStatus.approvedCount > 0) {
+                                                    return (
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="warning"
+                                                            onClick={handleChargeOverride}
+                                                            sx={{ fontSize: '12px' }}
+                                                            startIcon={<ArrowDownIcon />}
+                                                        >
+                                                            Revert {approvalStatus.approvedCount} to Pending
+                                                        </Button>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
+
+                                            {/* Other Actions */}
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                color="error"
+                                                onClick={handleBulkReject}
+                                                sx={{ fontSize: '12px' }}
+                                                startIcon={<CancelIcon />}
+                                            >
+                                                Reject {selectedCharges.size}
+                                            </Button>
+
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                color="warning"
+                                                onClick={handleRunExceptionDetection}
+                                                sx={{ fontSize: '12px' }}
+                                                startIcon={<AssessmentIcon />}
+                                            >
+                                                Check Exceptions
+                                            </Button>
+                                        </>
+                                    );
+                                })()}
+                            </Box>
+                        </Box>
+                    </Paper>
+                )}
 
                 {/* Optimized Charges Table */}
                 <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mx: 2 }}>
@@ -2294,11 +2568,20 @@ const ChargesTab = () => {
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', color: '#dc2626' }}>
                                                     {(() => {
-                                                        // Get actual cost from actualRates (carrier invoice amount)
-                                                        const actualCostAmount = charge.shipmentData?.actualRates?.totalCharges ||
-                                                            charge.actualRates?.totalCharges ||
-                                                            charge.shipmentData?.apExtractedCosts?.totalAmount ||
-                                                            null;
+                                                        // 🔧 FIXED: Check finalized values first for approved charges
+                                                        let actualCostAmount = null;
+
+                                                        // 1. First priority: Check finalized values from approval process
+                                                        if (charge.finalValues?.actualCost && charge.finalValues.actualCost > 0) {
+                                                            actualCostAmount = charge.finalValues.actualCost;
+                                                        }
+                                                        // 2. Fallback: Get actual cost from actualRates (carrier invoice amount)
+                                                        else {
+                                                            actualCostAmount = charge.shipmentData?.actualRates?.totalCharges ||
+                                                                charge.actualRates?.totalCharges ||
+                                                                charge.shipmentData?.apExtractedCosts?.totalAmount ||
+                                                                null;
+                                                        }
 
                                                         if (actualCostAmount && actualCostAmount > 0) {
                                                             return formatCurrency(actualCostAmount, charge.currency);

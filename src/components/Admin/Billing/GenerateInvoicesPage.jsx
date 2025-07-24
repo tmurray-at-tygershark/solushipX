@@ -31,7 +31,11 @@ import {
     Tooltip,
     Badge,
     Stack,
-    Autocomplete
+    Autocomplete,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions
 } from '@mui/material';
 import {
     CheckCircleOutline as CheckCircleIcon,
@@ -48,19 +52,39 @@ import {
 } from '@mui/icons-material';
 import { collection, getDocs, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../../../firebase';
+import { auth } from '../../../firebase';
 import { useSnackbar } from 'notistack';
 import { formatCurrencyWithPrefix, formatInvoiceCurrency, CURRENCIES, calculateTax } from '../../../utils/currencyUtils';
 
-const steps = [
-    'Review Uninvoiced Shipments',
-    'Configure Invoice Settings',
-    'Generate & Send Invoices',
-    'Process Complete'
-];
+// ✅ SIMPLIFIED: Single workflow for approved charges
+const getStepsForWorkflow = () => {
+    return [
+        'Review Approved Charges',
+        'Configure Invoice Settings',
+        'Generate Invoices',
+        'Send Invoices'
+    ];
+};
 
 const TAX_RATES = {
-    CAD: 0.13, // 13% HST for Canada
+    CAD: 0.13, // 13% HST for Canada (domestic only)
     USD: 0.00  // No tax for US invoices by default
+};
+
+// 🔧 NEW: Determine if tax should be applied based on shipment routes
+const shouldApplyTax = (shipments, currency) => {
+    if (currency !== 'CAD') return false; // Only CAD shipments can have tax
+
+    // Check if ALL shipments are domestic Canadian (CA to CA)
+    const allDomesticCanadian = shipments.every(shipment => {
+        const fromCountry = shipment?.shipFrom?.country;
+        const toCountry = shipment?.shipTo?.country;
+
+        // Both origin and destination must be Canada for domestic taxation
+        return fromCountry === 'CA' && toCountry === 'CA';
+    });
+
+    return allDomesticCanadian;
 };
 
 const PAYMENT_TERMS_OPTIONS = [
@@ -80,6 +104,8 @@ const GenerateInvoicesPage = () => {
     const [groupedShipments, setGroupedShipments] = useState({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // ✅ SIMPLIFIED: Always work with approved charges from database
     const [invoiceSettings, setInvoiceSettings] = useState({
         includeShipmentDetails: true,
         includeChargeBreakdown: true,
@@ -103,16 +129,226 @@ const GenerateInvoicesPage = () => {
     const [testEmailSent, setTestEmailSent] = useState(false);
     const [companies, setCompanies] = useState([]);
 
+    // 🔄 NEW: 2-Step Process State Management
+    const [generatedInvoices, setGeneratedInvoices] = useState([]);
+    const [sendingResults, setSendingResults] = useState({
+        successful: 0,
+        failed: 0,
+        totalSent: 0
+    });
+    const [isSendingInvoices, setIsSendingInvoices] = useState(false);
+    const [selectedInvoicesForSending, setSelectedInvoicesForSending] = useState(new Set());
+
+    // 🔍 NEW: Preview functionality
+    const [previewDialog, setPreviewDialog] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+
     useEffect(() => {
-        fetchUninvoicedShipments();
+        // ✅ SIMPLIFIED: Always fetch approved charges from database
+        // No more dependency on navigation from charges page
+        fetchApprovedCharges();
     }, []);
 
-    const fetchUninvoicedShipments = async () => {
+    // 📋 NEW: Process approved charges from ChargesTab into invoice-ready format
+    const processApprovedCharges = async (chargesData) => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch all shipments and filter locally (since we need to check multiple conditions)
+            console.log('📋 Processing approved charges for invoice generation:', chargesData);
+
+            // Extract approved charges data
+            const { approvedCharges, selectionSummary } = chargesData;
+
+            if (!approvedCharges || approvedCharges.length === 0) {
+                throw new Error('No approved charges found in navigation data');
+            }
+
+            // Convert approved charges to shipment format for invoice generation
+            const processedShipments = approvedCharges.map(charge => ({
+                id: charge.shipmentId,
+                shipmentID: charge.shipmentID,
+                companyID: charge.companyID,
+                companyName: charge.companyName,
+                customerId: charge.customerId || charge.customerName,
+                customerName: charge.customerName,
+
+                // 🔧 CRITICAL: Detect old vs new approval format to handle corrupted data
+                customerCharge: (() => {
+                    // 🎯 NEW FORMAT: Has finalizedCharges field (fixed approval process)
+                    if (charge.finalizedCharges?.customerCharge) {
+                        return charge.finalizedCharges.customerCharge;
+                    }
+                    // 🎯 LEGACY FORMAT: Has finalValues but no finalizedCharges
+                    if (charge.finalValues?.actualCharge) {
+                        return charge.finalValues.actualCharge;
+                    }
+                    // 🎯 OLD CORRUPTED FORMAT: actualRates.totalCharges was overwritten with customer charge
+                    // Need to use costComparison data to reconstruct proper amounts
+                    if (charge.costComparison?.actualCharge) {
+                        return charge.costComparison.actualCharge;
+                    }
+                    // 🎯 FALLBACK: Use manual rates for QuickShip
+                    if (charge.manualRates?.length) {
+                        return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                    }
+                    return charge.finalValues?.quotedCharge || 0;
+                })(),
+
+                actualCost: (() => {
+                    // 🎯 NEW FORMAT: Carrier cost preserved in actualRates OR available in costComparison
+                    if (charge.costComparison?.actualCost && charge.finalizedCharges?.customerCharge) {
+                        // New format: use cost comparison data
+                        return charge.costComparison.actualCost;
+                    }
+                    // 🎯 LEGACY FORMAT: finalValues.actualCost
+                    if (charge.finalValues?.actualCost) {
+                        return charge.finalValues.actualCost;
+                    }
+                    // 🎯 OLD CORRUPTED FORMAT: actualRates.totalCharges might be corrupted
+                    // Check if we can derive cost from margin data
+                    if (charge.costComparison?.actualCost) {
+                        return charge.costComparison.actualCost;
+                    }
+                    // 🎯 FALLBACK: Use manual rates for QuickShip cost
+                    if (charge.manualRates?.length) {
+                        return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+                    }
+                    return charge.actualRates?.totalCharges || 0;
+                })(),
+
+                // Use customer charge for invoice total
+                totalCharges: (() => {
+                    if (charge.finalizedCharges?.customerCharge) return charge.finalizedCharges.customerCharge;
+                    if (charge.finalValues?.actualCharge) return charge.finalValues.actualCharge;
+                    if (charge.costComparison?.actualCharge) return charge.costComparison.actualCharge;
+                    if (charge.manualRates?.length) {
+                        return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                    }
+                    return charge.finalValues?.quotedCharge || 0;
+                })(),
+
+                margin: charge.finalValues?.margin,
+                currency: charge.finalizedCharges?.currency || charge.finalValues?.currency || 'USD',
+
+                // 🔧 CRITICAL FIX: Include charge breakdown with correct amounts  
+                chargeBreakdown: [{
+                    description: 'Freight', // Clean customer-facing description
+                    name: 'Freight',
+                    finalValues: {
+                        actualCharge: (() => {
+                            if (charge.finalizedCharges?.customerCharge) return charge.finalizedCharges.customerCharge;
+                            if (charge.finalValues?.actualCharge) return charge.finalValues.actualCharge;
+                            if (charge.costComparison?.actualCharge) return charge.costComparison.actualCharge;
+                            if (charge.manualRates?.length) {
+                                return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                            }
+                            return charge.finalValues?.quotedCharge || 0;
+                        })(),
+                        actualCost: (() => {
+                            if (charge.costComparison?.actualCost && charge.finalizedCharges?.customerCharge) return charge.costComparison.actualCost;
+                            if (charge.finalValues?.actualCost) return charge.finalValues.actualCost;
+                            if (charge.costComparison?.actualCost) return charge.costComparison.actualCost;
+                            if (charge.manualRates?.length) {
+                                return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+                            }
+                            return charge.actualRates?.totalCharges || 0;
+                        })()
+                    },
+                    amount: (() => {
+                        if (charge.finalizedCharges?.customerCharge) return charge.finalizedCharges.customerCharge;
+                        if (charge.finalValues?.actualCharge) return charge.finalValues.actualCharge;
+                        if (charge.costComparison?.actualCharge) return charge.costComparison.actualCharge;
+                        if (charge.manualRates?.length) {
+                            return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                        }
+                        return charge.finalValues?.quotedCharge || 0;
+                    })(),
+                    currency: charge.finalizedCharges?.currency || charge.finalValues?.currency || 'USD'
+                }],
+
+                // Shipment details for invoice line items
+                carrier: charge.carrier,
+                route: charge.route,
+                shipmentDate: charge.shipmentDate,
+
+                // Mark as approved charges workflow
+                chargeStatus: 'approved',
+                approvalWorkflow: true,
+                processedFromCharges: true
+            }));
+
+            // Group by company for invoice generation
+            const grouped = processedShipments.reduce((acc, shipment) => {
+                const companyId = shipment.companyID;
+                if (!acc[companyId]) {
+                    acc[companyId] = {
+                        company: shipment.companyName || companyId,
+                        shipments: [],
+                        totalCharges: 0
+                    };
+                }
+                acc[companyId].shipments.push(shipment);
+                acc[companyId].totalCharges += shipment.totalCharges || 0;
+                return acc;
+            }, {});
+
+            // Update state with processed data
+            setUninvoicedShipments(processedShipments);
+            setGroupedShipments(grouped);
+
+            // Auto-detect currency and settings
+            const detectedCurrency = detectShipmentsCurrency(processedShipments);
+            const shouldEnableTax = shouldApplyTax(processedShipments, detectedCurrency);
+
+            console.log('🔍 Tax Decision Logic:', {
+                currency: detectedCurrency,
+                shipmentCount: processedShipments.length,
+                shouldEnableTax: shouldEnableTax,
+                shipmentRoutes: processedShipments.map(s => ({
+                    id: s.shipmentID || s.id,
+                    route: `${s.shipFrom?.country || 'Unknown'} → ${s.shipTo?.country || 'Unknown'}`
+                }))
+            });
+
+            setInvoiceSettings(prev => ({
+                ...prev,
+                currency: detectedCurrency,
+                taxRate: TAX_RATES[detectedCurrency] || 0,
+                enableTax: shouldEnableTax
+            }));
+
+            // Pre-select all approved charges for invoice generation
+            const initialSelection = {};
+            processedShipments.forEach(shipment => {
+                initialSelection[shipment.id] = true;
+            });
+            setSelectedShipments(initialSelection);
+
+            console.log(`📋 Successfully processed ${processedShipments.length} approved charges for ${Object.keys(grouped).length} companies`);
+
+            enqueueSnackbar(
+                `Loaded ${processedShipments.length} approved charges from ${Object.keys(grouped).length} companies ready for invoice generation`,
+                { variant: 'success' }
+            );
+
+        } catch (err) {
+            console.error('Error processing approved charges:', err);
+            setError('Failed to process approved charges: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ✅ NEW: Fetch approved charges from database instead of relying on navigation
+    const fetchApprovedCharges = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            console.log('📋 Loading approved charges from database...');
+
+            // Fetch all shipments and filter locally for approved charges
             const shipmentsRef = collection(db, 'shipments');
             const shipmentsQuery = query(
                 shipmentsRef,
@@ -127,19 +363,94 @@ const GenerateInvoicesPage = () => {
                 ...doc.data()
             }));
 
-            // Filter for uninvoiced shipments using the same logic as BillingDashboard
-            const uninvoicedShipments = shipments.filter(shipment => {
-                // Use same uninvoiced logic as BillingDashboard
-                const isUninvoiced = !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced';
-                return isUninvoiced;
+            // ✅ CRITICAL: Filter for approved charges (not uninvoiced)
+            const approvedChargeShipments = shipments.filter(shipment => {
+                // 🔧 ENHANCED: Check multiple charge approval patterns to match approval system
+                const isChargeApproved =
+                    // Standard charge status patterns
+                    shipment.chargeStatus?.status === 'approved' ||
+                    shipment.chargeStatus === 'approved' ||
+                    // Additional patterns used by approval system
+                    shipment.approvalStatus === 'approved' ||
+                    shipment.status === 'approved' ||
+                    // Check finalized charges from approval process
+                    shipment.finalizedCharges?.approvalStatus === 'approved';
+
+                // Must have approved charges AND not already invoiced
+                // 🔧 FIX: Handle both 'uninvoiced' and 'not_invoiced' formats
+                const notInvoiced = !shipment.invoiceStatus ||
+                    shipment.invoiceStatus === 'uninvoiced' ||
+                    shipment.invoiceStatus === 'not_invoiced' ||
+                    shipment.invoiceStatus === 'pending';
+
+                // 🔧 DEBUG: Log invoice status details for TS-21BWNG
+                if (shipment.shipmentID === 'TS-21BWNG' || shipment.id === 'n7dBBwnrNysB9yooYJi2') {
+                    console.log(`🧾 INVOICE STATUS DEBUG for ${shipment.shipmentID}:`, {
+                        invoiceStatus: shipment.invoiceStatus,
+                        invoiceStatusType: typeof shipment.invoiceStatus,
+                        notInvoiced: notInvoiced,
+                        isChargeApproved: isChargeApproved,
+                        finalResult: isChargeApproved && notInvoiced
+                    });
+                }
+
+                // 🔧 DEBUG: Log shipment details for troubleshooting
+                if (shipment.shipmentID === 'TS-21BWNG' || shipment.id === 'n7dBBwnrNysB9yooYJi2') {
+                    console.log(`🔍 DEBUG TS-21BWNG DATA STRUCTURE:`, {
+                        shipmentID: shipment.shipmentID,
+                        documentId: shipment.id,
+                        chargeStatus: shipment.chargeStatus,
+                        chargeStatusStringified: JSON.stringify(shipment.chargeStatus, null, 2),
+                        approvalStatus: shipment.approvalStatus,
+                        status: shipment.status,
+                        invoiceStatus: shipment.invoiceStatus,
+
+                        // 🔍 CRITICAL: Debug data corruption issue
+                        dataStructureAnalysis: {
+                            hasFinalizedCharges: !!shipment.finalizedCharges,
+                            finalizedCharges: shipment.finalizedCharges,
+                            hasFinalValues: !!shipment.finalValues,
+                            finalValues: shipment.finalValues,
+                            hasCostComparison: !!shipment.costComparison,
+                            costComparison: shipment.costComparison,
+                            actualRates: shipment.actualRates,
+                            manualRates: shipment.manualRates
+                        },
+
+                        isChargeApproved,
+                        notInvoiced,
+                        allChargeChecks: {
+                            'chargeStatus?.status': shipment.chargeStatus?.status,
+                            'chargeStatus.status exact match': shipment.chargeStatus?.status === 'approved',
+                            'chargeStatus direct': shipment.chargeStatus,
+                            'approvalStatus': shipment.approvalStatus,
+                            'status': shipment.status,
+                            'finalizedCharges?.approvalStatus': shipment.finalizedCharges?.approvalStatus,
+                            'isChargeApproved result': isChargeApproved,
+                            'notInvoiced result': notInvoiced
+                        }
+                    });
+                }
+
+                return isChargeApproved && notInvoiced;
             });
 
+            console.log(`📋 Found ${approvedChargeShipments.length} shipments with approved charges ready for invoicing`);
+
             // Filter out shipments without charges, invalid data, or draft status
-            const validShipments = uninvoicedShipments.filter(shipment => {
+            const validShipments = approvedChargeShipments.filter(shipment => {
                 const charges = getShipmentCharges(shipment);
                 const isDraft = shipment.status?.toLowerCase() === 'draft';
-                return charges > 0 && shipment.companyID && !isDraft;
+                const hasValidData = charges > 0 && shipment.companyID;
+
+                if (!hasValidData) {
+                    console.log(`❌ Excluding shipment ${shipment.shipmentID || shipment.id}: charges=${charges}, companyID=${shipment.companyID}`);
+                }
+
+                return hasValidData && !isDraft;
             });
+
+            console.log(`✅ ${validShipments.length} valid approved shipments ready for invoice generation`);
 
             // Group shipments by company
             const grouped = validShipments.reduce((acc, shipment) => {
@@ -157,43 +468,89 @@ const GenerateInvoicesPage = () => {
                 return acc;
             }, {});
 
-            setUninvoicedShipments(validShipments);
+            setUninvoicedShipments(validShipments); // Keep same state name for compatibility
             setGroupedShipments(grouped);
 
             // Auto-detect currency from shipments and update invoice settings
             const detectedCurrency = detectShipmentsCurrency(validShipments);
+            const shouldEnableTax = shouldApplyTax(validShipments, detectedCurrency);
+
             setInvoiceSettings(prev => ({
                 ...prev,
                 currency: detectedCurrency,
                 taxRate: TAX_RATES[detectedCurrency] || 0,
-                enableTax: detectedCurrency === 'CAD'
+                enableTax: shouldEnableTax
             }));
 
-            // Pre-select all shipments by default
+            // Pre-select all approved charges by default
             const initialSelection = {};
             validShipments.forEach(shipment => {
                 initialSelection[shipment.id] = true;
             });
             setSelectedShipments(initialSelection);
 
+            if (validShipments.length === 0) {
+                setError('No approved charges found. Please approve charges on the Charges page first, then return here to generate invoices.');
+            }
+
         } catch (err) {
-            console.error('Error fetching uninvoiced shipments:', err);
-            setError('Failed to load uninvoiced shipments: ' + err.message);
+            console.error('Error fetching approved charges:', err);
+            setError('Failed to load approved charges: ' + err.message);
         } finally {
             setLoading(false);
         }
     };
 
     const getShipmentCharges = (shipment) => {
-        // Use markup rates (what customer pays)
-        if (shipment.markupRates?.totalCharges) {
-            return shipment.markupRates.totalCharges;
+        // 🔧 CRITICAL FIX: Use approved/finalized charges FIRST, then fallback to original logic
+
+        // Priority 1: Check if charges have been approved with finalized values
+        if (shipment.chargeStatus?.finalizedCharges?.actualCharge) {
+            return shipment.chargeStatus.finalizedCharges.actualCharge;
         }
 
-        return shipment.totalCharges ||
-            shipment.selectedRate?.totalCharges ||
-            shipment.selectedRate?.pricing?.total ||
-            0;
+        // Priority 2: Check actualRates from approval process
+        if (shipment.actualRates?.totalCharges) {
+            return shipment.actualRates.totalCharges;
+        }
+
+        let actualCost = 0;
+        let customerCharge = 0;
+
+        // Priority 3: Enhanced charge extraction to handle QuickShip orders (matching ChargesTab logic)
+        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+            // QuickShip: Sum up customer charges from manual rates
+            customerCharge = shipment.manualRates.reduce((sum, rate) => {
+                return sum + (parseFloat(rate.charge) || 0);
+            }, 0);
+        } else {
+            // Regular shipment: Use markup rates (what customer pays)
+            customerCharge = shipment.markupRates?.totalCharges ||
+                shipment.quotedRates?.totalCharges ||
+                shipment.totalCharges ||
+                shipment.selectedRate?.totalCharges ||
+                shipment.selectedRate?.pricing?.total || 0;
+        }
+
+        // 🔧 DEBUG: Log charge calculation for TS-21BWNG
+        if (shipment.shipmentID === 'TS-21BWNG' || shipment.id === 'n7dBBwnrNysB9yooYJi2') {
+            console.log(`💰 CHARGE CALCULATION for ${shipment.shipmentID}:`, {
+                creationMethod: shipment.creationMethod,
+                isQuickShip: shipment.creationMethod === 'quickship',
+                manualRates: shipment.manualRates,
+                markupRates: shipment.markupRates,
+                'markupRates.totalCharges': shipment.markupRates?.totalCharges,
+                totalCharges: shipment.totalCharges,
+                'actualRates': shipment.actualRates,
+                'actualRates.totalCharges': shipment.actualRates?.totalCharges,
+                'chargeStatus.finalizedCharges': shipment.chargeStatus?.finalizedCharges,
+                'chargeStatus.finalizedCharges.actualCharge': shipment.chargeStatus?.finalizedCharges?.actualCharge,
+                calculatedCustomerCharge: customerCharge,
+                'FINAL RETURN VALUE': customerCharge
+            });
+        }
+
+        return customerCharge;
     };
 
     // Helper function to get the currency from a shipment
@@ -278,7 +635,8 @@ const GenerateInvoicesPage = () => {
         }, {});
     };
 
-    const generateInvoices = async () => {
+    // 🔄 NEW: Step 1 - Generate Invoices Only (Create PDFs, Save to DB, Don't Send)
+    const generateInvoicesOnly = async () => {
         try {
             setIsProcessing(true);
             const selectedByCompany = getSelectedShipmentsByCompany();
@@ -286,22 +644,25 @@ const GenerateInvoicesPage = () => {
 
             let successful = 0;
             let failed = 0;
-            const invoiceNumbers = [];
+            const generatedInvoicesList = [];
 
-            // Generate invoice for each company
+            console.log(`📄 Starting PDF generation for ${companies.length} companies...`);
+
+            // Generate invoice PDFs for each company (NO EMAIL SENDING)
             for (const companyId of companies) {
                 try {
                     const companyData = selectedByCompany[companyId];
-                    const invoiceNumber = await generateInvoiceForCompany(companyData);
-                    invoiceNumbers.push(invoiceNumber);
+                    const invoiceData = await generateInvoicePDFOnly(companyData);
+                    generatedInvoicesList.push(invoiceData);
                     successful++;
 
-                    // Mark shipments as invoiced
+                    // Mark shipments as "generated" (not "invoiced" yet)
                     const updatePromises = companyData.shipments.map(shipment =>
                         updateDoc(doc(db, 'shipments', shipment.id), {
-                            invoiceStatus: 'invoiced',
-                            invoiceNumber: invoiceNumber,
-                            invoicedAt: serverTimestamp()
+                            invoiceStatus: 'generated', // 🔄 NEW: Generated but not sent
+                            invoiceNumber: invoiceData.invoiceNumber,
+                            generatedAt: serverTimestamp(),
+                            invoiceId: invoiceData.invoiceId
                         })
                     );
                     await Promise.all(updatePromises);
@@ -312,21 +673,184 @@ const GenerateInvoicesPage = () => {
                 }
             }
 
+            // Update state with generated invoices
+            setGeneratedInvoices(generatedInvoicesList);
             setGenerationResults({
                 successful,
                 failed,
                 totalInvoices: companies.length,
-                invoiceNumbers
+                invoiceNumbers: generatedInvoicesList.map(inv => inv.invoiceNumber)
             });
 
-            enqueueSnackbar(`Successfully generated ${successful} invoices`, { variant: 'success' });
+            // Auto-select all generated invoices for potential sending
+            const selectedForSending = new Set(generatedInvoicesList.map(inv => inv.invoiceId));
+            setSelectedInvoicesForSending(selectedForSending);
+
+            enqueueSnackbar(
+                `Successfully generated ${successful} invoice PDFs. Ready for review and sending.`,
+                { variant: 'success' }
+            );
+
+            console.log(`📄 PDF generation complete. Generated ${successful} invoices.`);
 
         } catch (error) {
-            console.error('Error generating invoices:', error);
+            console.error('Error generating invoice PDFs:', error);
             enqueueSnackbar('Failed to generate invoices: ' + error.message, { variant: 'error' });
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    // 🔄 NEW: Step 2 - Send Generated Invoices Only (Email Delivery)
+    const sendGeneratedInvoices = async () => {
+        try {
+            setIsSendingInvoices(true);
+            const invoicesToSend = generatedInvoices.filter(invoice =>
+                selectedInvoicesForSending.has(invoice.invoiceId)
+            );
+
+            let successful = 0;
+            let failed = 0;
+
+            console.log(`📧 Starting email delivery for ${invoicesToSend.length} invoices...`);
+
+            for (const invoice of invoicesToSend) {
+                try {
+                    // Send email with PDF attachment
+                    await sendInvoiceEmail(invoice);
+                    successful++;
+
+                    // Update invoice status to "sent"
+                    await updateDoc(doc(db, 'invoices', invoice.invoiceId), {
+                        status: 'sent',
+                        sentAt: serverTimestamp()
+                    });
+
+                    // Update related shipments to "invoiced" status
+                    const updatePromises = invoice.shipmentIds.map(shipmentId =>
+                        updateDoc(doc(db, 'shipments', shipmentId), {
+                            invoiceStatus: 'invoiced', // 🔄 NOW: Generated + Sent = Invoiced
+                            sentAt: serverTimestamp()
+                        })
+                    );
+                    await Promise.all(updatePromises);
+
+                } catch (error) {
+                    console.error(`Failed to send invoice ${invoice.invoiceNumber}:`, error);
+                    failed++;
+                }
+            }
+
+            setSendingResults({
+                successful,
+                failed,
+                totalSent: invoicesToSend.length
+            });
+
+            enqueueSnackbar(
+                `Successfully sent ${successful} of ${invoicesToSend.length} invoices via email.`,
+                { variant: 'success' }
+            );
+
+            console.log(`📧 Email delivery complete. Sent ${successful} invoices.`);
+
+        } catch (error) {
+            console.error('Error sending invoices:', error);
+            enqueueSnackbar('Failed to send invoices: ' + error.message, { variant: 'error' });
+        } finally {
+            setIsSendingInvoices(false);
+        }
+    };
+
+    // 🔄 NEW: Helper function to generate invoice PDF without sending email
+    const generateInvoicePDFOnly = async (companyData) => {
+        // Create invoice record in database
+        const invoiceNumber = generateUniqueInvoiceNumber();
+
+        // Calculate invoice totals with proper tax handling
+        const subtotal = companyData.totalCharges;
+        const taxCalc = calculateTax(
+            subtotal,
+            invoiceSettings.enableTax ? invoiceSettings.taxRate : 0,
+            invoiceSettings.currency
+        );
+
+        // Prepare line items from shipments with customer billing info
+        const lineItems = companyData.shipments.map(shipment => {
+            const shipmentDate = getShipmentDate(shipment);
+            return {
+                shipmentId: shipment.shipmentID || shipment.id,
+                orderNumber: shipment.orderNumber || shipment.shipmentInfo?.orderNumber || 'N/A',
+                trackingNumber: shipment.trackingNumber || shipment.shipmentInfo?.carrierTrackingNumber || 'TBD',
+                description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                carrier: shipment.carrier,
+                service: shipment.selectedRate?.service?.name || shipment.service || 'Standard',
+                date: shipmentDate || new Date(),
+                charges: shipment.totalCharges || shipment.customerCharge,
+                chargeBreakdown: getChargeBreakdown(shipment),
+                packages: shipment.packages?.length || shipment.packageCount || 1,
+                weight: shipment.totalWeight || shipment.weight || 0,
+                consignee: shipment.shipTo?.companyName || shipment.shipTo?.company || 'N/A',
+                // 🔧 CRITICAL: Include customer billing information for email routing
+                customerBillingEmail: shipment.customerBillingEmail || shipment.customerEmail
+            };
+        });
+
+        const invoiceData = {
+            invoiceNumber,
+            companyId: companyData.companyId,
+            companyName: companyData.company,
+            customerId: companyData.shipments[0]?.customerId || companyData.shipments[0]?.customerName,
+            issueDate: new Date(),
+            dueDate: calculateDueDate(invoiceSettings.paymentTerms),
+            status: 'generated', // 🔄 NEW: Generated but not sent
+            lineItems,
+            subtotal: taxCalc.subtotal,
+            tax: taxCalc.tax,
+            total: taxCalc.total,
+            currency: invoiceSettings.currency,
+            paymentTerms: invoiceSettings.paymentTerms,
+            taxRate: invoiceSettings.enableTax ? invoiceSettings.taxRate : 0,
+            settings: invoiceSettings,
+            createdAt: serverTimestamp(),
+            shipmentIds: companyData.shipments.map(s => s.id),
+            // 🔄 NEW: No email sending in this step
+            generatedAt: serverTimestamp(),
+            emailSent: false
+        };
+
+        // Save invoice to database
+        const docRef = await addDoc(collection(db, 'invoices'), invoiceData);
+
+        return {
+            invoiceId: docRef.id,
+            invoiceNumber,
+            companyId: companyData.companyId,
+            companyName: companyData.company,
+            total: taxCalc.total,
+            currency: invoiceSettings.currency,
+            shipmentIds: companyData.shipments.map(s => s.id),
+            invoiceData: { ...invoiceData, invoiceId: docRef.id }
+        };
+    };
+
+    // 🔄 NEW: Helper function to send email for generated invoice
+    const sendInvoiceEmail = async (invoice) => {
+        // Use the existing triggerInvoiceGeneration function which handles email sending
+        return await triggerInvoiceGeneration(
+            invoice.invoiceData,
+            invoice.companyId,
+            false, // not test mode
+            null   // no test email
+        );
+    };
+
+    // 🔄 NEW: Generate unique invoice numbers with proper sequence
+    const generateUniqueInvoiceNumber = () => {
+        const currentYear = new Date().getFullYear();
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substr(2, 4).toUpperCase();
+        return `${invoiceSettings.invoicePrefix}-${currentYear}-${timestamp}-${randomSuffix}`;
     };
 
     const generateInvoiceForCompany = async (companyData) => {
@@ -602,6 +1126,180 @@ const GenerateInvoicesPage = () => {
         });
     };
 
+
+
+    // 🧪 NEW: Test with real approved charges data (no database changes)
+    const sendRealDataTestInvoice = async () => {
+        const selectedCount = Object.values(selectedShipments).filter(Boolean).length;
+        if (selectedCount === 0) {
+            enqueueSnackbar('Please select at least one approved charge to test', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setIsSendingTest(true);
+
+            // Use real selected shipments data for test
+            const selectedByCompany = getSelectedShipmentsByCompany();
+            const companies = Object.keys(selectedByCompany);
+
+            console.log(`🧪 Testing invoice generation with ${selectedCount} real approved charges from ${companies.length} companies`);
+
+            // Generate test invoice for each company using REAL data
+            for (const companyId of companies) {
+                const companyData = selectedByCompany[companyId];
+
+                // Calculate real totals
+                const subtotal = companyData.totalCharges;
+                const taxCalc = calculateTax(subtotal, invoiceSettings.enableTax ? invoiceSettings.taxRate : 0, invoiceSettings.currency);
+
+                // Create test invoice data using REAL shipment data
+                const testInvoiceData = {
+                    invoiceNumber: `TEST-REAL-${Date.now()}`,
+                    companyId: companyData.companyId,
+                    companyName: companyData.company,
+                    issueDate: new Date(),
+                    dueDate: calculateDueDate(invoiceSettings.paymentTerms),
+                    status: 'test',
+                    lineItems: companyData.shipments.map((shipment) => {
+                        const shipmentDate = getShipmentDate(shipment);
+                        const charges = getShipmentCharges(shipment);
+
+                        // 🔧 FIXED: Use real charge breakdown and proper shipment ID
+                        const realChargeBreakdown = shipment.chargeBreakdown || shipment.charges || [];
+
+                        return {
+                            shipmentId: shipment.shipmentID || shipment.id,
+                            orderNumber: shipment.shipmentID || shipment.id,  // 🔧 No ORD- prefix
+                            trackingNumber: shipment.trackingNumber || 'Pending',
+                            description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                            carrier: shipment.carrier || 'N/A',
+                            service: shipment.service || 'Standard',
+                            date: shipmentDate || new Date(),
+                            charges: charges,
+                            chargeBreakdown: Array.isArray(realChargeBreakdown) && realChargeBreakdown.length > 0
+                                ? realChargeBreakdown.map(charge => {
+                                    // 🔧 Clean up description for customer invoice (remove internal accounting terms)
+                                    let cleanDescription = charge.description || charge.name || 'Charge';
+                                    cleanDescription = cleanDescription.replace(/\s*Income\s*:?\s*/gi, '').trim(); // Remove "Income:" 
+                                    cleanDescription = cleanDescription.replace(/\s*Charges?\s*/gi, ''); // Remove "Charges"
+                                    if (!cleanDescription) cleanDescription = 'Freight'; // Default fallback
+
+                                    // 🔧 Smart detection for old vs new approval format
+                                    const customerAmount = (() => {
+                                        // 🎯 NEW FORMAT: finalizedCharges.customerCharge
+                                        if (charge.finalizedCharges?.customerCharge) {
+                                            return charge.finalizedCharges.customerCharge;
+                                        }
+                                        // 🎯 LEGACY FORMAT: finalValues.actualCharge  
+                                        if (charge.finalValues?.actualCharge) {
+                                            return charge.finalValues.actualCharge;
+                                        }
+                                        // 🎯 OLD CORRUPTED FORMAT: use costComparison.actualCharge
+                                        if (charge.costComparison?.actualCharge) {
+                                            return charge.costComparison.actualCharge;
+                                        }
+                                        // 🎯 QUICKSHIP: manual rates
+                                        if (charge.manualRates?.length) {
+                                            return charge.manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0);
+                                        }
+                                        // 🎯 FALLBACK
+                                        return charge.actualCharge || charge.finalizedAmount || charge.amount || 0;
+                                    })();
+
+                                    return {
+                                        description: cleanDescription,
+                                        amount: customerAmount
+                                    };
+                                })
+                                : [{ description: 'Total Charges', amount: charges }],  // 🔧 Real breakdown or simple total
+                            packages: shipment.packages || 1,
+                            weight: shipment.weight || 0,
+                            weightUnit: shipment.weightUnit || 'lbs',
+                            references: shipment.references || '',
+                            shipFrom: shipment.shipFrom,
+                            shipTo: shipment.shipTo
+                        };
+                    }),
+                    subtotal: taxCalc.subtotal,
+                    tax: taxCalc.tax,
+                    total: taxCalc.total,
+                    currency: invoiceSettings.currency,
+                    paymentTerms: invoiceSettings.paymentTerms,
+                    settings: {
+                        ...invoiceSettings,
+                        testEmail: 'tyler@tygershark.com',  // 🔧 Hardcoded test email
+                        testMode: true
+                    },
+                    testMode: true,
+                    realDataTest: true  // 🔧 Flag to indicate this is real data test
+                };
+
+                // 🧪 Use the same working infrastructure as the mock test (NO database changes)
+                await triggerInvoiceGeneration(
+                    testInvoiceData,
+                    companyData.companyId,
+                    true,  // test mode
+                    'tyler@tygershark.com'  // 🔧 Hardcoded test email
+                );
+
+                console.log(`✅ Test invoice sent for company ${companyData.company} with ${companyData.shipments.length} shipments`);
+            }
+
+            setTestEmailSent(true);
+            enqueueSnackbar(
+                `🧪 Test invoices sent to tyler@tygershark.com using real data from ${selectedCount} approved charges!`,
+                { variant: 'success' }
+            );
+
+        } catch (error) {
+            console.error('Error sending real data test invoice:', error);
+            enqueueSnackbar('Failed to send real data test: ' + error.message, { variant: 'error' });
+        } finally {
+            setIsSendingTest(false);
+        }
+    };
+
+    // 🔍 NEW: Preview invoice data without sending
+    const previewInvoiceData = () => {
+        const selectedCount = Object.values(selectedShipments).filter(Boolean).length;
+        if (selectedCount === 0) {
+            enqueueSnackbar('Please select at least one approved charge to preview', { variant: 'warning' });
+            return;
+        }
+
+        const selectedByCompany = getSelectedShipmentsByCompany();
+        const companies = Object.keys(selectedByCompany);
+
+        // Generate preview data for all companies
+        const previewInvoices = companies.map(companyId => {
+            const companyData = selectedByCompany[companyId];
+            const subtotal = companyData.totalCharges;
+            const taxCalc = calculateTax(subtotal, invoiceSettings.enableTax ? invoiceSettings.taxRate : 0, invoiceSettings.currency);
+
+            return {
+                companyName: companyData.company,
+                companyId: companyData.companyId,
+                shipmentsCount: companyData.shipments.length,
+                subtotal: taxCalc.subtotal,
+                tax: taxCalc.tax,
+                total: taxCalc.total,
+                currency: invoiceSettings.currency,
+                paymentTerms: invoiceSettings.paymentTerms,
+                shipments: companyData.shipments.map(shipment => ({
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    carrier: shipment.carrier || 'N/A',
+                    route: `${shipment.shipFrom?.city || 'N/A'} → ${shipment.shipTo?.city || 'N/A'}`,
+                    charges: getShipmentCharges(shipment),
+                    date: getShipmentDate(shipment)
+                }))
+            };
+        });
+
+        setPreviewData(previewInvoices);
+        setPreviewDialog(true);
+    };
+
     const sendTestInvoice = async () => {
         if (!invoiceSettings.testEmail) {
             enqueueSnackbar('Please enter a test email address', { variant: 'warning' });
@@ -871,26 +1569,36 @@ const GenerateInvoicesPage = () => {
         }
     };
 
+    // ✅ SIMPLIFIED: Single workflow navigation for approved charges
     const handleNext = () => {
         if (activeStep === 0) {
             const count = Object.values(selectedShipments).filter(Boolean).length;
             if (count === 0) {
-                enqueueSnackbar('Please select at least one shipment to invoice', { variant: 'warning' });
+                enqueueSnackbar('Please select at least one approved charge to invoice', { variant: 'warning' });
                 return;
             }
             setActiveStep(1);
         } else if (activeStep === 1) {
             setActiveStep(2);
         } else if (activeStep === 2) {
-            generateInvoices().then(() => {
-                setActiveStep(3);
+            // Generate invoices step
+            generateInvoicesOnly().then(() => {
+                setActiveStep(3); // Move to "Send Invoices" step
             });
         } else if (activeStep === 3) {
-            // Reset and start over
-            setActiveStep(0);
-            setSelectedShipments({});
-            setGenerationResults({ successful: 0, failed: 0, totalInvoices: 0, invoiceNumbers: [] });
-            fetchUninvoicedShipments();
+            // Send generated invoices step
+            sendGeneratedInvoices().then(() => {
+                enqueueSnackbar('Invoice workflow completed successfully!', { variant: 'success' });
+                // Reset for next batch
+                setTimeout(() => {
+                    setActiveStep(0);
+                    setSelectedShipments({});
+                    setGeneratedInvoices([]);
+                    setGenerationResults({ successful: 0, failed: 0, totalInvoices: 0, invoiceNumbers: [] });
+                    setSendingResults({ successful: 0, failed: 0, totalSent: 0 });
+                    fetchApprovedCharges(); // Reload approved charges
+                }, 2000);
+            });
         }
     };
 
@@ -923,11 +1631,12 @@ const GenerateInvoicesPage = () => {
             case 0:
                 return (
                     <Box>
+                        {/* ✅ SIMPLIFIED: Single workflow for approved charges */}
                         <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                            Select Shipments to Invoice
+                            Review Approved Charges
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '12px' }}>
-                            Review uninvoiced shipments below. Uncheck any shipments to exclude from this invoice run.
+                            These charges have been approved and are ready for invoice generation. Uncheck any shipments to exclude from this invoice run.
                         </Typography>
 
                         {/* Summary Cards */}
@@ -991,15 +1700,16 @@ const GenerateInvoicesPage = () => {
                                         <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Carrier</TableCell>
                                         <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Route</TableCell>
                                         <TableCell align="right" sx={{ fontSize: '12px', fontWeight: 600 }}>Amount</TableCell>
+                                        <TableCell align="center" sx={{ fontSize: '12px', fontWeight: 600 }}>Currency</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={7} align="center">
+                                            <TableCell colSpan={8} align="center">
                                                 <Box sx={{ py: 3 }}>
                                                     <CircularProgress size={24} />
-                                                    <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading shipments...</Typography>
+                                                    <Typography sx={{ mt: 1, fontSize: '12px' }}>Loading approved charges...</Typography>
                                                 </Box>
                                             </TableCell>
                                         </TableRow>
@@ -1045,12 +1755,24 @@ const GenerateInvoicesPage = () => {
                                                     <TableCell align="right" sx={{ fontSize: '12px' }}>
                                                         {formatInvoiceCurrency(charges, invoiceSettings.currency)}
                                                     </TableCell>
+                                                    <TableCell align="center" sx={{ fontSize: '12px' }}>
+                                                        <Chip
+                                                            label={invoiceSettings.currency}
+                                                            size="small"
+                                                            sx={{
+                                                                fontSize: '10px',
+                                                                height: '20px',
+                                                                backgroundColor: invoiceSettings.currency === 'CAD' ? '#dbeafe' : '#f3f4f6',
+                                                                color: invoiceSettings.currency === 'CAD' ? '#1e40af' : '#374151'
+                                                            }}
+                                                        />
+                                                    </TableCell>
                                                 </TableRow>
                                             );
                                         })
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={7} align="center">
+                                            <TableCell colSpan={8} align="center">
                                                 <Box sx={{ py: 4 }}>
                                                     <ReceiptIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
                                                     <Typography variant="body1" color="text.secondary" sx={{ fontSize: '12px' }}>
@@ -1175,17 +1897,56 @@ const GenerateInvoicesPage = () => {
                                         sx={{ mb: 2 }}
                                     />
 
-                                    <Button
-                                        variant="outlined"
-                                        startIcon={isSendingTest ? <CircularProgress size={16} /> : <SendIcon />}
-                                        onClick={sendTestInvoice}
-                                        disabled={isSendingTest || !invoiceSettings.testEmail || numSelected === 0}
-                                        size="small"
-                                        sx={{ fontSize: '12px' }}
-                                        fullWidth
-                                    >
-                                        {isSendingTest ? 'Sending Test...' : 'Send Test Invoice'}
-                                    </Button>
+                                    <Stack spacing={1}>
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={isSendingTest ? <CircularProgress size={16} /> : <SendIcon />}
+                                            onClick={sendTestInvoice}
+                                            disabled={isSendingTest || !invoiceSettings.testEmail}
+                                            size="small"
+                                            sx={{ fontSize: '12px' }}
+                                            fullWidth
+                                        >
+                                            {isSendingTest ? 'Sending Test...' : 'Send Mock Test Invoice'}
+                                        </Button>
+
+                                        <Grid container spacing={1}>
+                                            <Grid item xs={6}>
+                                                <Button
+                                                    variant="outlined"
+                                                    startIcon={<PreviewIcon />}
+                                                    onClick={previewInvoiceData}
+                                                    disabled={numSelected === 0}
+                                                    size="small"
+                                                    sx={{ fontSize: '12px', color: '#059669', borderColor: '#059669' }}
+                                                    fullWidth
+                                                >
+                                                    Preview Data
+                                                </Button>
+                                            </Grid>
+                                            <Grid item xs={6}>
+                                                <Button
+                                                    variant="contained"
+                                                    startIcon={isSendingTest ? <CircularProgress size={16} /> : <EmailIcon />}
+                                                    onClick={sendRealDataTestInvoice}
+                                                    disabled={isSendingTest || numSelected === 0}
+                                                    size="small"
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        backgroundColor: '#7c3aed',
+                                                        '&:hover': { backgroundColor: '#6d28d9' }
+                                                    }}
+                                                    fullWidth
+                                                >
+                                                    {isSendingTest ? 'Testing...' : 'Test Email'}
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+
+                                        <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', textAlign: 'center' }}>
+                                            Real data test uses your selected charges and sends to tyler@tygershark.com
+                                        </Typography>
+                                    </Stack>
 
                                     {testEmailSent && (
                                         <Alert severity="success" sx={{ mt: 2, fontSize: '11px' }}>
@@ -1271,72 +2032,189 @@ const GenerateInvoicesPage = () => {
                 );
 
             case 3:
+                // ✅ Send Invoices Step (only workflow)
                 return (
-                    <Box sx={{ textAlign: 'center', py: 5 }}>
-                        <CheckCircleIcon color="success" sx={{ fontSize: 70, mb: 2 }} />
-                        <Typography variant="h5" gutterBottom sx={{ fontSize: '18px', fontWeight: 600, color: '#374151' }}>
-                            Invoice Generation Complete!
+                    <Box>
+                        <Typography variant="h6" gutterBottom sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                            Send Generated Invoices
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '12px' }}>
+                            Review generated invoices and select which ones to send via email. You can send invoices individually or by company.
                         </Typography>
 
-                        <Grid container spacing={2} sx={{ mt: 2, mb: 3, maxWidth: 600, mx: 'auto' }}>
-                            <Grid item xs={4}>
-                                <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                        {/* Generation Summary */}
+                        <Grid container spacing={2} sx={{ mb: 3 }}>
+                            <Grid item xs={12} md={4}>
+                                <Card elevation={0} sx={{ border: '1px solid #e8f5e8', backgroundColor: '#f0fdf4' }}>
                                     <CardContent sx={{ p: 2 }}>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, color: '#16a34a' }}>
-                                            {generationResults.successful}
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#16a34a' }}>
+                                            Generated Invoices
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                            Successful
+                                        <Typography variant="h5" sx={{ fontWeight: 700, color: '#166534' }}>
+                                            {generatedInvoices.length}
                                         </Typography>
                                     </CardContent>
                                 </Card>
                             </Grid>
-                            <Grid item xs={4}>
-                                <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Grid item xs={12} md={4}>
+                                <Card elevation={0} sx={{ border: '1px solid #e0f2fe', backgroundColor: '#f0f9ff' }}>
                                     <CardContent sx={{ p: 2 }}>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, color: '#dc2626' }}>
-                                            {generationResults.failed}
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#0c4a6e' }}>
+                                            Selected for Sending
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                            Failed
+                                        <Typography variant="h5" sx={{ fontWeight: 700, color: '#075985' }}>
+                                            {selectedInvoicesForSending.size}
                                         </Typography>
                                     </CardContent>
                                 </Card>
                             </Grid>
-                            <Grid item xs={4}>
-                                <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Grid item xs={12} md={4}>
+                                <Card elevation={0} sx={{ border: '1px solid #fef3c7', backgroundColor: '#fffbeb' }}>
                                     <CardContent sx={{ p: 2 }}>
-                                        <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                                            {generationResults.totalInvoices}
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#92400e' }}>
+                                            Total Value
                                         </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                            Total
+                                        <Typography variant="h5" sx={{ fontWeight: 700, color: '#b45309' }}>
+                                            {formatCurrencyWithPrefix(
+                                                generatedInvoices.reduce((sum, inv) => sum + inv.total, 0),
+                                                generatedInvoices[0]?.currency || 'USD'
+                                            )}
                                         </Typography>
                                     </CardContent>
                                 </Card>
                             </Grid>
                         </Grid>
 
-                        {generationResults.invoiceNumbers.length > 0 && (
-                            <Box sx={{ mt: 3 }}>
-                                <Typography variant="body1" sx={{ mb: 2, fontSize: '12px', fontWeight: 600 }}>Generated Invoice Numbers:</Typography>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
-                                    {generationResults.invoiceNumbers.map((number, idx) => (
-                                        <Chip
-                                            key={idx}
-                                            label={number}
-                                            variant="outlined"
+                        {/* Invoices Table */}
+                        <Paper elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Box sx={{ p: 2, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Typography variant="body1" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                        Generated Invoices
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <Button
                                             size="small"
+                                            variant="outlined"
+                                            startIcon={<EmailIcon />}
+                                            onClick={() => {
+                                                // Select all invoices
+                                                setSelectedInvoicesForSending(new Set(generatedInvoices.map(inv => inv.invoiceId)));
+                                            }}
                                             sx={{ fontSize: '11px' }}
-                                        />
-                                    ))}
+                                        >
+                                            Select All
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            variant="contained"
+                                            startIcon={<SendIcon />}
+                                            onClick={sendGeneratedInvoices}
+                                            disabled={selectedInvoicesForSending.size === 0 || isSendingInvoices}
+                                            sx={{ fontSize: '11px' }}
+                                        >
+                                            {isSendingInvoices ? 'Sending...' : `Send ${selectedInvoicesForSending.size} Invoices`}
+                                        </Button>
+                                    </Box>
                                 </Box>
                             </Box>
-                        )}
 
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 3, fontSize: '12px' }}>
-                            Invoices are now available in the Invoices dashboard for review and management.
-                        </Typography>
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell padding="checkbox">
+                                                <Checkbox
+                                                    indeterminate={selectedInvoicesForSending.size > 0 && selectedInvoicesForSending.size < generatedInvoices.length}
+                                                    checked={generatedInvoices.length > 0 && selectedInvoicesForSending.size === generatedInvoices.length}
+                                                    onChange={(event) => {
+                                                        if (event.target.checked) {
+                                                            setSelectedInvoicesForSending(new Set(generatedInvoices.map(inv => inv.invoiceId)));
+                                                        } else {
+                                                            setSelectedInvoicesForSending(new Set());
+                                                        }
+                                                    }}
+                                                    size="small"
+                                                />
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Invoice #</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Company</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Total</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Status</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {generatedInvoices.map((invoice) => (
+                                            <TableRow key={invoice.invoiceId}>
+                                                <TableCell padding="checkbox">
+                                                    <Checkbox
+                                                        checked={selectedInvoicesForSending.has(invoice.invoiceId)}
+                                                        onChange={(event) => {
+                                                            const newSelected = new Set(selectedInvoicesForSending);
+                                                            if (event.target.checked) {
+                                                                newSelected.add(invoice.invoiceId);
+                                                            } else {
+                                                                newSelected.delete(invoice.invoiceId);
+                                                            }
+                                                            setSelectedInvoicesForSending(newSelected);
+                                                        }}
+                                                        size="small"
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                        {invoice.invoiceNumber}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {invoice.companyName}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {formatCurrencyWithPrefix(invoice.total, invoice.currency)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label="Generated"
+                                                        size="small"
+                                                        color="success"
+                                                        variant="outlined"
+                                                        sx={{ fontSize: '10px' }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        startIcon={<EmailIcon />}
+                                                        onClick={async () => {
+                                                            try {
+                                                                await sendInvoiceEmail(invoice);
+                                                                enqueueSnackbar(`Invoice ${invoice.invoiceNumber} sent successfully`, { variant: 'success' });
+                                                            } catch (error) {
+                                                                enqueueSnackbar(`Failed to send invoice: ${error.message}`, { variant: 'error' });
+                                                            }
+                                                        }}
+                                                        sx={{ fontSize: '10px' }}
+                                                    >
+                                                        Send
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Paper>
+
+                        {/* Sending Results */}
+                        {sendingResults.totalSent > 0 && (
+                            <Box sx={{ mt: 3 }}>
+                                <Alert severity="success" sx={{ fontSize: '12px' }}>
+                                    Successfully sent {sendingResults.successful} of {sendingResults.totalSent} invoices via email.
+                                </Alert>
+                            </Box>
+                        )}
                     </Box>
                 );
 
@@ -1354,7 +2232,7 @@ const GenerateInvoicesPage = () => {
                     </Alert>
                     <Button
                         variant="contained"
-                        onClick={fetchUninvoicedShipments}
+                        onClick={fetchApprovedCharges}
                         size="small"
                         sx={{ fontSize: '12px' }}
                     >
@@ -1369,7 +2247,7 @@ const GenerateInvoicesPage = () => {
         <Box sx={{ width: '100%' }}>
             <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 3, mx: 2 }}>
                 <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-                    {steps.map((label) => (
+                    {getStepsForWorkflow().map((label) => (
                         <Step key={label}>
                             <StepLabel sx={{
                                 '& .MuiStepLabel-label': { fontSize: '12px' }
@@ -1400,17 +2278,139 @@ const GenerateInvoicesPage = () => {
                         onClick={handleNext}
                         variant="contained"
                         disabled={isProcessing || (activeStep === 2 && isProcessing)}
-                        endIcon={activeStep !== steps.length - 1 && <NavigateNext />}
+                        endIcon={activeStep !== getStepsForWorkflow().length - 1 && <NavigateNext />}
                         size="small"
                         sx={{ fontSize: '12px' }}
                     >
-                        {activeStep === steps.length - 1 ? 'Generate More Invoices' :
+                        {activeStep === getStepsForWorkflow().length - 1 ? 'Generate More Invoices' :
                             activeStep === 0 ? `Continue with ${numSelected} Shipments` :
                                 activeStep === 1 ? 'Generate Invoices' :
                                     'Next'}
                     </Button>
                 </Box>
             </Paper>
+
+            {/* 🔍 Preview Dialog */}
+            <Dialog
+                open={previewDialog}
+                onClose={() => setPreviewDialog(false)}
+                maxWidth="lg"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>
+                    Invoice Data Preview
+                </DialogTitle>
+                <DialogContent>
+                    {previewData && (
+                        <Box>
+                            <Typography variant="body2" sx={{ mb: 2, fontSize: '12px', color: '#6b7280' }}>
+                                Preview of invoices that will be generated from your selected approved charges
+                            </Typography>
+
+                            {previewData.map((invoice, index) => (
+                                <Card key={index} elevation={0} sx={{ border: '1px solid #e5e7eb', mb: 2 }}>
+                                    <CardContent sx={{ p: 2 }}>
+                                        <Grid container spacing={2}>
+                                            <Grid item xs={12} md={8}>
+                                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>
+                                                    📄 Invoice for {invoice.companyName}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                                    {invoice.shipmentsCount} shipments • Payment Terms: {invoice.paymentTerms}
+                                                </Typography>
+
+                                                <Table size="small">
+                                                    <TableHead>
+                                                        <TableRow>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Shipment ID</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Carrier</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Route</TableCell>
+                                                            <TableCell align="right" sx={{ fontSize: '11px', fontWeight: 600 }}>Amount</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {invoice.shipments.slice(0, 5).map((shipment, idx) => (
+                                                            <TableRow key={idx}>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{shipment.shipmentId}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{shipment.carrier}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{shipment.route}</TableCell>
+                                                                <TableCell align="right" sx={{ fontSize: '11px' }}>
+                                                                    {formatInvoiceCurrency(shipment.charges, invoice.currency)}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                        {invoice.shipments.length > 5 && (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} sx={{ fontSize: '11px', color: '#6b7280', textAlign: 'center' }}>
+                                                                    ... and {invoice.shipments.length - 5} more shipments
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </Grid>
+                                            <Grid item xs={12} md={4}>
+                                                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 2, backgroundColor: '#f8fafc' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                                        Invoice Totals
+                                                    </Typography>
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                                        <Typography sx={{ fontSize: '11px' }}>Subtotal:</Typography>
+                                                        <Typography sx={{ fontSize: '11px' }}>
+                                                            {formatInvoiceCurrency(invoice.subtotal, invoice.currency)}
+                                                        </Typography>
+                                                    </Box>
+                                                    {invoice.tax > 0 && (
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                                            <Typography sx={{ fontSize: '11px' }}>Tax:</Typography>
+                                                            <Typography sx={{ fontSize: '11px' }}>
+                                                                {formatInvoiceCurrency(invoice.tax, invoice.currency)}
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                    <Divider sx={{ my: 1 }} />
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>Total:</Typography>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                            {formatInvoiceCurrency(invoice.total, invoice.currency)}
+                                                        </Typography>
+                                                    </Box>
+                                                </Paper>
+                                            </Grid>
+                                        </Grid>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setPreviewDialog(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Close
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            setPreviewDialog(false);
+                            sendRealDataTestInvoice();
+                        }}
+                        variant="contained"
+                        size="small"
+                        disabled={isSendingTest}
+                        startIcon={isSendingTest ? <CircularProgress size={16} /> : <EmailIcon />}
+                        sx={{
+                            fontSize: '12px',
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' }
+                        }}
+                    >
+                        {isSendingTest ? 'Sending...' : 'Send Test Email'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

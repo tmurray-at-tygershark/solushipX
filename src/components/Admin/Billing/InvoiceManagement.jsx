@@ -44,12 +44,20 @@ import {
     Assignment as AssignmentIcon,
     FilterList as FilterListIcon,
     GetApp as GetAppIcon,
-    Add as AddIcon
+    Add as AddIcon,
+    Refresh as RefreshIcon,
+    Send as SendIcon,
+    PictureAsPdf as PdfIcon,
+    CheckCircle as CheckCircleIcon,
+    Cancel as CancelIcon,
+    AttachMoney as AttachMoneyIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { collection, getDocs, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useSnackbar } from 'notistack';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../firebase';
 import InvoiceForm from './InvoiceForm';
 
 const InvoiceManagement = () => {
@@ -140,19 +148,63 @@ const InvoiceManagement = () => {
         setMetrics(metrics);
     };
 
-    const handleStatusUpdate = async (invoiceId, newStatus) => {
+    // 🔄 ENHANCED: Use the new comprehensive status update system
+    const handleStatusUpdate = async (invoiceId, newStatus, paymentDetails = null, notes = '') => {
         try {
-            await updateDoc(doc(db, 'invoices', invoiceId), {
-                status: newStatus,
-                updatedAt: new Date()
+            const updateInvoiceStatusFunction = httpsCallable(functions, 'updateBillingInvoiceStatus');
+
+            enqueueSnackbar(`Updating invoice status to ${newStatus}...`, { variant: 'info' });
+
+            const result = await updateInvoiceStatusFunction({
+                invoiceId: invoiceId,
+                newStatus: newStatus,
+                paymentDetails: paymentDetails,
+                notes: notes,
+                automaticUpdate: false
             });
 
-            enqueueSnackbar('Invoice status updated successfully', { variant: 'success' });
-            fetchInvoices(); // Refresh data
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Invoice ${result.data.invoiceNumber} status updated to ${newStatus}`,
+                    { variant: 'success' }
+                );
 
+                // Refresh invoice list to show updated data
+                fetchInvoices();
+            } else {
+                throw new Error('Failed to update invoice status');
+            }
         } catch (error) {
             console.error('Error updating invoice status:', error);
-            enqueueSnackbar('Failed to update invoice status', { variant: 'error' });
+            enqueueSnackbar('Failed to update invoice status: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // 🔄 NEW: Mark invoice as paid with payment details
+    const handleMarkAsPaid = async (invoice) => {
+        try {
+            const paymentDetails = {
+                amount: invoice.total,
+                currency: invoice.currency || 'USD',
+                method: 'Manual Entry',
+                reference: `Payment for ${invoice.invoiceNumber}`,
+                recordedBy: 'admin'
+            };
+
+            await handleStatusUpdate(invoice.id, 'paid', paymentDetails, 'Payment recorded by admin');
+        } catch (error) {
+            console.error('Error marking invoice as paid:', error);
+            enqueueSnackbar('Failed to mark invoice as paid: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // 🔄 NEW: Mark invoice as cancelled
+    const handleCancelInvoice = async (invoice) => {
+        try {
+            await handleStatusUpdate(invoice.id, 'cancelled', null, 'Invoice cancelled by admin');
+        } catch (error) {
+            console.error('Error cancelling invoice:', error);
+            enqueueSnackbar('Failed to cancel invoice: ' + error.message, { variant: 'error' });
         }
     };
 
@@ -178,6 +230,93 @@ const InvoiceManagement = () => {
         } catch (error) {
             console.error('Error resending invoice:', error);
             enqueueSnackbar('Failed to resend invoice', { variant: 'error' });
+        }
+    };
+
+    // 🔄 NEW: Enhanced regenerate PDF functionality
+    const handleRegenerateInvoice = async (invoice) => {
+        try {
+            const regenerateInvoiceFunction = httpsCallable(functions, 'regenerateInvoice');
+
+            enqueueSnackbar('Regenerating invoice PDF...', { variant: 'info' });
+
+            const result = await regenerateInvoiceFunction({
+                invoiceId: invoice.id,
+                action: 'regenerate'
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Invoice ${result.data.invoiceNumber} PDF regenerated successfully`,
+                    { variant: 'success' }
+                );
+
+                // Refresh invoice list to show updated data
+                fetchInvoices();
+            } else {
+                throw new Error('Failed to regenerate invoice');
+            }
+        } catch (error) {
+            console.error('Error regenerating invoice:', error);
+            enqueueSnackbar('Failed to regenerate invoice: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // 🔄 NEW: Enhanced resend email functionality
+    const handleResendInvoiceEmail = async (invoice) => {
+        try {
+            const regenerateInvoiceFunction = httpsCallable(functions, 'regenerateInvoice');
+
+            enqueueSnackbar('Resending invoice email...', { variant: 'info' });
+
+            const result = await regenerateInvoiceFunction({
+                invoiceId: invoice.id,
+                action: 'resend'
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Invoice ${result.data.invoiceNumber} email resent successfully to ${result.data.emailSentTo}`,
+                    { variant: 'success' }
+                );
+
+                // Refresh invoice list to show updated data
+                fetchInvoices();
+            } else {
+                throw new Error('Failed to resend invoice email');
+            }
+        } catch (error) {
+            console.error('Error resending invoice email:', error);
+            enqueueSnackbar('Failed to resend invoice email: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // 🔄 NEW: Combined regenerate and resend
+    const handleRegenerateAndResend = async (invoice) => {
+        try {
+            const regenerateInvoiceFunction = httpsCallable(functions, 'regenerateInvoice');
+
+            enqueueSnackbar('Regenerating PDF and resending email...', { variant: 'info' });
+
+            const result = await regenerateInvoiceFunction({
+                invoiceId: invoice.id,
+                action: 'both'
+            });
+
+            if (result.data.success) {
+                enqueueSnackbar(
+                    `Invoice ${result.data.invoiceNumber} regenerated and resent successfully`,
+                    { variant: 'success' }
+                );
+
+                // Refresh invoice list to show updated data
+                fetchInvoices();
+            } else {
+                throw new Error('Failed to regenerate and resend invoice');
+            }
+        } catch (error) {
+            console.error('Error regenerating and resending invoice:', error);
+            enqueueSnackbar('Failed to regenerate and resend invoice: ' + error.message, { variant: 'error' });
         }
     };
 
@@ -208,16 +347,29 @@ const InvoiceManagement = () => {
         setDetailsOpen(true);
     };
 
+    // 🔄 ENHANCED: Support for additional invoice statuses
     const getStatusColor = (status) => {
         switch (status) {
             case 'paid':
                 return { color: '#2e7d32', bgcolor: '#e8f5e9' };
+            case 'generated':
+                return { color: '#1565c0', bgcolor: '#e3f2fd' };
+            case 'sent':
+                return { color: '#7b1fa2', bgcolor: '#f3e5f5' };
+            case 'viewed':
+                return { color: '#00796b', bgcolor: '#e0f2f1' };
             case 'pending':
                 return { color: '#ed6c02', bgcolor: '#fff3e0' };
             case 'overdue':
                 return { color: '#d32f2f', bgcolor: '#ffebee' };
             case 'cancelled':
                 return { color: '#757575', bgcolor: '#f5f5f5' };
+            case 'refunded':
+                return { color: '#f57c00', bgcolor: '#fff8e1' };
+            case 'disputed':
+                return { color: '#c62828', bgcolor: '#ffebee' };
+            case 'draft':
+                return { color: '#616161', bgcolor: '#fafafa' };
             default:
                 return { color: '#1976d2', bgcolor: '#e3f2fd' };
         }
@@ -493,10 +645,16 @@ const InvoiceManagement = () => {
                                     label="Status Filter"
                                 >
                                     <MenuItem value="all">All Invoices</MenuItem>
+                                    <MenuItem value="draft">Draft</MenuItem>
+                                    <MenuItem value="generated">Generated</MenuItem>
+                                    <MenuItem value="sent">Sent</MenuItem>
+                                    <MenuItem value="viewed">Viewed</MenuItem>
                                     <MenuItem value="pending">Pending</MenuItem>
                                     <MenuItem value="paid">Paid</MenuItem>
                                     <MenuItem value="overdue">Overdue</MenuItem>
                                     <MenuItem value="cancelled">Cancelled</MenuItem>
+                                    <MenuItem value="refunded">Refunded</MenuItem>
+                                    <MenuItem value="disputed">Disputed</MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -570,7 +728,7 @@ const InvoiceManagement = () => {
                                                     />
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Stack direction="row" spacing={1}>
+                                                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
                                                         <Tooltip title="View Details">
                                                             <IconButton
                                                                 size="small"
@@ -587,15 +745,69 @@ const InvoiceManagement = () => {
                                                                 <DownloadIcon sx={{ fontSize: '16px' }} />
                                                             </IconButton>
                                                         </Tooltip>
+                                                        <Tooltip title="Regenerate PDF">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRegenerateInvoice(invoice);
+                                                                }}
+                                                                sx={{ color: '#3b82f6' }}
+                                                            >
+                                                                <RefreshIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        </Tooltip>
                                                         <Tooltip title="Resend Email">
                                                             <IconButton
                                                                 size="small"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    handleResendInvoice(invoice);
+                                                                    handleResendInvoiceEmail(invoice);
                                                                 }}
+                                                                sx={{ color: '#10b981' }}
                                                             >
-                                                                <EmailIcon sx={{ fontSize: '16px' }} />
+                                                                <SendIcon sx={{ fontSize: '16px' }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        {/* 🔄 NEW: Status-based action buttons */}
+                                                        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+                                                            <Tooltip title="Mark as Paid">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleMarkAsPaid(invoice);
+                                                                    }}
+                                                                    sx={{ color: '#059669' }}
+                                                                >
+                                                                    <AttachMoneyIcon sx={{ fontSize: '16px' }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
+                                                        {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
+                                                            <Tooltip title="Cancel Invoice">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleCancelInvoice(invoice);
+                                                                    }}
+                                                                    sx={{ color: '#dc2626' }}
+                                                                >
+                                                                    <CancelIcon sx={{ fontSize: '16px' }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
+                                                        <Tooltip title="Regenerate & Resend">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRegenerateAndResend(invoice);
+                                                                }}
+                                                                sx={{ color: '#8b5cf6' }}
+                                                            >
+                                                                <PdfIcon sx={{ fontSize: '16px' }} />
                                                             </IconButton>
                                                         </Tooltip>
                                                     </Stack>

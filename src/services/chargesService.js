@@ -1198,6 +1198,7 @@ async function processShipmentCharge(shipment, shipmentCharges, companyMap, getS
         manualRates: shipment.manualRates,
         isQuickShip: shipment.creationMethod === 'quickship',
         status: shipment.invoiceStatus || 'uninvoiced',
+        chargeStatus: shipment.chargeStatus, // 🔧 CRITICAL FIX: Add missing charge approval status
         shipmentStatus: shipment.status, // Shipment delivery status for status chips
         shipmentSubStatus: shipment.subStatus, // Sub-status for enhanced status chips
         hasManualOverride: shipment.statusOverride?.isManual || false, // Manual override indicator
