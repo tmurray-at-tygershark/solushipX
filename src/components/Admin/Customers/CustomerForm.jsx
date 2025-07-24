@@ -14,7 +14,9 @@ import {
     Dialog,
     DialogTitle,
     DialogContent,
-    DialogActions
+    DialogActions,
+    FormControlLabel,
+    Checkbox
 } from '@mui/material';
 import {
     Save as SaveIcon,
@@ -142,13 +144,35 @@ const CustomerForm = () => {
         dispatchEmail: '',
         billingEmail: '',
         website: '',
-        logoUrl: ''
+        logoUrl: '',
+        // Main Contact Information
+        mainContactName: '',
+        mainContactCompany: '',
+        mainContactAddress1: '',
+        mainContactAddress2: '',
+        mainContactCity: '',
+        mainContactState: '',
+        mainContactPostalCode: '',
+        mainContactCountry: 'CA',
+        mainContactPhone: '',
+        mainContactEmail: '',
+        // Billing Address Information
+        billingContactName: '',
+        billingCompanyName: '',
+        billingAddress1: '',
+        billingAddress2: '',
+        billingCity: '',
+        billingState: '',
+        billingPostalCode: '',
+        billingCountry: 'CA',
+        billingPhone: ''
     });
 
     const [companies, setCompanies] = useState([]);
     const [customerIdError, setCustomerIdError] = useState('');
     const [isCheckingCustomerId, setIsCheckingCustomerId] = useState(false);
     const [isGeneratingCustomerId, setIsGeneratingCustomerId] = useState(false);
+    const [sameAsMainContact, setSameAsMainContact] = useState(true);
 
     // Logo upload states
     const [selectedLogo, setSelectedLogo] = useState(null);
@@ -251,13 +275,42 @@ const CustomerForm = () => {
                 dispatchEmail: customerData.dispatchEmail || '',
                 billingEmail: customerData.billingEmail || '',
                 website: customerData.website || '',
-                logoUrl: customerData.logoUrl || ''
+                logoUrl: customerData.logoUrl || '',
+                // Main Contact Information
+                mainContactName: customerData.mainContactName || '',
+                mainContactCompany: customerData.mainContactCompany || '',
+                mainContactAddress1: customerData.mainContactAddress1 || '',
+                mainContactAddress2: customerData.mainContactAddress2 || '',
+                mainContactCity: customerData.mainContactCity || '',
+                mainContactState: customerData.mainContactState || '',
+                mainContactPostalCode: customerData.mainContactPostalCode || '',
+                mainContactCountry: customerData.mainContactCountry || 'CA',
+                mainContactPhone: customerData.mainContactPhone || '',
+                mainContactEmail: customerData.mainContactEmail || '',
+                // Billing Address Information
+                billingContactName: customerData.billingContactName || '',
+                billingCompanyName: customerData.billingCompanyName || '',
+                billingAddress1: customerData.billingAddress1 || '',
+                billingAddress2: customerData.billingAddress2 || '',
+                billingCity: customerData.billingCity || '',
+                billingState: customerData.billingState || '',
+                billingPostalCode: customerData.billingPostalCode || '',
+                billingCountry: customerData.billingCountry || 'CA',
+                billingPhone: customerData.billingPhone || ''
             });
 
             // Set logo preview if exists
             if (customerData.logoUrl) {
                 setLogoPreview(customerData.logoUrl);
             }
+
+            // Check if billing data matches main contact data to set checkbox state
+            const hasSeparateBillingData = customerData.billingContactName &&
+                (customerData.billingContactName !== customerData.mainContactName ||
+                    customerData.billingAddress1 !== customerData.mainContactAddress1 ||
+                    customerData.billingCity !== customerData.mainContactCity);
+
+            setSameAsMainContact(!hasSeparateBillingData);
 
         } catch (error) {
             console.error('Error loading customer data:', error);
@@ -273,10 +326,10 @@ const CustomerForm = () => {
     }, [loadCompanies]);
 
     useEffect(() => {
-        if (companies.length > 0) {
+        if (companies.length > 0 && isEditMode) {
             loadCustomerData();
         }
-    }, [companies, loadCustomerData]);
+    }, [companies.length, isEditMode, customerFirestoreId]); // ✅ FIXED: Direct dependencies only
 
     // Auto-generate customer ID when name changes
     useEffect(() => {
@@ -331,6 +384,58 @@ const CustomerForm = () => {
             setCustomerIdError('');
         }
     };
+
+    // Handle "Same as Main Contact" checkbox
+    const handleSameAsMainContactChange = (checked) => {
+        setSameAsMainContact(checked);
+
+        if (checked) {
+            // Auto-populate billing fields from main contact
+            setFormData(prev => ({
+                ...prev,
+                billingContactName: prev.mainContactName,
+                billingCompanyName: prev.mainContactCompany || prev.name,
+                billingAddress1: prev.mainContactAddress1,
+                billingAddress2: prev.mainContactAddress2,
+                billingCity: prev.mainContactCity,
+                billingState: prev.mainContactState,
+                billingPostalCode: prev.mainContactPostalCode,
+                billingCountry: prev.mainContactCountry,
+                billingPhone: prev.mainContactPhone
+            }));
+        }
+        setIsFormDirty(true);
+    };
+
+    // Auto-sync billing data when main contact changes and sameAsMainContact is true
+    useEffect(() => {
+        if (sameAsMainContact) {
+            setFormData(prev => ({
+                ...prev,
+                billingContactName: prev.mainContactName,
+                billingCompanyName: prev.mainContactCompany || prev.name,
+                billingAddress1: prev.mainContactAddress1,
+                billingAddress2: prev.mainContactAddress2,
+                billingCity: prev.mainContactCity,
+                billingState: prev.mainContactState,
+                billingPostalCode: prev.mainContactPostalCode,
+                billingCountry: prev.mainContactCountry,
+                billingPhone: prev.mainContactPhone
+            }));
+        }
+    }, [
+        sameAsMainContact,
+        formData.mainContactName,
+        formData.mainContactCompany,
+        formData.mainContactAddress1,
+        formData.mainContactAddress2,
+        formData.mainContactCity,
+        formData.mainContactState,
+        formData.mainContactPostalCode,
+        formData.mainContactCountry,
+        formData.mainContactPhone,
+        formData.name
+    ]);
 
     // Handle company selection
     const handleCompanyChange = (event, newValue) => {
@@ -506,6 +611,27 @@ const CustomerForm = () => {
                 billingEmail: formData.billingEmail.trim(),
                 website: formData.website.trim(),
                 logoUrl: logoUrl,
+                // Main Contact Information
+                mainContactName: formData.mainContactName.trim(),
+                mainContactCompany: formData.mainContactCompany.trim(),
+                mainContactAddress1: formData.mainContactAddress1.trim(),
+                mainContactAddress2: formData.mainContactAddress2.trim(),
+                mainContactCity: formData.mainContactCity.trim(),
+                mainContactState: formData.mainContactState.trim(),
+                mainContactPostalCode: formData.mainContactPostalCode.trim(),
+                mainContactCountry: formData.mainContactCountry,
+                mainContactPhone: formData.mainContactPhone.trim(),
+                mainContactEmail: formData.mainContactEmail.trim(),
+                // Billing Address Information
+                billingContactName: formData.billingContactName.trim(),
+                billingCompanyName: formData.billingCompanyName.trim() || formData.name.trim(),
+                billingAddress1: formData.billingAddress1.trim(),
+                billingAddress2: formData.billingAddress2.trim(),
+                billingCity: formData.billingCity.trim(),
+                billingState: formData.billingState.trim(),
+                billingPostalCode: formData.billingPostalCode.trim(),
+                billingCountry: formData.billingCountry,
+                billingPhone: formData.billingPhone.trim(),
                 updatedAt: serverTimestamp()
             };
 
@@ -555,7 +681,28 @@ const CustomerForm = () => {
             dispatchEmail: '',
             billingEmail: '',
             website: '',
-            logoUrl: ''
+            logoUrl: '',
+            // Main Contact Information
+            mainContactName: '',
+            mainContactCompany: '',
+            mainContactAddress1: '',
+            mainContactAddress2: '',
+            mainContactCity: '',
+            mainContactState: '',
+            mainContactPostalCode: '',
+            mainContactCountry: 'CA',
+            mainContactPhone: '',
+            mainContactEmail: '',
+            // Billing Address Information
+            billingContactName: '',
+            billingCompanyName: '',
+            billingAddress1: '',
+            billingAddress2: '',
+            billingCity: '',
+            billingState: '',
+            billingPostalCode: '',
+            billingCountry: 'CA',
+            billingPhone: ''
         });
         setLogoPreview('');
         setSelectedLogo(null);
@@ -1013,12 +1160,558 @@ const CustomerForm = () => {
                                                 }}
                                             />
                                         </Grid>
-
-
                                     </Grid>
                                 </Box>
                             </Grid>
                         </Grid>
+
+                        {/* Main Contact Information Section */}
+                        <Paper sx={{ p: 4, border: '1px solid #e5e7eb', mt: 3 }}>
+                            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <PersonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                                <Typography variant="h6" sx={{ color: '#111827', fontWeight: 600, fontSize: '16px' }}>
+                                    Main Contact Information
+                                </Typography>
+                            </Box>
+                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px', mb: 3 }}>
+                                Primary contact person and address information for this customer.
+                            </Typography>
+
+                            <Grid container spacing={3}>
+                                {/* Main Contact Name */}
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Contact Name"
+                                        value={formData.mainContactName || ''}
+                                        onChange={(e) => handleFormChange('mainContactName', e.target.value)}
+                                        placeholder="John Smith"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Main Contact Company */}
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Company Name"
+                                        value={formData.mainContactCompany || formData.name}
+                                        onChange={(e) => handleFormChange('mainContactCompany', e.target.value)}
+                                        placeholder="Company name"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Main Contact Address Line 1 */}
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Address Line 1"
+                                        value={formData.mainContactAddress1 || ''}
+                                        onChange={(e) => handleFormChange('mainContactAddress1', e.target.value)}
+                                        placeholder="123 Main Street"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Main Contact Address Line 2 */}
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Address Line 2 (Optional)"
+                                        value={formData.mainContactAddress2 || ''}
+                                        onChange={(e) => handleFormChange('mainContactAddress2', e.target.value)}
+                                        placeholder="Suite 200, Unit B"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* City */}
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        label="City"
+                                        value={formData.mainContactCity || ''}
+                                        onChange={(e) => handleFormChange('mainContactCity', e.target.value)}
+                                        placeholder="Toronto"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* State/Province */}
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        label="State/Province"
+                                        value={formData.mainContactState || ''}
+                                        onChange={(e) => handleFormChange('mainContactState', e.target.value)}
+                                        placeholder="ON"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Postal Code */}
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        label="Postal Code"
+                                        value={formData.mainContactPostalCode || ''}
+                                        onChange={(e) => handleFormChange('mainContactPostalCode', e.target.value)}
+                                        placeholder="M5V 3A8"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Country */}
+                                <Grid item xs={12} md={6}>
+                                    <Autocomplete
+                                        value={formData.mainContactCountry}
+                                        onChange={(event, newValue) => handleFormChange('mainContactCountry', newValue)}
+                                        options={['CA', 'US', 'MX']}
+                                        getOptionLabel={(option) => {
+                                            switch (option) {
+                                                case 'CA': return 'Canada';
+                                                case 'US': return 'United States';
+                                                case 'MX': return 'Mexico';
+                                                default: return option;
+                                            }
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                label="Country"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                        sx={{
+                                            '& .MuiAutocomplete-listbox': {
+                                                fontSize: '12px'
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Main Contact Phone */}
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Phone"
+                                        value={formData.mainContactPhone || ''}
+                                        onChange={(e) => handleFormChange('mainContactPhone', e.target.value)}
+                                        placeholder="(416) 555-0123"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Main Contact Email */}
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Email"
+                                        type="email"
+                                        value={formData.mainContactEmail || ''}
+                                        onChange={(e) => handleFormChange('mainContactEmail', e.target.value)}
+                                        placeholder="contact@company.com"
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiOutlinedInput-root': {
+                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                },
+                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                    borderColor: '#6366f1'
+                                                }
+                                            }
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                        </Paper>
+
+                        {/* Billing Address Information Section */}
+                        <Paper sx={{ p: 4, border: '1px solid #e5e7eb', mt: 3 }}>
+                            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <LocationOnIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                                <Typography variant="h6" sx={{ color: '#111827', fontWeight: 600, fontSize: '16px' }}>
+                                    Billing Address Information
+                                </Typography>
+                            </Box>
+
+                            {/* Same as Main Contact Checkbox */}
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={sameAsMainContact}
+                                        onChange={(e) => handleSameAsMainContactChange(e.target.checked)}
+                                        sx={{
+                                            color: '#6366f1',
+                                            '&.Mui-checked': {
+                                                color: '#6366f1',
+                                            },
+                                        }}
+                                    />
+                                }
+                                label={
+                                    <Typography sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
+                                        Same as Main Contact
+                                    </Typography>
+                                }
+                                sx={{ mb: 3 }}
+                            />
+
+                            {!sameAsMainContact && (
+                                <>
+                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px', mb: 3 }}>
+                                        Invoice delivery address and billing contact information for this customer.
+                                    </Typography>
+
+                                    <Grid container spacing={3}>
+                                        {/* Billing Contact Name */}
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Billing Contact Name"
+                                                value={formData.billingContactName || ''}
+                                                onChange={(e) => handleFormChange('billingContactName', e.target.value)}
+                                                placeholder="John Smith"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Billing Company Name */}
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Billing Company Name"
+                                                value={formData.billingCompanyName || formData.name}
+                                                onChange={(e) => handleFormChange('billingCompanyName', e.target.value)}
+                                                placeholder="Company name for invoices"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Billing Address Line 1 */}
+                                        <Grid item xs={12}>
+                                            <TextField
+                                                fullWidth
+                                                label="Billing Address Line 1"
+                                                value={formData.billingAddress1 || ''}
+                                                onChange={(e) => handleFormChange('billingAddress1', e.target.value)}
+                                                placeholder="123 Main Street"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Billing Address Line 2 */}
+                                        <Grid item xs={12}>
+                                            <TextField
+                                                fullWidth
+                                                label="Billing Address Line 2 (Optional)"
+                                                value={formData.billingAddress2 || ''}
+                                                onChange={(e) => handleFormChange('billingAddress2', e.target.value)}
+                                                placeholder="Suite 200, Unit B"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* City */}
+                                        <Grid item xs={12} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                label="City"
+                                                value={formData.billingCity || ''}
+                                                onChange={(e) => handleFormChange('billingCity', e.target.value)}
+                                                placeholder="Toronto"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* State/Province */}
+                                        <Grid item xs={12} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                label="State/Province"
+                                                value={formData.billingState || ''}
+                                                onChange={(e) => handleFormChange('billingState', e.target.value)}
+                                                placeholder="ON"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Postal Code */}
+                                        <Grid item xs={12} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                label="Postal Code"
+                                                value={formData.billingPostalCode || ''}
+                                                onChange={(e) => handleFormChange('billingPostalCode', e.target.value)}
+                                                placeholder="M5V 3A8"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Country */}
+                                        <Grid item xs={12} md={6}>
+                                            <Autocomplete
+                                                value={formData.billingCountry}
+                                                onChange={(event, newValue) => handleFormChange('billingCountry', newValue)}
+                                                options={['CA', 'US', 'MX']}
+                                                getOptionLabel={(option) => {
+                                                    switch (option) {
+                                                        case 'CA': return 'Canada';
+                                                        case 'US': return 'United States';
+                                                        case 'MX': return 'Mexico';
+                                                        default: return option;
+                                                    }
+                                                }}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        label="Country"
+                                                        size="small"
+                                                        sx={{
+                                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                            '& .MuiOutlinedInput-root': {
+                                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                                    borderColor: '#6366f1'
+                                                                },
+                                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                                    borderColor: '#6366f1'
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+                                                )}
+                                                sx={{
+                                                    '& .MuiAutocomplete-listbox': {
+                                                        fontSize: '12px'
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+
+                                        {/* Billing Phone */}
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                label="Billing Phone"
+                                                value={formData.billingPhone || ''}
+                                                onChange={(e) => handleFormChange('billingPhone', e.target.value)}
+                                                placeholder="(416) 555-0123"
+                                                size="small"
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiOutlinedInput-root': {
+                                                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        },
+                                                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                            borderColor: '#6366f1'
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                </>
+                            )}
+                        </Paper>
                     </Paper>
                 </form>
             </Box>
@@ -1221,8 +1914,8 @@ const CustomerForm = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Box >
+        </Box>
     );
 };
 
-export default CustomerForm; 
+export default CustomerForm;

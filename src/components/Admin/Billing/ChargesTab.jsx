@@ -79,8 +79,9 @@ import {
     Cancel as CancelIcon,
     KeyboardArrowDown as ArrowDownIcon,
 } from '@mui/icons-material';
-import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import {
     collection,
     query,
@@ -1673,7 +1674,7 @@ const ChargesTab = () => {
     };
 
     return (
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Box className="admin-billing-charges" sx={{ width: '100%' }}>
                 {/* Header with Title and Action Buttons */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, px: 2 }}>

@@ -413,9 +413,9 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .font('Helvetica-Bold');
 
             const invoiceDetails = [
-                ['Invoice Date:', formatDate(invoiceData.issueDate)],
-                ['Due Date:', formatDate(invoiceData.dueDate)],
-                ['Terms:', invoiceData.paymentTerms],
+                ['Invoice Date:', formatDate(invoiceData.issueDate || invoiceData.invoiceDate || new Date())],
+                ['Due Date:', formatDate(invoiceData.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))],
+                ['Terms:', 'NET 30'],
                 ['Currency:', invoiceData.currency || 'USD']
             ];
 
@@ -445,83 +445,77 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             currentY += 10;
 
-            // Customer information with complete address (increased spacing)
+            // Customer billing information with complete address (increased spacing)
             doc.fillColor(colors.text)
                .fontSize(8)
                .font('Helvetica-Bold')
-               .text(companyInfo.name || invoiceData.companyName, leftCol, currentY);
+               .text(invoiceData.companyName || companyInfo.name, leftCol, currentY);
 
             currentY += 12; // Increased from 8 to 12
             doc.fontSize(7)
-               .font('Helvetica')
-               .text(companyInfo.address?.street || '123 Business Street', leftCol, currentY);
+               .font('Helvetica');
 
-            currentY += 10; // Increased from 8 to 10
-            doc.text(`${companyInfo.address?.city || 'Toronto'}, ${companyInfo.address?.state || 'ON'} ${companyInfo.address?.postalCode || 'M5V 3A8'}`, leftCol, currentY);
-
-            currentY += 10; // Increased from 8 to 10
-            doc.text(companyInfo.address?.country || 'Canada', leftCol, currentY);
-
-            if (companyInfo.phone) {
-                currentY += 10; // Increased from 8 to 10
-                doc.text(`Tel: ${companyInfo.phone}`, leftCol, currentY);
+            // Use actual billing address if available, otherwise main address
+            const billingAddr = companyInfo.billingAddress || companyInfo.address || {};
+            const mainAddr = companyInfo.address || {};
+            
+            // ✅ FIXED: Combine street and suite on one line with comma
+            const street = billingAddr.street || billingAddr.address1 || mainAddr.street;
+            const addressLine2 = billingAddr.address2 || billingAddr.addressLine2;
+            
+            if (street) {
+                if (addressLine2) {
+                    doc.text(`${street}, ${addressLine2}`, leftCol, currentY);
+                } else {
+                    doc.text(street, leftCol, currentY);
+                }
+                currentY += 10;
             }
 
-            if (companyInfo.email) {
-                currentY += 10; // Increased from 8 to 10
-                doc.text(`Email: ${companyInfo.email}`, leftCol, currentY);
+            const city = billingAddr.city || mainAddr.city;
+            const state = billingAddr.state || billingAddr.stateProv || mainAddr.state;
+            const postal = billingAddr.postalCode || billingAddr.zipPostal || mainAddr.postalCode;
+            const country = billingAddr.country || mainAddr.country;
+            
+            // ✅ FIXED: Combine city, state, postal, country on one line
+            if (city && state && postal) {
+                const countryName = country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country;
+                if (countryName) {
+                    doc.text(`${city}, ${state} ${postal} ${countryName}`, leftCol, currentY);
+                } else {
+                    doc.text(`${city}, ${state} ${postal}`, leftCol, currentY);
+                }
+                currentY += 10;
             }
 
-            // Summary information (right side - simplified)
+            // Phone and email from billing or main contact
+            const phone = companyInfo.billingPhone || companyInfo.phone || companyInfo.mainContact?.phone;
+            if (phone) {
+                doc.text(`Phone: ${phone}`, leftCol, currentY);
+                currentY += 10;
+            }
+
+            const email = companyInfo.billingEmail || companyInfo.email || companyInfo.mainContact?.email;
+            if (email) {
+                doc.text(`Email: ${email}`, leftCol, currentY);
+                currentY += 10;
+            }
+
+            // Summary information (right side - simplified, moved closer)
+            const totalAmountY = currentY - 10; // Move total amount up closer to title
             doc.fillColor(colors.text)
-               .fontSize(10)
+               .fontSize(12)
                .font('Helvetica-Bold')
-               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, currentY);  // 🔧 FIXED: No duplicate currency
+               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, totalAmountY);
 
             currentY += 8;
             doc.fontSize(7)
                .font('Helvetica')
                .fillColor(colors.textLight);
 
-            // Customer address (left side)
-            let customerAddressY = currentY;
-            
-            // Use real billing address or provide a complete sample address
-            if (companyInfo.billingAddress) {
-                const addr = companyInfo.billingAddress;
-                const addressLines = [
-                    addr.address1 || addr.street,
-                    addr.address2 || addr.addressLine2,
-                    `${addr.city || ''}, ${addr.stateProv || addr.state || ''} ${addr.zipPostal || addr.postalCode || ''}`.trim(),
-                    addr.country === 'CA' ? 'Canada' : addr.country === 'US' ? 'United States' : addr.country
-                ].filter(line => line && line.trim() && line !== ', ');
+            // ✅ REMOVED: Duplicate customer address section that was causing duplication
 
-                addressLines.forEach(line => {
-                    doc.text(line, leftCol, customerAddressY);
-                    customerAddressY += 7;
-                });
-            } else {
-                // Provide a complete sample billing address
-                const sampleAddress = [
-                    '123 Business Street, Suite 100',
-                    'Toronto, ON M5V 3A8',
-                    'Canada',
-                    '',
-                    'Phone: (416) 555-0123',
-                    'Email: billing@tygershark.com'
-                ];
-                sampleAddress.forEach(line => {
-                    if (line === '') {
-                        customerAddressY += 3;
-                    } else {
-                        doc.text(line, leftCol, customerAddressY);
-                        customerAddressY += 7;
-                    }
-                });
-            }
-
-            // Use the maximum Y position from both sides
-            currentY = Math.max(customerAddressY, currentY + 20) + 15;
+            // Summary information (right side - simplified, moved closer)
 
             // ==================== SHIPMENT TABLE (WITH ENHANCED SPACING) ====================
             const tableStartY = currentY;
@@ -543,7 +537,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .fontSize(7)
                .font('Helvetica-Bold');
 
-            const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'SERVICE', 'FEES', 'TOTAL'];
+            const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
             headers.forEach((header, i) => {
                 doc.text(header, colPositions[i] + 3, tableStartY + 7, { width: colWidths[i] - 6 });
             });
@@ -575,66 +569,119 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                    .fontSize(6)
                    .font('Helvetica');
 
-                // Column 1: Shipment ID
+                // Column 1: Shipment ID (top aligned)
                 const shipmentRef = item.shipmentId || item.id || 'N/A';
-                doc.text(shipmentRef, colPositions[0] + 2, tableY + 4, { width: colWidths[0] - 4 });
-
-                // Column 2: Details (Enhanced with references)
-                const references = item.references || item.orderNumber || `${Math.floor(Math.random() * 9000000000) + 1000000000}, ${Math.floor(Math.random() * 9000000000) + 1000000000}`;
-                const shipmentDetails = [
-                    `${formatDate(item.date)}`,
-                    `${item.trackingNumber || 'TBD'}`,
-                    `${references}`,
-                    `${item.packages || 1} pcs | ${item.weight || 'N/A'} ${item.weightUnit || 'lbs'}`
-                ];
-                let detailY = tableY + 2;
-                shipmentDetails.forEach(detail => {
-                    doc.text(detail, colPositions[1] + 2, detailY, { width: colWidths[1] - 4 });
-                    detailY += 9; // Reduced spacing slightly to fit references
+                doc.text(shipmentRef, colPositions[0] + 2, tableY + 2, { 
+                    width: colWidths[0] - 4,
+                    align: 'left',
+                    baseline: 'top'
                 });
 
-                // Column 3: Origin (Narrower, more compact)
-                let origin = 'N/A';
+                // Column 2: Details (Enhanced with references and ship date)
+                const references = item.references || item.orderNumber || '';
+                const totalWeight = (item.weight || 0) * (item.packages || 1);
+                const shipmentDetails = [
+                    `Ship Date: ${formatDate(item.date)}`,
+                    `Tracking: ${item.trackingNumber || 'TBD'}`,
+                    references ? `Ref: ${references}` : '',
+                    `${item.packages || 1} pcs`,
+                    `${totalWeight} ${item.weightUnit || 'lbs'}`
+                ].filter(detail => detail); // Remove empty details
+                
+                let detailY = tableY + 2;
+                shipmentDetails.forEach(detail => {
+                    doc.text(detail, colPositions[1] + 2, detailY, { 
+                        width: colWidths[1] - 4,
+                        align: 'left',
+                        baseline: 'top' 
+                    });
+                    detailY += 9;
+                });
+
+                // Column 3: Origin (with company name and proper spacing)
+                let originLines = [];
                 if (item.shipFrom) {
                     const from = item.shipFrom;
-                    origin = `${from.street || from.address1 || ''}\n${from.city || ''}, ${from.state || from.stateProv || ''}\n${from.postalCode || from.zipPostal || ''}`;
+                    // Add company name first if available
+                    if (from.companyName || from.company) {
+                        originLines.push(from.companyName || from.company);
+                    }
+                    // Add street address
+                    if (from.street || from.address1) {
+                        originLines.push(from.street || from.address1);
+                    }
+                    // Add city, state, postal
+                    const cityLine = `${from.city || ''}, ${from.state || from.stateProv || ''}`;
+                    if (cityLine.trim() !== ',') {
+                        originLines.push(cityLine);
+                    }
+                    if (from.postalCode || from.zipPostal) {
+                        originLines.push(from.postalCode || from.zipPostal);
+                    }
                 } else if (item.description && item.description.includes('from')) {
                     const parts = item.description.split(' from ');
                     if (parts[1] && parts[1].includes(' to ')) {
-                        origin = parts[1].split(' to ')[0];
+                        originLines.push(parts[1].split(' to ')[0]);
                     }
                 } else if (item.origin) {
-                    origin = item.origin;
+                    originLines.push(item.origin);
                 }
                 
-                // Split address into lines for better display
-                const originLines = origin.split('\n').filter(line => line.trim());
+                // Display origin lines with proper spacing (top aligned)
+                if (originLines.length === 0) originLines = ['N/A'];
                 let originY = tableY + 2;
-                originLines.slice(0, 3).forEach(line => {
-                    doc.text(line.trim(), colPositions[2] + 2, originY, { width: colWidths[2] - 4 });
-                    originY += 10;
+                originLines.slice(0, 4).forEach(line => {
+                    if (line && line.trim()) {
+                        doc.text(line.trim(), colPositions[2] + 2, originY, { 
+                            width: colWidths[2] - 4,
+                            align: 'left',
+                            baseline: 'top'
+                        });
+                        originY += 9; // Consistent spacing between lines
+                    }
                 });
 
-                // Column 4: Destination (Narrower, more compact)
-                let destination = 'N/A';
+                // Column 4: Destination (with company name and proper spacing)
+                let destLines = [];
                 if (item.shipTo) {
                     const to = item.shipTo;
-                    destination = `${to.street || to.address1 || ''}\n${to.city || ''}, ${to.state || to.stateProv || ''}\n${to.postalCode || to.zipPostal || ''}`;
+                    // Add company name first if available
+                    if (to.companyName || to.company) {
+                        destLines.push(to.companyName || to.company);
+                    }
+                    // Add street address
+                    if (to.street || to.address1) {
+                        destLines.push(to.street || to.address1);
+                    }
+                    // Add city, state, postal
+                    const cityLine = `${to.city || ''}, ${to.state || to.stateProv || ''}`;
+                    if (cityLine.trim() !== ',') {
+                        destLines.push(cityLine);
+                    }
+                    if (to.postalCode || to.zipPostal) {
+                        destLines.push(to.postalCode || to.zipPostal);
+                    }
                 } else if (item.description && item.description.includes(' to ')) {
                     const parts = item.description.split(' to ');
                     if (parts[1]) {
-                        destination = parts[1];
+                        destLines.push(parts[1]);
                     }
                 } else if (item.destination) {
-                    destination = item.destination;
+                    destLines.push(item.destination);
                 }
                 
-                // Split address into lines for better display
-                const destLines = destination.split('\n').filter(line => line.trim());
+                // Display destination lines with proper spacing (top aligned)
+                if (destLines.length === 0) destLines = ['N/A'];
                 let destY = tableY + 2;
-                destLines.slice(0, 3).forEach(line => {
-                    doc.text(line.trim(), colPositions[3] + 2, destY, { width: colWidths[3] - 4 });
-                    destY += 10;
+                destLines.slice(0, 4).forEach(line => {
+                    if (line && line.trim()) {
+                        doc.text(line.trim(), colPositions[3] + 2, destY, { 
+                            width: colWidths[3] - 4,
+                            align: 'left',
+                            baseline: 'top'
+                        });
+                        destY += 9; // Consistent spacing between lines
+                    }
                 });
 
                 // Column 5: Service (Enhanced with carrier name)
@@ -643,14 +690,18 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 doc.fontSize(6)
                    .font('Helvetica-Bold')
-                   .text(carrierName, colPositions[4] + 2, tableY + 4, { 
-                       width: colWidths[4] - 4
+                   .text(carrierName, colPositions[4] + 2, tableY + 2, { 
+                       width: colWidths[4] - 4,
+                       align: 'left',
+                       baseline: 'top'
                    });
                 
                 doc.fontSize(6)
                    .font('Helvetica')
-                   .text(serviceInfo, colPositions[4] + 2, tableY + 14, { 
-                       width: colWidths[4] - 4
+                   .text(serviceInfo, colPositions[4] + 2, tableY + 12, { 
+                       width: colWidths[4] - 4,
+                       align: 'left',
+                       baseline: 'top'
                    });
 
                 // Column 6: Enhanced Fees with Professional Charge Breakdown
@@ -676,7 +727,11 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                             `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
                             `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
                         
-                        doc.text(displayText, colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                        doc.text(displayText, colPositions[5] + 2, feeY, { 
+                            width: colWidths[5] - 4,
+                            align: 'left',
+                            baseline: 'top'
+                        });
                         feeY += 7;
                         chargesDisplayed++;
                     });
@@ -691,7 +746,11 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         doc.fontSize(4)
                            .fillColor('#666666')
                            .text(`+${remainingCharges} more charges: ${formatCurrency(remainingAmount, invoiceData.currency)}`, 
-                                 colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                                 colPositions[5] + 2, feeY, { 
+                                     width: colWidths[5] - 4,
+                                     align: 'left',
+                                     baseline: 'top'
+                                 });
                     }
                 } else {
                     // 🔧 ENHANCED: More realistic default breakdown based on industry standards
@@ -729,25 +788,34 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     let feeY = tableY + 2;
                     charges.forEach(charge => {
                         doc.text(`${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`, 
-                                colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                                colPositions[5] + 2, feeY, { 
+                                    width: colWidths[5] - 4,
+                                    align: 'left',
+                                    baseline: 'top'
+                                });
                         feeY += 7;
                     });
                     
                     // Show total if no detailed breakdown available
                     if (charges.length === 0 && totalCharges > 0) {
                         doc.text(`Total Shipping Charges: ${formatCurrency(totalCharges, invoiceData.currency)}`, 
-                                colPositions[5] + 2, feeY, { width: colWidths[5] - 4 });
+                                colPositions[5] + 2, feeY, { 
+                                    width: colWidths[5] - 4,
+                                    align: 'left',
+                                    baseline: 'top'
+                                });
                     }
                 }
 
-                // Column 7: Total
+                // Column 7: Total (top aligned)
                 const totalCharges = item.charges || 0;
                 doc.fontSize(6)
                    .font('Helvetica-Bold')
                    .text(formatCurrency(totalCharges, invoiceData.currency), 
-                         colPositions[6] + 2, tableY + 12, { 
+                         colPositions[6] + 2, tableY + 2, { 
                              width: colWidths[6] - 4, 
-                             align: 'right' 
+                             align: 'right',
+                             baseline: 'top'
                          });
 
                 // Bottom border
@@ -841,7 +909,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             const paymentInfo = [
                 'Please remit payment within the specified terms. Make payments payable to: INTEGRATED CARRIERS',
-                'Reference this invoice number in your payment. Questions: accounting@integratedcarriers.com | (416) 603-0103'
+                'Reference this invoice number in your payment. Questions: ap@integratedcarriers.com | (416) 603-0103'
             ];
 
             paymentInfo.forEach(line => {

@@ -413,139 +413,204 @@ const CustomerDetail = () => {
 
                         {/* Main Contact Information */}
                         <Paper sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#111827', mb: 3 }}>
-                                Main Contact
-                            </Typography>
-                            {mainContact || customer.contactEmail || customer.dispatchEmail || customer.billingEmail || customer.website ? (
-                                <Grid container spacing={2}>
-                                    {/* Main Contact Information - only show if mainContact exists */}
-                                    {mainContact && (
-                                        <>
-                                            <Grid item xs={12} sm={6}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                    <PersonIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                        Name
-                                                    </Typography>
-                                                </Box>
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                    {`${mainContact.firstName || ''} ${mainContact.lastName || ''}`.trim() || 'N/A'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                    <EmailIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                        Email
-                                                    </Typography>
-                                                </Box>
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                    {mainContact.email || 'N/A'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                    <PhoneIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                        Phone
-                                                    </Typography>
-                                                </Box>
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                    {mainContact.phone || 'N/A'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                    <BusinessIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                        Company
-                                                    </Typography>
-                                                </Box>
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                    {mainContact.companyName || 'N/A'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12}>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                    <LocationOnIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                        Address
-                                                    </Typography>
-                                                </Box>
-                                                <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                    {formatAddress(mainContact)}
-                                                </Typography>
-                                            </Grid>
-                                        </>
-                                    )}
+                            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <PersonIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                                <Typography variant="h6" sx={{ color: '#111827', fontWeight: 600, fontSize: '16px' }}>
+                                    Main Contact Information
+                                </Typography>
+                            </Box>
 
-                                    {/* Customer Email Fields */}
-                                    {customer.contactEmail && (
+                            {customer.mainContactName || customer.mainContactAddress1 || customer.mainContactCity ? (
+                                <Grid container spacing={3}>
+                                    {customer.mainContactName && (
                                         <Grid item xs={12} sm={6}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                <EmailIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <PersonIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
                                                 <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                    Contact Email
+                                                    Contact Name
                                                 </Typography>
                                             </Box>
                                             <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                {customer.contactEmail}
+                                                {customer.mainContactName}
                                             </Typography>
                                         </Grid>
                                     )}
 
-                                    {customer.dispatchEmail && (
-                                        <Grid item xs={12} sm={6}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                <EmailIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                    Dispatch Email
-                                                </Typography>
-                                            </Box>
-                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                {customer.dispatchEmail}
-                                            </Typography>
-                                        </Grid>
-                                    )}
-
-                                    {customer.billingEmail && (
-                                        <Grid item xs={12} sm={6}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                <EmailIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                    Billing Email
-                                                </Typography>
-                                            </Box>
-                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                {customer.billingEmail}
-                                            </Typography>
-                                        </Grid>
-                                    )}
-
-                                    {customer.website && (
+                                    {customer.mainContactCompany && (
                                         <Grid item xs={12} sm={6}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                                                 <BusinessIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
                                                 <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                    Website
+                                                    Company
                                                 </Typography>
                                             </Box>
                                             <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
-                                                <a
-                                                    href={customer.website.startsWith('http') ? customer.website : `https://${customer.website}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    style={{ color: '#3b82f6', textDecoration: 'none' }}
-                                                >
-                                                    {customer.website}
-                                                </a>
+                                                {customer.mainContactCompany}
+                                            </Typography>
+                                        </Grid>
+                                    )}
+
+                                    {(customer.mainContactAddress1 || customer.mainContactCity) && (
+                                        <Grid item xs={12}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <LocationOnIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Address
+                                                </Typography>
+                                            </Box>
+                                            <Box sx={{ ml: 3 }}>
+                                                {customer.mainContactAddress1 && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {customer.mainContactAddress1}
+                                                    </Typography>
+                                                )}
+                                                {customer.mainContactAddress2 && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {customer.mainContactAddress2}
+                                                    </Typography>
+                                                )}
+                                                {(customer.mainContactCity || customer.mainContactState || customer.mainContactPostalCode) && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {[customer.mainContactCity, customer.mainContactState, customer.mainContactPostalCode].filter(Boolean).join(', ')}
+                                                    </Typography>
+                                                )}
+                                                {customer.mainContactCountry && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        {customer.mainContactCountry === 'CA' ? 'Canada' :
+                                                            customer.mainContactCountry === 'US' ? 'United States' :
+                                                                customer.mainContactCountry === 'MX' ? 'Mexico' : customer.mainContactCountry}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        </Grid>
+                                    )}
+
+                                    {customer.mainContactPhone && (
+                                        <Grid item xs={12} sm={6}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <PhoneIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Phone
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
+                                                {customer.mainContactPhone}
+                                            </Typography>
+                                        </Grid>
+                                    )}
+
+                                    {customer.mainContactEmail && (
+                                        <Grid item xs={12} sm={6}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <EmailIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Email
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
+                                                {customer.mainContactEmail}
                                             </Typography>
                                         </Grid>
                                     )}
                                 </Grid>
                             ) : (
                                 <Alert severity="info" sx={{ fontSize: '12px' }}>
-                                    No contact information available
+                                    No main contact information available. <span style={{ color: '#3b82f6', cursor: 'pointer' }} onClick={() => navigate(`/admin/customers/${customerFirestoreId}/edit`)}>Add contact information</span>
+                                </Alert>
+                            )}
+                        </Paper>
+
+                        {/* Billing Address Information */}
+                        <Paper sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb' }}>
+                            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <LocationOnIcon sx={{ color: '#6366f1', fontSize: 20 }} />
+                                <Typography variant="h6" sx={{ color: '#111827', fontWeight: 600, fontSize: '16px' }}>
+                                    Billing Address Information
+                                </Typography>
+                            </Box>
+
+                            {customer.billingAddress1 || customer.billingCity || customer.billingContactName ? (
+                                <Grid container spacing={3}>
+                                    {customer.billingContactName && (
+                                        <Grid item xs={12} sm={6}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <PersonIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Billing Contact
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
+                                                {customer.billingContactName}
+                                            </Typography>
+                                        </Grid>
+                                    )}
+
+                                    {customer.billingCompanyName && (
+                                        <Grid item xs={12} sm={6}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <BusinessIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Billing Company
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
+                                                {customer.billingCompanyName}
+                                            </Typography>
+                                        </Grid>
+                                    )}
+
+                                    {(customer.billingAddress1 || customer.billingCity) && (
+                                        <Grid item xs={12}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <LocationOnIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Billing Address
+                                                </Typography>
+                                            </Box>
+                                            <Box sx={{ ml: 3 }}>
+                                                {customer.billingAddress1 && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {customer.billingAddress1}
+                                                    </Typography>
+                                                )}
+                                                {customer.billingAddress2 && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {customer.billingAddress2}
+                                                    </Typography>
+                                                )}
+                                                {(customer.billingCity || customer.billingState || customer.billingPostalCode) && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>
+                                                        {[customer.billingCity, customer.billingState, customer.billingPostalCode].filter(Boolean).join(', ')}
+                                                    </Typography>
+                                                )}
+                                                {customer.billingCountry && (
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        {customer.billingCountry === 'CA' ? 'Canada' :
+                                                            customer.billingCountry === 'US' ? 'United States' :
+                                                                customer.billingCountry === 'MX' ? 'Mexico' : customer.billingCountry}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        </Grid>
+                                    )}
+
+                                    {customer.billingPhone && (
+                                        <Grid item xs={12} sm={6}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                <PhoneIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                                                    Billing Phone
+                                                </Typography>
+                                            </Box>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280', ml: 3 }}>
+                                                {customer.billingPhone}
+                                            </Typography>
+                                        </Grid>
+                                    )}
+                                </Grid>
+                            ) : (
+                                <Alert severity="info" sx={{ fontSize: '12px' }}>
+                                    No billing address information available. <span style={{ color: '#3b82f6', cursor: 'pointer' }} onClick={() => navigate(`/admin/customers/${customerFirestoreId}/edit`)}>Add billing information</span>
                                 </Alert>
                             )}
                         </Paper>

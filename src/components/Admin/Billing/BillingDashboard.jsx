@@ -90,8 +90,9 @@ import {
 import { collection, query, where, getDocs, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import './Billing.css';
-import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import EDIUploader from './EDIUploader';
 import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
@@ -108,6 +109,7 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 // Import Sales Commission Module
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import GenerateInvoicesPage from './GenerateInvoicesPage';
+import BulkInvoiceGenerator from './BulkInvoiceGenerator';
 import APProcessing from './APProcessing';
 
 const BillingDashboard = ({ initialTab = 'overview' }) => {
@@ -1063,6 +1065,9 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 break;
             case 'payments':
                 navigate('/admin/billing/payments');
+                break;
+            case 'bulk':
+                // Don't navigate - handle internally 
                 break;
             default:
                 navigate('/admin/billing');
@@ -2282,6 +2287,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     <Tab label="AP Processing" value="ap-processing" />
                     <Tab label="Charges" value="charges" />
                     <Tab label="Generate Invoices" value="generate" />
+                    <Tab label="Auto-Invoice Gen" value="bulk" />
                     <Tab label="Business Invoicing" value="business" />
                     <Tab label="Payment Terms" value="payment-terms" />
                     <Tab label="Received Payments" value="payments" />
@@ -2542,6 +2548,10 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
             {activeTab === 'generate' && (
                 <GenerateInvoicesPage />
+            )}
+
+            {activeTab === 'bulk' && (
+                <BulkInvoiceGenerator />
             )}
 
             {activeTab === 'business' && (
