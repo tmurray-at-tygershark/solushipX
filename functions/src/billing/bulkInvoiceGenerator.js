@@ -482,6 +482,12 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                 // ✅ UPDATED: Use sequential invoice numbering
                 const sequentialInvoiceNumber = await getNextInvoiceNumber();
 
+                // Get detailed charge breakdown for tax calculation
+                const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+                
+                // Calculate proper tax separation
+                const invoiceTotals = calculateInvoiceTotals(chargeBreakdown);
+                
                 // Create invoice data for this single shipment
                 const invoiceData = {
                     invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From `INV-${shipmentId}` to sequential number
@@ -498,7 +504,7 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                         service: shipment.service || 'Standard',
                         date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
                         charges: charges,
-                        chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
+                        chargeBreakdown: chargeBreakdown,
                         packages: shipment.packages?.length || shipment.packageCount || 1,
                         weight: calculateTotalWeight(shipment),
                         weightUnit: shipment.weightUnit || 'lbs',
@@ -511,10 +517,10 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                     dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                     paymentTerms: 'NET 30',
                     
-                    // Totals for this single shipment
-                    subtotal: charges,
-                    tax: 0,
-                    total: charges
+                    // ✅ UPDATED: Proper tax separation using the new calculation system
+                    subtotal: invoiceTotals.subtotal,  // Total of non-tax items
+                    tax: invoiceTotals.tax,           // Total of tax items
+                    total: invoiceTotals.total        // Subtotal + tax
                 };
 
                 const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
@@ -573,6 +579,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
             // Calculate totals for all shipments for this customer
             let totalCharges = 0;
             const lineItems = [];
+            const allChargeBreakdowns = [];
             let companyInfo = null;
 
             // Process all shipments for this customer
@@ -587,6 +594,10 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     companyInfo = await getCustomerBillingInfo(shipment, companyId);
                 }
 
+                // Get detailed charge breakdown for this shipment
+                const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+                allChargeBreakdowns.push(...chargeBreakdown);
+
                 // Add this shipment as a line item
                 lineItems.push({
                     shipmentId: shipmentId,
@@ -597,7 +608,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     service: shipment.service || 'Standard',
                     date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
                     charges: charges,
-                    chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
+                    chargeBreakdown: chargeBreakdown,
                     packages: shipment.packages?.length || shipment.packageCount || 1,
                     weight: calculateTotalWeight(shipment),
                     weightUnit: shipment.weightUnit || 'lbs',
@@ -610,6 +621,9 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
 
             // ✅ UPDATED: Use sequential invoice numbering for combined invoices
             const sequentialInvoiceNumber = await getNextInvoiceNumber();
+
+            // ✅ UPDATED: Calculate proper tax separation across all shipments
+            const combinedInvoiceTotals = calculateInvoiceTotals(allChargeBreakdowns);
 
             // Create combined invoice data
             const invoiceData = {
@@ -625,10 +639,10 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                 paymentTerms: 'NET 30',
                 
-                // ✅ COMBINED TOTALS: Sum of all shipments
-                subtotal: totalCharges,
-                tax: 0,
-                total: totalCharges
+                // ✅ UPDATED: Proper tax separation across all combined shipments
+                subtotal: combinedInvoiceTotals.subtotal,  // Total of non-tax items
+                tax: combinedInvoiceTotals.tax,           // Total of tax items  
+                total: combinedInvoiceTotals.total        // Subtotal + tax
             };
 
             console.log(`Generated combined invoice ${sequentialInvoiceNumber} for ${customerName}: $${totalCharges} ${currency} (${lineItems.length} shipments)`);
@@ -836,26 +850,208 @@ function getSimpleShipmentCharges(shipment) {
 
 function getSimpleChargeBreakdown(shipment, totalCharges, currency) {
     try {
+        const shipmentId = shipment.shipmentID || shipment.id;
+        console.log(`💰 Processing charges for shipment ${shipmentId} (${shipment.creationMethod || 'standard'})`);
+        
+        let rawBreakdown = [];
+        
         // Try to get breakdown from manual rates
         if (shipment.creationMethod === 'quickship' && shipment.manualRates?.length) {
-            return shipment.manualRates.map(rate => ({
-                description: rate.chargeName || rate.description || 'Freight',
-                amount: parseFloat(rate.charge) || parseFloat(rate.cost) || 0
-            }));
+            console.log(`   ✅ Using manualRates (${shipment.manualRates.length} items)`);
+            rawBreakdown = shipment.manualRates.map(rate => {
+                const amount = parseFloat(rate.charge) || parseFloat(rate.cost) || 0;
+                const code = rate.code || rate.chargeCode || 'FRT';
+                const isTax = rate.isTax || isTaxCharge(code);
+                
+                return {
+                    description: rate.chargeName || rate.description || 'Freight',
+                    amount: amount,
+                    code: code,
+                    isTax: isTax
+                };
+            });
+        }
+        // Try to get breakdown from carrier confirmation rates
+        else if (shipment.carrierConfirmationRates?.length) {
+            console.log(`   ✅ Using carrierConfirmationRates (${shipment.carrierConfirmationRates.length} items)`);
+            rawBreakdown = shipment.carrierConfirmationRates.map(rate => {
+                const amount = parseFloat(rate.charge) || parseFloat(rate.actualCharge) || 0;
+                const code = rate.code || rate.chargeCode || 'FRT';
+                const isTax = rate.isTax || isTaxCharge(code);
+                
+                return {
+                    description: rate.chargeName || rate.description || 'Freight',
+                    amount: amount,
+                    code: code,
+                    isTax: isTax
+                };
+            });
+        }
+        // Try to get breakdown from markup rates
+        else if (shipment.markupRates?.breakdown?.length) {
+            console.log(`   ✅ Using markupRates.breakdown (${shipment.markupRates.breakdown.length} items)`);
+            rawBreakdown = shipment.markupRates.breakdown.map(rate => {
+                const amount = parseFloat(rate.charge) || parseFloat(rate.actualCharge) || 0;
+                const code = rate.code || rate.chargeCode || 'FRT';
+                const isTax = rate.isTax || isTaxCharge(code);
+                
+                return {
+                    description: rate.chargeName || rate.description || 'Freight',
+                    amount: amount,
+                    code: code,
+                    isTax: isTax
+                };
+            });
+        }
+        // Try to get breakdown from charges array (another common location)
+        else if (shipment.charges?.length) {
+            console.log(`   ✅ Using charges array (${shipment.charges.length} items)`);
+            rawBreakdown = shipment.charges.map(charge => {
+                const amount = parseFloat(charge.amount) || parseFloat(charge.charge) || 0;
+                const code = charge.code || charge.chargeCode || 'FRT';
+                const isTax = charge.isTax || isTaxCharge(code);
+                
+                return {
+                    description: charge.description || charge.chargeName || 'Freight',
+                    amount: amount,
+                    code: code,
+                    isTax: isTax
+                };
+            });
+        }
+        // Default: Single freight charge
+        else {
+            console.log(`   ⚠️ No detailed breakdown found, using single freight charge: $${totalCharges}`);
+            rawBreakdown = [{
+                description: 'Freight',
+                amount: totalCharges,
+                code: 'FRT',
+                isTax: false
+            }];
         }
         
-        // Default: Single freight charge
-        return [{
-            description: 'Freight',
-            amount: totalCharges
-        }];
+        // ✅ FILTER OUT $0.00 LINE ITEMS
+        const filteredBreakdown = rawBreakdown.filter(item => {
+            const amount = parseFloat(item.amount) || 0;
+            return amount > 0;
+        });
+        
+        const filteredCount = rawBreakdown.length - filteredBreakdown.length;
+        if (filteredCount > 0) {
+            console.log(`   🚫 Filtered out ${filteredCount} $0.00 line items`);
+        }
+        
+        // Count tax vs non-tax items
+        const taxItems = filteredBreakdown.filter(item => item.isTax);
+        const regularItems = filteredBreakdown.filter(item => !item.isTax);
+        
+        console.log(`   📊 Final breakdown: ${filteredBreakdown.length} items (${regularItems.length} regular + ${taxItems.length} tax)`);
+        
+        // If all items were filtered out, return single freight charge
+        if (filteredBreakdown.length === 0 && totalCharges > 0) {
+            console.log(`   ⚠️ All items filtered out, returning single freight charge: $${totalCharges}`);
+            return [{
+                description: 'Freight',
+                amount: totalCharges,
+                code: 'FRT',
+                isTax: false
+            }];
+        }
+        
+        return filteredBreakdown;
+        
     } catch (error) {
         console.warn(`Error getting charge breakdown for shipment ${shipment.shipmentID || shipment.id}:`, error);
         return [{
             description: 'Freight',
-            amount: totalCharges
+            amount: totalCharges,
+            code: 'FRT',
+            isTax: false
         }];
     }
+}
+
+// Helper function to check if a charge code represents a tax
+function isTaxCharge(code) {
+    if (!code) return false;
+    
+    const upperCode = code.toUpperCase().trim();
+    
+    const taxCodes = [
+        // Canadian Federal Taxes
+        'HST', 'GST', 'QST',
+        
+            // Provincial HST variations
+    'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE',
+    'HST_ON', 'HST_BC', 'HST_NB', 'HST_NS', 'HST_NL', 'HST_PE',
+    'HST ONTARIO', 'HST ONTARIO', 'HST QUEBEC', 'HST ALBERTA',
+        
+        // Provincial PST variations
+        'PST BC', 'PST SK', 'PST MB', 'PST QC',
+        'PST_BC', 'PST_SK', 'PST_MB', 'PST_QC',
+        
+        // Generic tax terms
+        'TAX', 'TAXES', 'SALES TAX', 'SALESTAX',
+        
+        // US Tax variations (if applicable)
+        'SALES_TAX', 'STATE_TAX', 'LOCAL_TAX'
+    ];
+    
+    // Direct match
+    if (taxCodes.includes(upperCode)) {
+        return true;
+    }
+    
+    // Partial match for tax-related terms
+    const taxPatterns = [
+        /^HST/i,         // Starts with HST
+        /^GST/i,         // Starts with GST  
+        /^QST/i,         // Starts with QST
+        /^PST/i,         // Starts with PST
+        /TAX$/i,         // Ends with TAX
+        /TAXES$/i,       // Ends with TAXES
+        /HST.*ONTARIO/i, // HST Ontario (any variation)
+        /HST.*QUEBEC/i,  // HST Quebec
+        /HST.*BC/i,      // HST BC
+        /HST.*ALBERTA/i  // HST Alberta
+    ];
+    
+    for (const pattern of taxPatterns) {
+        if (pattern.test(upperCode)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to calculate tax vs non-tax totals from charge breakdown
+function calculateInvoiceTotals(chargeBreakdown) {
+    let subtotal = 0;  // Non-tax charges
+    let taxTotal = 0;  // Tax charges
+    
+    if (chargeBreakdown && Array.isArray(chargeBreakdown)) {
+        chargeBreakdown.forEach((charge, index) => {
+            const amount = parseFloat(charge.amount) || 0;
+            const isItemTax = charge.isTax || isTaxCharge(charge.code);
+            
+            if (isItemTax) {
+                taxTotal += amount;
+            } else {
+                subtotal += amount;
+            }
+        });
+    }
+    
+    const result = {
+        subtotal: Math.round(subtotal * 100) / 100,  // Round to 2 decimal places
+        tax: Math.round(taxTotal * 100) / 100,       // Round to 2 decimal places
+        total: Math.round((subtotal + taxTotal) * 100) / 100  // Round to 2 decimal places
+    };
+    
+    console.log(`📊 Invoice totals: Subtotal $${result.subtotal} + Taxes $${result.tax} = Total $${result.total} ${result.tax > 0 ? '✅ TAX SEPARATED' : ''}`);
+    
+    return result;
 }
 
 function detectSimpleCurrency(shipments) {
@@ -874,4 +1070,6 @@ function detectSimpleCurrency(shipments) {
     }
     
     return 'CAD'; // Default to CAD for most companies
-} 
+}
+
+// ✅ Note: Tax separation and $0.00 filtering is now active in production 

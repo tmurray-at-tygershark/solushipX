@@ -221,12 +221,12 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
                 
                 // Last resort: get first user's email from the company
                 if (!customerBillingEmail) {
-                    const usersSnapshot = await db.collection('users')
-                        .where('companyID', '==', companyInfo.companyID)
-                        .limit(1)
-                        .get();
-                    
-                    if (!usersSnapshot.empty) {
+                const usersSnapshot = await db.collection('users')
+                    .where('companyID', '==', companyInfo.companyID)
+                    .limit(1)
+                    .get();
+                
+                if (!usersSnapshot.empty) {
                         customerBillingEmail = usersSnapshot.docs[0].data().email;
                     }
                 }
@@ -536,7 +536,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 const countryName = country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country;
                 if (countryName) {
                     doc.text(`${city}, ${state} ${postal} ${countryName}`, leftCol, currentY);
-                } else {
+            } else {
                     doc.text(`${city}, ${state} ${postal}`, leftCol, currentY);
                 }
                 currentY += 10;
@@ -600,9 +600,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         const chargeCode = fee.code || fee.chargeCode || '';
                         const chargeName = fee.description || fee.name || fee.chargeType || 'Miscellaneous';
                         const amount = fee.amount || 0;
-                        const displayText = chargeCode ? 
-                            `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
-                            `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
+                        const displayText = `${chargeName} - ${formatCurrency(amount, invoiceData.currency)}`;
                         
                         const textHeight = doc.heightOfString(displayText, { 
                             width: colWidths[5] - 4,
@@ -838,24 +836,28 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 doc.font('Helvetica')
                    .fontSize(6); // ✅ CHANGED: From fontSize(5) to fontSize(6) to match other columns
                 
-                // 🔧 ENHANCED: More comprehensive charge breakdown display
+                // 🔧 ENHANCED: More comprehensive charge breakdown display with $0.00 filtering
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
                     let feeY = tableY + 2;
                     let chargesDisplayed = 0;
                     const maxCharges = 5;
                     
+                    // ✅ FILTER OUT $0.00 CHARGES from display
+                    const nonZeroCharges = item.chargeBreakdown.filter(charge => {
+                        const amount = parseFloat(charge.amount) || 0;
+                        return amount > 0;
+                    });
+                    
                     // Sort charges by amount (largest first) for better display
-                    const sortedCharges = [...item.chargeBreakdown].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+                    const sortedCharges = [...nonZeroCharges].sort((a, b) => (b.amount || 0) - (a.amount || 0));
                     
                     sortedCharges.slice(0, maxCharges).forEach((fee, index) => {
                         const chargeCode = fee.code || fee.chargeCode || '';
                         const chargeName = fee.description || fee.name || fee.chargeType || 'Miscellaneous';
                         const amount = fee.amount || 0;
                         
-                        // Enhanced display with charge codes and proper formatting
-                        const displayText = chargeCode ? 
-                            `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
-                            `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
+                        // Enhanced display without charge codes - just description and amount
+                        const displayText = `${chargeName} - ${formatCurrency(amount, invoiceData.currency)}`;
                         
                         // ✅ FIXED: Calculate actual text height to prevent overlapping
                         const textHeight = doc.heightOfString(displayText, { 
@@ -874,10 +876,10 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         chargesDisplayed++;
                     });
                     
-                    // Show summary if more charges exist
-                    if (item.chargeBreakdown.length > maxCharges) {
-                        const remainingCharges = item.chargeBreakdown.length - maxCharges;
-                        const remainingAmount = item.chargeBreakdown
+                    // Show summary if more charges exist (excluding $0.00 charges)
+                    if (nonZeroCharges.length > maxCharges) {
+                        const remainingCharges = nonZeroCharges.length - maxCharges;
+                        const remainingAmount = nonZeroCharges
                             .slice(maxCharges)
                             .reduce((sum, charge) => sum + (charge.amount || 0), 0);
                         
@@ -1013,6 +1015,9 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             currentTotalY += 20;
 
+            // ✅ LOG TAX SEPARATION STATUS
+            console.log(`📊 PDF Totals: Subtotal=$${invoiceData.subtotal || invoiceData.total} Tax=$${invoiceData.tax || 0} Total=$${invoiceData.total} ${invoiceData.tax > 0 ? '✅ TAX SEPARATED' : '❌ NO TAX'}`);
+            
             // Subtotal line
             doc.fillColor(colors.text)
                .fontSize(7)
@@ -1025,12 +1030,16 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // Tax line (if applicable)
             if (invoiceData.tax && invoiceData.tax > 0) {
                 const taxRate = invoiceData.taxRate || 0;
-                const taxLabel = taxRate > 0 ? `Tax (${(taxRate * 100).toFixed(1)}%):` : 'Tax:';
+                const taxLabel = taxRate > 0 ? `Taxes (${(taxRate * 100).toFixed(1)}%):` : 'Taxes:';
+                
+                console.log(`💸 Adding tax line to PDF: ${taxLabel} $${invoiceData.tax}`);
                 
                 doc.text(taxLabel, totalsX + 8, currentTotalY);
                 doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
                          totalsX + 100, currentTotalY, { width: 70, align: 'right' });
                 currentTotalY += lineHeight;
+            } else {
+                console.log(`❌ No tax line added - invoiceData.tax: ${invoiceData.tax}`);
             }
 
             // Total line with emphasis
@@ -1124,7 +1133,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
                 // Space between sections
                 if (sectionIndex < paymentSections.length - 1) {
-                    payInfoY += 8;
+                payInfoY += 8;
                 }
             });
 
