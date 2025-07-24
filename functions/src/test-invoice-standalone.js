@@ -170,7 +170,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .text('Email:', leftMargin, 130);
             doc.fillColor(colors.secondary)
                .font('Helvetica')
-               .text(' SAVE@INTEGRATEDCARRIERS.COM', 85, 130);
+               .text(' AP@INTEGRATEDCARRIERS.COM', 85, 130); // ✅ UPDATED: Changed from SAVE@ to AP@
 
             doc.fillColor(colors.primary)
                .font('Helvetica-Bold')

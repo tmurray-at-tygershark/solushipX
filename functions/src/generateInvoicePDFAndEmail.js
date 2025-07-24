@@ -331,10 +331,10 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // ==================== COMPACT HEADER SECTION ====================
             let currentY = margin;
 
-            // Company logo (top right corner)
+            // Company logo (top right corner) - MOVED UP 8PX
             try {
                 const logoPath = path.join(__dirname, 'assets', 'integratedcarrriers_logo_blk.png');
-                doc.image(logoPath, rightCol, currentY, { 
+                doc.image(logoPath, rightCol, currentY - 8, { // ✅ MOVED UP 8PX
                     width: 130,
                     fit: [130, 40]
                 });
@@ -343,7 +343,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 doc.fillColor(colors.primary)
                    .fontSize(14)
                    .font('Helvetica-Bold')
-                   .text('INTEGRATED CARRIERS', rightCol, currentY, { width: 130, align: 'center' });
+                   .text('INTEGRATED CARRIERS', rightCol, currentY - 8, { width: 130, align: 'center' }); // ✅ MOVED UP 8PX
             }
 
             // INVOICE title (left side)
@@ -379,7 +379,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 'Orangeville, ON L9W 5B6, Canada',
                 '',
                 'Tel: (416) 603-0103',
-                'Email: save@integratedcarriers.com',
+                'Email: ap@integratedcarriers.com', // ✅ CHANGED FROM save@ to ap@
                 'Web: www.integratedcarriers.com',
                 'GST#: 84606 8013 RT0001'
             ];
@@ -502,7 +502,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             }
 
             // Summary information (right side - simplified, moved closer)
-            const totalAmountY = currentY - 10; // Move total amount up closer to title
+            const totalAmountY = currentY - 15; // ✅ CHANGED: Move total amount closer to title (was -10, now -15)
             doc.fillColor(colors.text)
                .fontSize(12)
                .font('Helvetica-Bold')
@@ -519,8 +519,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             // ==================== SHIPMENT TABLE (WITH ENHANCED SPACING) ====================
             const tableStartY = currentY;
-            // Column widths: narrower origin/destination, wider fees
-            const colWidths = [60, 90, 75, 75, 65, 115, 50]; // Increased service column from 55 to 65
+            // Column widths: wider origin/destination, narrower fees
+            const colWidths = [60, 90, 90, 90, 65, 85, 50]; // ✅ CHANGED: ORIGIN 75→90, DESTINATION 75→90, FEES 115→85
             let colX = leftCol;
             const colPositions = colWidths.map(width => {
                 const pos = colX;
@@ -627,17 +627,20 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     originLines.push(item.origin);
                 }
                 
-                // Display origin lines with proper spacing (top aligned)
+                // ✅ IMPROVED: Display origin with proper text wrapping and height calculation
                 if (originLines.length === 0) originLines = ['N/A'];
                 let originY = tableY + 2;
                 originLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
+                        const textHeight = doc.heightOfString(line.trim(), { 
+                            width: colWidths[2] - 4 
+                        });
                         doc.text(line.trim(), colPositions[2] + 2, originY, { 
                             width: colWidths[2] - 4,
                             align: 'left',
                             baseline: 'top'
                         });
-                        originY += 9; // Consistent spacing between lines
+                        originY += Math.max(textHeight, 9); // Use calculated height or minimum 9px
                     }
                 });
 
@@ -670,17 +673,20 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     destLines.push(item.destination);
                 }
                 
-                // Display destination lines with proper spacing (top aligned)
+                // ✅ IMPROVED: Display destination with proper text wrapping and height calculation
                 if (destLines.length === 0) destLines = ['N/A'];
                 let destY = tableY + 2;
                 destLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
+                        const textHeight = doc.heightOfString(line.trim(), { 
+                            width: colWidths[3] - 4 
+                        });
                         doc.text(line.trim(), colPositions[3] + 2, destY, { 
                             width: colWidths[3] - 4,
                             align: 'left',
                             baseline: 'top'
                         });
-                        destY += 9; // Consistent spacing between lines
+                        destY += Math.max(textHeight, 9); // Use calculated height or minimum 9px
                     }
                 });
 
@@ -706,7 +712,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
                 // Column 6: Enhanced Fees with Professional Charge Breakdown
                 doc.font('Helvetica')
-                   .fontSize(5);
+                   .fontSize(6); // ✅ CHANGED: From fontSize(5) to fontSize(6) to match other columns
                 
                 // 🔧 ENHANCED: More comprehensive charge breakdown display
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {

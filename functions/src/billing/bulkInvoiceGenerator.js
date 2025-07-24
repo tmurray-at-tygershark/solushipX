@@ -12,6 +12,40 @@ try {
 
 const db = getFirestore();
 
+// ✅ HELPER FUNCTION: Calculate total weight from packages or shipment data
+function calculateTotalWeight(shipment) {
+    // First try explicit totalWeight field
+    if (shipment.totalWeight && shipment.totalWeight > 0) {
+        return shipment.totalWeight;
+    }
+    
+    // Then try weight field
+    if (shipment.weight && shipment.weight > 0) {
+        return shipment.weight;
+    }
+    
+    // Calculate from packages array
+    if (shipment.packages && Array.isArray(shipment.packages)) {
+        const calculatedWeight = shipment.packages.reduce((total, pkg) => {
+            const weight = parseFloat(pkg.weight || 0);
+            const quantity = parseInt(pkg.quantity || 1);
+            return total + (weight * quantity);
+        }, 0);
+        
+        if (calculatedWeight > 0) {
+            return calculatedWeight;
+        }
+    }
+    
+    // Calculate from package count and average weight
+    if (shipment.packageCount && shipment.averageWeight) {
+        return shipment.packageCount * shipment.averageWeight;
+    }
+    
+    // Default fallback
+    return 0;
+}
+
 // AUTO INVOICE GENERATOR - Customer-Grouped ZIP Files with Comprehensive Filtering
 exports.generateBulkInvoices = onRequest(
     {
@@ -447,7 +481,7 @@ exports.generateBulkInvoices = onRequest(
                             charges: charges,
                             chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
                             packages: shipment.packages?.length || shipment.packageCount || 1,
-                            weight: shipment.totalWeight || shipment.weight || 0,
+                            weight: calculateTotalWeight(shipment), // ✅ IMPROVED: Use helper function to calculate proper weight
                             weightUnit: shipment.weightUnit || 'lbs',
                             shipFrom: shipment.shipFrom,
                             shipTo: shipment.shipTo
