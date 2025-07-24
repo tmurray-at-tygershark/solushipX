@@ -10,6 +10,52 @@ const path = require('path');
 const db = getFirestore();
 const storage = getStorage();
 
+// ✅ SEQUENTIAL INVOICE NUMBERING SYSTEM
+async function getNextInvoiceNumber() {
+    const invoiceCounterRef = db.collection('system').doc('invoiceCounter');
+    
+    try {
+        // Use atomic transaction to ensure unique sequential numbers
+        const result = await db.runTransaction(async (transaction) => {
+            const counterDoc = await transaction.get(invoiceCounterRef);
+            
+            let currentNumber;
+            if (!counterDoc.exists) {
+                // Initialize counter starting at 1000000 (first invoice will be 1000001)
+                currentNumber = 1000000;
+                transaction.set(invoiceCounterRef, { 
+                    currentNumber: currentNumber,
+                    lastUpdated: FieldValue.serverTimestamp(),
+                    createdAt: FieldValue.serverTimestamp()
+                });
+            } else {
+                currentNumber = counterDoc.data().currentNumber || 1000000;
+            }
+            
+            // Increment counter for next use
+            const nextNumber = currentNumber + 1;
+            transaction.update(invoiceCounterRef, { 
+                currentNumber: nextNumber,
+                lastUpdated: FieldValue.serverTimestamp()
+            });
+            
+            return nextNumber;
+        });
+        
+        // Format as 7-digit number (pad with leading zeros if needed)
+        const formattedNumber = result.toString().padStart(7, '0');
+        console.log(`Generated sequential invoice number: ${formattedNumber}`);
+        
+        return formattedNumber;
+    } catch (error) {
+        console.error('Error generating sequential invoice number:', error);
+        // Fallback to timestamp-based number if sequential fails
+        const fallbackNumber = (1000000 + Date.now() % 9000000).toString();
+        console.warn(`Using fallback invoice number: ${fallbackNumber}`);
+        return fallbackNumber;
+    }
+}
+
 // Configure SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
@@ -542,6 +588,41 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             invoiceData.lineItems.forEach((item, index) => {
                 const rowHeight = 45; // Increased from 40 to accommodate references
                 
+                // ✅ PAGINATION: Check if we need a new page for combined invoices
+                const pageBottomMargin = 150; // Reserve space for totals and footer
+                const availableSpace = doc.page.height - pageBottomMargin;
+                
+                if (tableY + rowHeight > availableSpace) {
+                    // Start new page for remaining line items
+                    doc.addPage();
+                    
+                    // Recreate header on new page
+                    const newPageStartY = margin + 50; // Leave space for condensed header
+                    
+                    // Add condensed invoice header
+                    doc.fillColor(colors.text)
+                       .fontSize(10)
+                       .font('Helvetica-Bold')
+                       .text(`Invoice ${invoiceData.invoiceNumber} (Continued)`, leftCol, margin);
+                    
+                    // Recreate table header
+                    const newTableStartY = newPageStartY;
+                    doc.rect(leftCol, newTableStartY, contentWidth, 22)
+                       .fillColor(colors.primary)
+                       .fill();
+
+                    doc.fillColor('white')
+                       .fontSize(7)
+                       .font('Helvetica-Bold');
+
+                    const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
+                    headers.forEach((header, i) => {
+                        doc.text(header, colPositions[i] + 3, newTableStartY + 7, { width: colWidths[i] - 6 });
+                    });
+
+                    tableY = newTableStartY + 22 + 8;
+                }
+                
                 // Alternate row backgrounds
                 if (index % 2 === 1) {
                     doc.rect(leftCol, tableY, contentWidth, rowHeight)
@@ -698,7 +779,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 doc.fontSize(6)
                    .font('Helvetica')
-                   .text(serviceInfo, colPositions[4] + 2, tableY + 12, { 
+                   .text(serviceInfo, colPositions[4] + 2, tableY + 18, { // ✅ CHANGED: From tableY + 12 to tableY + 18 (6px more space)
                        width: colWidths[4] - 4,
                        align: 'left',
                        baseline: 'top'
@@ -727,12 +808,20 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                             `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
                             `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
                         
+                        // ✅ FIXED: Calculate actual text height to prevent overlapping
+                        const textHeight = doc.heightOfString(displayText, { 
+                            width: colWidths[5] - 4,
+                            align: 'left'
+                        });
+                        
                         doc.text(displayText, colPositions[5] + 2, feeY, { 
                             width: colWidths[5] - 4,
                             align: 'left',
                             baseline: 'top'
                         });
-                        feeY += 7;
+                        
+                        // ✅ FIXED: Use calculated height + 2px spacing instead of fixed 7px
+                        feeY += Math.max(textHeight + 2, 8); // Minimum 8px spacing
                         chargesDisplayed++;
                     });
                     
@@ -743,10 +832,11 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                             .slice(maxCharges)
                             .reduce((sum, charge) => sum + (charge.amount || 0), 0);
                         
+                        const summaryText = `+${remainingCharges} more charges: ${formatCurrency(remainingAmount, invoiceData.currency)}`;
+                        
                         doc.fontSize(4)
                            .fillColor('#666666')
-                           .text(`+${remainingCharges} more charges: ${formatCurrency(remainingAmount, invoiceData.currency)}`, 
-                                 colPositions[5] + 2, feeY, { 
+                           .text(summaryText, colPositions[5] + 2, feeY, { 
                                      width: colWidths[5] - 4,
                                      align: 'left',
                                      baseline: 'top'
@@ -787,23 +877,42 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     
                     let feeY = tableY + 2;
                     charges.forEach(charge => {
-                        doc.text(`${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`, 
-                                colPositions[5] + 2, feeY, { 
+                        const chargeText = `${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`;
+                        
+                        // ✅ FIXED: Calculate actual text height to prevent overlapping
+                        const textHeight = doc.heightOfString(chargeText, { 
+                            width: colWidths[5] - 4,
+                            align: 'left'
+                        });
+                        
+                        doc.text(chargeText, colPositions[5] + 2, feeY, { 
                                     width: colWidths[5] - 4,
                                     align: 'left',
                                     baseline: 'top'
                                 });
-                        feeY += 7;
+                        
+                        // ✅ FIXED: Use calculated height + 2px spacing instead of fixed 7px
+                        feeY += Math.max(textHeight + 2, 8); // Minimum 8px spacing
                     });
                     
                     // Show total if no detailed breakdown available
                     if (charges.length === 0 && totalCharges > 0) {
-                        doc.text(`Total Shipping Charges: ${formatCurrency(totalCharges, invoiceData.currency)}`, 
-                                colPositions[5] + 2, feeY, { 
+                        const totalText = `Total Shipping Charges: ${formatCurrency(totalCharges, invoiceData.currency)}`;
+                        
+                        // ✅ FIXED: Calculate actual text height to prevent overlapping
+                        const textHeight = doc.heightOfString(totalText, { 
+                            width: colWidths[5] - 4,
+                            align: 'left'
+                        });
+                        
+                        doc.text(totalText, colPositions[5] + 2, feeY, { 
                                     width: colWidths[5] - 4,
                                     align: 'left',
                                     baseline: 'top'
                                 });
+                        
+                        // Update feeY for any subsequent content
+                        feeY += Math.max(textHeight + 2, 8); // Minimum 8px spacing
                     }
                 }
 
@@ -894,8 +1003,22 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .text(`All amounts in ${invoiceData.currency || 'USD'}`, 
                      totalsX + 8, currentTotalY + lineHeight + 5);
 
-            // ==================== PAYMENT INFORMATION (MOVED DOWN) ====================
-            const paymentY = totalsStartY + 50; // Increased spacing to move it down
+            // ==================== ENHANCED PAYMENT INFORMATION ====================
+            // ✅ ENSURE PAYMENT INFO ON LAST PAGE: Check if enough space remains
+            const paymentSectionHeight = 120; // Estimate height needed for payment information
+            const pageBottomMargin = 80; // Space for footer
+            const availableSpaceForPayment = doc.page.height - (totalsStartY + 50) - pageBottomMargin;
+            
+            let paymentY;
+            if (availableSpaceForPayment < paymentSectionHeight) {
+                // Not enough space, add new page for payment information
+                doc.addPage();
+                paymentY = margin + 20; // Start near top of new page
+                console.log('Added new page for payment information to ensure it appears on last page');
+            } else {
+                // Enough space on current page
+                paymentY = totalsStartY + 50;
+            }
 
             doc.fillColor(colors.primary)
                .fontSize(8)
@@ -907,15 +1030,61 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .fontSize(6)
                .font('Helvetica');
 
-            const paymentInfo = [
-                'Please remit payment within the specified terms. Make payments payable to: INTEGRATED CARRIERS',
-                'Reference this invoice number in your payment. Questions: ap@integratedcarriers.com | (416) 603-0103'
+            // ✅ NEW: Enhanced payment information with E-transfer, EFT, and credit card options
+            const paymentSections = [
+                {
+                    title: 'FOR E-TRANSFER PAYMENT,',
+                    content: ['Please send to: ar@integratedcarriers.com']
+                },
+                {
+                    title: 'FOR EFT PAYMENT,',
+                    content: [
+                        'Bank name: Royal Bank of Canada',
+                        'Bank address: 4550 Hurontario St. Mississauga ON L5R 4E4',
+                        'Account Name: 6834884 Canada Inc. / Integrated Carriers',
+                        '',
+                        'Account address: 9 – 75 First Street, Suite 209, Orangeville, ON, L9W 5B6',
+                        '',
+                        'Bank #: 003  |  Branch Transit #: 03971',
+                        'RBC Canadian Account #: 1002567  |  US Account #: 4001947',
+                        '',
+                        'Payment notice sent to: ar@integratedcarriers.com'
+                    ]
+                }
             ];
 
-            paymentInfo.forEach(line => {
-                doc.text(line, leftCol, payInfoY, { width: contentWidth });
-                payInfoY += 8;
+            // Render payment sections in compact format
+            paymentSections.forEach((section, sectionIndex) => {
+                // Section title
+                doc.fillColor(colors.text)
+                   .fontSize(6)
+                   .font('Helvetica-Bold')
+                   .text(section.title, leftCol, payInfoY);
+                payInfoY += 10;
+
+                // Section content
+                doc.font('Helvetica');
+                section.content.forEach(line => {
+                    if (line.trim() === '') {
+                        payInfoY += 3; // Small gap for empty lines
+                    } else {
+                        doc.text(line, leftCol + 10, payInfoY, { width: contentWidth - 10 });
+                        payInfoY += 7;
+                    }
+                });
+
+                // Space between sections
+                if (sectionIndex < paymentSections.length - 1) {
+                    payInfoY += 8;
+                }
             });
+
+            // Credit card payment notice
+            payInfoY += 5;
+            doc.fillColor(colors.text)
+               .fontSize(6)
+               .font('Helvetica')
+               .text('We also accept credit card payment with a fee.', leftCol, payInfoY, { width: contentWidth });
 
             // ==================== FOOTER ====================
             const footerY = pageHeight - margin - 25;
@@ -1128,5 +1297,6 @@ module.exports = {
     generateInvoicePDFAndEmail: generateInvoicePDFAndEmailCallable,
     onInvoiceCreated,
     generateInvoicePDFAndEmailHelper,
-    generateInvoicePDF // Export the PDF generation function for testing
+    generateInvoicePDF, // Export the PDF generation function for testing
+    getNextInvoiceNumber // ✅ NEW: Export sequential invoice numbering function
 }; 

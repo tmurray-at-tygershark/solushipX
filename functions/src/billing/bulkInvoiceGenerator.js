@@ -1,6 +1,6 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const archiver = require('archiver');
 
 // Initialize Firebase Admin if not already initialized
@@ -11,6 +11,52 @@ try {
 }
 
 const db = getFirestore();
+
+// ✅ SEQUENTIAL INVOICE NUMBERING SYSTEM
+async function getNextInvoiceNumber() {
+    const invoiceCounterRef = db.collection('system').doc('invoiceCounter');
+    
+    try {
+        // Use atomic transaction to ensure unique sequential numbers
+        const result = await db.runTransaction(async (transaction) => {
+            const counterDoc = await transaction.get(invoiceCounterRef);
+            
+            let currentNumber;
+            if (!counterDoc.exists) {
+                // Initialize counter starting at 1000000 (first invoice will be 1000001)
+                currentNumber = 1000000;
+                transaction.set(invoiceCounterRef, { 
+                    currentNumber: currentNumber,
+                    lastUpdated: FieldValue.serverTimestamp(),
+                    createdAt: FieldValue.serverTimestamp()
+                });
+            } else {
+                currentNumber = counterDoc.data().currentNumber || 1000000;
+            }
+            
+            // Increment counter for next use
+            const nextNumber = currentNumber + 1;
+            transaction.update(invoiceCounterRef, { 
+                currentNumber: nextNumber,
+                lastUpdated: FieldValue.serverTimestamp()
+            });
+            
+            return nextNumber;
+        });
+        
+        // Format as 7-digit number (pad with leading zeros if needed)
+        const formattedNumber = result.toString().padStart(7, '0');
+        console.log(`Generated sequential invoice number: ${formattedNumber}`);
+        
+        return formattedNumber;
+    } catch (error) {
+        console.error('Error generating sequential invoice number:', error);
+        // Fallback to timestamp-based number if sequential fails
+        const fallbackNumber = (1000000 + Date.now() % 9000000).toString();
+        console.warn(`Using fallback invoice number: ${fallbackNumber}`);
+        return fallbackNumber;
+    }
+}
 
 // ✅ HELPER FUNCTION: Get actual customer name from database lookup
 async function getActualCustomerName(shipment, companyId) {
@@ -103,13 +149,14 @@ exports.generateBulkInvoices = onRequest(
     try {
         console.log('Starting Auto Invoice generation...');
 
-        const { companyId, companyName, filters = {} } = req.body;
+        const { companyId, companyName, invoiceMode = 'separate', filters = {} } = req.body;
         
         if (!companyId) {
             return res.status(400).json({ error: 'Company ID required' });
         }
 
         console.log(`Generating invoices for company: ${companyName || companyId}`);
+        console.log(`Invoice mode: ${invoiceMode}`);
         console.log(`Applied filters:`, filters);
 
         // 1. BUILD DYNAMIC QUERY WITH ALL FILTERS
@@ -323,252 +370,19 @@ exports.generateBulkInvoices = onRequest(
         
         console.log('Starting PDF generation...');
 
-        // Fetch customer company data for proper billing information (BILL TO)
-        for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
-            console.log(`Processing ${customerShipments.length} shipments for ${customerName}...`);
-            
-                            for (const shipment of customerShipments) {
-                try {
-                    const charges = getSimpleShipmentCharges(shipment);
-                    const shipmentId = shipment.shipmentID || shipment.id;
-                    
-                    console.log(`Generating PDF for shipment ${shipmentId} (${charges} ${currency})...`);
+        // ✅ ENHANCED: Handle both separate and combined invoice modes
+        console.log(`Using invoice mode: ${invoiceMode}`);
 
-                    // Generate PDF for this shipment with correct customer company billing information
-                    const shipmentCustomerId = shipment.customerId || shipment.customerID || shipment.customer?.id || shipment.shipTo?.customerID;
-                    
-                    let companyInfo;
-                    if (shipmentCustomerId) {
-                        // Try direct document lookup first
-                        let customerDoc = await db.collection('customers').doc(shipmentCustomerId).get();
-                        
-                        if (!customerDoc.exists) {
-                            // Fallback: query by customerID field
-                            const customerQuery = db.collection('customers').where('customerID', '==', shipmentCustomerId).limit(1);
-                            const customerSnapshot = await customerQuery.get();
-                            
-                            if (!customerSnapshot.empty) {
-                                customerDoc = customerSnapshot.docs[0];
-                            }
-                        }
-
-                        if (customerDoc.exists) {
-                            const customer = customerDoc.data();
-                            
-                            // Check if customer belongs to this company
-                            if (customer.companyID === companyId) {
-                                // Check if customer has billing address info, otherwise use main contact address
-                                if (customer.billingAddress1 && customer.billingCity) {
-                                    // Use customer's billing address
-                                    companyInfo = {
-                                        companyName: customer.name, // ✅ FIXED: Use customer name first
-                                        companyId: customer.companyID,
-                                        name: customer.name, // ✅ FIXED: Use customer name first
-                                        address: {
-                                            street: customer.billingAddress1,
-                                            addressLine2: customer.billingAddress2,
-                                            city: customer.billingCity,
-                                            state: customer.billingState,
-                                            postalCode: customer.billingPostalCode,
-                                            country: customer.billingCountry
-                                        },
-                                        billingAddress: {
-                                            street: customer.billingAddress1,
-                                            addressLine2: customer.billingAddress2,
-                                            city: customer.billingCity,
-                                            state: customer.billingState,
-                                            postalCode: customer.billingPostalCode,
-                                            country: customer.billingCountry
-                                        },
-                                        phone: customer.billingPhone || customer.mainContactPhone,
-                                        email: customer.billingEmail,
-                                        billingPhone: customer.billingPhone || customer.mainContactPhone,
-                                        billingEmail: customer.billingEmail
-                                    };
-                                } else if (customer.mainContactAddress1 && customer.mainContactCity) {
-                                    // Fallback to main contact address
-                                    companyInfo = {
-                                        companyName: customer.name, // ✅ FIXED: Use customer name first
-                                        companyId: customer.companyID,
-                                        name: customer.name, // ✅ FIXED: Use customer name first
-                                        address: {
-                                            street: customer.mainContactAddress1,
-                                            addressLine2: customer.mainContactAddress2,
-                                            city: customer.mainContactCity,
-                                            state: customer.mainContactState,
-                                            postalCode: customer.mainContactPostalCode,
-                                            country: customer.mainContactCountry
-                                        },
-                                        billingAddress: {
-                                            street: customer.mainContactAddress1,
-                                            addressLine2: customer.mainContactAddress2,
-                                            city: customer.mainContactCity,
-                                            state: customer.mainContactState,
-                                            postalCode: customer.mainContactPostalCode,
-                                            country: customer.mainContactCountry
-                                        },
-                                        phone: customer.mainContactPhone,
-                                        email: customer.mainContactEmail || customer.billingEmail,
-                                        billingPhone: customer.mainContactPhone,
-                                        billingEmail: customer.billingEmail || customer.mainContactEmail
-                                    };
-                                } else {
-                                    // Final fallback - customer with no address info
-                                    companyInfo = {
-                                        companyName: customer.name, // ✅ FIXED: Use customer name first
-                                        companyId: customer.companyID,
-                                        name: customer.name, // ✅ FIXED: Use customer name first
-                                        address: {},
-                                        billingAddress: {},
-                                        phone: customer.mainContactPhone || customer.billingPhone,
-                                        email: customer.mainContactEmail || customer.billingEmail,
-                                        billingPhone: customer.mainContactPhone || customer.billingPhone,
-                                        billingEmail: customer.billingEmail || customer.mainContactEmail
-                                    };
-                                }
-                            } else {
-                                // Customer belongs to a different company, try to find their company data
-                                const companyQuery = db.collection('companies').where('companyID', '==', customer.companyID).limit(1);
-                                const companySnapshot = await companyQuery.get();
-                                if (!companySnapshot.empty) {
-                                    const companyData = companySnapshot.docs[0].data();
-                                    companyInfo = {
-                                        companyName: companyData.name || customer.name,
-                                        companyId: customer.companyID,
-                                        name: companyData.name || customer.name,
-                                        address: companyData.address || {},
-                                        billingAddress: companyData.billingAddress || companyData.address || {},
-                                        phone: companyData.phone || companyData.mainContact?.phone,
-                                        email: customer.billingEmail || companyData.email || companyData.mainContact?.email,
-                                        billingPhone: companyData.billingPhone || companyData.phone,
-                                        billingEmail: customer.billingEmail || companyData.billingEmail || companyData.email
-                                    };
-                                } else {
-                                    // Fallback to main contact or company data if customer's company not found
-                                    companyInfo = {
-                                        companyName: customer.name, // Use customer name first
-                                        companyId: customer.companyID,
-                                        name: customer.name, // Use customer name first
-                                        address: {}, // No direct address info
-                                        billingAddress: {}, // No direct billing address info
-                                        phone: customer.mainContactPhone,
-                                        email: customer.mainContactEmail || customer.billingEmail,
-                                        billingPhone: customer.mainContactPhone,
-                                        billingEmail: customer.billingEmail || customer.mainContactEmail
-                                    };
-                                }
-                            }
-                        } else {
-                            // No customer data found, leave BILL TO blank (never use shipTo as fallback)
-                            console.log(`No customer data found for shipment ${shipmentId}, BILL TO will be blank`);
-                            companyInfo = {
-                                companyName: '',
-                                companyId: companyId,
-                                name: '',
-                                address: {},
-                                billingAddress: {},
-                                phone: '',
-                                email: '',
-                                billingPhone: '',
-                                billingEmail: ''
-                            };
-                        }
-                    } else {
-                        // No customer data found, leave BILL TO blank (never use shipTo as fallback)
-                        console.log(`No customer data found for shipment ${shipmentId}, BILL TO will be blank`);
-                        companyInfo = {
-                            companyName: '',
-                            companyId: companyId,
-                            name: '',
-                            address: {},
-                            billingAddress: {},
-                            phone: '',
-                            email: '',
-                            billingPhone: '',
-                            billingEmail: ''
-                        };
-                    }
-
-                    console.log(`Final companyInfo for ${shipmentId}:`);
-                    console.log(` - companyName: ${companyInfo.companyName}`);
-                    console.log(` - address.street: ${companyInfo.address?.street}`);
-                    console.log(` - address.city: ${companyInfo.address?.city}`);
-                    console.log(` - phone: ${companyInfo.phone}`);
-                    console.log(` - email: ${companyInfo.email}`);
-
-                    // Create invoice data for this single shipment
-                    const invoiceData = {
-                        invoiceNumber: `INV-${shipmentId}`,
-                        companyId: companyId,
-                        companyName: companyInfo.companyName || customerName || companyName || companyId, // ✅ FIXED: Use customer data not shipTo
-                        
-                        // Single line item for this shipment
-                        lineItems: [{
-                            shipmentId: shipmentId,
-                            orderNumber: shipmentId, // No ORD- prefix
-                            trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
-                            description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                            carrier: shipment.carrier || shipment.selectedCarrier?.name || 'N/A',
-                            service: shipment.service || 'Standard',
-                            date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
-                            charges: charges,
-                            chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
-                            packages: shipment.packages?.length || shipment.packageCount || 1,
-                            weight: calculateTotalWeight(shipment), // ✅ IMPROVED: Use helper function to calculate proper weight
-                            weightUnit: shipment.weightUnit || 'lbs',
-                            shipFrom: shipment.shipFrom,
-                            shipTo: shipment.shipTo
-                        }],
-                        
-                        currency: currency,
-                        issueDate: new Date(), // Fixed: changed from invoiceDate to issueDate
-                        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-                        paymentTerms: 'NET 30', // Added: payment terms
-                        
-                        // Totals for this single shipment
-                        subtotal: charges,
-                        tax: 0,
-                        total: charges
-                    };
-
-                    const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
-
-                    // Validate PDF buffer
-                    if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
-                        throw new Error(`Invalid PDF buffer generated`);
-                    }
-
-                    console.log(`Generated PDF for ${shipmentId} - Size: ${pdfBuffer.length} bytes`);
-
-                    // Add PDF to archive in customer folder
-                    const filename = `${customerName}/Invoice-${shipmentId}.pdf`;
-                    archive.append(pdfBuffer, { name: filename });
-                    
-                    successCount++;
-
-                } catch (pdfError) {
-                    console.error(`Error generating PDF for shipment ${shipment.shipmentID || shipment.id}:`, pdfError);
-                    errorCount++;
-                    
-                    // Add error log to archive instead of failing completely
-                    const errorFilename = `${customerName}/ERROR-${shipment.shipmentID || shipment.id}.txt`;
-                    const errorContent = `Failed to generate invoice for shipment ${shipment.shipmentID || shipment.id}
-Error: ${pdfError.message}
-Stack: ${pdfError.stack}
-Timestamp: ${new Date().toISOString()}
-
-Shipment Data Summary:
-- Creation Method: ${shipment.creationMethod || 'unknown'}
-- Company ID: ${shipment.companyID || 'unknown'}
-- Customer ID: ${shipment.shipTo?.customerID || 'unknown'}
-- Charges: ${getSimpleShipmentCharges(shipment)}
-- Currency: ${currency}
-- Status: ${shipment.status || 'unknown'}
-- Date: ${shipment.createdAt || 'unknown'}`;
-                    
-                    archive.append(Buffer.from(errorContent), { name: errorFilename });
-                }
-            }
+        if (invoiceMode === 'combined') {
+            // COMBINED MODE: One invoice per customer with multiple line items
+            const result = await generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive);
+            successCount += result.successCount;
+            errorCount += result.errorCount;
+        } else {
+            // SEPARATE MODE: One invoice per shipment (existing behavior)
+            const result = await generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive);
+            successCount += result.successCount;
+            errorCount += result.errorCount;
         }
 
         // 7. ADD COMPREHENSIVE SUMMARY FILE
@@ -644,7 +458,343 @@ Filter Details:
     }
 });
 
-// HELPER FUNCTIONS (Enhanced)
+// ✅ SEPARATE INVOICE MODE: One invoice per shipment (existing behavior)
+async function generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive) {
+    const { generateInvoicePDF } = require('../generateInvoicePDFAndEmail');
+    
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Fetch customer company data for proper billing information (BILL TO)
+    for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
+        console.log(`Processing ${customerShipments.length} shipments for ${customerName}...`);
+        
+        for (const shipment of customerShipments) {
+            try {
+                const charges = getSimpleShipmentCharges(shipment);
+                const shipmentId = shipment.shipmentID || shipment.id;
+                
+                console.log(`Generating PDF for shipment ${shipmentId} (${charges} ${currency})...`);
+
+                // Get customer billing information
+                const companyInfo = await getCustomerBillingInfo(shipment, companyId);
+
+                // ✅ UPDATED: Use sequential invoice numbering
+                const sequentialInvoiceNumber = await getNextInvoiceNumber();
+
+                // Create invoice data for this single shipment
+                const invoiceData = {
+                    invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From `INV-${shipmentId}` to sequential number
+                    companyId: companyId,
+                    companyName: companyInfo.companyName || customerName || companyName || companyId,
+                    
+                    // Single line item for this shipment
+                    lineItems: [{
+                        shipmentId: shipmentId,
+                        orderNumber: shipmentId,
+                        trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
+                        description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                        carrier: shipment.carrier || shipment.selectedCarrier?.name || 'N/A',
+                        service: shipment.service || 'Standard',
+                        date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
+                        charges: charges,
+                        chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
+                        packages: shipment.packages?.length || shipment.packageCount || 1,
+                        weight: calculateTotalWeight(shipment),
+                        weightUnit: shipment.weightUnit || 'lbs',
+                        shipFrom: shipment.shipFrom,
+                        shipTo: shipment.shipTo
+                    }],
+                    
+                    currency: currency,
+                    issueDate: new Date(),
+                    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                    paymentTerms: 'NET 30',
+                    
+                    // Totals for this single shipment
+                    subtotal: charges,
+                    tax: 0,
+                    total: charges
+                };
+
+                const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+
+                // Validate PDF buffer
+                if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+                    throw new Error(`Invalid PDF buffer generated`);
+                }
+
+                console.log(`Generated PDF for ${shipmentId} - Size: ${pdfBuffer.length} bytes`);
+
+                // Add PDF to archive in customer folder
+                const filename = `${customerName}/Invoice-${sequentialInvoiceNumber}.pdf`; // ✅ CHANGED: From shipmentId to sequentialInvoiceNumber
+                archive.append(pdfBuffer, { name: filename });
+                
+                successCount++;
+
+            } catch (pdfError) {
+                console.error(`Error generating PDF for shipment ${shipment.shipmentID || shipment.id}:`, pdfError);
+                errorCount++;
+                
+                // Add error log to archive instead of failing completely
+                const errorFilename = `${customerName}/ERROR-${shipment.shipmentID || shipment.id}.txt`;
+                const errorContent = `Failed to generate invoice for shipment ${shipment.shipmentID || shipment.id}
+Error: ${pdfError.message}
+Stack: ${pdfError.stack}
+Timestamp: ${new Date().toISOString()}
+
+Shipment Data Summary:
+- Creation Method: ${shipment.creationMethod || 'unknown'}
+- Company ID: ${shipment.companyID || 'unknown'}
+- Customer ID: ${shipment.shipTo?.customerID || 'unknown'}
+- Charges: ${getSimpleShipmentCharges(shipment)}
+- Currency: ${currency}
+- Status: ${shipment.status || 'unknown'}
+- Date: ${shipment.createdAt || 'unknown'}`;
+                
+                archive.append(Buffer.from(errorContent), { name: errorFilename });
+            }
+        }
+    }
+    return { successCount, errorCount };
+}
+
+// ✅ COMBINED INVOICE MODE: One invoice per customer with multiple line items
+async function generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive) {
+    const { generateInvoicePDF } = require('../generateInvoicePDFAndEmail');
+    
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
+        console.log(`Generating COMBINED invoice for ${customerName} with ${customerShipments.length} shipments...`);
+        
+        try {
+            // Calculate totals for all shipments for this customer
+            let totalCharges = 0;
+            const lineItems = [];
+            let companyInfo = null;
+
+            // Process all shipments for this customer
+            for (const shipment of customerShipments) {
+                const charges = getSimpleShipmentCharges(shipment);
+                const shipmentId = shipment.shipmentID || shipment.id;
+                
+                console.log(`Adding shipment ${shipmentId} (${charges} ${currency}) to combined invoice...`);
+                
+                // Get customer billing info from first shipment (same for all shipments from same customer)
+                if (!companyInfo) {
+                    companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                }
+
+                // Add this shipment as a line item
+                lineItems.push({
+                    shipmentId: shipmentId,
+                    orderNumber: shipmentId,
+                    trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
+                    description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                    carrier: shipment.carrier || shipment.selectedCarrier?.name || 'N/A',
+                    service: shipment.service || 'Standard',
+                    date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
+                    charges: charges,
+                    chargeBreakdown: getSimpleChargeBreakdown(shipment, charges, currency),
+                    packages: shipment.packages?.length || shipment.packageCount || 1,
+                    weight: calculateTotalWeight(shipment),
+                    weightUnit: shipment.weightUnit || 'lbs',
+                    shipFrom: shipment.shipFrom,
+                    shipTo: shipment.shipTo
+                });
+
+                totalCharges += charges;
+            }
+
+            // ✅ UPDATED: Use sequential invoice numbering for combined invoices
+            const sequentialInvoiceNumber = await getNextInvoiceNumber();
+
+            // Create combined invoice data
+            const invoiceData = {
+                invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From complex naming to sequential number
+                companyId: companyId,
+                companyName: companyInfo?.companyName || customerName || companyName || companyId,
+                
+                // ✅ MULTIPLE LINE ITEMS: All shipments for this customer
+                lineItems: lineItems,
+                
+                currency: currency,
+                issueDate: new Date(),
+                dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                paymentTerms: 'NET 30',
+                
+                // ✅ COMBINED TOTALS: Sum of all shipments
+                subtotal: totalCharges,
+                tax: 0,
+                total: totalCharges
+            };
+
+            console.log(`Generated combined invoice ${sequentialInvoiceNumber} for ${customerName}: $${totalCharges} ${currency} (${lineItems.length} shipments)`);
+
+            const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo || {});
+
+            // Validate PDF buffer
+            if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+                throw new Error(`Invalid PDF buffer generated for combined invoice`);
+            }
+
+            console.log(`Generated combined PDF for ${customerName} - Size: ${pdfBuffer.length} bytes`);
+
+            // Add combined PDF to archive in customer folder
+            const filename = `${customerName}/Combined-Invoice-${sequentialInvoiceNumber}.pdf`;
+            archive.append(pdfBuffer, { name: filename });
+            
+            successCount++;
+
+        } catch (pdfError) {
+            console.error(`Error generating combined PDF for ${customerName}:`, pdfError);
+            errorCount++;
+            
+            // Add error log to archive
+            const errorFilename = `${customerName}/ERROR-Combined-Invoice.txt`;
+            const errorContent = `Failed to generate combined invoice for ${customerName}
+Error: ${pdfError.message}
+Stack: ${pdfError.stack}
+Timestamp: ${new Date().toISOString()}
+
+Customer: ${customerName}
+Shipments: ${customerShipments.length}
+Total Expected Charges: ${customerShipments.reduce((sum, s) => sum + getSimpleShipmentCharges(s), 0)} ${currency}`;
+            
+            archive.append(Buffer.from(errorContent), { name: errorFilename });
+        }
+    }
+    return { successCount, errorCount };
+}
+
+// ✅ HELPER: Get customer billing information (extracted from existing logic)
+async function getCustomerBillingInfo(shipment, companyId) {
+    const shipmentCustomerId = shipment.customerId || shipment.customerID || shipment.customer?.id || shipment.shipTo?.customerID;
+    
+    if (!shipmentCustomerId) {
+        console.log(`No customer ID found for shipment ${shipment.shipmentID || shipment.id}, BILL TO will be blank`);
+        return {
+            companyName: '',
+            companyId: companyId,
+            name: '',
+            address: {},
+            billingAddress: {},
+            phone: '',
+            email: '',
+            billingPhone: '',
+            billingEmail: ''
+        };
+    }
+
+    try {
+        // Try direct document lookup first
+        let customerDoc = await db.collection('customers').doc(shipmentCustomerId).get();
+        
+        if (!customerDoc.exists) {
+            // Fallback: query by customerID field
+            const customerQuery = db.collection('customers').where('customerID', '==', shipmentCustomerId).limit(1);
+            const customerSnapshot = await customerQuery.get();
+            
+            if (!customerSnapshot.empty) {
+                customerDoc = customerSnapshot.docs[0];
+            }
+        }
+
+        if (customerDoc.exists) {
+            const customer = customerDoc.data();
+            
+            // Check if customer belongs to this company
+            if (customer.companyID === companyId) {
+                // Check if customer has billing address info, otherwise use main contact address
+                if (customer.billingAddress1 && customer.billingCity) {
+                    // Use customer's billing address
+                    return {
+                        companyName: customer.name,
+                        companyId: customer.companyID,
+                        name: customer.name,
+                        address: {
+                            street: customer.billingAddress1,
+                            addressLine2: customer.billingAddress2,
+                            city: customer.billingCity,
+                            state: customer.billingState,
+                            postalCode: customer.billingPostalCode,
+                            country: customer.billingCountry
+                        },
+                        billingAddress: {
+                            street: customer.billingAddress1,
+                            addressLine2: customer.billingAddress2,
+                            city: customer.billingCity,
+                            state: customer.billingState,
+                            postalCode: customer.billingPostalCode,
+                            country: customer.billingCountry
+                        },
+                        phone: customer.billingPhone || customer.mainContactPhone,
+                        email: customer.billingEmail,
+                        billingPhone: customer.billingPhone || customer.mainContactPhone,
+                        billingEmail: customer.billingEmail
+                    };
+                } else if (customer.mainContactAddress1 && customer.mainContactCity) {
+                    // Fallback to main contact address
+                    return {
+                        companyName: customer.name,
+                        companyId: customer.companyID,
+                        name: customer.name,
+                        address: {
+                            street: customer.mainContactAddress1,
+                            addressLine2: customer.mainContactAddress2,
+                            city: customer.mainContactCity,
+                            state: customer.mainContactState,
+                            postalCode: customer.mainContactPostalCode,
+                            country: customer.mainContactCountry
+                        },
+                        billingAddress: {
+                            street: customer.mainContactAddress1,
+                            addressLine2: customer.mainContactAddress2,
+                            city: customer.mainContactCity,
+                            state: customer.mainContactState,
+                            postalCode: customer.mainContactPostalCode,
+                            country: customer.mainContactCountry
+                        },
+                        phone: customer.mainContactPhone,
+                        email: customer.mainContactEmail || customer.billingEmail,
+                        billingPhone: customer.mainContactPhone,
+                        billingEmail: customer.billingEmail || customer.mainContactEmail
+                    };
+                } else {
+                    // Final fallback - customer with no address info
+                    return {
+                        companyName: customer.name,
+                        companyId: customer.companyID,
+                        name: customer.name,
+                        address: {},
+                        billingAddress: {},
+                        phone: customer.mainContactPhone || customer.billingPhone,
+                        email: customer.mainContactEmail || customer.billingEmail,
+                        billingPhone: customer.mainContactPhone || customer.billingPhone,
+                        billingEmail: customer.billingEmail || customer.mainContactEmail
+                    };
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`Error looking up customer billing info:`, error);
+    }
+
+    // Final fallback
+    return {
+        companyName: '',
+        companyId: companyId,
+        name: '',
+        address: {},
+        billingAddress: {},
+        phone: '',
+        email: '',
+        billingPhone: '',
+        billingEmail: ''
+    };
+}
 
 function getSimpleShipmentCharges(shipment) {
     try {

@@ -76,6 +76,9 @@ const BulkInvoiceGenerator = () => {
     const [filtersExpanded, setFiltersExpanded] = useState(true);
     const [generationProgress, setGenerationProgress] = useState(0);
 
+    // 5. INVOICE GENERATION MODE
+    const [invoiceMode, setInvoiceMode] = useState('separate'); // 'separate', 'combined'
+
     // Status options for filtering
     const statusOptions = [
         { value: 'all', label: 'All Statuses' },
@@ -232,6 +235,7 @@ const BulkInvoiceGenerator = () => {
             const filterParams = {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
+                invoiceMode: invoiceMode, // ✅ NEW: Pass invoice generation mode to backend
                 filters: {
                     // Date filters
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
@@ -260,8 +264,9 @@ const BulkInvoiceGenerator = () => {
             }
 
             const filterText = filterSummary.length > 0 ? ` with ${filterSummary.join(', ')}` : '';
+            const modeText = invoiceMode === 'combined' ? ' (Combined Invoices)' : ' (Separate Invoices)';
 
-            enqueueSnackbar(`Generating filtered ZIP for ${selectedCompany.name}${filterText}...`, {
+            enqueueSnackbar(`Generating ${invoiceMode} invoices ZIP for ${selectedCompany.name}${filterText}${modeText}...`, {
                 variant: 'info',
                 autoHideDuration: 3000
             });
@@ -690,6 +695,60 @@ IC-CUSTOMER-789"
                             </Collapse>
                         </>
                     )}
+
+                    {/* INVOICE GENERATION MODE SELECTION */}
+                    <Paper sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                            Invoice Generation Method
+                        </Typography>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                            Choose how invoices should be generated for your selected shipments
+                        </Typography>
+
+                        <FormControl fullWidth size="small">
+                            <InputLabel sx={{ fontSize: '12px' }}>Invoice Method</InputLabel>
+                            <Select
+                                value={invoiceMode}
+                                onChange={(e) => setInvoiceMode(e.target.value)}
+                                label="Invoice Method"
+                                sx={{ fontSize: '12px' }}
+                            >
+                                <MenuItem value="separate" sx={{ fontSize: '12px' }}>
+                                    <Box>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            Create separate invoice for each shipment
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Each shipment gets its own invoice number
+                                        </Typography>
+                                    </Box>
+                                </MenuItem>
+                                <MenuItem value="combined" sx={{ fontSize: '12px' }}>
+                                    <Box>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            Combine all shipments into one invoice per customer
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Multiple shipments on single invoice with shared invoice number
+                                        </Typography>
+                                    </Box>
+                                </MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        {/* Visual indicator of current selection */}
+                        <Box sx={{ mt: 2, p: 2, backgroundColor: invoiceMode === 'combined' ? '#f0f9ff' : '#f8fafc', borderRadius: 1, border: '1px solid ' + (invoiceMode === 'combined' ? '#bae6fd' : '#e5e7eb') }}>
+                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>
+                                {invoiceMode === 'combined' ? '🔗 Combined Mode:' : '📄 Separate Mode:'}
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                {invoiceMode === 'combined'
+                                    ? 'Customer "Temspec" with 3 shipments → 1 invoice (INV-ICAL-TEMSPEC-20250124) with 3 line items'
+                                    : 'Customer "Temspec" with 3 shipments → 3 separate invoices (INV-ICAL-21DNH6, INV-ICAL-22ABC7, INV-ICAL-23XYZ8)'
+                                }
+                            </Typography>
+                        </Box>
+                    </Paper>
 
                     {/* GENERATION PROGRESS */}
                     {loading && (
