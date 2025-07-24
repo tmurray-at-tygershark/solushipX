@@ -586,7 +586,56 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             // Invoice line items
             invoiceData.lineItems.forEach((item, index) => {
-                const rowHeight = 45; // Increased from 40 to accommodate references
+                // ✅ DYNAMIC ROW HEIGHT: Calculate height needed based on content
+                let maxColumnHeight = 45; // Minimum row height
+                
+                // Calculate fees column height (typically the tallest)
+                let feesHeight = 0;
+                if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
+                    const maxCharges = 5;
+                    const sortedCharges = [...item.chargeBreakdown].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+                    
+                    feesHeight += 4; // Initial padding
+                    sortedCharges.slice(0, maxCharges).forEach((fee) => {
+                        const chargeCode = fee.code || fee.chargeCode || '';
+                        const chargeName = fee.description || fee.name || fee.chargeType || 'Miscellaneous';
+                        const amount = fee.amount || 0;
+                        const displayText = chargeCode ? 
+                            `${chargeCode}: ${chargeName} - ${formatCurrency(amount, invoiceData.currency)}` :
+                            `${chargeName}: ${formatCurrency(amount, invoiceData.currency)}`;
+                        
+                        const textHeight = doc.heightOfString(displayText, { 
+                            width: colWidths[5] - 4,
+                            align: 'left'
+                        });
+                        feesHeight += Math.max(textHeight + 2, 8);
+                    });
+                    
+                    if (item.chargeBreakdown.length > maxCharges) {
+                        feesHeight += 8; // Summary line
+                    }
+                } else {
+                    // Default charge breakdown height
+                    const totalCharges = item.charges || 0;
+                    if (totalCharges > 0) {
+                        feesHeight += 4 + (3 * 8); // 3 default charge lines
+                    } else {
+                        feesHeight += 12; // Single total line
+                    }
+                }
+                
+                // Calculate details column height
+                const detailsForHeight = [
+                    `Ship Date: ${formatDate(item.date)}`,
+                    `Tracking: ${item.trackingNumber || 'TBD'}`,
+                    item.references || item.orderNumber || '' ? `Ref: ${item.references || item.orderNumber}` : '',
+                    `${item.packages || 1} pcs`,
+                    `${(item.weight || 0) * (item.packages || 1)} ${item.weightUnit || 'lbs'}`
+                ].filter(detail => detail);
+                const detailsHeight = 4 + (detailsForHeight.length * 9);
+                
+                // Use the maximum height among all columns, with minimum of 45px
+                const rowHeight = Math.max(maxColumnHeight, feesHeight, detailsHeight, 45);
                 
                 // ✅ PAGINATION: Check if we need a new page for combined invoices
                 const pageBottomMargin = 150; // Reserve space for totals and footer
