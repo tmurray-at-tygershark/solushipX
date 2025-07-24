@@ -12,6 +12,40 @@ try {
 
 const db = getFirestore();
 
+// ✅ HELPER FUNCTION: Get actual customer name from database lookup
+async function getActualCustomerName(shipment, companyId) {
+    const shipmentCustomerId = shipment.customerId || shipment.customerID || shipment.customer?.id || shipment.shipTo?.customerID;
+    
+    if (!shipmentCustomerId) {
+        return shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer';
+    }
+    
+    try {
+        // Try direct document lookup first
+        let customerDoc = await db.collection('customers').doc(shipmentCustomerId).get();
+        
+        if (!customerDoc.exists) {
+            // Fallback: query by customerID field
+            const customerQuery = db.collection('customers').where('customerID', '==', shipmentCustomerId).limit(1);
+            const customerSnapshot = await customerQuery.get();
+            
+            if (!customerSnapshot.empty) {
+                customerDoc = customerSnapshot.docs[0];
+            }
+        }
+        
+        if (customerDoc.exists) {
+            const customer = customerDoc.data();
+            return customer.name || customer.companyName || shipment.shipTo?.companyName || 'Unknown Customer';
+        }
+    } catch (error) {
+        console.error(`Error looking up customer ${shipmentCustomerId}:`, error);
+    }
+    
+    // Fallback to shipTo if customer lookup fails
+    return shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer';
+}
+
 // ✅ HELPER FUNCTION: Calculate total weight from packages or shipment data
 function calculateTotalWeight(shipment) {
     // First try explicit totalWeight field
@@ -213,27 +247,26 @@ exports.generateBulkInvoices = onRequest(
             });
         }
 
-        // 4. GROUP SHIPMENTS BY CUSTOMER (existing logic with enhancements)
-        const customerGroups = validShipments.reduce((groups, shipment) => {
-            // Enhanced customer name detection
-            const customerName = shipment.shipTo?.companyName || 
-                               shipment.shipTo?.company || 
-                               shipment.customerName || 
-                               shipment.shipTo?.name ||
-                               shipment.shipTo?.firstName + ' ' + shipment.shipTo?.lastName ||
-                               `Customer-${shipment.shipTo?.customerID || 'Unknown'}`;
+        // 4. GROUP SHIPMENTS BY CUSTOMER (FIXED to use actual customer names)
+        console.log('Looking up actual customer names for proper ZIP folder structure...');
+        
+        // Create customer groups with actual customer names
+        const customerGroups = {};
+        
+        for (const shipment of validShipments) {
+            // ✅ FIXED: Get actual customer name from database lookup
+            const actualCustomerName = await getActualCustomerName(shipment, companyId);
             
             // Clean customer name for folder (remove special characters)
-            const cleanCustomerName = customerName.replace(/[<>:"/\\|?*]/g, '-').trim();
+            const cleanCustomerName = actualCustomerName.replace(/[<>:"/\\|?*]/g, '-').trim();
             
-            if (!groups[cleanCustomerName]) {
-                groups[cleanCustomerName] = [];
+            if (!customerGroups[cleanCustomerName]) {
+                customerGroups[cleanCustomerName] = [];
             }
-            groups[cleanCustomerName].push(shipment);
-            return groups;
-        }, {});
+            customerGroups[cleanCustomerName].push(shipment);
+        }
 
-        console.log(`Grouped into ${Object.keys(customerGroups).length} customer folders`);
+        console.log(`Grouped into ${Object.keys(customerGroups).length} customer folders using actual customer names`);
 
         // 5. SET UP ENHANCED ZIP STREAMING (with comprehensive filename)
         const timestamp = Date.now();

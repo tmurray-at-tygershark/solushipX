@@ -428,7 +428,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             });
 
             // ==================== BILL TO SECTION WITH SIMPLIFIED INVOICE SUMMARY ====================
-            currentY = Math.max(currentY, detailsBoxY + detailsBoxHeight + 5);
+            currentY = Math.max(currentY, detailsBoxY + detailsBoxHeight - 15); // ✅ MOVED UP 20PX: Changed from +5 to -15
 
             // Bill To section (left side)
             doc.fillColor(colors.primary)
@@ -442,6 +442,14 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .fontSize(9)
                .font('Helvetica-Bold')
                .text('INVOICE TOTAL:', summaryX, currentY);
+
+            // ✅ FIXED: Proper single line spacing for invoice total
+            const totalLabelY = currentY;
+            const totalAmountY = totalLabelY + 12; // ✅ FIXED: Single line spacing (12px down from label)
+            doc.fillColor(colors.text)
+               .fontSize(12)
+               .font('Helvetica-Bold')
+               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, totalAmountY);
 
             currentY += 10;
 
@@ -500,20 +508,6 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 doc.text(`Email: ${email}`, leftCol, currentY);
                 currentY += 10;
             }
-
-            // Summary information (right side - simplified, moved closer)
-            const totalAmountY = currentY - 15; // ✅ CHANGED: Move total amount closer to title (was -10, now -15)
-            doc.fillColor(colors.text)
-               .fontSize(12)
-               .font('Helvetica-Bold')
-               .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, totalAmountY);
-
-            currentY += 8;
-            doc.fontSize(7)
-               .font('Helvetica')
-               .fillColor(colors.textLight);
-
-            // ✅ REMOVED: Duplicate customer address section that was causing duplication
 
             // Summary information (right side - simplified, moved closer)
 
