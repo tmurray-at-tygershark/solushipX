@@ -636,7 +636,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 const rowHeight = Math.max(maxColumnHeight, feesHeight, detailsHeight, 45);
                 
                 // ✅ PAGINATION: Check if we need a new page for combined invoices
-                const pageBottomMargin = 150; // Reserve space for totals and footer
+                const pageBottomMargin = 90; // Reserve space for totals and footer (optimized from 150)
                 const availableSpace = doc.page.height - pageBottomMargin;
                 
                 if (tableY + rowHeight > availableSpace) {
@@ -812,8 +812,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     }
                 });
 
-                // Column 5: Service (Enhanced with carrier name)
-                const carrierName = item.carrier || 'Canpar Express';
+                // Column 5: Service (Enhanced with carrier name) - Override to Integrated Carriers
+                const carrierName = 'Integrated Carriers'; // Override carrier for customer invoices
                 const serviceInfo = item.service || 'Standard Ground';
                 
                 doc.fontSize(6)
@@ -842,10 +842,18 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     let chargesDisplayed = 0;
                     const maxCharges = 5;
                     
-                    // ✅ FILTER OUT $0.00 CHARGES from display
+                    // ✅ FILTER OUT $0.00 CHARGES AND TRANSACTION FEES from display
                     const nonZeroCharges = item.chargeBreakdown.filter(charge => {
                         const amount = parseFloat(charge.amount) || 0;
-                        return amount > 0;
+                        const description = (charge.description || charge.name || charge.chargeType || '').toLowerCase().trim();
+                        
+                        // Skip zero amount items
+                        if (amount <= 0) return false;
+                        
+                        // Skip transaction fees
+                        if (description.includes('transaction fee')) return false;
+                        
+                        return true;
                     });
                     
                     // Sort charges by amount (largest first) for better display
@@ -1015,9 +1023,6 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             currentTotalY += 20;
 
-            // ✅ LOG TAX SEPARATION STATUS
-            console.log(`📊 PDF Totals: Subtotal=$${invoiceData.subtotal || invoiceData.total} Tax=$${invoiceData.tax || 0} Total=$${invoiceData.total} ${invoiceData.tax > 0 ? '✅ TAX SEPARATED' : '❌ NO TAX'}`);
-            
             // Subtotal line
             doc.fillColor(colors.text)
                .fontSize(7)
@@ -1032,14 +1037,10 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 const taxRate = invoiceData.taxRate || 0;
                 const taxLabel = taxRate > 0 ? `Taxes (${(taxRate * 100).toFixed(1)}%):` : 'Taxes:';
                 
-                console.log(`💸 Adding tax line to PDF: ${taxLabel} $${invoiceData.tax}`);
-                
                 doc.text(taxLabel, totalsX + 8, currentTotalY);
                 doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
                          totalsX + 100, currentTotalY, { width: 70, align: 'right' });
                 currentTotalY += lineHeight;
-            } else {
-                console.log(`❌ No tax line added - invoiceData.tax: ${invoiceData.tax}`);
             }
 
             // Total line with emphasis

@@ -488,6 +488,9 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                 // Calculate proper tax separation
                 const invoiceTotals = calculateInvoiceTotals(chargeBreakdown);
                 
+                // Use filtered total instead of raw charges (excludes transaction fees)
+                const filteredCharges = invoiceTotals.total;
+                
                 // Create invoice data for this single shipment
                 const invoiceData = {
                     invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From `INV-${shipmentId}` to sequential number
@@ -500,10 +503,10 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                         orderNumber: shipmentId,
                         trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
                         description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                        carrier: shipment.carrier || shipment.selectedCarrier?.name || 'N/A',
+                        carrier: 'Integrated Carriers', // Override carrier for customer invoices
                         service: shipment.service || 'Standard',
                         date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
-                        charges: charges,
+                        charges: filteredCharges, // Use filtered amount (excludes transaction fees)
                         chargeBreakdown: chargeBreakdown,
                         packages: shipment.packages?.length || shipment.packageCount || 1,
                         weight: calculateTotalWeight(shipment),
@@ -587,8 +590,6 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 const charges = getSimpleShipmentCharges(shipment);
                 const shipmentId = shipment.shipmentID || shipment.id;
                 
-                console.log(`Adding shipment ${shipmentId} (${charges} ${currency}) to combined invoice...`);
-                
                 // Get customer billing info from first shipment (same for all shipments from same customer)
                 if (!companyInfo) {
                     companyInfo = await getCustomerBillingInfo(shipment, companyId);
@@ -597,6 +598,12 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 // Get detailed charge breakdown for this shipment
                 const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
                 allChargeBreakdowns.push(...chargeBreakdown);
+                
+                // Calculate filtered total for this shipment (excludes transaction fees)
+                const shipmentTotals = calculateInvoiceTotals(chargeBreakdown);
+                const filteredCharges = shipmentTotals.total;
+                
+                console.log(`Adding shipment ${shipmentId} (raw: ${charges} ${currency}, filtered: ${filteredCharges} ${currency}) to combined invoice...`);
 
                 // Add this shipment as a line item
                 lineItems.push({
@@ -604,10 +611,10 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     orderNumber: shipmentId,
                     trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
                     description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                    carrier: shipment.carrier || shipment.selectedCarrier?.name || 'N/A',
+                    carrier: 'Integrated Carriers', // Override carrier for customer invoices
                     service: shipment.service || 'Standard',
                     date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
-                    charges: charges,
+                    charges: filteredCharges, // Use filtered amount (excludes transaction fees)
                     chargeBreakdown: chargeBreakdown,
                     packages: shipment.packages?.length || shipment.packageCount || 1,
                     weight: calculateTotalWeight(shipment),
@@ -616,7 +623,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     shipTo: shipment.shipTo
                 });
 
-                totalCharges += charges;
+                totalCharges += filteredCharges; // Use filtered amount (excludes transaction fees)
             }
 
             // ✅ UPDATED: Use sequential invoice numbering for combined invoices
@@ -930,15 +937,29 @@ function getSimpleChargeBreakdown(shipment, totalCharges, currency) {
             }];
         }
         
-        // ✅ FILTER OUT $0.00 LINE ITEMS
+        // ✅ FILTER OUT $0.00 LINE ITEMS AND TRANSACTION FEES
         const filteredBreakdown = rawBreakdown.filter(item => {
             const amount = parseFloat(item.amount) || 0;
-            return amount > 0;
+            const description = (item.description || '').toLowerCase().trim();
+            
+            // Skip zero amount items
+            if (amount <= 0) return false;
+            
+            // Skip transaction fees
+            if (description.includes('transaction fee')) return false;
+            
+            return true;
         });
         
         const filteredCount = rawBreakdown.length - filteredBreakdown.length;
         if (filteredCount > 0) {
-            console.log(`   🚫 Filtered out ${filteredCount} $0.00 line items`);
+            const zeroItems = rawBreakdown.filter(item => (parseFloat(item.amount) || 0) <= 0).length;
+            const transactionFees = rawBreakdown.filter(item => {
+                const description = (item.description || '').toLowerCase().trim();
+                return description.includes('transaction fee');
+            }).length;
+            
+            console.log(`   🚫 Filtered out ${filteredCount} items: ${zeroItems} $0.00 charges, ${transactionFees} transaction fees`);
         }
         
         // Count tax vs non-tax items
