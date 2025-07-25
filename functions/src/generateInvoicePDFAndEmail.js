@@ -57,7 +57,14 @@ async function getNextInvoiceNumber() {
 }
 
 // Configure SendGrid
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const functions = require('firebase-functions/v1');
+const sendgridApiKey = functions.config().sendgrid?.api_key || process.env.SENDGRID_API_KEY;
+if (!sendgridApiKey) {
+    logger.error('❌ SendGrid API key not found in Firebase config or environment');
+} else {
+    logger.info('✅ SendGrid API key found, length:', sendgridApiKey.length, 'starts with:', sendgridApiKey.substring(0, 10) + '...');
+}
+sgMail.setApiKey(sendgridApiKey);
 
 // Email configuration constants - Updated per billing requirements
 const SEND_FROM_EMAIL = 'ap@integratedcarriers.com';
@@ -86,47 +93,20 @@ async function generateInvoicePDFAndEmailHelper(invoiceData, companyId, testMode
 
         let companyInfo;
         
-        // Handle test mode with mock company data - make this check more explicit
-        if (testMode === true && companyId === 'TEST_COMPANY') {
-            logger.info('✅ USING MOCK COMPANY DATA - Test mode detected correctly');
-            // Use mock company data for test mode
-            companyInfo = {
-                name: 'Tyger Shark Inc',
-                companyID: 'TEST_COMPANY',
-                address: {
-                    street: '123 Business Street, Suite 100',
-                    city: 'Toronto',
-                    state: 'ON',
-                    postalCode: 'M5V 3A8',
-                    country: 'Canada'
-                },
-                phone: '(416) 555-0123',
-                email: 'billing@tygershark.com',
-                billingAddress: {
-                    address1: '123 Business Street, Suite 100',
-                    city: 'Toronto',
-                    stateProv: 'ON',
-                    zipPostal: 'M5V 3A8',
-                    country: 'CA',
-                    email: 'billing@tygershark.com'
-                }
-            };
-            logger.info('Mock company data created successfully');
+        // Always get real company data from database (test mode only affects email sending)
+        logger.info(`Retrieving company data for: ${companyId} (Test Mode: ${testMode})`);
+        const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
+        if (companyDoc.empty) {
+            logger.error('Company not found in database:', companyId);
+            throw new Error('Company not found');
+        }
+        companyInfo = companyDoc.docs[0].data();
+        logger.info(`✅ Company data retrieved: ${companyInfo.name} (${testMode ? 'TEST MODE' : 'PRODUCTION MODE'})`);
+        
+        if (testMode) {
+            logger.info('🧪 TEST MODE ACTIVE - Emails will be sent to test address only');
         } else {
-            logger.info('❌ PRODUCTION MODE - Will query database for company:', companyId);
-            logger.info('Why production mode?', {
-                testModeCheck: testMode === true,
-                companyIdCheck: companyId === 'TEST_COMPANY',
-                bothChecks: testMode === true && companyId === 'TEST_COMPANY'
-            });
-            // Get company information from database for production mode
-            const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
-            if (companyDoc.empty) {
-                logger.error('Company not found in database:', companyId);
-                throw new Error('Company not found');
-            }
-            companyInfo = companyDoc.docs[0].data();
-            logger.info('Company data retrieved from database');
+            logger.info('🚀 PRODUCTION MODE - Emails will be sent to customer addresses');
         }
         
         // Generate PDF

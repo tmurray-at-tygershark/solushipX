@@ -149,7 +149,7 @@ exports.generateBulkInvoices = onRequest(
     try {
         console.log('Starting Auto Invoice generation...');
 
-        const { companyId, companyName, invoiceMode = 'separate', filters = {} } = req.body;
+        const { companyId, companyName, invoiceMode = 'separate', invoiceDate, filters = {} } = req.body;
         
         if (!companyId) {
             return res.status(400).json({ error: 'Company ID required' });
@@ -158,6 +158,11 @@ exports.generateBulkInvoices = onRequest(
         console.log(`Generating invoices for company: ${companyName || companyId}`);
         console.log(`Invoice mode: ${invoiceMode}`);
         console.log(`Applied filters:`, filters);
+        
+        // Process invoice date override
+        const issueDate = invoiceDate ? new Date(invoiceDate) : new Date();
+        const dueDate = new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days from issue date
+        console.log(`Invoice dates: Issue=${issueDate.toISOString().split('T')[0]}, Due=${dueDate.toISOString().split('T')[0]}`);
 
         // 1. BUILD DYNAMIC QUERY WITH ALL FILTERS
         let baseQuery = db.collection('shipments')
@@ -516,8 +521,8 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                     }],
                     
                     currency: currency,
-                    issueDate: new Date(),
-                    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                    issueDate: issueDate,
+                    dueDate: dueDate,
                     paymentTerms: 'NET 30',
                     
                     // ✅ UPDATED: Proper tax separation using the new calculation system
@@ -642,8 +647,8 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 lineItems: lineItems,
                 
                 currency: currency,
-                issueDate: new Date(),
-                dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                issueDate: issueDate,
+                dueDate: dueDate,
                 paymentTerms: 'NET 30',
                 
                 // ✅ UPDATED: Proper tax separation across all combined shipments
@@ -1094,3 +1099,340 @@ function detectSimpleCurrency(shipments) {
 }
 
 // ✅ Note: Tax separation and $0.00 filtering is now active in production 
+
+// AUTO INVOICE PREVIEWER - Returns invoice data and PDFs for preview before ZIP generation
+exports.previewBulkInvoices = onRequest(
+    {
+        cors: true,
+        timeoutSeconds: 300,
+        memory: '1GiB'
+    },
+    async (req, res) => {
+    // Handle CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+        res.status(200).send('');
+        return;
+    }
+    
+    try {
+        console.log('Starting Auto Invoice preview...');
+
+        const { companyId, companyName, invoiceMode = 'separate', invoiceDate, filters = {} } = req.body;
+        
+        if (!companyId) {
+            return res.status(400).json({ error: 'Company ID required' });
+        }
+
+        console.log(`Previewing invoices for company: ${companyName || companyId}`);
+        console.log(`Invoice mode: ${invoiceMode}`);
+        
+        // Process invoice date override
+        const issueDate = invoiceDate ? new Date(invoiceDate) : new Date();
+        const dueDate = new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+        
+        // Reuse the same filtering logic as generateBulkInvoices
+        let baseQuery = db.collection('shipments')
+            .where('companyID', '==', companyId)
+            .where('status', '!=', 'draft');
+
+        // Apply same filters as main function
+        if (filters.dateFrom || filters.dateTo) {
+            if (filters.dateFrom) {
+                const fromDate = new Date(filters.dateFrom);
+                fromDate.setHours(0, 0, 0, 0);
+                baseQuery = baseQuery.where('createdAt', '>=', fromDate);
+            }
+            if (filters.dateTo) {
+                const toDate = new Date(filters.dateTo);
+                toDate.setHours(23, 59, 59, 999);
+                baseQuery = baseQuery.where('createdAt', '<=', toDate);
+            }
+        }
+
+        const querySnapshot = await baseQuery.get();
+        const allShipments = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        
+        console.log(`Found ${allShipments.length} shipments before additional filtering`);
+
+        // Apply additional filters (same as main function)
+        let shipments = allShipments;
+        
+        if (filters.status) {
+            shipments = shipments.filter(s => s.status === filters.status);
+        }
+        
+        if (filters.customers && filters.customers.length > 0) {
+            shipments = shipments.filter(shipment => {
+                const customerID = shipment.shipTo?.customerID || shipment.customerId;
+                return customerID && filters.customers.includes(customerID);
+            });
+        }
+        
+        if (filters.shipmentIds && filters.shipmentIds.length > 0) {
+            shipments = shipments.filter(shipment => {
+                return filters.shipmentIds.includes(shipment.shipmentID || shipment.id);
+            });
+        }
+
+        // Validate charges
+        const validShipments = shipments.filter(shipment => {
+            const charges = getSimpleShipmentCharges(shipment);
+            return charges > 0;
+        });
+
+        console.log(`${validShipments.length} shipments have valid charges`);
+
+        if (validShipments.length === 0) {
+            return res.status(400).json({ 
+                error: 'No valid shipments found with the applied filters' 
+            });
+        }
+
+        const currency = detectSimpleCurrency(validShipments);
+        const previewResults = [];
+
+        if (invoiceMode === 'separate') {
+            // Generate separate invoice previews
+            for (const shipment of validShipments) {
+                const charges = getSimpleShipmentCharges(shipment);
+                const shipmentId = shipment.shipmentID || shipment.id;
+                
+                const sequentialInvoiceNumber = `PREVIEW-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+                const invoiceTotals = calculateInvoiceTotals(chargeBreakdown);
+                const filteredCharges = invoiceTotals.total;
+
+                const invoiceData = {
+                    invoiceNumber: sequentialInvoiceNumber,
+                    companyId: companyId,
+                    companyName: companyInfo.companyName || companyName || companyId,
+                    lineItems: [{
+                        shipmentId: shipmentId,
+                        orderNumber: shipmentId,
+                        trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
+                        description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                        carrier: 'Integrated Carriers',
+                        service: shipment.service || 'Standard',
+                        date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
+                        charges: filteredCharges,
+                        chargeBreakdown: chargeBreakdown,
+                        packages: shipment.packages?.length || shipment.packageCount || 1,
+                        weight: calculateTotalWeight(shipment),
+                        weightUnit: shipment.weightUnit || 'lbs',
+                        shipFrom: shipment.shipFrom,
+                        shipTo: shipment.shipTo
+                    }],
+                    currency: currency,
+                    issueDate: issueDate,
+                    dueDate: dueDate,
+                    paymentTerms: 'NET 30',
+                    subtotal: invoiceTotals.subtotal,
+                    tax: invoiceTotals.tax,
+                    total: invoiceTotals.total
+                };
+
+                // Generate PDF for preview
+                const generateInvoicePDF = require('../generateInvoicePDFAndEmail').generateInvoicePDF;
+                const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+                
+                previewResults.push({
+                    invoiceData,
+                    pdfBase64: pdfBuffer.toString('base64'),
+                    shipmentCount: 1,
+                    customerName: companyInfo.companyName || companyName
+                });
+            }
+        } else {
+            // Generate combined invoice preview by customer
+            const customerGroups = groupShipmentsByCustomer(validShipments);
+            
+            for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
+                let totalCharges = 0;
+                const lineItems = [];
+                const allChargeBreakdowns = [];
+                let companyInfo = null;
+
+                for (const shipment of customerShipments) {
+                    const charges = getSimpleShipmentCharges(shipment);
+                    const shipmentId = shipment.shipmentID || shipment.id;
+                    
+                    if (!companyInfo) {
+                        companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                    }
+
+                    const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+                    allChargeBreakdowns.push(...chargeBreakdown);
+                    
+                    const shipmentTotals = calculateInvoiceTotals(chargeBreakdown);
+                    const filteredCharges = shipmentTotals.total;
+
+                    lineItems.push({
+                        shipmentId: shipmentId,
+                        orderNumber: shipmentId,
+                        trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
+                        description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
+                        carrier: 'Integrated Carriers',
+                        service: shipment.service || 'Standard',
+                        date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
+                        charges: filteredCharges,
+                        chargeBreakdown: chargeBreakdown,
+                        packages: shipment.packages?.length || shipment.packageCount || 1,
+                        weight: calculateTotalWeight(shipment),
+                        weightUnit: shipment.weightUnit || 'lbs',
+                        shipFrom: shipment.shipFrom,
+                        shipTo: shipment.shipTo
+                    });
+
+                    totalCharges += filteredCharges;
+                }
+
+                const sequentialInvoiceNumber = `PREVIEW-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const combinedInvoiceTotals = calculateInvoiceTotals(allChargeBreakdowns);
+
+                const invoiceData = {
+                    invoiceNumber: sequentialInvoiceNumber,
+                    companyId: companyId,
+                    companyName: companyInfo.companyName || companyName || companyId,
+                    lineItems: lineItems,
+                    currency: currency,
+                    issueDate: issueDate,
+                    dueDate: dueDate,
+                    paymentTerms: 'NET 30',
+                    subtotal: combinedInvoiceTotals.subtotal,
+                    tax: combinedInvoiceTotals.tax,
+                    total: combinedInvoiceTotals.total
+                };
+
+                // Generate PDF for preview
+                const generateInvoicePDF = require('../generateInvoicePDFAndEmail').generateInvoicePDF;
+                const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+                
+                previewResults.push({
+                    invoiceData,
+                    pdfBase64: pdfBuffer.toString('base64'),
+                    shipmentCount: customerShipments.length,
+                    customerName: customerName
+                });
+            }
+        }
+
+        console.log(`Generated ${previewResults.length} invoice previews`);
+
+        res.status(200).json({
+            success: true,
+            previews: previewResults,
+            summary: {
+                totalInvoices: previewResults.length,
+                totalShipments: validShipments.length,
+                invoiceMode: invoiceMode,
+                currency: currency,
+                invoiceDate: issueDate.toISOString().split('T')[0],
+                dueDate: dueDate.toISOString().split('T')[0]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error generating invoice previews:', error);
+        res.status(500).json({ 
+            error: 'Failed to generate invoice previews',
+            details: error.message 
+        });
+    }
+});
+
+// AUTO INVOICE EMAILER - Send previewed invoices via email
+exports.emailBulkInvoices = onRequest(
+    {
+        cors: true,
+        timeoutSeconds: 300,
+        memory: '1GiB'
+    },
+    async (req, res) => {
+    // Handle CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+        res.status(200).send('');
+        return;
+    }
+    
+    try {
+        console.log('Starting bulk invoice email sending...');
+
+        const { previews, testMode = false, testEmail = null } = req.body;
+        
+        if (!previews || !Array.isArray(previews) || previews.length === 0) {
+            return res.status(400).json({ error: 'Preview data required' });
+        }
+
+        console.log(`Sending ${previews.length} invoices via email. Test mode: ${testMode}`);
+
+        const emailResults = [];
+        const { generateInvoicePDFAndEmailHelper } = require('../generateInvoicePDFAndEmail');
+
+        for (const preview of previews) {
+            try {
+                // Use the existing email system
+                const result = await generateInvoicePDFAndEmailHelper(
+                    preview.invoiceData,
+                    preview.invoiceData.companyId,
+                    testMode,
+                    testEmail
+                );
+
+                emailResults.push({
+                    invoiceNumber: preview.invoiceData.invoiceNumber,
+                    customerName: preview.customerName,
+                    success: true,
+                    message: 'Email sent successfully'
+                });
+
+                console.log(`Email sent successfully for invoice ${preview.invoiceData.invoiceNumber}`);
+
+            } catch (emailError) {
+                console.error(`Failed to send email for invoice ${preview.invoiceData.invoiceNumber}:`, emailError);
+                
+                emailResults.push({
+                    invoiceNumber: preview.invoiceData.invoiceNumber,
+                    customerName: preview.customerName,
+                    success: false,
+                    error: emailError.message
+                });
+            }
+        }
+
+        const successCount = emailResults.filter(r => r.success).length;
+        const failureCount = emailResults.filter(r => !r.success).length;
+
+        console.log(`Email sending completed: ${successCount} successful, ${failureCount} failed`);
+
+        res.status(200).json({
+            success: true,
+            summary: {
+                totalInvoices: previews.length,
+                successCount: successCount,
+                failureCount: failureCount,
+                testMode: testMode,
+                testEmail: testMode ? testEmail : null
+            },
+            results: emailResults
+        });
+
+    } catch (error) {
+        console.error('Error sending bulk invoice emails:', error);
+        res.status(500).json({ 
+            error: 'Failed to send invoice emails',
+            details: error.message 
+        });
+    }
+});
