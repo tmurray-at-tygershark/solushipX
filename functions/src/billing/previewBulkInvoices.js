@@ -42,7 +42,7 @@ exports.previewBulkInvoices = onRequest(
         try {
             console.log('Starting invoice preview generation...');
 
-            const { companyId, companyName, invoiceMode = 'separate', filters = {} } = req.body;
+            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, filters = {} } = req.body;
             
             if (!companyId) {
                 return res.status(400).json({ error: 'Company ID required' });
@@ -155,7 +155,7 @@ exports.previewBulkInvoices = onRequest(
                 // Generate actual PDFs for ALL shipments
                 for (const shipment of shipments) {
                     try {
-                        const invoiceData = await createInvoiceDataForShipment(shipment, companyId);
+                        const invoiceData = await createInvoiceDataForShipment(shipment, companyId, invoiceIssueDate);
                         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
                         
                         const charges = getSimpleShipmentCharges(shipment);
@@ -201,7 +201,7 @@ exports.previewBulkInvoices = onRequest(
                 for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
                     
                     try {
-                        const invoiceData = await createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId);
+                        const invoiceData = await createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate);
                         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
                         
                         let customerTotal = 0;
@@ -319,7 +319,7 @@ async function getCompanyInfo(companyId) {
 /**
  * Create invoice data for a single shipment (same as email function)
  */
-async function createInvoiceDataForShipment(shipment, companyId) {
+async function createInvoiceDataForShipment(shipment, companyId, invoiceIssueDate = null) {
     const shipmentId = shipment.shipmentID || shipment.id;
     const sequentialInvoiceNumber = await getNextInvoiceNumber(companyId);
     const charges = getSimpleShipmentCharges(shipment);
@@ -353,8 +353,8 @@ async function createInvoiceDataForShipment(shipment, companyId) {
         }],
         
         currency: currency,
-        issueDate: new Date(),
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        issueDate: invoiceIssueDate ? new Date(invoiceIssueDate) : new Date(),
+        dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         paymentTerms: 'NET 30',
         
         subtotal: invoiceTotals.subtotal,
@@ -366,7 +366,7 @@ async function createInvoiceDataForShipment(shipment, companyId) {
 /**
  * Create combined invoice data for a customer (same as email function)
  */
-async function createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId) {
+async function createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate = null) {
     const sequentialInvoiceNumber = await getNextInvoiceNumber(companyId);
     const currency = 'USD';
     
@@ -409,8 +409,8 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
         lineItems: lineItems,
         
         currency: currency,
-        issueDate: new Date(),
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        issueDate: invoiceIssueDate ? new Date(invoiceIssueDate) : new Date(),
+        dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         paymentTerms: 'NET 30',
         
         subtotal: invoiceTotals.subtotal,

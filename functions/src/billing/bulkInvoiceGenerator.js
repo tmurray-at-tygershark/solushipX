@@ -149,7 +149,7 @@ exports.generateBulkInvoices = onRequest(
     try {
         console.log('Starting Auto Invoice generation...');
 
-        const { companyId, companyName, invoiceMode = 'separate', filters = {} } = req.body;
+                    const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, filters = {} } = req.body;
         
         if (!companyId) {
             return res.status(400).json({ error: 'Company ID required' });
@@ -375,12 +375,12 @@ exports.generateBulkInvoices = onRequest(
 
         if (invoiceMode === 'combined') {
             // COMBINED MODE: One invoice per customer with multiple line items
-            const result = await generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive);
+                            const result = await generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive, invoiceIssueDate);
             successCount += result.successCount;
             errorCount += result.errorCount;
         } else {
             // SEPARATE MODE: One invoice per shipment (existing behavior)
-            const result = await generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive);
+                            const result = await generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive, invoiceIssueDate);
             successCount += result.successCount;
             errorCount += result.errorCount;
         }
@@ -459,7 +459,7 @@ Filter Details:
 });
 
 // ✅ SEPARATE INVOICE MODE: One invoice per shipment (existing behavior)
-async function generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive) {
+async function generateSeparateInvoices(customerGroups, companyId, companyName, currency, archive, invoiceIssueDate = null) {
     const { generateInvoicePDF } = require('../generateInvoicePDFAndEmail');
     
     let successCount = 0;
@@ -516,8 +516,8 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                     }],
                     
                     currency: currency,
-                    issueDate: new Date(),
-                    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                    issueDate: invoiceIssueDate ? new Date(invoiceIssueDate) : new Date(),
+                    dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                     paymentTerms: 'NET 30',
                     
                     // ✅ UPDATED: Proper tax separation using the new calculation system
@@ -569,7 +569,7 @@ Shipment Data Summary:
 }
 
 // ✅ COMBINED INVOICE MODE: One invoice per customer with multiple line items
-async function generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive) {
+async function generateCombinedInvoices(customerGroups, companyId, companyName, currency, archive, invoiceIssueDate = null) {
     const { generateInvoicePDF } = require('../generateInvoicePDFAndEmail');
     
     let successCount = 0;
@@ -642,8 +642,8 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 lineItems: lineItems,
                 
                 currency: currency,
-                issueDate: new Date(),
-                dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                issueDate: invoiceIssueDate ? new Date(invoiceIssueDate) : new Date(),
+                dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                 paymentTerms: 'NET 30',
                 
                 // ✅ UPDATED: Proper tax separation across all combined shipments
@@ -1092,5 +1092,14 @@ function detectSimpleCurrency(shipments) {
     
     return 'CAD'; // Default to CAD for most companies
 }
+
+// Export helper functions for use in other modules
+exports.getSimpleShipmentCharges = getSimpleShipmentCharges;
+exports.getSimpleChargeBreakdown = getSimpleChargeBreakdown;
+exports.calculateInvoiceTotals = calculateInvoiceTotals;
+exports.detectSimpleCurrency = detectSimpleCurrency;
+exports.calculateTotalWeight = calculateTotalWeight;
+exports.getActualCustomerName = getActualCustomerName;
+exports.getCustomerBillingInfo = getCustomerBillingInfo;
 
 // ✅ Note: Tax separation and $0.00 filtering is now active in production 

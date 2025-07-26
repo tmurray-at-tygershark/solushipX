@@ -95,6 +95,9 @@ const BulkInvoiceGenerator = () => {
     // 5. INVOICE GENERATION MODE
     const [invoiceMode, setInvoiceMode] = useState('separate'); // 'separate', 'combined'
 
+    // ✅ NEW: INVOICE DATE SELECTION
+    const [invoiceIssueDate, setInvoiceIssueDate] = useState(null); // Custom invoice issue date
+
     // ✅ NEW: PREVIEW & EMAIL FUNCTIONALITY
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewData, setPreviewData] = useState(null);
@@ -102,6 +105,12 @@ const BulkInvoiceGenerator = () => {
     const [emailLoading, setEmailLoading] = useState(false);
     const [testEmailLoading, setTestEmailLoading] = useState(false);
     const [previewTab, setPreviewTab] = useState(0);
+
+    // ✅ NEW: TEST EMAIL DIALOG
+    const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
+    const [testEmailTo, setTestEmailTo] = useState(['tyler@tygershark.com']); // Default email
+    const [testEmailCc, setTestEmailCc] = useState([]); // CC emails
+    const [testEmailBcc, setTestEmailBcc] = useState([]); // BCC emails
 
     // Status options for filtering
     const statusOptions = [
@@ -132,6 +141,7 @@ const BulkInvoiceGenerator = () => {
                 companyName: selectedCompany.name,
                 invoiceMode: invoiceMode,
                 previewMode: true, // ✅ NEW: Enable preview mode
+                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -196,6 +206,7 @@ const BulkInvoiceGenerator = () => {
                 companyName: selectedCompany.name,
                 invoiceMode: invoiceMode,
                 emailMode: true, // ✅ NEW: Enable email mode
+                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -253,10 +264,24 @@ const BulkInvoiceGenerator = () => {
         }
     };
 
+    // ✅ NEW: OPEN TEST EMAIL DIALOG
+    const handleOpenTestEmailDialog = () => {
+        if (!selectedCompany) {
+            enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+        setTestEmailDialogOpen(true);
+    };
+
     // ✅ NEW: SEND TEST EMAIL FUNCTIONALITY
     const handleSendTestEmail = async () => {
         if (!selectedCompany) {
             enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+
+        if (testEmailTo.length === 0) {
+            enqueueSnackbar('Please enter at least one email address in the "To" field', { variant: 'warning' });
             return;
         }
 
@@ -268,7 +293,12 @@ const BulkInvoiceGenerator = () => {
                 companyName: selectedCompany.name,
                 invoiceMode: invoiceMode,
                 testMode: true, // ✅ NEW: Enable test mode
-                testEmail: 'tyler@tygershark.com', // ✅ NEW: Test email recipient
+                testEmails: {
+                    to: testEmailTo,
+                    cc: testEmailCc,
+                    bcc: testEmailBcc
+                }, // ✅ NEW: Multiple email recipients
+                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -278,7 +308,8 @@ const BulkInvoiceGenerator = () => {
                 }
             };
 
-            enqueueSnackbar('Sending test email to tyler@tygershark.com...', { variant: 'info' });
+            const totalEmails = testEmailTo.length + testEmailCc.length + testEmailBcc.length;
+            enqueueSnackbar(`Sending test email to ${totalEmails} recipient${totalEmails > 1 ? 's' : ''}...`, { variant: 'info' });
 
             const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/sendTestInvoiceEmail', {
                 method: 'POST',
@@ -301,10 +332,13 @@ const BulkInvoiceGenerator = () => {
 
             const testResult = await response.json();
 
-            enqueueSnackbar(`Test email sent successfully to tyler@tygershark.com! ${testResult.invoicesGenerated} sample invoice${testResult.invoicesGenerated > 1 ? 's' : ''} included.`, {
+            enqueueSnackbar(`Test email sent successfully to ${totalEmails} recipient${totalEmails > 1 ? 's' : ''}! ${testResult.invoicesGenerated} sample invoice${testResult.invoicesGenerated > 1 ? 's' : ''} included.`, {
                 variant: 'success',
                 autoHideDuration: 6000
             });
+
+            // Close dialog after successful send
+            setTestEmailDialogOpen(false);
 
         } catch (error) {
             console.error('Test email error:', error);
@@ -460,6 +494,7 @@ const BulkInvoiceGenerator = () => {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
                 invoiceMode: invoiceMode, // ✅ NEW: Pass invoice generation mode to backend
+                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 filters: {
                     // Date filters
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
@@ -974,6 +1009,67 @@ IC-CUSTOMER-789"
                         </Box>
                     </Paper>
 
+                    {/* INVOICE DATE SELECTION */}
+                    <Paper sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                            Invoice Date Settings
+                        </Typography>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                            Set a custom invoice issue date (optional). Due date will automatically be 30 days after the issue date.
+                        </Typography>
+
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={6}>
+                                <DatePicker
+                                    label="Invoice Issue Date (Optional)"
+                                    value={invoiceIssueDate}
+                                    onChange={(newValue) => setInvoiceIssueDate(newValue)}
+                                    slotProps={{
+                                        textField: {
+                                            size: 'small',
+                                            fullWidth: true,
+                                            helperText: invoiceIssueDate ? `Due date will be: ${dayjs(invoiceIssueDate).add(30, 'day').format('MMM DD, YYYY')}` : 'Leave empty to use today\'s date',
+                                            sx: {
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                            }
+                                        }
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Box sx={{ p: 2, backgroundColor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>
+                                    <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        Date Information:
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Issue Date: {invoiceIssueDate ? dayjs(invoiceIssueDate).format('MMM DD, YYYY') : 'Today'}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Due Date: {invoiceIssueDate ? dayjs(invoiceIssueDate).add(30, 'day').format('MMM DD, YYYY') : dayjs().add(30, 'day').format('MMM DD, YYYY')}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Payment Terms: NET 30
+                                    </Typography>
+                                </Box>
+                            </Grid>
+                        </Grid>
+
+                        {invoiceIssueDate && (
+                            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Chip
+                                    label={`Custom Issue Date: ${dayjs(invoiceIssueDate).format('MMM DD, YYYY')}`}
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                    onDelete={() => setInvoiceIssueDate(null)}
+                                    sx={{ fontSize: '11px' }}
+                                />
+                            </Box>
+                        )}
+                    </Paper>
+
                     {/* GENERATION PROGRESS */}
                     {loading && (
                         <Box sx={{ mb: 3 }}>
@@ -1026,9 +1122,9 @@ IC-CUSTOMER-789"
                         {/* ✅ NEW: Test Email Button */}
                         <Button
                             variant="outlined"
-                            startIcon={testEmailLoading ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
-                            onClick={handleSendTestEmail}
-                            disabled={testEmailLoading || !selectedCompany}
+                            startIcon={<SendIcon />}
+                            onClick={handleOpenTestEmailDialog}
+                            disabled={!selectedCompany}
                             sx={{
                                 fontSize: '12px',
                                 borderColor: '#f59e0b',
@@ -1036,7 +1132,7 @@ IC-CUSTOMER-789"
                                 '&:hover': { borderColor: '#d97706', backgroundColor: '#fffbeb' }
                             }}
                         >
-                            {testEmailLoading ? 'Sending Test...' : 'Send Test Email'}
+                            Send Test Email
                         </Button>
 
                         {/* Original ZIP Download Button */}
@@ -1250,14 +1346,138 @@ IC-CUSTOMER-789"
                     >
                         {emailLoading ? 'Sending Invoices...' : 'Email Invoices'}
                     </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ✅ NEW: TEST EMAIL DIALOG */}
+            <Dialog
+                open={testEmailDialogOpen}
+                onClose={() => setTestEmailDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Send Test Invoice Email
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 3 }}>
+                        Enter email addresses to send test invoice emails. You can add multiple emails separated by commas.
+                    </Typography>
+
+                    <Box sx={{ mb: 3 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                            To: *
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            multiline
+                            rows={2}
+                            placeholder="tyler@tygershark.com, john@example.com"
+                            value={testEmailTo.join(', ')}
+                            onChange={(e) => {
+                                const inputValue = e.target.value;
+                                // Allow commas and split on them, but keep the raw input for display
+                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
+                                setTestEmailTo(emails);
+                            }}
+                            onKeyDown={(e) => {
+                                // Allow comma key
+                                if (e.key === ',') {
+                                    e.stopPropagation();
+                                }
+                            }}
+                            helperText="Enter email addresses separated by commas"
+                            sx={{
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                            }}
+                        />
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                            CC:
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            multiline
+                            rows={2}
+                            placeholder="cc@example.com, another@example.com"
+                            value={testEmailCc.join(', ')}
+                            onChange={(e) => {
+                                const inputValue = e.target.value;
+                                // Allow commas and split on them, but keep the raw input for display
+                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
+                                setTestEmailCc(emails);
+                            }}
+                            onKeyDown={(e) => {
+                                // Allow comma key
+                                if (e.key === ',') {
+                                    e.stopPropagation();
+                                }
+                            }}
+                            helperText="Enter CC email addresses separated by commas (optional)"
+                            sx={{
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                            }}
+                        />
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                            BCC:
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            multiline
+                            rows={2}
+                            placeholder="bcc@example.com, another@example.com"
+                            value={testEmailBcc.join(', ')}
+                            onChange={(e) => {
+                                const inputValue = e.target.value;
+                                // Allow commas and split on them, but keep the raw input for display
+                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
+                                setTestEmailBcc(emails);
+                            }}
+                            onKeyDown={(e) => {
+                                // Allow comma key
+                                if (e.key === ',') {
+                                    e.stopPropagation();
+                                }
+                            }}
+                            helperText="Enter BCC email addresses separated by commas (optional)"
+                            sx={{
+                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                            }}
+                        />
+                    </Box>
+
+                    <Alert severity="info" sx={{ fontSize: '12px' }}>
+                        <strong>Note:</strong> Test emails will be sent to all addresses in the "To", "CC", and "BCC" fields.
+                        Each recipient will receive the same test invoice email with all generated invoices attached.
+                    </Alert>
+                </DialogContent>
+                <DialogActions>
                     <Button
-                        variant="outlined"
-                        startIcon={<SendIcon />}
-                        onClick={handleSendTestEmail}
-                        disabled={testEmailLoading || !selectedCompany}
+                        onClick={() => setTestEmailDialogOpen(false)}
                         sx={{ fontSize: '12px' }}
                     >
-                        {testEmailLoading ? 'Sending Test Email...' : 'Send Test Email'}
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={testEmailLoading ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                        onClick={handleSendTestEmail}
+                        disabled={testEmailLoading || testEmailTo.length === 0}
+                        sx={{
+                            fontSize: '12px',
+                            backgroundColor: '#f59e0b',
+                            '&:hover': { backgroundColor: '#d97706' }
+                        }}
+                    >
+                        {testEmailLoading ? 'Sending...' : 'Send Test Email'}
                     </Button>
                 </DialogActions>
             </Dialog>

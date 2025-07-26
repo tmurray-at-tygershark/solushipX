@@ -1158,45 +1158,39 @@ function generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurr
         </div>
     ` : '';
 
+    // Format dates - use invoice data dates if available, otherwise use dynamic dates
+    const issueDate = invoiceData.issueDate ? new Date(invoiceData.issueDate).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
+    const dueDate = invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString('en-US') : new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US');
+
     return `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
                 <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
-                <h1 style="margin: 0; font-size: 24px;">Invoice ${invoiceData.invoiceNumber}</h1>
+                <h1 style="margin: 0; font-size: 24px;">Invoice Notification</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Invoice for ${companyInfo.name || invoiceData.companyName}</p>
             </div>
             
             <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
                 ${testBanner}
                 
-                <!-- Invoice Summary -->
+                <!-- Introductory Content -->
                 <div style="background: white; padding: 20px; border-radius: 4px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Invoice Summary</h2>
+                    <p style="color: #1c277d; margin: 0 0 15px 0; font-size: 16px; font-weight: bold;">Thank you for choosing Integrated Carriers</p>
+                    <p style="color: #333; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at <a href="mailto:ar@integratedcarriers.com" style="color: #1c277d;">ar@integratedcarriers.com</a></p>
+                    <p style="color: #333; margin: 0 0 15px 0; font-size: 14px;">We appreciate your business and look forward to serving you again.</p>
+                    <p style="color: #1c277d; margin: 0; font-size: 14px; font-weight: bold;">(Invoices Attached)</p>
+                </div>
+
+                <!-- Invoice Details -->
+                <div style="background: white; padding: 20px; border-radius: 4px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Invoice #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${invoiceData.invoiceNumber}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Issue Date:</strong></td><td style="padding: 8px 0;">${new Date(invoiceData.issueDate).toLocaleDateString()}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Due Date:</strong></td><td style="padding: 8px 0;">${new Date(invoiceData.dueDate).toLocaleDateString()}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Payment Terms:</strong></td><td style="padding: 8px 0;">${invoiceData.paymentTerms}</td></tr>
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Line Items:</strong></td><td style="padding: 8px 0;">${invoiceData.lineItems.length} shipment${invoiceData.lineItems.length > 1 ? 's' : ''}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Issue Date:</strong></td><td style="padding: 8px 0;">${issueDate}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Due Date:</strong></td><td style="padding: 8px 0;">${dueDate}</td></tr>
+                        <tr><td style="padding: 8px 0; color: #666;"><strong>Payment Terms:</strong></td><td style="padding: 8px 0;">NET 30</td></tr>
                     </table>
                 </div>
 
-                <!-- Amount Summary -->
-                <div style="background: white; padding: 20px; border-radius: 4px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <h3 style="color: #1c277d; margin: 0 0 15px 0; font-size: 16px;">Amount Summary</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 8px 0; color: #666;"><strong>Subtotal:</strong></td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${formatCurrency(invoiceData.subtotal, invoiceData.currency)}</td></tr>
-                        ${invoiceData.tax > 0 ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Tax:</strong></td><td style="padding: 8px 0; text-align: right;">${formatCurrency(invoiceData.tax, invoiceData.currency)}</td></tr>` : ''}
-                        <tr style="border-top: 2px solid #1c277d;"><td style="padding: 12px 0; color: #1c277d; font-size: 18px;"><strong>Total Due:</strong></td><td style="padding: 12px 0; text-align: right; font-size: 18px; font-weight: bold; color: #1c277d;">${formatCurrency(invoiceData.total, invoiceData.currency)}</td></tr>
-                    </table>
-                </div>
 
-                <!-- Important Notes -->
-                <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 4px;">
-                    <h3 style="color: #1d4ed8; margin: 0 0 10px 0; font-size: 16px;">📋 Important Information</h3>
-                    <p style="color: #1e40af; margin: 0; font-size: 14px;">Your detailed invoice PDF is attached to this email. Please remit payment according to the terms specified.</p>
-                    <p style="color: #1e40af; margin: 10px 0 0 0; font-size: 14px;">Questions? Contact us at accounting@integratedcarriers.com</p>
-                </div>
             </div>
             
             <!-- Footer -->
@@ -1218,25 +1212,26 @@ This is a test invoice for formatting verification only.
 
 ` : '';
 
+    // Format dates - use invoice data dates if available, otherwise use dynamic dates
+    const issueDate = invoiceData.issueDate ? new Date(invoiceData.issueDate).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
+    const dueDate = invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString('en-US') : new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US');
+
     return `
-${testHeader}INVOICE ${invoiceData.invoiceNumber}
+${testHeader}INVOICE NOTIFICATION
 Invoice for ${companyInfo.name || invoiceData.companyName}
 
-INVOICE SUMMARY
-Invoice #: ${invoiceData.invoiceNumber}
-Issue Date: ${new Date(invoiceData.issueDate).toLocaleDateString()}
-Due Date: ${new Date(invoiceData.dueDate).toLocaleDateString()}
-Payment Terms: ${invoiceData.paymentTerms}
-Line Items: ${invoiceData.lineItems.length} shipment${invoiceData.lineItems.length > 1 ? 's' : ''}
+Thank you for choosing Integrated Carriers
 
-AMOUNT SUMMARY
-Subtotal: ${formatCurrency(invoiceData.subtotal, invoiceData.currency)}${invoiceData.tax > 0 ? `\nTax: ${formatCurrency(invoiceData.tax, invoiceData.currency)}` : ''}
-Total Due: ${formatCurrency(invoiceData.total, invoiceData.currency)}
+Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at ar@integratedcarriers.com
 
-📋 IMPORTANT INFORMATION
-Your detailed invoice PDF is attached to this email. Please remit payment according to the terms specified.
+We appreciate your business and look forward to serving you again.
 
-Questions? Contact us at accounting@integratedcarriers.com
+(Invoices Attached)
+
+INVOICE DETAILS
+Issue Date: ${issueDate}
+Due Date: ${dueDate}
+Payment Terms: NET 30
 
 "Helping Everyone Succeed"
 © 2025 Integrated Carriers. All rights reserved.
@@ -1330,5 +1325,7 @@ module.exports = {
     onInvoiceCreated,
     generateInvoicePDFAndEmailHelper,
     generateInvoicePDF, // Export the PDF generation function for testing
-    getNextInvoiceNumber // ✅ NEW: Export sequential invoice numbering function
+    getNextInvoiceNumber, // ✅ NEW: Export sequential invoice numbering function
+    generateInvoiceEmailHTML,
+    generateInvoiceEmailText
 }; 
