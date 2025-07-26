@@ -14,13 +14,17 @@ const db = getFirestore();
 const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
 
 // Get SendGrid API key from environment variables or Firebase config
-const sendgridApiKey = process.env.SENDGRID_API_KEY;
+const functions = require('firebase-functions');
+const sendgridApiKey = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.api_key;
 
 // Initialize SendGrid only if API key is available
 if (sendgridApiKey) {
     sgMail.setApiKey(sendgridApiKey);
+    console.log('SendGrid API key loaded successfully');
+    console.log('API Key length:', sendgridApiKey.length);
+    console.log('API Key starts with:', sendgridApiKey.substring(0, 10) + '...');
 } else {
-    console.warn('SendGrid API key not found in environment variables');
+    console.error('SendGrid API key not found in environment variables or Firebase config');
 }
 
 // Status Cache for email notifications
@@ -725,13 +729,20 @@ Questions? Contact support@integratedcarriers.com
 
     status_changed: {
         subject: async (data) => {
-            // Use the enhanced status display that was already prepared with shipment data
-            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
-            return `Status Update: ${currentStatusDisplay.displayText} # ${data.shipmentNumber}`;
+            try {
+                // Use the enhanced status display that was already prepared with shipment data
+                const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+                return `Status Update: ${currentStatusDisplay.displayText} # ${data.shipmentNumber}`;
+            } catch (error) {
+                logger.error('Error generating status_changed subject:', error);
+                // Fallback to simple status
+                return `Status Update: ${data.currentStatus || 'Updated'} # ${data.shipmentNumber}`;
+            }
         },
         html: async (data) => {
-            // Use the enhanced status displays that were already prepared with shipment data
-            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+            try {
+                // Use the enhanced status displays that were already prepared with shipment data
+                const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
             
             return `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -831,10 +842,48 @@ Questions? Contact support@integratedcarriers.com
                 </div>
             </div>
         `;
+            } catch (error) {
+                logger.error('Error generating status_changed html:', error);
+                // Fallback to simple status email
+                return `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
+                        <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                        <h1 style="margin: 0; font-size: 24px;">Shipment Status Update</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Your shipment status has been updated</p>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 30px; border-radius: 0; border: 1px solid #e9ecef;">
+                        <div style="background: white; padding: 20px; border-radius: 0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <h2 style="color: #1c277d; margin: 0 0 15px 0; font-size: 18px;">Status Update</h2>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Shipment #:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.shipmentNumber}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666;"><strong>Current Status:</strong></td><td style="padding: 8px 0; font-weight: bold;">${data.currentStatus || 'Updated'}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666;"><strong>Updated:</strong></td><td style="padding: 8px 0;">${formatDateTimeEST(data.updatedAt)}</td></tr>
+                            </table>
+                        </div>
+                        
+                        <div style="background: #f5f5f5; padding: 20px; border-radius: 0; text-align: center; margin-bottom: 20px;">
+                            <h3 style="color: #1c277d; margin: 0 0 10px 0;">Track Your Shipment</h3>
+                            <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold; color: #1c277d;">${data.shipmentNumber}</p>
+                            <a href="https://solushipx.web.app/tracking/${data.shipmentNumber}" 
+                               style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 0; display: inline-block; border: 2px solid #000;">
+                               Track Shipment
+                            </a>
+                        </div>
+                        
+                        <div style="text-align: center; padding: 20px; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Questions? Contact us at support@integratedcarriers.com</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }
         },
         text: async (data) => {
-            // Use the enhanced status displays that were already prepared with shipment data
-            const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
+            try {
+                // Use the enhanced status displays that were already prepared with shipment data
+                const currentStatusDisplay = data.statusDisplay || await getEnhancedStatusDisplay(data.currentStatus);
             
             return `
 Shipment Status Update
@@ -868,6 +917,22 @@ ${data.isFreight ? '- Freight: Yes' : ''}
 
 Questions? Contact support@integratedcarriers.com
         `;
+            } catch (error) {
+                logger.error('Error generating status_changed text:', error);
+                // Fallback to simple status email
+                return `
+Shipment Status Update
+
+STATUS UPDATE
+- Shipment #: ${data.shipmentNumber}
+- Current Status: ${data.currentStatus || 'Updated'}
+- Updated: ${formatDateTimeEST(data.updatedAt)}
+
+Track your shipment: https://solushipx.web.app/tracking/${data.shipmentNumber}
+
+Questions? Contact support@integratedcarriers.com
+        `;
+            }
         }
     },
 
@@ -1547,6 +1612,7 @@ Questions about this cancellation? Contact support@integratedcarriers.com
 async function sendNotificationEmail(type, companyId, data, notificationId = null) {
     try {
         logger.info(`Sending ${type} notification for company ${companyId}`, { notificationId, type });
+        logger.info(`🔑 SendGrid API Key Debug - Key exists: ${!!sendgridApiKey}, Length: ${sendgridApiKey ? sendgridApiKey.length : 0}`);
 
         if (!sendgridApiKey) {
             throw new Error('SendGrid API key not configured');

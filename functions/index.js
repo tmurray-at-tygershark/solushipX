@@ -382,6 +382,9 @@ const { updateInvoiceStatus: updateBillingInvoiceStatus } = require('./src/billi
 const { approveChargesWithFinalValues } = require('./src/billing/approveChargesWithFinalValues');
 const { testInvoiceGeneration } = require('./src/billing/testInvoiceGeneration');
 const { generateBulkInvoices } = require('./src/billing/bulkInvoiceGenerator');
+const { previewBulkInvoices } = require('./src/billing/previewBulkInvoices');
+const { emailBulkInvoices } = require('./src/billing/emailBulkInvoices');
+const { sendTestInvoiceEmail } = require('./src/billing/sendTestInvoiceEmail');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -403,6 +406,9 @@ exports.updateBillingInvoiceStatus = updateBillingInvoiceStatus;
 exports.approveChargesWithFinalValues = approveChargesWithFinalValues;
 exports.testInvoiceGeneration = testInvoiceGeneration;
 exports.generateBulkInvoices = generateBulkInvoices;
+exports.previewBulkInvoices = previewBulkInvoices;
+exports.emailBulkInvoices = emailBulkInvoices;
+exports.sendTestInvoiceEmail = sendTestInvoiceEmail;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;

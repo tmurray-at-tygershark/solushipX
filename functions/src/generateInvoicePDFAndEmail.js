@@ -1,5 +1,5 @@
 const { logger } = require('firebase-functions');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const PDFDocument = require('pdfkit');
 const { getStorage } = require('firebase-admin/storage');
 const sgMail = require('@sendgrid/mail');
@@ -56,8 +56,14 @@ async function getNextInvoiceNumber() {
     }
 }
 
-// Configure SendGrid
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Configure SendGrid with fallback to Firebase config
+const functions = require('firebase-functions');
+const sendgridApiKey = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.api_key;
+
+if (!sendgridApiKey) {
+    throw new Error('SendGrid API key not found in environment variables or Firebase config');
+}
+sgMail.setApiKey(sendgridApiKey);
 
 // Email configuration constants - Updated per billing requirements
 const SEND_FROM_EMAIL = 'ap@integratedcarriers.com';
@@ -86,48 +92,15 @@ async function generateInvoicePDFAndEmailHelper(invoiceData, companyId, testMode
 
         let companyInfo;
         
-        // Handle test mode with mock company data - make this check more explicit
-        if (testMode === true && companyId === 'TEST_COMPANY') {
-            logger.info('✅ USING MOCK COMPANY DATA - Test mode detected correctly');
-            // Use mock company data for test mode
-            companyInfo = {
-                name: 'Tyger Shark Inc',
-                companyID: 'TEST_COMPANY',
-                address: {
-                    street: '123 Business Street, Suite 100',
-                    city: 'Toronto',
-                    state: 'ON',
-                    postalCode: 'M5V 3A8',
-                    country: 'Canada'
-                },
-                phone: '(416) 555-0123',
-                email: 'billing@tygershark.com',
-                billingAddress: {
-                    address1: '123 Business Street, Suite 100',
-                    city: 'Toronto',
-                    stateProv: 'ON',
-                    zipPostal: 'M5V 3A8',
-                    country: 'CA',
-                    email: 'billing@tygershark.com'
-                }
-            };
-            logger.info('Mock company data created successfully');
-        } else {
-            logger.info('❌ PRODUCTION MODE - Will query database for company:', companyId);
-            logger.info('Why production mode?', {
-                testModeCheck: testMode === true,
-                companyIdCheck: companyId === 'TEST_COMPANY',
-                bothChecks: testMode === true && companyId === 'TEST_COMPANY'
-            });
-            // Get company information from database for production mode
-            const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
-            if (companyDoc.empty) {
-                logger.error('Company not found in database:', companyId);
-                throw new Error('Company not found');
-            }
-            companyInfo = companyDoc.docs[0].data();
-            logger.info('Company data retrieved from database');
+        // Get company information from database (always use real company data)
+        logger.info('Querying database for company:', companyId);
+        const companyDoc = await db.collection('companies').where('companyID', '==', companyId).get();
+        if (companyDoc.empty) {
+            logger.error('Company not found in database:', companyId);
+            throw new Error('Company not found');
         }
+        companyInfo = companyDoc.docs[0].data();
+        logger.info('Company data retrieved from database');
         
         // Generate PDF
         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);

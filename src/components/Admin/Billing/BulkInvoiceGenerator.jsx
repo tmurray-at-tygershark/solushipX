@@ -19,7 +19,19 @@ import {
     Collapse,
     IconButton,
     Tooltip,
-    LinearProgress
+    LinearProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Tabs,
+    Tab
 } from '@mui/material';
 import {
     Download as DownloadIcon,
@@ -32,7 +44,11 @@ import {
     Clear as ClearIcon,
     Inventory as ShipmentIcon,
     CalendarToday as CalendarIcon,
-    Assignment as StatusIcon
+    Assignment as StatusIcon,
+    Preview as PreviewIcon,
+    Email as EmailIcon,
+    Send as SendIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -44,7 +60,7 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 
-// AUTO INVOICE GENERATOR - Enterprise-Grade Filtering
+// AUTO INVOICE GENERATOR - Enterprise-Grade Filtering with Preview & Email Features
 const BulkInvoiceGenerator = () => {
     const { enqueueSnackbar } = useSnackbar();
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
@@ -79,6 +95,14 @@ const BulkInvoiceGenerator = () => {
     // 5. INVOICE GENERATION MODE
     const [invoiceMode, setInvoiceMode] = useState('separate'); // 'separate', 'combined'
 
+    // ✅ NEW: PREVIEW & EMAIL FUNCTIONALITY
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [emailLoading, setEmailLoading] = useState(false);
+    const [testEmailLoading, setTestEmailLoading] = useState(false);
+    const [previewTab, setPreviewTab] = useState(0);
+
     // Status options for filtering
     const statusOptions = [
         { value: 'all', label: 'All Statuses' },
@@ -92,6 +116,206 @@ const BulkInvoiceGenerator = () => {
         { value: 'delayed', label: 'Delayed' },
         { value: 'exception', label: 'Exception' }
     ];
+
+    // ✅ NEW: PREVIEW INVOICES FUNCTIONALITY
+    const handlePreviewInvoices = async () => {
+        if (!selectedCompany) {
+            enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setPreviewLoading(true);
+
+            const filterParams = {
+                companyId: selectedCompany.companyID,
+                companyName: selectedCompany.name,
+                invoiceMode: invoiceMode,
+                previewMode: true, // ✅ NEW: Enable preview mode
+                filters: {
+                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
+                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
+                    status: statusFilter !== 'all' ? statusFilter : null,
+                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
+                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                }
+            };
+
+            enqueueSnackbar('Generating invoice preview...', { variant: 'info' });
+
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/previewBulkInvoices', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(filterParams)
+            });
+
+            if (!response.ok) {
+                let errorMessage = 'Failed to generate invoice preview';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (parseError) {
+                    console.warn('Could not parse error response:', parseError);
+                }
+                throw new Error(errorMessage);
+            }
+
+            const previewResult = await response.json();
+            setPreviewData(previewResult);
+            setPreviewOpen(true);
+
+            enqueueSnackbar(`Preview generated: ${previewResult.totalInvoices} invoices for ${previewResult.totalShipments} shipments`, {
+                variant: 'success'
+            });
+
+        } catch (error) {
+            console.error('Preview generation error:', error);
+            enqueueSnackbar(`Failed to generate preview: ${error.message}`, {
+                variant: 'error'
+            });
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    // ✅ NEW: EMAIL INVOICES FUNCTIONALITY
+    const handleEmailInvoices = async () => {
+        if (!selectedCompany) {
+            enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setEmailLoading(true);
+            setGenerationProgress(10);
+
+            const filterParams = {
+                companyId: selectedCompany.companyID,
+                companyName: selectedCompany.name,
+                invoiceMode: invoiceMode,
+                emailMode: true, // ✅ NEW: Enable email mode
+                filters: {
+                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
+                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
+                    status: statusFilter !== 'all' ? statusFilter : null,
+                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
+                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                }
+            };
+
+            enqueueSnackbar(`Generating and emailing invoices for ${selectedCompany.name}...`, {
+                variant: 'info',
+                autoHideDuration: 3000
+            });
+
+            setGenerationProgress(25);
+
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/emailBulkInvoices', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(filterParams)
+            });
+
+            setGenerationProgress(75);
+
+            if (!response.ok) {
+                let errorMessage = 'Failed to email invoices';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (parseError) {
+                    console.warn('Could not parse error response:', parseError);
+                }
+                throw new Error(errorMessage);
+            }
+
+            const emailResult = await response.json();
+            setGenerationProgress(100);
+
+            enqueueSnackbar(`Successfully emailed ${emailResult.successCount} invoices! ${emailResult.errorCount > 0 ? `${emailResult.errorCount} failed to send.` : ''}`, {
+                variant: 'success',
+                autoHideDuration: 8000
+            });
+
+        } catch (error) {
+            console.error('Email invoices error:', error);
+            enqueueSnackbar(`Failed to email invoices: ${error.message}`, {
+                variant: 'error',
+                autoHideDuration: 8000
+            });
+        } finally {
+            setEmailLoading(false);
+            setGenerationProgress(0);
+        }
+    };
+
+    // ✅ NEW: SEND TEST EMAIL FUNCTIONALITY
+    const handleSendTestEmail = async () => {
+        if (!selectedCompany) {
+            enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setTestEmailLoading(true);
+
+            const filterParams = {
+                companyId: selectedCompany.companyID,
+                companyName: selectedCompany.name,
+                invoiceMode: invoiceMode,
+                testMode: true, // ✅ NEW: Enable test mode
+                testEmail: 'tyler@tygershark.com', // ✅ NEW: Test email recipient
+                filters: {
+                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
+                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
+                    status: statusFilter !== 'all' ? statusFilter : null,
+                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
+                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                }
+            };
+
+            enqueueSnackbar('Sending test email to tyler@tygershark.com...', { variant: 'info' });
+
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/sendTestInvoiceEmail', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(filterParams)
+            });
+
+            if (!response.ok) {
+                let errorMessage = 'Failed to send test email';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (parseError) {
+                    console.warn('Could not parse error response:', parseError);
+                }
+                throw new Error(errorMessage);
+            }
+
+            const testResult = await response.json();
+
+            enqueueSnackbar(`Test email sent successfully to tyler@tygershark.com! ${testResult.invoicesGenerated} sample invoice${testResult.invoicesGenerated > 1 ? 's' : ''} included.`, {
+                variant: 'success',
+                autoHideDuration: 6000
+            });
+
+        } catch (error) {
+            console.error('Test email error:', error);
+            enqueueSnackbar(`Failed to send test email: ${error.message}`, {
+                variant: 'error',
+                autoHideDuration: 8000
+            });
+        } finally {
+            setTestEmailLoading(false);
+        }
+    };
 
     // COMPANY LOADING - Fixed Implementation based on GlobalShipmentList.jsx
     const loadCompanies = useCallback(async () => {
@@ -766,8 +990,56 @@ IC-CUSTOMER-789"
                         </Box>
                     )}
 
-                    {/* ACTION BUTTONS */}
-                    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                    {/* ACTION BUTTONS - Enhanced with Preview, Email & Test Functionality */}
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 3 }}>
+                        {/* ✅ NEW: Preview Button */}
+                        <Button
+                            variant="outlined"
+                            startIcon={previewLoading ? <CircularProgress size={16} color="inherit" /> : <PreviewIcon />}
+                            onClick={handlePreviewInvoices}
+                            disabled={previewLoading || !selectedCompany}
+                            sx={{
+                                fontSize: '12px',
+                                borderColor: '#7c3aed',
+                                color: '#7c3aed',
+                                '&:hover': { borderColor: '#6d28d9', backgroundColor: '#f3f4f6' }
+                            }}
+                        >
+                            {previewLoading ? 'Generating Preview...' : 'Preview Invoices'}
+                        </Button>
+
+                        {/* ✅ NEW: Email Invoices Button */}
+                        <Button
+                            variant="contained"
+                            startIcon={emailLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
+                            onClick={handleEmailInvoices}
+                            disabled={emailLoading || !selectedCompany}
+                            sx={{
+                                fontSize: '12px',
+                                backgroundColor: '#059669',
+                                '&:hover': { backgroundColor: '#047857' }
+                            }}
+                        >
+                            {emailLoading ? 'Sending Emails...' : 'Email Invoices'}
+                        </Button>
+
+                        {/* ✅ NEW: Test Email Button */}
+                        <Button
+                            variant="outlined"
+                            startIcon={testEmailLoading ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                            onClick={handleSendTestEmail}
+                            disabled={testEmailLoading || !selectedCompany}
+                            sx={{
+                                fontSize: '12px',
+                                borderColor: '#f59e0b',
+                                color: '#f59e0b',
+                                '&:hover': { borderColor: '#d97706', backgroundColor: '#fffbeb' }
+                            }}
+                        >
+                            {testEmailLoading ? 'Sending Test...' : 'Send Test Email'}
+                        </Button>
+
+                        {/* Original ZIP Download Button */}
                         <Button
                             variant="contained"
                             startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <ArchiveIcon />}
@@ -779,22 +1051,7 @@ IC-CUSTOMER-789"
                                 '&:hover': { backgroundColor: '#6d28d9' }
                             }}
                         >
-                            {loading ? 'Generating ZIP...' : 'Generate Customer ZIP'}
-                        </Button>
-
-                        <Button
-                            variant="outlined"
-                            startIcon={<DownloadIcon />}
-                            disabled={loading}
-                            sx={{ fontSize: '12px' }}
-                            onClick={() => {
-                                enqueueSnackbar('Configure filters above and click "Generate Customer ZIP" to create your download', {
-                                    variant: 'info',
-                                    autoHideDuration: 4000
-                                });
-                            }}
-                        >
-                            Download will start automatically
+                            {loading ? 'Generating ZIP...' : 'Generate ZIP'}
                         </Button>
                     </Box>
 
@@ -803,9 +1060,13 @@ IC-CUSTOMER-789"
                     {/* ENHANCED SUMMARY INFO */}
                     <Box sx={{ mt: 3 }}>
                         <Alert severity="info" sx={{ mb: 2, fontSize: '12px' }}>
-                            <strong>Smart Filtering:</strong> Set date range and status at the top level, select a company,
-                            optionally filter by specific customers and target specific shipment IDs. Creates organized ZIP
-                            with customer folders containing individual PDF invoices.
+                            <strong>✨ New Features:</strong> <strong>Preview Invoices</strong> to see what will be generated,
+                            <strong>Email Invoices</strong> to send directly to customers using professional templates, and
+                            <strong>Send Test Email</strong> to tyler@tygershark.com for validation. Original ZIP download still available.
+                        </Alert>
+
+                        <Alert severity="success" sx={{ mb: 2, fontSize: '12px' }}>
+                            <strong>Workflow:</strong> 1) Configure filters → 2) Preview invoices → 3) Send test email for approval → 4) Email to customers or download ZIP
                         </Alert>
 
                         {selectedCompany && (
@@ -848,6 +1109,158 @@ IC-CUSTOMER-789"
                     </Box>
                 </Paper>
             </Box>
+
+            {/* PREVIEW DIALOG */}
+            <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="h6">Invoice Preview</Typography>
+                    <IconButton onClick={() => setPreviewOpen(false)}>
+                        <CloseIcon />
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent dividers>
+                    {previewLoading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                            <CircularProgress />
+                        </Box>
+                    ) : previewData ? (
+                        <Tabs value={previewTab} onChange={(event, newValue) => setPreviewTab(newValue)}>
+                            <Tab label="Summary" />
+                            <Tab label="PDF Previews" />
+                        </Tabs>
+                    ) : (
+                        <Alert severity="info">No preview data available.</Alert>
+                    )}
+
+                    {previewData && previewTab === 0 && (
+                        <Box sx={{ mt: 3 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                Preview Summary
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                This is a preview of the invoices that would be generated for your selected filters.
+                                The actual ZIP file will contain the full, detailed invoices.
+                            </Typography>
+                            <Box sx={{ mt: 2 }}>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                    Total Shipments: {previewData.totalShipments}
+                                </Typography>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                    Total Invoices: {previewData.totalInvoices}
+                                </Typography>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                    Total Line Items: {previewData.totalLineItems}
+                                </Typography>
+                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                    Total Amount: {previewData.totalAmount.toLocaleString()}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    )}
+
+                    {previewData && previewTab === 1 && (
+                        <Box sx={{ mt: 3 }}>
+                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                PDF Invoice Previews
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                                These are actual generated PDF invoices that preview what will be sent to customers.
+                                Click on any invoice to view the full PDF.
+                            </Typography>
+
+                            {previewData.sampleInvoices.map((invoice, index) => (
+                                <Paper key={index} sx={{ p: 2, mb: 2, border: '1px solid #e5e7eb' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                        <Box>
+                                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                {invoice.invoiceId}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                {invoice.customerName} • {invoice.shipmentId} • ${invoice.totalAmount.toLocaleString()}
+                                            </Typography>
+                                        </Box>
+                                        {invoice.pdfBase64 ? (
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<PreviewIcon />}
+                                                onClick={() => {
+                                                    const pdfWindow = window.open('', '_blank');
+                                                    pdfWindow.document.write(`
+                                                         <html>
+                                                             <head><title>${invoice.fileName}</title></head>
+                                                             <body style="margin:0;">
+                                                                 <iframe src="data:application/pdf;base64,${invoice.pdfBase64}" 
+                                                                         style="width:100%; height:100vh; border:none;">
+                                                                 </iframe>
+                                                             </body>
+                                                         </html>
+                                                     `);
+                                                    pdfWindow.document.close();
+                                                }}
+                                                sx={{ fontSize: '11px' }}
+                                            >
+                                                View PDF
+                                            </Button>
+                                        ) : (
+                                            <Chip
+                                                label={invoice.error || 'PDF Generation Failed'}
+                                                color="error"
+                                                size="small"
+                                                sx={{ fontSize: '10px' }}
+                                            />
+                                        )}
+                                    </Box>
+
+                                    {invoice.pdfBase64 && (
+                                        <Box sx={{
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: 1,
+                                            overflow: 'hidden',
+                                            height: '400px'
+                                        }}>
+                                            <iframe
+                                                src={`data:application/pdf;base64,${invoice.pdfBase64}`}
+                                                width="100%"
+                                                height="100%"
+                                                style={{ border: 'none' }}
+                                                title={`Invoice Preview - ${invoice.invoiceId}`}
+                                            />
+                                        </Box>
+                                    )}
+                                </Paper>
+                            ))}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setPreviewOpen(false)} color="primary">
+                        Close
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<EmailIcon />}
+                        onClick={handleEmailInvoices}
+                        disabled={emailLoading || !selectedCompany}
+                        sx={{
+                            fontSize: '12px',
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' }
+                        }}
+                    >
+                        {emailLoading ? 'Sending Invoices...' : 'Email Invoices'}
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<SendIcon />}
+                        onClick={handleSendTestEmail}
+                        disabled={testEmailLoading || !selectedCompany}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {testEmailLoading ? 'Sending Test Email...' : 'Send Test Email'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </LocalizationProvider>
     );
 };
