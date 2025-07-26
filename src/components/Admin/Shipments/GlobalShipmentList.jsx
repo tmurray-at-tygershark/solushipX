@@ -94,6 +94,17 @@ const GlobalShipmentList = () => {
     // State for refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
 
+    // State for navigation tracking
+    const [currentShipmentDetail, setCurrentShipmentDetail] = useState(null);
+
+    // Function to handle breadcrumb navigation back to shipments list
+    const handleBreadcrumbBack = useCallback(() => {
+        // This will close the shipment detail modal and return to the shipments list
+        setCurrentShipmentDetail(null);
+        // Force a reset of the ShipmentsX navigation stack
+        setResetKey(prev => prev + 1);
+    }, []);
+
     // State for view mode restoration
     const [originalViewMode, setOriginalViewMode] = useState(null);
     const [originalCompanyData, setOriginalCompanyData] = useState(null);
@@ -1049,7 +1060,11 @@ const GlobalShipmentList = () => {
                 {/* Breadcrumb and Filter Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
                     {/* Breadcrumb */}
-                    <AdminBreadcrumb currentPage="Shipments" />
+                    <AdminBreadcrumb
+                        currentPage="Shipments"
+                        detailContext={currentShipmentDetail ? "Shipment Detail" : null}
+                        onNavigateBack={currentShipmentDetail ? handleBreadcrumbBack : null}
+                    />
 
                     {/* Right side controls */}
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flex: 1 }}>
@@ -1588,100 +1603,102 @@ const GlobalShipmentList = () => {
                             )}
                         </Box>
 
-                        {/* Company Selector */}
-                        <FormControl
-                            size="small"
-                            sx={{
-                                minWidth: 300,
-                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                '& .MuiSelect-select': { fontSize: '12px' }
-                            }}
-                        >
-                            <InputLabel id="company-select-label">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <BusinessIcon sx={{ fontSize: 16 }} />
-                                    Filter by Company
-                                </Box>
-                            </InputLabel>
-                            <Select
-                                labelId="company-select-label"
-                                value={selectedCompanyId}
-                                onChange={handleCompanyChange}
-                                label={
+                        {/* Company Selector - Hide when viewing shipment details */}
+                        {!currentShipmentDetail && (
+                            <FormControl
+                                size="small"
+                                sx={{
+                                    minWidth: 300,
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiSelect-select': { fontSize: '12px' }
+                                }}
+                            >
+                                <InputLabel id="company-select-label">
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         <BusinessIcon sx={{ fontSize: 16 }} />
                                         Filter by Company
                                     </Box>
-                                }
-                            >
-                                {/* All Companies Option */}
-                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                        <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            All Companies
-                                        </Typography>
-                                        <Chip
-                                            label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
-                                            size="small"
-                                            color="primary"
-                                            sx={{
-                                                height: 20,
-                                                fontSize: '10px',
-                                                ml: 'auto'
-                                            }}
-                                        />
-                                    </Box>
-                                </MenuItem>
-
-                                {/* Individual Companies */}
-                                {availableCompanies.map(company => (
-                                    <MenuItem
-                                        key={company.companyID}
-                                        value={company.companyID}
-                                        sx={{ fontSize: '12px' }}
-                                    >
+                                </InputLabel>
+                                <Select
+                                    labelId="company-select-label"
+                                    value={selectedCompanyId}
+                                    onChange={handleCompanyChange}
+                                    label={
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <BusinessIcon sx={{ fontSize: 16 }} />
+                                            Filter by Company
+                                        </Box>
+                                    }
+                                >
+                                    {/* All Companies Option */}
+                                    <MenuItem value="all" sx={{ fontSize: '12px' }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
-                                                <Typography sx={{ fontSize: '12px' }}>
-                                                    {company.name}
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                    ({company.companyID})
-                                                </Typography>
-                                            </Box>
-                                            {company.status === 'active' ? (
-                                                <Chip
-                                                    label="Active"
-                                                    size="small"
-                                                    color="success"
-                                                    sx={{
-                                                        height: 20,
-                                                        fontSize: '10px',
-                                                        ml: 'auto'
-                                                    }}
-                                                />
-                                            ) : (
-                                                <Chip
-                                                    label="Inactive"
-                                                    size="small"
-                                                    sx={{
-                                                        height: 20,
-                                                        fontSize: '10px',
-                                                        ml: 'auto'
-                                                    }}
-                                                />
-                                            )}
+                                            <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                All Companies
+                                            </Typography>
+                                            <Chip
+                                                label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                                size="small"
+                                                color="primary"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
+                                                }}
+                                            />
                                         </Box>
                                     </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+
+                                    {/* Individual Companies */}
+                                    {availableCompanies.map(company => (
+                                        <MenuItem
+                                            key={company.companyID}
+                                            value={company.companyID}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
+                                                    <Typography sx={{ fontSize: '12px' }}>
+                                                        {company.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                        ({company.companyID})
+                                                    </Typography>
+                                                </Box>
+                                                {company.status === 'active' ? (
+                                                    <Chip
+                                                        label="Active"
+                                                        size="small"
+                                                        color="success"
+                                                        sx={{
+                                                            height: 20,
+                                                            fontSize: '10px',
+                                                            ml: 'auto'
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <Chip
+                                                        label="Inactive"
+                                                        size="small"
+                                                        sx={{
+                                                            height: 20,
+                                                            fontSize: '10px',
+                                                            ml: 'auto'
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
                     </Box>
                 </Box>
 
-                {/* Company Details */}
-                {selectedCompanyData && viewMode === 'single' && (
+                {/* Company Details - Hide when viewing shipment details */}
+                {selectedCompanyData && viewMode === 'single' && !currentShipmentDetail && (
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px' }}>
                             Company ID: {selectedCompanyData.companyID} |
@@ -1765,6 +1782,15 @@ const GlobalShipmentList = () => {
                         onModalBack={null}
                         deepLinkParams={shipmentsDeepLinkParams}
                         onOpenCreateShipment={handleOpenCreateShipment}
+                        onNavigationChange={(navigationStack) => {
+                            // Track when shipment detail is open for breadcrumb display
+                            const shipmentDetailView = navigationStack.find(view => view.component === 'shipment-detail');
+                            if (shipmentDetailView) {
+                                setCurrentShipmentDetail(shipmentDetailView.props?.shipmentId);
+                            } else {
+                                setCurrentShipmentDetail(null);
+                            }
+                        }}
                         onClearDeepLinkParams={() => {
                             // PREVENT CLEARING DURING NAVIGATION
                             if (isNavigating) {

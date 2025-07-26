@@ -47,6 +47,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import ManualStatusOverride from './ManualStatusOverride';
 import invoiceStatusService from '../../../services/invoiceStatusService';
+import { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } from '../../../utils/shipmentEvents';
 
 // CarrierDisplay component to show carrier logo and name
 const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
@@ -470,6 +471,46 @@ const ShipmentInformation = ({
             if (updatedShipment.exists()) {
                 const shipmentData = updatedShipment.data();
                 console.log(`Verified: shipment ${shipment.shipmentID} now has invoiceStatus: "${shipmentData.invoiceStatus}"`);
+            }
+
+            // 🔧 RECORD INVOICE STATUS CHANGE EVENT
+            try {
+                // Get the status labels for better display
+                const currentStatusObj = invoiceStatuses.find(s => s.statusCode === currentInvoiceStatus);
+                const newStatusObj = invoiceStatuses.find(s => s.statusCode === statusToSave);
+
+                const currentStatusLabel = currentStatusObj?.statusLabel || currentInvoiceStatus;
+                const newStatusLabel = newStatusObj?.statusLabel || statusToSave;
+
+                // 🔍 DEBUG LOGGING: Let's see what IDs we're working with
+                console.log('🔍 DEBUG - Invoice Status Change Event Recording:');
+                console.log('shipment.id (Firestore document ID):', shipment.id);
+                console.log('shipment.shipmentID (business ID):', shipment.shipmentID);
+                console.log('actualDocumentId (from query):', actualDocumentId);
+                console.log('Event will be recorded using actualDocumentId:', actualDocumentId);
+
+                await recordShipmentEvent(actualDocumentId, {
+                    eventType: EVENT_TYPES.USER_ACTION,
+                    title: 'Invoice Status Changed',
+                    description: `Invoice status changed from "${currentStatusLabel}" to "${newStatusLabel}"`,
+                    source: EVENT_SOURCES.USER,
+                    metadata: {
+                        previousInvoiceStatus: currentInvoiceStatus,
+                        newInvoiceStatus: statusToSave,
+                        previousStatusLabel: currentStatusLabel,
+                        newStatusLabel: newStatusLabel,
+                        changeType: 'invoice_status'
+                    }
+                }, {
+                    email: currentUser?.email,
+                    uid: currentUser?.uid,
+                    displayName: currentUser?.displayName || currentUser?.email
+                });
+
+                console.log(`📝 Recorded invoice status change event for shipment ${shipment.shipmentID} using documentId ${actualDocumentId}`);
+            } catch (eventError) {
+                console.error('Failed to record invoice status change event:', eventError);
+                // Don't fail the main operation if event logging fails
             }
 
             if (onShowSnackbar) {

@@ -244,6 +244,12 @@ const ShipmentTimeline = ({ events }) => {
     const formatStatusDisplay = (event) => {
         const rawStatus = event.status || event.title || 'Status Unavailable';
 
+        // For user action events (like invoice status changes), display the title directly
+        // without trying to process it through the status service
+        if (event.eventType === 'user_action') {
+            return { displayText: rawStatus, masterStatus: null, subStatus: null };
+        }
+
         if (!statusService || !statusServiceInitialized) {
             return { displayText: rawStatus, masterStatus: null, subStatus: null };
         }
@@ -438,10 +444,10 @@ const ShipmentTimeline = ({ events }) => {
                                     {event.description}
                                 </Typography>
                             )}
-                            {event.userData && event.userData.email && (
+                            {event.userData && (event.userData.userEmail || event.userData.email) && (
                                 <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '12px' }}>
-                                        {`User: ${event.userData.email}`}
+                                        {`User: ${event.userData.userName || event.userData.userEmail || event.userData.email}`}
                                     </Typography>
                                 </Box>
                             )}

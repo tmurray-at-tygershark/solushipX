@@ -923,7 +923,7 @@ const EnterpriseModalHeader = ({
     );
 };
 
-const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null, hideSearch = false }) => {
+const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, onModalBack = null, deepLinkParams = null, onOpenCreateShipment = null, onClearDeepLinkParams = null, adminViewMode = null, adminCompanyIds = null, hideSearch = false, onNavigationChange = null }) => {
     console.log('🚢 ShipmentsX component loaded with props:', { isModal, showCloseButton, deepLinkParams, onOpenCreateShipment, adminViewMode, adminCompanyIds });
 
     // Auth and company context
@@ -1034,6 +1034,13 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
 
     // Track if we've already processed the initial search to prevent re-triggering
     const [hasProcessedInitialSearch, setHasProcessedInitialSearch] = useState(false);
+
+    // Notify parent component about navigation changes for breadcrumb updates
+    useEffect(() => {
+        if (onNavigationChange && typeof onNavigationChange === 'function') {
+            onNavigationChange(navigationStack);
+        }
+    }, [navigationStack, onNavigationChange]);
 
     // Initialize state from deep link parameters only
     useEffect(() => {
@@ -5033,8 +5040,8 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
     return (
         <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
             <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-                {/* Modal Header - Show for modal mode OR when in admin view with detail page */}
-                {(isModal || (adminViewMode && navigationStack.length > 1)) && (
+                {/* Modal Header - Show for modal mode, but hide for admin users viewing shipment details */}
+                {(isModal && !(adminViewMode && navigationStack.length > 1)) && (
                     <EnterpriseModalHeader
                         navigation={getNavigationObject()}
                         onBack={handleBackClick}

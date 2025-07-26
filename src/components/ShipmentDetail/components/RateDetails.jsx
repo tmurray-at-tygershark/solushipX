@@ -1323,7 +1323,7 @@ const RateDetails = ({
                                 <TableBody>
                                     {localRateBreakdown.map((item, index) => (
                                         <TableRow key={index} sx={{ '&:hover': { bgcolor: '#f8fafc' } }}>
-                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle', width: '80px' }}>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top', width: '80px' }}>
                                                 {editingIndex === index ? (
                                                     <FormControl size="small" fullWidth>
                                                         <Select
@@ -1382,7 +1382,7 @@ const RateDetails = ({
                                                     />
                                                 )}
                                             </TableCell>
-                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'middle' }}>
+                                            <TableCell sx={{ fontSize: '12px', verticalAlign: 'top' }}>
                                                 {editingIndex === index ? (
                                                     <TextField
                                                         value={editingValues.description}
@@ -1414,7 +1414,7 @@ const RateDetails = ({
                                                 )}
                                             </TableCell>
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', color: '#374151', fontWeight: 500, verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', color: '#374151', fontWeight: 500, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
                                                             value={editingValues.quotedCost}
@@ -1441,7 +1441,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
+                                            <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                 {editingIndex === index ? (
                                                     <TextField
                                                         value={editingValues.quotedCharge}
@@ -1468,7 +1468,7 @@ const RateDetails = ({
                                                 )}
                                             </TableCell>
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
                                                             value={editingValues.actualCost || ''}
@@ -1491,7 +1491,7 @@ const RateDetails = ({
                                                             }}
                                                         />
                                                     ) : (
-                                                        item.actualCost > 0 ? formatCurrency(item.actualCost) : (
+                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '') ? formatCurrency(item.actualCost) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1500,7 +1500,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
                                                             value={editingValues.actualCharge || ''}
@@ -1523,7 +1523,7 @@ const RateDetails = ({
                                                             }}
                                                         />
                                                     ) : (
-                                                        item.actualCharge > 0 ? formatCurrency(item.actualCharge) : (
+                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '') ? formatCurrency(item.actualCharge) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1532,7 +1532,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         // Show calculated profit during editing using smart logic
                                                         (() => {
@@ -1618,7 +1618,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
                                                             value={editingValues.invoiceNumber || ''}
@@ -1639,7 +1639,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
                                                             value={editingValues.ediNumber || ''}
@@ -1660,7 +1660,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'top' }}>
                                                     <Checkbox
                                                         checked={editingIndex === index ? (editingValues.commissionable || false) : (item.commissionable || false)}
                                                         onChange={(e) => {
@@ -1691,7 +1691,7 @@ const RateDetails = ({
                                                 </TableCell>
                                             )}
                                             {enhancedIsAdmin && (
-                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                                <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                                                             <Tooltip title="Save">
@@ -1754,34 +1754,14 @@ const RateDetails = ({
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
                                                 {formatCurrency(localEffectiveTotalCost)}
-                                                {localTotalActualCost > 0 && (
-                                                    <Typography variant="caption" sx={{
-                                                        fontSize: '10px',
-                                                        color: '#059669',
-                                                        display: 'block',
-                                                        fontWeight: 400
-                                                    }}>
-                                                        (with actuals)
-                                                    </Typography>
-                                                )}
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                             {formatCurrency(localEffectiveTotalCharge)}
-                                            {localTotalActualCharge > 0 && (
-                                                <Typography variant="caption" sx={{
-                                                    fontSize: '10px',
-                                                    color: '#059669',
-                                                    display: 'block',
-                                                    fontWeight: 400
-                                                }}>
-                                                    (with actuals)
-                                                </Typography>
-                                            )}
                                         </TableCell>
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                                {localTotalActualCost > 0 ? formatCurrency(localTotalActualCost) : (
+                                                {(localTotalActualCost !== null && localTotalActualCost !== undefined && localTotalActualCost !== '') ? formatCurrency(localTotalActualCost) : (
                                                     <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
                                                         TBD
                                                     </Typography>
@@ -1790,7 +1770,7 @@ const RateDetails = ({
                                         )}
                                         {enhancedIsAdmin && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                                {localTotalActualCharge > 0 ? formatCurrency(localTotalActualCharge) : (
+                                                {(localTotalActualCharge !== null && localTotalActualCharge !== undefined && localTotalActualCharge !== '') ? formatCurrency(localTotalActualCharge) : (
                                                     <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
                                                         TBD
                                                     </Typography>

@@ -2,8 +2,16 @@ import React from 'react';
 import { Paper, Box, Typography, Grid, Button } from '@mui/material';
 import { Business as BusinessIcon } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const ShipmentSummary = ({ shipment }) => {
+    const { userRole } = useAuth();
+    const isAdminView = userRole === 'admin' || userRole === 'superadmin';
+
+    // Hide the entire component in admin view
+    if (isAdminView) {
+        return null;
+    }
     return (
         <Paper sx={{ p: 3, borderRadius: 2, mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>

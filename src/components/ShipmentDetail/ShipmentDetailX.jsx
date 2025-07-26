@@ -134,6 +134,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     // Main hooks for data and actions
     const {
         shipment,
+        setShipment,
         loading,
         error,
         carrierData,
@@ -1149,10 +1150,24 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
         }
 
         try {
+            // 🔧 CRITICAL FIX: Filter out charges with empty descriptions before sending to backend
+            const validCharges = updatedCharges.filter((charge, index) => {
+                if (!charge.description || charge.description.trim() === '') {
+                    console.warn(`⚠️ Skipping charge ${index + 1} with empty description:`, charge);
+                    return false;
+                }
+                return true;
+            });
+
+            if (validCharges.length === 0) {
+                throw new Error('No valid charges to save. All charges must have a description.');
+            }
+
             console.log('💰 Saving updated charges to database:', {
                 shipmentId: shipment.id,
-                chargeCount: updatedCharges.length,
-                charges: updatedCharges.map(charge => ({
+                originalChargeCount: updatedCharges.length,
+                validChargeCount: validCharges.length,
+                charges: validCharges.map(charge => ({
                     id: charge.id,
                     code: charge.code,
                     description: charge.description,
@@ -1166,11 +1181,11 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
             const chargesData = {
                 shipmentId: shipment.id,
-                charges: updatedCharges.map((charge, index) => ({
+                charges: validCharges.map((charge, index) => ({
                     // 🔧 CRITICAL FIX: Only use fallbacks for truly missing/null values, preserve existing data
                     id: charge.id || `charge_${index}`, // Add unique ID for tracking
                     code: charge.code != null ? charge.code : 'FRT', // Preserve empty strings, only fallback for null/undefined
-                    description: charge.description != null ? charge.description : '', // Preserve empty strings
+                    description: charge.description.trim(), // Ensure description is trimmed and not empty
                     quotedCost: charge.quotedCost != null ? parseFloat(charge.quotedCost) || 0 : 0,
                     quotedCharge: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) || 0 : 0,
                     actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) || 0 : 0,
@@ -1192,13 +1207,87 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     showSnackbar('Charges saved successfully', 'success');
                 }
 
-                // SMART BACKGROUND REFRESH - Update data without disrupting UI
-                setTimeout(() => {
-                    console.log('🔄 Background refresh: Updating shipment data silently');
-                    refreshShipment();
-                }, 500); // Small delay to ensure database consistency
+                // 🔧 HYBRID APPROACH: Update local state with saved charges, then fallback refresh if needed
+                try {
+                    // 2. Selective State Update: Update local shipment state with confirmed data
+                    console.log('🔄 Updating local state with saved charges');
+                    setShipment(prevShipment => {
+                        if (!prevShipment) {
+                            console.warn('⚠️ No previous shipment data for state update');
+                            return prevShipment;
+                        }
 
-                return { success: true };
+                        // Calculate totals from the saved charges
+                        const totalQuotedCost = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.quotedCost) || 0), 0);
+                        const totalQuotedCharge = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.quotedCharge) || 0), 0);
+                        const totalActualCost = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCost) || 0), 0);
+                        const totalActualCharge = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCharge) || 0), 0);
+
+                        // Update the shipment with new charge data
+                        const updatedShipment = {
+                            ...prevShipment,
+                            rateBreakdown: validCharges,
+                            // Update selectedRate if it exists
+                            ...(prevShipment.selectedRate && {
+                                selectedRate: {
+                                    ...prevShipment.selectedRate,
+                                    charges: validCharges,
+                                    totalCharges: totalQuotedCharge,
+                                    // Update rate totals if they exist
+                                    ...(totalQuotedCharge > 0 && {
+                                        cost: totalQuotedCost,
+                                        price: totalQuotedCharge,
+                                        totalCost: totalQuotedCost,
+                                        totalPrice: totalQuotedCharge
+                                    })
+                                }
+                            }),
+                            // Update actualRates if it exists (for dual rate system)
+                            ...(prevShipment.actualRates && {
+                                actualRates: {
+                                    ...prevShipment.actualRates,
+                                    charges: validCharges,
+                                    totalCharges: totalActualCost
+                                }
+                            }),
+                            // Update markupRates if it exists (for dual rate system)
+                            ...(prevShipment.markupRates && {
+                                markupRates: {
+                                    ...prevShipment.markupRates,
+                                    charges: validCharges,
+                                    totalCharges: totalActualCharge
+                                }
+                            }),
+                            // Update any legacy charge fields
+                            ...(prevShipment.charges && { charges: validCharges }),
+                            // Update timestamp to track when charges were last modified
+                            lastChargeUpdate: new Date().toISOString(),
+                            chargesLastModified: new Date().toISOString()
+                        };
+
+                        console.log('✅ Local state updated with saved charges:', {
+                            chargeCount: validCharges.length,
+                            totalQuotedCost,
+                            totalQuotedCharge,
+                            totalActualCost,
+                            totalActualCharge
+                        });
+
+                        return updatedShipment;
+                    });
+
+                    return { success: true };
+                } catch (stateUpdateError) {
+                    console.warn('⚠️ State update failed, falling back to full refresh:', stateUpdateError);
+
+                    // 3. Fallback: Full refresh only if state update fails
+                    setTimeout(() => {
+                        console.log('🔄 Executing fallback refresh due to state update failure');
+                        refreshShipment();
+                    }, 300); // Shorter delay since this is a fallback
+
+                    return { success: true };
+                }
             } else {
                 throw new Error(result.data?.error || 'Failed to update charges');
             }
@@ -1209,7 +1298,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
             }
             return { success: false, error: error.message };
         }
-    }, [shipment?.id, showSnackbar]);
+    }, [shipment?.id, setShipment, refreshShipment]); // Added setShipment and refreshShipment for hybrid approach
 
     if (loading) {
         return <LoadingSkeleton />;

@@ -94,7 +94,14 @@ export const useShipmentData = (shipmentId) => {
         setHistoryLoading(true);
         const idToListen = shipment.id || shipment.shipmentID;
 
+        // 🔍 DEBUG LOGGING: Let's see what ID we're listening with
+        console.log('🔍 DEBUG - Event Listener Setup:');
+        console.log('shipment.id (Firestore document ID):', shipment.id);
+        console.log('shipment.shipmentID (business ID):', shipment.shipmentID);
+        console.log('idToListen (what we will use for listening):', idToListen);
+
         const unsubscribe = listenToShipmentEvents(idToListen, (events) => {
+            console.log('🔍 DEBUG - Events received for ID:', idToListen, 'Count:', events?.length || 0);
             setShipmentEvents(events || []);
             setHistoryLoading(false);
         });
@@ -591,6 +598,7 @@ export const useShipmentData = (shipmentId) => {
 
     return {
         shipment,
+        setShipment, // Export setter for selective updates
         loading,
         error,
         carrierData,
