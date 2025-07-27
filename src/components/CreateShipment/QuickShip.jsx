@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import rateDataManager from '../../utils/rateDataManager';
 import {
     Box,
     Typography,
@@ -3032,13 +3033,61 @@ const QuickShip = ({
                     setPackages(validatedPackages);
                 }
 
-                // 🔧 CRITICAL FIX: Load rates with priority order - updatedCharges first, then manualRates
+                // 🔧 UNIFIED SYSTEM: Use rateDataManager for consistent data loading
                 let ratesToLoad = null;
                 let rateSource = '';
 
-                // Priority 1: Check for saved inline edits in updatedCharges
-                if (editShipment.updatedCharges && Array.isArray(editShipment.updatedCharges) && editShipment.updatedCharges.length > 0) {
-                    console.log('🔧 QuickShip edit: Loading from updatedCharges (inline edits):', editShipment.updatedCharges.length);
+                try {
+                    // Use unified rate data manager to get the latest rate data
+                    const rateData = rateDataManager.convertToUniversalFormat(editShipment);
+
+                    console.log('🔧 QuickShip edit: Loading from unified rate manager:', {
+                        chargeCount: rateData.charges.length,
+                        totalCost: rateData.totals.cost,
+                        totalCharge: rateData.totals.charge,
+                        carrier: rateData.carrier.name
+                    });
+
+                    rateSource = 'unified_manager';
+                    ratesToLoad = rateData.charges.map((charge, index) => ({
+                        id: charge.id || index + 1,
+                        carrier: rateData.carrier.name || editShipment.selectedCarrier || '',
+                        code: charge.code,
+                        chargeName: charge.name,
+                        cost: charge.cost ? parseFloat(charge.cost).toFixed(2) : '',
+                        costCurrency: charge.currency,
+                        charge: charge.charge ? parseFloat(charge.charge).toFixed(2) : '',
+                        chargeCurrency: charge.currency,
+                        // Include all inline edit fields
+                        actualCost: charge.cost || '',
+                        actualCharge: charge.charge || '',
+                        invoiceNumber: charge.invoiceNumber || '',
+                        ediNumber: charge.ediNumber || '',
+                        commissionable: charge.commissionable || false
+                    }));
+                } catch (error) {
+                    console.error('❌ Error loading from unified rate manager, falling back to legacy:', error);
+
+                    // Legacy fallback: manualRates
+                    if (editShipment.manualRates && editShipment.manualRates.length > 0) {
+                        console.log('🔧 QuickShip edit: Legacy fallback to manualRates:', editShipment.manualRates.length);
+                        rateSource = 'manualRates_fallback';
+                        ratesToLoad = editShipment.manualRates.map(rate => ({
+                            ...rate,
+                            cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
+                            charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : '',
+                            actualCost: rate.actualCost || '',
+                            actualCharge: rate.actualCharge || '',
+                            invoiceNumber: rate.invoiceNumber || '',
+                            ediNumber: rate.ediNumber || '',
+                            commissionable: rate.commissionable || false
+                        }));
+                    }
+                }
+
+                // Legacy fallback: Check for old updatedCharges format (for backward compatibility)
+                if (!ratesToLoad && editShipment.updatedCharges && Array.isArray(editShipment.updatedCharges) && editShipment.updatedCharges.length > 0) {
+                    console.log('🔧 QuickShip edit: Legacy fallback - loading from updatedCharges:', editShipment.updatedCharges.length);
                     rateSource = 'updatedCharges';
                     ratesToLoad = editShipment.updatedCharges.map(charge => ({
                         id: charge.id || Math.random(),
@@ -3057,18 +3106,8 @@ const QuickShip = ({
                         isMarkup: charge.isMarkup || false
                     }));
                 }
-                // Priority 2: Fallback to manualRates if no inline edits exist
-                else if (editShipment.manualRates && editShipment.manualRates.length > 0) {
-                    console.log('🔧 QuickShip edit: Loading from manualRates (original data):', editShipment.manualRates.length);
-                    rateSource = 'manualRates';
-                    ratesToLoad = editShipment.manualRates.map(rate => ({
-                        ...rate,
-                        cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
-                        charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
-                    }));
-                }
                 // Priority 3: Legacy rates format
-                else if (editShipment.rates && editShipment.rates.length > 0) {
+                if (!ratesToLoad && editShipment.rates && editShipment.rates.length > 0) {
                     console.log('🔧 QuickShip edit: Loading from legacy rates format:', editShipment.rates.length);
                     rateSource = 'legacy rates';
                     ratesToLoad = editShipment.rates.map((rate, index) => ({

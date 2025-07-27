@@ -1223,10 +1223,31 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         const totalActualCost = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCost) || 0), 0);
                         const totalActualCharge = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCharge) || 0), 0);
 
+                        // 🔧 CRITICAL FIX: Update manualRates for QuickShip shipments (rateDataManager source of truth)
+                        const isQuickShip = prevShipment.creationMethod === 'quickship';
+
                         // Update the shipment with new charge data
                         const updatedShipment = {
                             ...prevShipment,
                             rateBreakdown: validCharges,
+                            // 🚀 QuickShip: Update manualRates (rateDataManager priority field)
+                            ...(isQuickShip && {
+                                manualRates: validCharges.map(charge => ({
+                                    id: charge.id,
+                                    carrier: charge.carrier || prevShipment.selectedCarrier || '',
+                                    code: charge.code,
+                                    chargeName: charge.description,
+                                    cost: charge.quotedCost || 0,
+                                    charge: charge.quotedCharge || 0,
+                                    actualCost: charge.actualCost || 0,
+                                    actualCharge: charge.actualCharge || 0,
+                                    costCurrency: charge.currency || 'CAD',
+                                    chargeCurrency: charge.currency || 'CAD',
+                                    invoiceNumber: charge.invoiceNumber || '-',
+                                    ediNumber: charge.ediNumber || '-',
+                                    commissionable: charge.commissionable || false
+                                }))
+                            }),
                             // Update selectedRate if it exists
                             ...(prevShipment.selectedRate && {
                                 selectedRate: {
@@ -1262,7 +1283,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                             ...(prevShipment.charges && { charges: validCharges }),
                             // Update timestamp to track when charges were last modified
                             lastChargeUpdate: new Date().toISOString(),
-                            chargesLastModified: new Date().toISOString()
+                            chargesLastModified: new Date().toISOString(),
+                            // 🔄 CRITICAL: Update lastModified so RateDetails component refreshes
+                            lastModified: new Date().toISOString()
                         };
 
                         console.log('✅ Local state updated with saved charges:', {
@@ -1270,7 +1293,10 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                             totalQuotedCost,
                             totalQuotedCharge,
                             totalActualCost,
-                            totalActualCharge
+                            totalActualCharge,
+                            isQuickShip,
+                            manualRatesUpdated: isQuickShip ? validCharges.length : 'N/A (not QuickShip)',
+                            lastModified: new Date().toISOString()
                         });
 
                         return updatedShipment;

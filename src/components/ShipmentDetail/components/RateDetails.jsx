@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import rateDataManager from '../../../utils/rateDataManager';
 import {
     Grid,
     Paper,
@@ -853,317 +854,79 @@ const RateDetails = ({
         });
     };
 
-    // Get rate breakdown data for table
+    // Get rate breakdown data for table - UNIFIED VERSION
     const getRateBreakdown = () => {
-        const breakdown = [];
+        console.log('🔧 DEBUG: Getting unified rate breakdown for shipment:', {
+            shipmentId: shipment?.id,
+            shipmentCreationMethod: shipment?.creationMethod,
+            lastModified: shipment?.lastModified
+        });
 
-        // FIXED PRIORITY: For QuickShip shipments, manualRates is the single source of truth
-        const isQuickShipShipment = shipment?.creationMethod === 'quickship' || shipment?.isQuickShip;
-
-        if (isQuickShipShipment) {
-            // 🔧 CRITICAL FIX: For QuickShip, check updatedCharges FIRST (saved edits), then manualRates
-
-            // Priority 1: Check for saved inline edits in updatedCharges
-            if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
-                console.log('🔧 DEBUG: QuickShip getRateBreakdown - loading from updatedCharges (inline edits):', {
-                    shipmentId: shipment.id,
-                    updatedChargesCount: shipment.updatedCharges.length,
-                    rates: shipment.updatedCharges.map(charge => ({
-                        code: charge.code,
-                        description: charge.description,
-                        quotedCharge: charge.quotedCharge || charge.amount,
-                        isTax: charge.isTax || false
-                    }))
-                });
-
-                return shipment.updatedCharges.map((charge, index) => ({
-                    id: charge.id || `quickship_updated_${index}`,
-                    description: charge.description || '',
-                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0,
-                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0,
-                    actualCost: parseFloat(charge.actualCost) || 0,
-                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0,
-                    code: charge.code || 'FRT',
-                    invoiceNumber: charge.invoiceNumber || '-',
-                    ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false,
-                    // Preserve tax flags
-                    isTax: charge.isTax || false,
-                    isMarkup: charge.isMarkup || false
-                }));
-            }
-
-            // Priority 2: Fallback to original manualRates if no edits exist
-            if (shipment?.manualRates && Array.isArray(shipment.manualRates) && shipment.manualRates.length > 0) {
-                console.log('🔧 DEBUG: QuickShip getRateBreakdown - loading from manualRates (original data):', {
-                    shipmentId: shipment.id,
-                    manualRatesCount: shipment.manualRates.length,
-                    rates: shipment.manualRates.map(rate => ({
-                        code: rate.code,
-                        description: rate.chargeName || rate.description,
-                        charge: rate.charge,
-                        isTax: rate.isTax || false
-                    }))
-                });
-
-                return shipment.manualRates.map((rate, index) => ({
-                    id: rate.id || `quickship_${index}`, // 🔧 Add unique ID
-                    description: rate.chargeName || rate.description || '',
-                    quotedCost: parseFloat(rate.cost) || 0,
-                    quotedCharge: parseFloat(rate.charge) || 0,
-                    actualCost: parseFloat(rate.actualCost) || 0,
-                    actualCharge: parseFloat(rate.actualCharge) || 0,
-                    code: rate.code || 'FRT',
-                    invoiceNumber: rate.invoiceNumber || '-',
-                    ediNumber: rate.ediNumber || '-',
-                    commissionable: rate.commissionable || false,
-                    // Preserve tax flags
-                    isTax: rate.isTax || false,
-                    isMarkup: rate.isMarkup || false
-                }));
-            }
-        } else {
-            // For regular shipments: Use the original priority order
-
-            // Priority 1: Check for saved charges from database (highest priority)
-            if (shipment?.updatedCharges && Array.isArray(shipment.updatedCharges) && shipment.updatedCharges.length > 0) {
-                console.log('🔧 DEBUG: Regular shipment getRateBreakdown - loading from updatedCharges:', {
-                    shipmentId: shipment.id,
-                    updatedChargesCount: shipment.updatedCharges.length,
-                    charges: shipment.updatedCharges.map(charge => ({
-                        code: charge.code,
-                        description: charge.description,
-                        quotedCharge: charge.quotedCharge || charge.amount,
-                        isTax: charge.isTax || false
-                    }))
-                });
-
-                return shipment.updatedCharges.map((charge, index) => ({
-                    id: charge.id || `updated_${index}`, // 🔧 Add unique ID
-                    description: charge.description,
-                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
-                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
-                    actualCost: parseFloat(charge.actualCost) || 0,
-                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
-                    code: charge.code || 'FRT',
-                    invoiceNumber: charge.invoiceNumber || '-',
-                    ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false,
-                    // Preserve tax flags
-                    isTax: charge.isTax || false,
-                    isMarkup: charge.isMarkup || false
-                }));
-            }
-
-            // Priority 2: Check chargesBreakdown
-            if (shipment?.chargesBreakdown && Array.isArray(shipment.chargesBreakdown) && shipment.chargesBreakdown.length > 0) {
-                console.log('🔧 DEBUG: Regular shipment getRateBreakdown - loading from chargesBreakdown:', {
-                    shipmentId: shipment.id,
-                    chargesBreakdownCount: shipment.chargesBreakdown.length,
-                    charges: shipment.chargesBreakdown.map(charge => ({
-                        code: charge.code,
-                        description: charge.description,
-                        quotedCharge: charge.quotedCharge || charge.amount,
-                        isTax: charge.isTax || false
-                    }))
-                });
-
-                return shipment.chargesBreakdown.map((charge, index) => ({
-                    id: charge.id || `breakdown_${index}`, // 🔧 Add unique ID
-                    description: charge.description,
-                    quotedCost: parseFloat(charge.quotedCost || charge.cost) || 0, // Fallback to old 'cost' field
-                    quotedCharge: parseFloat(charge.quotedCharge || charge.amount) || 0, // Fallback to old 'amount' field
-                    actualCost: parseFloat(charge.actualCost) || 0,
-                    actualCharge: parseFloat(charge.actualCharge || charge.actualAmount) || 0, // Fallback to old 'actualAmount' field
-                    code: charge.code || 'FRT',
-                    invoiceNumber: charge.invoiceNumber || '-',
-                    ediNumber: charge.ediNumber || '-',
-                    commissionable: charge.commissionable || false,
-                    // Preserve tax flags
-                    isTax: charge.isTax || false,
-                    isMarkup: charge.isMarkup || false
-                }));
-            }
+        if (!shipment?.id) {
+            console.log('🔧 DEBUG: No shipment ID, returning empty breakdown');
+            return [];
         }
 
-        // Priority 3: QuickShip data
-        if (quickShipData && quickShipData.charges.length > 0) {
-            // QuickShip manual rates - get codes from original manualRates
-            quickShipData.charges.forEach((charge, index) => {
-                const originalRate = shipment?.manualRates?.[index];
+        try {
+            // Use the unified rate data manager
+            const rateData = rateDataManager.convertToUniversalFormat(shipment);
+
+            console.log('🔧 DEBUG: Universal rate data loaded:', {
+                shipmentId: shipment.id,
+                chargeCount: rateData.charges.length,
+                totalCost: rateData.totals.cost,
+                totalCharge: rateData.totals.charge,
+                carrier: rateData.carrier.name
+            });
+
+            // Convert to legacy format for current UI compatibility
+            const breakdown = rateData.charges.map(charge => ({
+                id: charge.id,
+                code: charge.code,
+                description: charge.name,
+                quotedCost: charge.cost,
+                quotedCharge: charge.charge,
+                actualCost: charge.cost,
+                actualCharge: charge.charge,
+                invoiceNumber: charge.invoiceNumber,
+                ediNumber: charge.ediNumber,
+                commissionable: charge.commissionable,
+                currency: charge.currency,
+                // Preserve tax flags
+                isTax: charge.category === 'tax',
+                isMarkup: charge.category === 'markup'
+            }));
+
+            // Add markup as separate line item for admin users
+            if (enhancedIsAdmin && markupSummary?.hasMarkup) {
                 breakdown.push({
-                    id: charge.id || `quickship_data_${index}`, // 🔧 Add unique ID
-                    description: charge.name,
-                    quotedCost: charge.cost || 0, // QuickShip cost becomes quoted cost
-                    quotedCharge: charge.amount || 0, // QuickShip amount becomes quoted charge
-                    actualCost: 0, // No actual cost initially
-                    actualCharge: 0, // No actual charge initially
-                    code: originalRate?.code || 'FRT',
-                    invoiceNumber: '-',
-                    ediNumber: '-',
-                    commissionable: false,
-                    // Preserve tax flags
-                    isTax: charge.isTax || false,
-                    isMarkup: charge.isMarkup || false
-                });
-            });
-        } else if (getBestRateInfo?.billingDetails && Array.isArray(getBestRateInfo.billingDetails) && getBestRateInfo.billingDetails.length > 0) {
-            // Regular shipment rates with billingDetails
-            const validDetails = getBestRateInfo.billingDetails.filter(detail =>
-                detail &&
-                detail.name &&
-                (detail.amount !== undefined && detail.amount !== null)
-            );
-
-            validDetails.forEach(detail => {
-                // Map description to likely charge code
-                const getChargeCode = (name) => {
-                    const lowerName = name.toLowerCase();
-                    if (lowerName.includes('freight')) return 'FRT';
-                    if (lowerName.includes('fuel')) return 'FUE';
-                    if (lowerName.includes('accessorial')) return 'ACC';
-                    if (lowerName.includes('hst') || lowerName.includes('tax')) return 'HST';
-                    if (lowerName.includes('gst')) return 'GST';
-                    if (lowerName.includes('surcharge')) return 'SUR';
-                    return 'MSC'; // Default to miscellaneous
-                };
-
-                breakdown.push({
-                    description: detail.name,
-                    quotedCost: safeNumber(detail.cost || detail.amount), // Use cost field or fallback to amount
-                    quotedCharge: safeNumber(detail.amount),
-                    actualCost: 0, // No actual cost initially
-                    actualCharge: 0, // No actual charge initially
-                    code: detail.code || getChargeCode(detail.name),
-                    invoiceNumber: '-',
-                    ediNumber: '-',
-                    commissionable: false
-                });
-            });
-        } else {
-            // Fallback to basic rate structure
-            const getActualVsMarkupAmount = (field) => {
-                if (shipment?.actualRates?.billingDetails && shipment?.markupRates?.billingDetails) {
-                    const actualDetail = shipment.actualRates.billingDetails.find(detail =>
-                        detail.name && (
-                            detail.name.toLowerCase().includes(field.toLowerCase()) ||
-                            detail.category === field
-                        )
-                    );
-                    const markupDetail = shipment.markupRates.billingDetails.find(detail =>
-                        detail.name && (
-                            detail.name.toLowerCase().includes(field.toLowerCase()) ||
-                            detail.category === field
-                        )
-                    );
-
-                    if (actualDetail && markupDetail) {
-                        return {
-                            actual: actualDetail.amount,
-                            markup: markupDetail.amount
-                        };
-                    }
-                }
-
-                // Fallback to same amount for both
-                const fallbackAmount = safeNumber(getBestRateInfo?.pricing?.[field] || getBestRateInfo?.[field + 'Charge'] || getBestRateInfo?.[field + 'Charges']);
-                return {
-                    actual: fallbackAmount,
-                    markup: fallbackAmount
-                };
-            };
-
-            const freight = getActualVsMarkupAmount('freight');
-            // Always show freight charges, even if $0.00
-            breakdown.push({
-                description: 'Freight Charges',
-                quotedCost: freight.actual || 0, // Use actual as quoted cost initially
-                quotedCharge: freight.markup || 0, // Use markup as quoted charge initially
-                actualCost: 0, // No actual cost initially
-                actualCharge: 0, // No actual charge initially
-                code: 'FRT',
-                invoiceNumber: '-',
-                ediNumber: '-',
-                commissionable: false
-            });
-
-            const fuel = getActualVsMarkupAmount('fuel');
-            // Always show fuel charges, even if $0.00
-            breakdown.push({
-                description: 'Fuel Charges',
-                quotedCost: fuel.actual || 0,
-                quotedCharge: fuel.markup || 0,
-                actualCost: 0,
-                actualCharge: 0,
-                code: 'FUE',
-                invoiceNumber: '-',
-                ediNumber: '-',
-                commissionable: false
-            });
-
-            const service = getActualVsMarkupAmount('service');
-            // Always show service charges, even if $0.00
-            breakdown.push({
-                description: 'Service Charges',
-                quotedCost: service.actual || 0,
-                quotedCharge: service.markup || 0,
-                actualCost: 0,
-                actualCharge: 0,
-                code: 'MSC',
-                invoiceNumber: '-',
-                ediNumber: '-',
-                commissionable: false
-            });
-
-            const accessorial = getActualVsMarkupAmount('accessorial');
-            // Always show accessorial charges, even if $0.00
-            breakdown.push({
-                description: 'Accessorial Charges',
-                quotedCost: accessorial.actual || 0,
-                quotedCharge: accessorial.markup || 0,
-                actualCost: 0,
-                actualCharge: 0,
-                code: 'ACC',
-                invoiceNumber: '-',
-                ediNumber: '-',
-                commissionable: false
-            });
-
-            if (getBestRateInfo?.guaranteed) {
-                const guarantee = getActualVsMarkupAmount('guarantee');
-                // Always show guarantee charges, even if $0.00
-                breakdown.push({
-                    description: 'Guarantee Charge',
-                    quotedCost: guarantee.actual || 0,
-                    quotedCharge: guarantee.markup || 0,
+                    id: 'platform-markup',
+                    description: 'Platform Markup',
+                    quotedCost: 0,
+                    quotedCharge: markupSummary.markupAmount || 0,
                     actualCost: 0,
                     actualCharge: 0,
-                    code: 'SUR',
+                    code: 'MSC',
+                    isMarkup: true,
                     invoiceNumber: '-',
                     ediNumber: '-',
                     commissionable: false
                 });
             }
-        }
 
-        // Add markup as separate line item for admin users
-        if (enhancedIsAdmin && markupSummary?.hasMarkup) {
-            breakdown.push({
-                description: 'Platform Markup',
-                quotedCost: 0,
-                quotedCharge: markupSummary.markupAmount || 0,
-                actualCost: 0,
-                actualCharge: 0,
-                code: 'MSC',
-                isMarkup: true,
-                invoiceNumber: '-',
-                ediNumber: '-',
-                commissionable: false
+            console.log('✅ Unified rate breakdown complete:', {
+                shipmentId: shipment.id,
+                itemCount: breakdown.length,
+                totalQuotedCost: breakdown.reduce((sum, item) => sum + item.quotedCost, 0),
+                totalQuotedCharge: breakdown.reduce((sum, item) => sum + item.quotedCharge, 0)
             });
-        }
 
-        // Apply actual charges extraction to the breakdown
-        return extractActualCharges(breakdown);
+            return breakdown;
+
+        } catch (error) {
+            console.error('❌ Error getting unified rate breakdown:', error);
+            return [];
+        }
     };
 
     const {
