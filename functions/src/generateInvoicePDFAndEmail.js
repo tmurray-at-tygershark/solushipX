@@ -595,7 +595,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     }
                 }
                 
-                // Calculate details column height
+                // ✅ FIXED: Calculate details column height using proper text wrapping calculation
                 const detailsForHeight = [
                     `Ship Date: ${formatDate(item.date)}`,
                     `Tracking: ${item.trackingNumber || 'TBD'}`,
@@ -603,7 +603,17 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     `${item.packages || 1} pcs`,
                     `${(item.weight || 0) * (item.packages || 1)} ${item.weightUnit || 'lbs'}`
                 ].filter(detail => detail);
-                const detailsHeight = 4 + (detailsForHeight.length * 9);
+                
+                let calculatedDetailsHeight = 4; // Base padding
+                detailsForHeight.forEach(detail => {
+                    if (detail && detail.trim()) {
+                        const textHeight = doc.heightOfString(detail.trim(), { 
+                            width: colWidths[1] - 4 
+                        });
+                        calculatedDetailsHeight += Math.max(textHeight, 9); // Use calculated height or minimum 9px
+                    }
+                });
+                const detailsHeight = calculatedDetailsHeight;
                 
                 // Use the maximum height among all columns, with minimum of 45px
                 const rowHeight = Math.max(maxColumnHeight, feesHeight, detailsHeight, 45);
@@ -683,14 +693,20 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     `${totalWeight} ${item.weightUnit || 'lbs'}`
                 ].filter(detail => detail); // Remove empty details
                 
+                // ✅ FIXED: Use proper text wrapping and height calculation for DETAILS column
                 let detailY = tableY + 2;
                 shipmentDetails.forEach(detail => {
-                    doc.text(detail, colPositions[1] + 2, detailY, { 
-                        width: colWidths[1] - 4,
-                        align: 'left',
-                        baseline: 'top' 
-                    });
-                    detailY += 9;
+                    if (detail && detail.trim()) {
+                        const textHeight = doc.heightOfString(detail.trim(), { 
+                            width: colWidths[1] - 4 
+                        });
+                        doc.text(detail.trim(), colPositions[1] + 2, detailY, { 
+                            width: colWidths[1] - 4,
+                            align: 'left',
+                            baseline: 'top' 
+                        });
+                        detailY += Math.max(textHeight, 9); // Use calculated height or minimum 9px
+                    }
                 });
 
                 // Column 3: Origin (with company name and proper spacing)
