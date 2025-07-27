@@ -4066,7 +4066,7 @@ const QuickShip = ({
             ? selectedCompanyId
             : companyIdForAddress;
 
-        if (currentCompanyId && selectedCustomerId) {
+        if (currentCompanyId && selectedCustomerId !== undefined && selectedCustomerId !== null) {
             console.log('🎯 Customer filter changed, reloading addresses:', {
                 currentCompanyId,
                 selectedCustomerId,
@@ -6001,7 +6001,65 @@ const QuickShip = ({
                                                         size="small"
                                                         onClick={() => {
                                                             console.log('Change Ship From address clicked');
+
+                                                            // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
+                                                            let customerContext = selectedCustomerId;
+
+                                                            // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
+                                                            const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
+
+                                                            if (!customerContext || customerContext === 'all' || isFirestoreId) {
+                                                                // Priority 1: Use addressClassID if it's a customer address (business customer ID)
+                                                                if (shipFromAddress?.addressClassID && shipFromAddress?.addressClass === 'customer') {
+                                                                    customerContext = shipFromAddress.addressClassID;
+                                                                }
+                                                                // Priority 2: Use customerID field (business customer ID)
+                                                                else if (shipFromAddress?.customerID) {
+                                                                    customerContext = shipFromAddress.customerID;
+                                                                }
+                                                                // Priority 3: Extract business customer ID from shipment data
+                                                                else if (editShipment?.shipTo?.customer?.customerID) {
+                                                                    customerContext = editShipment.shipTo.customer.customerID;
+                                                                }
+                                                                // Priority 4: Try other shipment customer fields (business IDs)
+                                                                else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
+                                                                    customerContext = editShipment.customerID; // Business customer ID
+                                                                }
+                                                                // Default: Show all company addresses
+                                                                else {
+                                                                    customerContext = 'all';
+                                                                }
+                                                            }
+
+                                                            console.log('🔍 Customer extraction process for ShipFrom:', {
+                                                                originalSelectedCustomerId: selectedCustomerId,
+                                                                shipFromAddress: {
+                                                                    addressClassID: shipFromAddress?.addressClassID,
+                                                                    addressClass: shipFromAddress?.addressClass,
+                                                                    customerID: shipFromAddress?.customerID
+                                                                },
+                                                                editShipment: {
+                                                                    customerID: editShipment?.customerID,
+                                                                    customerId: editShipment?.customerId,
+                                                                    shipToCustomerID: editShipment?.shipTo?.customer?.customerID
+                                                                },
+                                                                finalCustomerContext: customerContext
+                                                            });
+
                                                             setShipFromAddress(null);
+
+                                                            // Refresh addresses with the determined customer context
+                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+                                                                ? selectedCompanyId
+                                                                : companyIdForAddress;
+                                                            if (currentCompanyId) {
+                                                                console.log('🔄 Refreshing addresses after clearing ShipFrom:', {
+                                                                    currentCompanyId,
+                                                                    customerContext,
+                                                                    shouldFindAddressesFor: customerContext === 'all' ? 'ALL company addresses' : `Customer: ${customerContext}`
+                                                                });
+                                                                loadAddressesForCompany(currentCompanyId, customerContext);
+                                                            }
                                                         }}
                                                         sx={{
                                                             bgcolor: 'rgba(255, 255, 255, 0.95)',
@@ -6296,7 +6354,52 @@ const QuickShip = ({
                                                         size="small"
                                                         onClick={() => {
                                                             console.log('Change Ship To address clicked');
+
+                                                            // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
+                                                            let customerContext = selectedCustomerId;
+
+                                                            // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
+                                                            const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
+
+                                                            if (!customerContext || customerContext === 'all' || isFirestoreId) {
+                                                                // Priority 1: Use addressClassID if it's a customer address (business customer ID)
+                                                                if (shipToAddress?.addressClassID && shipToAddress?.addressClass === 'customer') {
+                                                                    customerContext = shipToAddress.addressClassID;
+                                                                }
+                                                                // Priority 2: Use customerID field (business customer ID)
+                                                                else if (shipToAddress?.customerID) {
+                                                                    customerContext = shipToAddress.customerID;
+                                                                }
+                                                                // Priority 3: Extract business customer ID from shipment data
+                                                                else if (editShipment?.shipTo?.customer?.customerID) {
+                                                                    customerContext = editShipment.shipTo.customer.customerID;
+                                                                }
+                                                                // Priority 4: Try other shipment customer fields (business IDs)
+                                                                else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
+                                                                    customerContext = editShipment.customerID; // Business customer ID
+                                                                }
+                                                                // Default: Show all company addresses
+                                                                else {
+                                                                    customerContext = 'all';
+                                                                }
+                                                            }
+
                                                             setShipToAddress(null);
+
+                                                            // Refresh addresses with the determined customer context
+                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+                                                                ? selectedCompanyId
+                                                                : companyIdForAddress;
+                                                            if (currentCompanyId) {
+                                                                console.log('🔄 Refreshing addresses after clearing ShipTo:', {
+                                                                    currentCompanyId,
+                                                                    customerContext,
+                                                                    originalSelectedCustomerId: selectedCustomerId,
+                                                                    shipToCustomer: shipToAddress?.customerID || shipToAddress?.addressClassID,
+                                                                    editShipmentCustomer: editShipment?.customerId || editShipment?.customerID
+                                                                });
+                                                                loadAddressesForCompany(currentCompanyId, customerContext);
+                                                            }
                                                         }}
                                                         sx={{
                                                             bgcolor: 'rgba(255, 255, 255, 0.95)',
