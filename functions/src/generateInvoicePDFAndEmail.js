@@ -504,13 +504,15 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             const postal = billingAddr.postalCode || billingAddr.zipPostal || mainAddr.postalCode;
             const country = billingAddr.country || mainAddr.country;
             
-            // ✅ FIXED: Combine city, state, postal, country on one line
+            // ✅ FIXED: Combine city, state, postal, country on one line with UPPERCASE postal codes
             if (city && state && postal) {
                 const countryName = country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country;
+                const postalUpper = postal.toString().toUpperCase(); // ✅ NEW: Convert postal code to uppercase
+                console.log('🔤 PDF Generation: Converting postal code to uppercase:', postal, '→', postalUpper);
                 if (countryName) {
-                    doc.text(`${city}, ${state} ${postal} ${countryName}`, leftCol, currentY);
+                    doc.text(`${city}, ${state} ${postalUpper} ${countryName}`, leftCol, currentY);
             } else {
-                    doc.text(`${city}, ${state} ${postal}`, leftCol, currentY);
+                    doc.text(`${city}, ${state} ${postalUpper}`, leftCol, currentY);
                 }
                 currentY += 10;
             }
@@ -531,6 +533,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // Summary information (right side - simplified, moved closer)
 
             // ==================== SHIPMENT TABLE (WITH ENHANCED SPACING) ====================
+            currentY += 20; // ✅ NEW: Add 20px spacing between BILL TO and rate table
+            console.log('🎯 PDF Generation: Added 20px spacing before table, currentY:', currentY);
             const tableStartY = currentY;
             // Column widths: wider origin/destination, narrower fees
             const colWidths = [60, 90, 90, 90, 65, 85, 50]; // ✅ CHANGED: ORIGIN 75→90, DESTINATION 75→90, FEES 115→85
@@ -726,8 +730,9 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     if (cityLine.trim() !== ',') {
                         originLines.push(cityLine);
                     }
-                    if (from.postalCode || from.zipPostal) {
-                        originLines.push(from.postalCode || from.zipPostal);
+                                    if (from.postalCode || from.zipPostal) {
+                    const postalCode = from.postalCode || from.zipPostal;
+                    originLines.push(postalCode.toString().toUpperCase()); // ✅ NEW: Convert to uppercase
                     }
                 } else if (item.description && item.description.includes('from')) {
                     const parts = item.description.split(' from ');
@@ -772,8 +777,9 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     if (cityLine.trim() !== ',') {
                         destLines.push(cityLine);
                     }
-                    if (to.postalCode || to.zipPostal) {
-                        destLines.push(to.postalCode || to.zipPostal);
+                                    if (to.postalCode || to.zipPostal) {
+                    const postalCode = to.postalCode || to.zipPostal;
+                    destLines.push(postalCode.toString().toUpperCase()); // ✅ NEW: Convert to uppercase
                     }
                 } else if (item.description && item.description.includes(' to ')) {
                     const parts = item.description.split(' to ');
