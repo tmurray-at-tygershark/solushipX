@@ -60,6 +60,75 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 
+// ✅ NEW: EmailChipInput Component for dynamic email input
+const EmailChipInput = ({ label, placeholder, emails, onChange, helperText, required = false }) => {
+    const [inputValue, setInputValue] = useState('');
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && inputValue.trim()) {
+            e.preventDefault();
+            const email = inputValue.trim();
+
+            // Basic email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (emailRegex.test(email) && !emails.includes(email)) {
+                onChange([...emails, email]);
+                setInputValue('');
+            }
+        }
+    };
+
+    const handleRemoveEmail = (emailToRemove) => {
+        onChange(emails.filter(email => email !== emailToRemove));
+    };
+
+    return (
+        <Box sx={{ mb: 3 }}>
+            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                {label}
+            </Typography>
+
+            {/* Email Chips Display */}
+            {emails.length > 0 && (
+                <Box sx={{ mb: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {emails.map((email, index) => (
+                        <Chip
+                            key={index}
+                            label={email}
+                            onDelete={() => handleRemoveEmail(email)}
+                            size="small"
+                            sx={{
+                                fontSize: '11px',
+                                backgroundColor: '#e0f2fe',
+                                color: '#0277bd',
+                                '& .MuiChip-deleteIcon': {
+                                    fontSize: '14px',
+                                    color: '#0277bd'
+                                }
+                            }}
+                        />
+                    ))}
+                </Box>
+            )}
+
+            {/* Input Field */}
+            <TextField
+                fullWidth
+                size="small"
+                placeholder={placeholder}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={handleKeyPress}
+                helperText={helperText}
+                sx={{
+                    '& .MuiInputBase-input': { fontSize: '12px' },
+                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                }}
+            />
+        </Box>
+    );
+};
+
 // AUTO INVOICE GENERATOR - Enterprise-Grade Filtering with Preview & Email Features
 const BulkInvoiceGenerator = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -108,7 +177,7 @@ const BulkInvoiceGenerator = () => {
 
     // ✅ NEW: TEST EMAIL DIALOG
     const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
-    const [testEmailTo, setTestEmailTo] = useState(['tyler@tygershark.com']); // Default email
+    const [testEmailTo, setTestEmailTo] = useState([]); // No default email
     const [testEmailCc, setTestEmailCc] = useState([]); // CC emails
     const [testEmailBcc, setTestEmailBcc] = useState([]); // BCC emails
 
@@ -1361,103 +1430,35 @@ IC-CUSTOMER-789"
                 </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 3 }}>
-                        Enter email addresses to send test invoice emails. You can add multiple emails separated by commas.
+                        Enter email addresses to send test invoice emails. Press Enter after typing each email address to add it.
                     </Typography>
 
-                    <Box sx={{ mb: 3 }}>
-                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                            To: *
-                        </Typography>
-                        <TextField
-                            fullWidth
-                            multiline
-                            rows={2}
-                            placeholder="tyler@tygershark.com, john@example.com"
-                            value={testEmailTo.join(', ')}
-                            onChange={(e) => {
-                                const inputValue = e.target.value;
-                                // Allow commas and split on them, but keep the raw input for display
-                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
-                                setTestEmailTo(emails);
-                            }}
-                            onKeyDown={(e) => {
-                                // Allow comma key
-                                if (e.key === ',') {
-                                    e.stopPropagation();
-                                }
-                            }}
-                            helperText="Enter email addresses separated by commas"
-                            sx={{
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiFormHelperText-root': { fontSize: '11px' }
-                            }}
-                        />
-                    </Box>
+                    <EmailChipInput
+                        label="To: *"
+                        placeholder="Enter email address and press Enter"
+                        emails={testEmailTo}
+                        onChange={setTestEmailTo}
+                        helperText="Press Enter after typing each email address"
+                        required
+                    />
 
-                    <Box sx={{ mb: 3 }}>
-                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                            CC:
-                        </Typography>
-                        <TextField
-                            fullWidth
-                            multiline
-                            rows={2}
-                            placeholder="cc@example.com, another@example.com"
-                            value={testEmailCc.join(', ')}
-                            onChange={(e) => {
-                                const inputValue = e.target.value;
-                                // Allow commas and split on them, but keep the raw input for display
-                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
-                                setTestEmailCc(emails);
-                            }}
-                            onKeyDown={(e) => {
-                                // Allow comma key
-                                if (e.key === ',') {
-                                    e.stopPropagation();
-                                }
-                            }}
-                            helperText="Enter CC email addresses separated by commas (optional)"
-                            sx={{
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiFormHelperText-root': { fontSize: '11px' }
-                            }}
-                        />
-                    </Box>
+                    <EmailChipInput
+                        label="CC:"
+                        placeholder="Enter CC email address and press Enter"
+                        emails={testEmailCc}
+                        onChange={setTestEmailCc}
+                        helperText="Press Enter after typing each email address (optional)"
+                    />
 
-                    <Box sx={{ mb: 3 }}>
-                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                            BCC:
-                        </Typography>
-                        <TextField
-                            fullWidth
-                            multiline
-                            rows={2}
-                            placeholder="bcc@example.com, another@example.com"
-                            value={testEmailBcc.join(', ')}
-                            onChange={(e) => {
-                                const inputValue = e.target.value;
-                                // Allow commas and split on them, but keep the raw input for display
-                                const emails = inputValue.split(',').map(email => email.trim()).filter(email => email);
-                                setTestEmailBcc(emails);
-                            }}
-                            onKeyDown={(e) => {
-                                // Allow comma key
-                                if (e.key === ',') {
-                                    e.stopPropagation();
-                                }
-                            }}
-                            helperText="Enter BCC email addresses separated by commas (optional)"
-                            sx={{
-                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                '& .MuiFormHelperText-root': { fontSize: '11px' }
-                            }}
-                        />
-                    </Box>
+                    <EmailChipInput
+                        label="BCC:"
+                        placeholder="Enter BCC email address and press Enter"
+                        emails={testEmailBcc}
+                        onChange={setTestEmailBcc}
+                        helperText="Press Enter after typing each email address (optional)"
+                    />
 
-                    <Alert severity="info" sx={{ fontSize: '12px' }}>
-                        <strong>Note:</strong> Test emails will be sent to all addresses in the "To", "CC", and "BCC" fields.
-                        Each recipient will receive the same test invoice email with all generated invoices attached.
-                    </Alert>
+
                 </DialogContent>
                 <DialogActions>
                     <Button
@@ -1473,8 +1474,8 @@ IC-CUSTOMER-789"
                         disabled={testEmailLoading || testEmailTo.length === 0}
                         sx={{
                             fontSize: '12px',
-                            backgroundColor: '#f59e0b',
-                            '&:hover': { backgroundColor: '#d97706' }
+                            backgroundColor: '#10b981',
+                            '&:hover': { backgroundColor: '#059669' }
                         }}
                     >
                         {testEmailLoading ? 'Sending...' : 'Send Test Email'}
