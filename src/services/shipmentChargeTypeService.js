@@ -25,6 +25,7 @@ const STATIC_CHARGE_CODES = [
     { value: 'HST NS', label: 'HST NS', description: 'Harmonized Sales Tax - NS', category: 'taxes' },
     { value: 'GST', label: 'GST', description: 'Goods and Sales Tax', category: 'taxes' },
     { value: 'QST', label: 'QST', description: 'Quebec Sales Tax', category: 'taxes' },
+    { value: 'QGST', label: 'QGST', description: 'Quebec GST', category: 'taxes' },
     { value: 'HST PE', label: 'HST PE', description: 'Harmonized Sales Tax - PEI', category: 'taxes' },
     { value: 'GOVT', label: 'GOVT', description: 'Customs Taxes', category: 'government' },
     { value: 'GOVD', label: 'GOVD', description: 'Customs Duty', category: 'government' },

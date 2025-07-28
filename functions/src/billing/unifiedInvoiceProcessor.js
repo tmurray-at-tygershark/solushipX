@@ -520,10 +520,13 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                     dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                     paymentTerms: 'NET 30',
                     
-                    // ✅ UPDATED: Proper tax separation using the new calculation system
+                    // ✅ UPDATED: Proper tax separation using the new calculation system with Quebec breakdown
                     subtotal: invoiceTotals.subtotal,  // Total of non-tax items
                     tax: invoiceTotals.tax,           // Total of tax items
-                    total: invoiceTotals.total        // Subtotal + tax
+                    total: invoiceTotals.total,       // Subtotal + tax
+                    // 🍁 NEW: Quebec tax breakdown support
+                    taxBreakdown: invoiceTotals.taxBreakdown,
+                    hasQuebecTaxes: invoiceTotals.hasQuebecTaxes
                 };
 
                 const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
@@ -646,10 +649,13 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
                 paymentTerms: 'NET 30',
                 
-                // ✅ UPDATED: Proper tax separation across all combined shipments
+                // ✅ UPDATED: Proper tax separation across all combined shipments with Quebec breakdown
                 subtotal: combinedInvoiceTotals.subtotal,  // Total of non-tax items
                 tax: combinedInvoiceTotals.tax,           // Total of tax items  
-                total: combinedInvoiceTotals.total        // Subtotal + tax
+                total: combinedInvoiceTotals.total,       // Subtotal + tax
+                // 🍁 NEW: Quebec tax breakdown support
+                taxBreakdown: combinedInvoiceTotals.taxBreakdown,
+                hasQuebecTaxes: combinedInvoiceTotals.hasQuebecTaxes
             };
 
             console.log(`Generated combined invoice ${sequentialInvoiceNumber} for ${customerName}: $${totalCharges} ${currency} (${lineItems.length} shipments)`);
@@ -1000,7 +1006,7 @@ function isTaxCharge(code) {
     
     const taxCodes = [
         // Canadian Federal Taxes
-        'HST', 'GST', 'QST',
+        'HST', 'GST', 'QST', 'QGST',
         
             // Provincial HST variations
     'HST ON', 'HST BC', 'HST NB', 'HST NS', 'HST NL', 'HST PE',
@@ -1046,10 +1052,13 @@ function isTaxCharge(code) {
     return false;
 }
 
-// Helper function to calculate tax vs non-tax totals from charge breakdown
+// Helper function to calculate tax vs non-tax totals from charge breakdown with detailed tax breakdown
 function calculateInvoiceTotals(chargeBreakdown) {
     let subtotal = 0;  // Non-tax charges
-    let taxTotal = 0;  // Tax charges
+    let taxTotal = 0;  // Total of all taxes
+    let taxBreakdown = []; // Individual tax items for Quebec breakdown
+    
+    console.log(`🍁 calculateInvoiceTotals called with ${chargeBreakdown?.length || 0} charges`);
     
     if (chargeBreakdown && Array.isArray(chargeBreakdown)) {
         chargeBreakdown.forEach((charge, index) => {
@@ -1058,19 +1067,114 @@ function calculateInvoiceTotals(chargeBreakdown) {
             
             if (isItemTax) {
                 taxTotal += amount;
+                
+                // 🍁 QUEBEC TAX BREAKDOWN: Clean code-based categorization
+                const code = charge.code ? charge.code.toUpperCase().trim() : '';
+                const description = charge.description || charge.name || charge.chargeName || '';
+                
+                console.log(`🍁 Analyzing tax charge: code="${code}", description="${description}", amount=${amount}`);
+                
+                // 🎯 ENHANCED DETECTION: Handle both exact codes and provincial variations
+                if (code === 'QST' || code.includes('QST')) {
+                    console.log(`🍁 ✅ Detected QST by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'QST',
+                        label: 'QST',
+                        amount: amount,
+                        code: charge.code,
+                        name: description
+                    });
+                } else if (code === 'QGST' || code.includes('QGST')) {
+                    console.log(`🍁 ✅ Detected QGST by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'QGST', 
+                        label: 'QGST',
+                        amount: amount,
+                        code: charge.code,
+                        name: description
+                    });
+                } else if (code.includes('GST') && code.includes('QUEBEC')) {
+                    // Special case: GST Quebec should be treated as QGST  
+                    console.log(`🍁 ✅ Detected Quebec GST (QGST) by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'QGST',
+                        label: 'QGST',
+                        amount: amount,
+                        code: charge.code,
+                        name: description
+                    });
+                } else if (code === 'GST' || code.startsWith('GST ')) {
+                    console.log(`🍁 ✅ Detected GST by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'GST',
+                        label: 'GST', 
+                        amount: amount,
+                        code: charge.code,
+                        name: description
+                    });
+                } else if (code === 'HST' || code.startsWith('HST ')) {
+                    console.log(`🍁 ✅ Detected HST by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'HST',
+                        label: 'HST',
+                        amount: amount, 
+                        code: charge.code,
+                        name: description
+                    });
+                } else if (code.includes('PST')) {
+                    console.log(`🍁 ✅ Detected PST by code: ${code}`);
+                    taxBreakdown.push({
+                        type: 'PST',
+                        label: code, // Use actual code like "PST BC"
+                        amount: amount, 
+                        code: charge.code,
+                        name: description
+                    });
+                } else {
+                    // Fallback: Generic tax using the actual label
+                    console.log(`🍁 ✅ Detected Other Tax: ${code || description}`);
+                    taxBreakdown.push({
+                        type: 'OTHER',
+                        label: code || description || 'Tax',
+                        amount: amount,
+                        code: charge.code,
+                        name: description
+                    });
+                }
             } else {
                 subtotal += amount;
             }
         });
     }
     
+    // 🍁 CONSOLIDATE DUPLICATE TAX TYPES: Combine multiple entries of same type
+    const consolidatedTaxes = {};
+    taxBreakdown.forEach(tax => {
+        if (consolidatedTaxes[tax.type]) {
+            consolidatedTaxes[tax.type].amount += tax.amount;
+        } else {
+            consolidatedTaxes[tax.type] = { ...tax };
+        }
+    });
+    
+    // Convert back to array and sort (Quebec taxes first)
+    const sortedTaxBreakdown = Object.values(consolidatedTaxes).sort((a, b) => {
+        const priority = { 'QST': 1, 'QGST': 2, 'GST': 3, 'PST': 4, 'HST': 5, 'OTHER': 6 };
+        return (priority[a.type] || 5) - (priority[b.type] || 5);
+    });
+    
     const result = {
         subtotal: Math.round(subtotal * 100) / 100,  // Round to 2 decimal places
-        tax: Math.round(taxTotal * 100) / 100,       // Round to 2 decimal places
-        total: Math.round((subtotal + taxTotal) * 100) / 100  // Round to 2 decimal places
+        tax: Math.round(taxTotal * 100) / 100,       // Total of all taxes
+        total: Math.round((subtotal + taxTotal) * 100) / 100,  // Grand total
+        taxBreakdown: sortedTaxBreakdown,  // 🍁 NEW: Individual tax items for detailed display
+        hasQuebecTaxes: sortedTaxBreakdown.some(tax => tax.type === 'QST' || tax.type === 'QGST') // 🍁 NEW: Quebec detection flag
     };
     
-    console.log(`📊 Invoice totals: Subtotal $${result.subtotal} + Taxes $${result.tax} = Total $${result.total} ${result.tax > 0 ? '✅ TAX SEPARATED' : ''}`);
+    console.log(`📊 Enhanced Invoice totals: Subtotal $${result.subtotal} + Taxes $${result.tax} = Total $${result.total}`);
+    if (result.hasQuebecTaxes) {
+        console.log(`🍁 Quebec taxes detected:`, result.taxBreakdown.filter(tax => tax.type === 'QST' || tax.type === 'QGST'));
+    }
     
     return result;
 }

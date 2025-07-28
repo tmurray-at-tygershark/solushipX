@@ -127,6 +127,15 @@ export const UNIVERSAL_CHARGE_TYPES = {
         displayOrder: 12
     },
     
+    QGST: {
+        code: 'QGST',
+        label: 'QGST',
+        description: 'Quebec GST',
+        category: CHARGE_CATEGORIES.TAXES,
+        isCore: false,
+        displayOrder: 13
+    },
+    
     // Provincial HST
     'HST ON': {
         code: 'HST ON',
@@ -134,7 +143,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - Ontario',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 13
+        displayOrder: 14
     },
     
     'HST BC': {
@@ -143,7 +152,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - British Columbia',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 14
+        displayOrder: 15
     },
     
     'HST NB': {
@@ -152,7 +161,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - New Brunswick',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 15
+        displayOrder: 16
     },
     
     'HST NF': {
@@ -161,7 +170,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - Newfoundland and Labrador',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 16
+        displayOrder: 17
     },
     
     'HST NS': {
@@ -170,7 +179,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - Nova Scotia',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 17
+        displayOrder: 18
     },
     
     'HST PE': {
@@ -179,7 +188,7 @@ export const UNIVERSAL_CHARGE_TYPES = {
         description: 'HST - Prince Edward Island',
         category: CHARGE_CATEGORIES.TAXES,
         isCore: false,
-        displayOrder: 18
+        displayOrder: 19
     },
     
     // Government Charges

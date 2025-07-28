@@ -226,7 +226,7 @@ export const isTaxCharge = (code) => {
     if (!code) return false;
     
     const taxCodes = [
-        'HST', 'GST', 'QST', 'HST ON', 'HST BC', 'HST NB', 
+        'HST', 'GST', 'QST', 'QGST', 'HST ON', 'HST BC', 'HST NB', 
         'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'
     ];
     

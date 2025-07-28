@@ -360,10 +360,13 @@ async function createInvoiceDataForShipment(shipment, companyId, customerName, c
         dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         paymentTerms: 'NET 30',
         
-        // ✅ UPDATED: Proper tax separation using the new calculation system
+        // ✅ UPDATED: Proper tax separation using the new calculation system with Quebec breakdown
         subtotal: invoiceTotals.subtotal,  // Total of non-tax items
         tax: invoiceTotals.tax,           // Total of tax items
-        total: invoiceTotals.total        // Subtotal + tax
+        total: invoiceTotals.total,       // Subtotal + tax
+        // 🍁 NEW: Quebec tax breakdown support
+        taxBreakdown: invoiceTotals.taxBreakdown,
+        hasQuebecTaxes: invoiceTotals.hasQuebecTaxes
     };
 
     return invoiceData;
@@ -433,10 +436,13 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
         dueDate: invoiceIssueDate ? new Date(new Date(invoiceIssueDate).getTime() + 30 * 24 * 60 * 60 * 1000) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         paymentTerms: 'NET 30',
         
-        // ✅ UPDATED: Proper tax separation across all combined shipments
+        // ✅ UPDATED: Proper tax separation across all combined shipments with Quebec breakdown
         subtotal: combinedInvoiceTotals.subtotal,  // Total of non-tax items
         tax: combinedInvoiceTotals.tax,           // Total of tax items  
-        total: combinedInvoiceTotals.total        // Subtotal + tax
+        total: combinedInvoiceTotals.total,       // Subtotal + tax
+        // 🍁 NEW: Quebec tax breakdown support
+        taxBreakdown: combinedInvoiceTotals.taxBreakdown,
+        hasQuebecTaxes: combinedInvoiceTotals.hasQuebecTaxes
     };
 
     console.log(`Generated combined invoice ${sequentialInvoiceNumber} for ${customerName}: $${totalCharges} ${currency} (${lineItems.length} shipments)`);

@@ -990,10 +990,28 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             const totalsWidth = 180;
             const totalsX = leftCol + contentWidth - totalsWidth;
 
-            // 🔧 ENHANCED: Professional totals breakdown with subtotal, tax, and total
+            // 🍁 ENHANCED: Professional totals breakdown with Quebec tax breakdown support
             let currentTotalY = totalsStartY;
             const lineHeight = 18;
-            const totalLines = invoiceData.tax && invoiceData.tax > 0 ? 3 : 2; // Subtotal + Tax (if applicable) + Total
+            
+            // 🍁 QUEBEC TAX BREAKDOWN: Calculate total lines needed
+            let totalLines = 2; // Subtotal + Total (minimum)
+            let hasQuebecTaxes = false;
+            let taxLines = 0;
+            
+            if (invoiceData.tax && invoiceData.tax > 0) {
+                if (invoiceData.taxBreakdown && invoiceData.taxBreakdown.length > 0 && invoiceData.hasQuebecTaxes) {
+                    // Quebec tax breakdown: individual tax lines
+                    hasQuebecTaxes = true;
+                    taxLines = invoiceData.taxBreakdown.length;
+                    totalLines = 1 + taxLines + 1; // Subtotal + Individual Tax Lines + Total
+                } else {
+                    // Standard tax display: single tax line
+                    taxLines = 1;
+                    totalLines = 3; // Subtotal + Tax + Total
+                }
+            }
+            
             const totalsHeight = totalLines * lineHeight + 10;
 
             // Background for totals section
@@ -1021,15 +1039,30 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                      totalsX + 100, currentTotalY, { width: 70, align: 'right' });
             currentTotalY += lineHeight;
 
-            // Tax line (if applicable)
+            // 🍁 QUEBEC TAX BREAKDOWN: Individual tax lines or standard tax line
             if (invoiceData.tax && invoiceData.tax > 0) {
-                const taxRate = invoiceData.taxRate || 0;
-                const taxLabel = taxRate > 0 ? `Taxes (${(taxRate * 100).toFixed(1)}%):` : 'Taxes:';
-                
-                doc.text(taxLabel, totalsX + 8, currentTotalY);
-                doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
-                         totalsX + 100, currentTotalY, { width: 70, align: 'right' });
-                currentTotalY += lineHeight;
+                if (hasQuebecTaxes && invoiceData.taxBreakdown && invoiceData.taxBreakdown.length > 0) {
+                    // Show individual Quebec tax lines
+                    console.log('🍁 Rendering Quebec tax breakdown with', invoiceData.taxBreakdown.length, 'tax types');
+                    
+                    invoiceData.taxBreakdown.forEach(tax => {
+                        if (tax.amount > 0) {
+                            doc.text(`${tax.label}:`, totalsX + 8, currentTotalY);
+                            doc.text(formatCurrency(tax.amount, invoiceData.currency), 
+                                     totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+                            currentTotalY += lineHeight;
+                        }
+                    });
+                } else {
+                    // Standard single tax line
+                    const taxRate = invoiceData.taxRate || 0;
+                    const taxLabel = taxRate > 0 ? `Taxes (${(taxRate * 100).toFixed(1)}%):` : 'Taxes:';
+                    
+                    doc.text(taxLabel, totalsX + 8, currentTotalY);
+                    doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
+                             totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+                    currentTotalY += lineHeight;
+                }
             }
 
             // Total line with emphasis
