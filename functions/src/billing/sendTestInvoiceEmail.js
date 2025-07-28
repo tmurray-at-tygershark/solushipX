@@ -25,7 +25,8 @@ const {
     detectSimpleCurrency,
     calculateTotalWeight,
     getActualCustomerName,
-    getCustomerBillingInfo
+    getCustomerBillingInfo,
+    getAllReferenceNumbers
 } = require('./bulkInvoiceGenerator');
 
 // Import email template functions from the real invoice email system
@@ -352,7 +353,9 @@ async function createInvoiceDataForShipment(shipment, companyId, customerName, c
             weight: calculateTotalWeight(shipment),
             weightUnit: shipment.weightUnit || 'lbs',
             shipFrom: shipment.shipFrom,
-            shipTo: shipment.shipTo
+            shipTo: shipment.shipTo,
+            // 🔍 NEW: All reference numbers for comprehensive invoice display
+            allReferenceNumbers: getAllReferenceNumbers(shipment)
         }],
         
         currency: currency,
@@ -411,7 +414,9 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
             weight: calculateTotalWeight(shipment),
             weightUnit: shipment.weightUnit || 'lbs',
             shipFrom: shipment.shipFrom,
-            shipTo: shipment.shipTo
+            shipTo: shipment.shipTo,
+            // 🔍 NEW: All reference numbers for comprehensive invoice display
+            allReferenceNumbers: getAllReferenceNumbers(shipment)
         });
 
         totalCharges += filteredCharges;

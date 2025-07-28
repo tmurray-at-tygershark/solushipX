@@ -556,7 +556,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
             headers.forEach((header, i) => {
-                doc.text(header, colPositions[i] + 3, tableStartY + 7, { width: colWidths[i] - 6 });
+                doc.text(header, colPositions[i] + 8, tableStartY + 7, { width: colWidths[i] - 16 });
             });
 
             let tableY = tableStartY + 22 + 8; // Added 8px space below headers
@@ -567,12 +567,11 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 let maxColumnHeight = 45; // Minimum row height
                 
                 // Calculate fees column height (typically the tallest)
-                let feesHeight = 0;
+                let feesHeight = 16; // Base padding (8px top + 8px bottom)
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
                     const maxCharges = 5;
                     const sortedCharges = [...item.chargeBreakdown].sort((a, b) => (b.amount || 0) - (a.amount || 0));
                     
-                    feesHeight += 4; // Initial padding
                     sortedCharges.slice(0, maxCharges).forEach((fee) => {
                         const chargeCode = fee.code || fee.chargeCode || '';
                         const chargeName = fee.description || fee.name || fee.chargeType || 'Miscellaneous';
@@ -580,7 +579,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         const displayText = `${chargeName} - ${formatCurrency(amount, invoiceData.currency)}`;
                         
                         const textHeight = doc.heightOfString(displayText, { 
-                            width: colWidths[5] - 4,
+                            width: colWidths[5] - 16,
                             align: 'left'
                         });
                         feesHeight += Math.max(textHeight + 2, 8);
@@ -593,26 +592,39 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                     // Default charge breakdown height
                     const totalCharges = item.charges || 0;
                     if (totalCharges > 0) {
-                        feesHeight += 4 + (3 * 8); // 3 default charge lines
+                        feesHeight += (3 * 8); // 3 default charge lines
                     } else {
                         feesHeight += 12; // Single total line
                     }
                 }
                 
-                // ✅ FIXED: Calculate details column height using proper text wrapping calculation
+                // ✅ FIXED: Calculate details column height using SAME data as rendering
+                // Get ALL reference numbers (same logic as rendering)
+                const allReferences = item.allReferenceNumbers || [];
+                
+                // Fallback to basic references if no comprehensive data
+                if (allReferences.length === 0) {
+                    const fallbackRefs = item.references || item.orderNumber || '';
+                    if (fallbackRefs) {
+                        allReferences.push(fallbackRefs);
+                    }
+                }
+                
+                const totalWeight = (item.weight || 0) * (item.packages || 1);
                 const detailsForHeight = [
                     `Ship Date: ${formatDate(item.date)}`,
                     `Tracking: ${item.trackingNumber || 'TBD'}`,
-                    item.references || item.orderNumber || '' ? `Ref: ${item.references || item.orderNumber}` : '',
+                    // 🔍 CRITICAL: Use SAME reference logic as rendering
+                    allReferences.length > 0 ? `Ref: ${allReferences.join(', ')}` : '',
                     `${item.packages || 1} pcs`,
-                    `${(item.weight || 0) * (item.packages || 1)} ${item.weightUnit || 'lbs'}`
+                    `${totalWeight} ${item.weightUnit || 'lbs'}`
                 ].filter(detail => detail);
                 
-                let calculatedDetailsHeight = 4; // Base padding
+                let calculatedDetailsHeight = 16; // Base padding (8px top + 8px bottom)
                 detailsForHeight.forEach(detail => {
                     if (detail && detail.trim()) {
                         const textHeight = doc.heightOfString(detail.trim(), { 
-                            width: colWidths[1] - 4 
+                            width: colWidths[1] - 16 
                         });
                         calculatedDetailsHeight += Math.max(textHeight, 9); // Use calculated height or minimum 9px
                     }
@@ -651,7 +663,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
                     const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
                     headers.forEach((header, i) => {
-                        doc.text(header, colPositions[i] + 3, newTableStartY + 7, { width: colWidths[i] - 6 });
+                        doc.text(header, colPositions[i] + 8, newTableStartY + 7, { width: colWidths[i] - 16 });
                     });
 
                     tableY = newTableStartY + 22 + 8;
@@ -680,32 +692,32 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
                 // Column 1: Shipment ID (top aligned)
                 const shipmentRef = item.shipmentId || item.id || 'N/A';
-                doc.text(shipmentRef, colPositions[0] + 2, tableY + 2, { 
-                    width: colWidths[0] - 4,
+                doc.text(shipmentRef, colPositions[0] + 8, tableY + 8, { 
+                    width: colWidths[0] - 16,
                     align: 'left',
                     baseline: 'top'
                 });
 
-                // Column 2: Details (Enhanced with references and ship date)
-                const references = item.references || item.orderNumber || '';
-                const totalWeight = (item.weight || 0) * (item.packages || 1);
+                // Column 2: Details (Enhanced with ALL reference numbers and ship date)
+                // 🔍 ENHANCED: Use already calculated reference numbers and weight
                 const shipmentDetails = [
                     `Ship Date: ${formatDate(item.date)}`,
                     `Tracking: ${item.trackingNumber || 'TBD'}`,
-                    references ? `Ref: ${references}` : '',
+                    // 🔍 ENHANCED: Show ALL reference numbers, joined with commas
+                    allReferences.length > 0 ? `Ref: ${allReferences.join(', ')}` : '',
                     `${item.packages || 1} pcs`,
                     `${totalWeight} ${item.weightUnit || 'lbs'}`
                 ].filter(detail => detail); // Remove empty details
                 
                 // ✅ FIXED: Use proper text wrapping and height calculation for DETAILS column
-                let detailY = tableY + 2;
+                let detailY = tableY + 8;
                 shipmentDetails.forEach(detail => {
                     if (detail && detail.trim()) {
                         const textHeight = doc.heightOfString(detail.trim(), { 
-                            width: colWidths[1] - 4 
+                            width: colWidths[1] - 16 
                         });
-                        doc.text(detail.trim(), colPositions[1] + 2, detailY, { 
-                            width: colWidths[1] - 4,
+                        doc.text(detail.trim(), colPositions[1] + 8, detailY, { 
+                            width: colWidths[1] - 16,
                             align: 'left',
                             baseline: 'top' 
                         });
@@ -745,14 +757,14 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 // ✅ IMPROVED: Display origin with proper text wrapping and height calculation
                 if (originLines.length === 0) originLines = ['N/A'];
-                let originY = tableY + 2;
+                let originY = tableY + 8;
                 originLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
                         const textHeight = doc.heightOfString(line.trim(), { 
-                            width: colWidths[2] - 4 
+                            width: colWidths[2] - 16 
                         });
-                        doc.text(line.trim(), colPositions[2] + 2, originY, { 
-                            width: colWidths[2] - 4,
+                        doc.text(line.trim(), colPositions[2] + 8, originY, { 
+                            width: colWidths[2] - 16,
                             align: 'left',
                             baseline: 'top'
                         });
@@ -792,14 +804,14 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 // ✅ IMPROVED: Display destination with proper text wrapping and height calculation
                 if (destLines.length === 0) destLines = ['N/A'];
-                let destY = tableY + 2;
+                let destY = tableY + 8;
                 destLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
                         const textHeight = doc.heightOfString(line.trim(), { 
-                            width: colWidths[3] - 4 
+                            width: colWidths[3] - 16 
                         });
-                        doc.text(line.trim(), colPositions[3] + 2, destY, { 
-                            width: colWidths[3] - 4,
+                        doc.text(line.trim(), colPositions[3] + 8, destY, { 
+                            width: colWidths[3] - 16,
                             align: 'left',
                             baseline: 'top'
                         });
@@ -813,16 +825,16 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 doc.fontSize(6)
                    .font('Helvetica-Bold')
-                   .text(carrierName, colPositions[4] + 2, tableY + 2, { 
-                       width: colWidths[4] - 4,
+                   .text(carrierName, colPositions[4] + 8, tableY + 8, { 
+                       width: colWidths[4] - 16,
                        align: 'left',
                        baseline: 'top'
                    });
                 
                 doc.fontSize(6)
                    .font('Helvetica')
-                   .text(serviceInfo, colPositions[4] + 2, tableY + 18, { // ✅ CHANGED: From tableY + 12 to tableY + 18 (6px more space)
-                       width: colWidths[4] - 4,
+                   .text(serviceInfo, colPositions[4] + 8, tableY + 24, { // ✅ CHANGED: From tableY + 18 to tableY + 24 (maintain spacing)
+                       width: colWidths[4] - 16,
                        align: 'left',
                        baseline: 'top'
                    });
@@ -833,7 +845,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 
                 // 🔧 ENHANCED: More comprehensive charge breakdown display with $0.00 filtering
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
-                    let feeY = tableY + 2;
+                    let feeY = tableY + 8;
                     let chargesDisplayed = 0;
                     const maxCharges = 5;
                     
@@ -864,12 +876,12 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         
                         // ✅ FIXED: Calculate actual text height to prevent overlapping
                         const textHeight = doc.heightOfString(displayText, { 
-                            width: colWidths[5] - 4,
+                            width: colWidths[5] - 16,
                             align: 'left'
                         });
                         
-                        doc.text(displayText, colPositions[5] + 2, feeY, { 
-                            width: colWidths[5] - 4,
+                        doc.text(displayText, colPositions[5] + 8, feeY, { 
+                            width: colWidths[5] - 16,
                             align: 'left',
                             baseline: 'top'
                         });
@@ -890,8 +902,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         
                         doc.fontSize(4)
                            .fillColor('#666666')
-                           .text(summaryText, colPositions[5] + 2, feeY, { 
-                                     width: colWidths[5] - 4,
+                           .text(summaryText, colPositions[5] + 8, feeY, { 
+                                     width: colWidths[5] - 16,
                                      align: 'left',
                                      baseline: 'top'
                                  });
@@ -929,18 +941,18 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         }
                     }
                     
-                    let feeY = tableY + 2;
+                    let feeY = tableY + 8;
                     charges.forEach(charge => {
                         const chargeText = `${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`;
                         
                         // ✅ FIXED: Calculate actual text height to prevent overlapping
                         const textHeight = doc.heightOfString(chargeText, { 
-                            width: colWidths[5] - 4,
+                            width: colWidths[5] - 16,
                             align: 'left'
                         });
                         
-                        doc.text(chargeText, colPositions[5] + 2, feeY, { 
-                                    width: colWidths[5] - 4,
+                        doc.text(chargeText, colPositions[5] + 8, feeY, { 
+                                    width: colWidths[5] - 16,
                                     align: 'left',
                                     baseline: 'top'
                                 });
@@ -955,12 +967,12 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                         
                         // ✅ FIXED: Calculate actual text height to prevent overlapping
                         const textHeight = doc.heightOfString(totalText, { 
-                            width: colWidths[5] - 4,
+                            width: colWidths[5] - 16,
                             align: 'left'
                         });
                         
-                        doc.text(totalText, colPositions[5] + 2, feeY, { 
-                                    width: colWidths[5] - 4,
+                        doc.text(totalText, colPositions[5] + 8, feeY, { 
+                                    width: colWidths[5] - 16,
                                     align: 'left',
                                     baseline: 'top'
                                 });
@@ -975,8 +987,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 doc.fontSize(6)
                    .font('Helvetica-Bold')
                    .text(formatCurrency(totalCharges, invoiceData.currency), 
-                         colPositions[6] + 2, tableY + 2, { 
-                             width: colWidths[6] - 4, 
+                         colPositions[6] + 8, tableY + 8, { 
+                             width: colWidths[6] - 16, 
                              align: 'right',
                              baseline: 'top'
                          });

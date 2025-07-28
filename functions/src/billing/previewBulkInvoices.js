@@ -16,7 +16,7 @@ const db = getFirestore();
 
 // Import the existing invoice generation functions
 const { generateInvoicePDF, getNextInvoiceNumber } = require('../generateInvoicePDFAndEmail');
-const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo } = require('./bulkInvoiceGenerator');
+const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo, getAllReferenceNumbers } = require('./bulkInvoiceGenerator');
 
 /**
  * Preview Bulk Invoices - Generates actual PDF invoices for preview
@@ -350,7 +350,9 @@ async function createInvoiceDataForShipment(shipment, companyId, invoiceIssueDat
             weight: calculateTotalWeight(shipment),
             weightUnit: shipment.weightUnit || 'lbs',
             shipFrom: shipment.shipFrom,
-            shipTo: shipment.shipTo
+            shipTo: shipment.shipTo,
+            // 🔍 NEW: All reference numbers for comprehensive invoice display
+            allReferenceNumbers: getAllReferenceNumbers(shipment)
         }],
         
         currency: currency,
@@ -400,7 +402,9 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
             weight: calculateTotalWeight(shipment),
             weightUnit: shipment.weightUnit || 'lbs',
             shipFrom: shipment.shipFrom,
-            shipTo: shipment.shipTo
+            shipTo: shipment.shipTo,
+            // 🔍 NEW: All reference numbers for comprehensive invoice display
+            allReferenceNumbers: getAllReferenceNumbers(shipment)
         });
     }
 

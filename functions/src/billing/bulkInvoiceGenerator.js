@@ -512,7 +512,9 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                         weight: calculateTotalWeight(shipment),
                         weightUnit: shipment.weightUnit || 'lbs',
                         shipFrom: shipment.shipFrom,
-                        shipTo: shipment.shipTo
+                        shipTo: shipment.shipTo,
+                        // 🔍 NEW: All reference numbers for comprehensive invoice display
+                        allReferenceNumbers: getAllReferenceNumbers(shipment)
                     }],
                     
                     currency: currency,
@@ -623,7 +625,9 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     weight: calculateTotalWeight(shipment),
                     weightUnit: shipment.weightUnit || 'lbs',
                     shipFrom: shipment.shipFrom,
-                    shipTo: shipment.shipTo
+                    shipTo: shipment.shipTo,
+                    // 🔍 NEW: All reference numbers for comprehensive invoice display
+                    allReferenceNumbers: getAllReferenceNumbers(shipment)
                 });
 
                 totalCharges += filteredCharges; // Use filtered amount (excludes transaction fees)
@@ -1052,6 +1056,75 @@ function isTaxCharge(code) {
     return false;
 }
 
+// Helper function to collect ALL reference numbers from a shipment
+function getAllReferenceNumbers(shipment) {
+    const allReferences = [];
+    
+    // Primary reference number sources
+    const primarySources = [
+        shipment?.shipmentInfo?.shipperReferenceNumber,
+        shipment?.referenceNumber,
+        shipment?.shipperReferenceNumber,
+        shipment?.selectedRate?.referenceNumber,
+        shipment?.selectedRateRef?.referenceNumber,
+        shipment?.shipmentInfo?.bookingReferenceNumber,
+        shipment?.bookingReferenceNumber
+    ];
+
+    // Add all non-empty primary references
+    primarySources.forEach(ref => {
+        if (ref && typeof ref === 'string' && ref.trim() && !allReferences.includes(ref.trim())) {
+            allReferences.push(ref.trim());
+        }
+    });
+
+    // Reference numbers from shipmentInfo.referenceNumbers array
+    if (shipment?.shipmentInfo?.referenceNumbers && Array.isArray(shipment.shipmentInfo.referenceNumbers)) {
+        shipment.shipmentInfo.referenceNumbers.forEach(ref => {
+            let refValue = null;
+            if (typeof ref === 'string') {
+                refValue = ref.trim();
+            } else if (ref && typeof ref === 'object') {
+                refValue = (ref.number || ref.referenceNumber || ref.value)?.trim();
+            }
+            if (refValue && !allReferences.includes(refValue)) {
+                allReferences.push(refValue);
+            }
+        });
+    }
+
+    // Legacy reference numbers array
+    if (shipment?.referenceNumbers && Array.isArray(shipment.referenceNumbers)) {
+        shipment.referenceNumbers.forEach(ref => {
+            let refValue = null;
+            if (typeof ref === 'string') {
+                refValue = ref.trim();
+            } else if (ref && typeof ref === 'object') {
+                refValue = (ref.number || ref.referenceNumber || ref.value)?.trim();
+            }
+            if (refValue && !allReferences.includes(refValue)) {
+                allReferences.push(refValue);
+            }
+        });
+    }
+
+    // Additional fields that might contain reference numbers
+    const additionalSources = [
+        shipment?.customerReferenceNumber,
+        shipment?.poNumber,
+        shipment?.invoiceNumber,
+        shipment?.orderNumber
+    ];
+
+    additionalSources.forEach(ref => {
+        if (ref && typeof ref === 'string' && ref.trim() && !allReferences.includes(ref.trim())) {
+            allReferences.push(ref.trim());
+        }
+    });
+    
+    return allReferences;
+}
+
 // Helper function to calculate tax vs non-tax totals from charge breakdown with detailed tax breakdown
 function calculateInvoiceTotals(chargeBreakdown) {
     let subtotal = 0;  // Non-tax charges
@@ -1205,5 +1278,6 @@ exports.detectSimpleCurrency = detectSimpleCurrency;
 exports.calculateTotalWeight = calculateTotalWeight;
 exports.getActualCustomerName = getActualCustomerName;
 exports.getCustomerBillingInfo = getCustomerBillingInfo;
+exports.getAllReferenceNumbers = getAllReferenceNumbers;
 
 // ✅ Note: Tax separation and $0.00 filtering is now active in production 
