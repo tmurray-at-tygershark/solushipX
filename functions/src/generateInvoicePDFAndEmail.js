@@ -1000,17 +1000,17 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             let currentTotalY = totalsStartY;
             const lineHeight = 18;
             
-            // 🍁 QUEBEC TAX BREAKDOWN: Calculate total lines needed
+            // 🍁 ENHANCED TAX BREAKDOWN: Calculate total lines needed with nested structure
             let totalLines = 2; // Subtotal + Total (minimum)
             let hasQuebecTaxes = false;
             let taxLines = 0;
             
             if (invoiceData.tax && invoiceData.tax > 0) {
                 if (invoiceData.taxBreakdown && invoiceData.taxBreakdown.length > 0 && invoiceData.hasQuebecTaxes) {
-                    // Quebec tax breakdown: individual tax lines
+                    // Enhanced tax breakdown: Total Tax + Individual nested tax lines
                     hasQuebecTaxes = true;
                     taxLines = invoiceData.taxBreakdown.length;
-                    totalLines = 1 + taxLines + 1; // Subtotal + Individual Tax Lines + Total
+                    totalLines = 1 + 1 + taxLines + 1; // Subtotal + Total Tax + Individual Tax Lines + Total Due
                 } else {
                     // Standard tax display: single tax line
                     taxLines = 1;
@@ -1045,15 +1045,21 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                      totalsX + 100, currentTotalY, { width: 70, align: 'right' });
             currentTotalY += lineHeight;
 
-            // 🍁 QUEBEC TAX BREAKDOWN: Individual tax lines or standard tax line
+            // 🍁 ENHANCED TAX BREAKDOWN: Total Tax with nested individual tax lines
             if (invoiceData.tax && invoiceData.tax > 0) {
                 if (hasQuebecTaxes && invoiceData.taxBreakdown && invoiceData.taxBreakdown.length > 0) {
-                    // Show individual Quebec tax lines
-                    console.log('🍁 Rendering Quebec tax breakdown with', invoiceData.taxBreakdown.length, 'tax types');
+                    // Show "Total Tax:" line first
+                    console.log('🍁 Rendering enhanced tax breakdown with Total Tax + nested individual taxes');
                     
+                    doc.text('Total Tax:', totalsX + 8, currentTotalY);
+                    doc.text(formatCurrency(invoiceData.tax, invoiceData.currency), 
+                             totalsX + 100, currentTotalY, { width: 70, align: 'right' });
+                    currentTotalY += lineHeight;
+                    
+                    // Show nested individual tax lines with indentation
                     invoiceData.taxBreakdown.forEach(tax => {
                         if (tax.amount > 0) {
-                            doc.text(`${tax.label}:`, totalsX + 8, currentTotalY);
+                            doc.text(`  ${tax.label}:`, totalsX + 16, currentTotalY); // 8px additional indent
                             doc.text(formatCurrency(tax.amount, invoiceData.currency), 
                                      totalsX + 100, currentTotalY, { width: 70, align: 'right' });
                             currentTotalY += lineHeight;

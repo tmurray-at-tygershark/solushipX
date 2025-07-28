@@ -16,6 +16,7 @@ const db = getFirestore();
 
 // Import the existing invoice generation functions
 const { generateInvoicePDF, getNextInvoiceNumber } = require('../generateInvoicePDFAndEmail');
+const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo } = require('./bulkInvoiceGenerator');
 
 /**
  * Preview Bulk Invoices - Generates actual PDF invoices for preview
@@ -323,13 +324,13 @@ async function createInvoiceDataForShipment(shipment, companyId, invoiceIssueDat
     const shipmentId = shipment.shipmentID || shipment.id;
     const sequentialInvoiceNumber = await getNextInvoiceNumber(companyId);
     const charges = getSimpleShipmentCharges(shipment);
-    const currency = 'USD';
+    const currency = detectSimpleCurrency([shipment]);
 
-    const invoiceTotals = {
-        subtotal: charges,
-        tax: 0,
-        total: charges
-    };
+    // Get detailed charge breakdown for tax calculation
+    const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+    
+    // Calculate proper tax separation
+    const invoiceTotals = calculateInvoiceTotals(chargeBreakdown);
 
     return {
         invoiceNumber: sequentialInvoiceNumber,
@@ -359,7 +360,10 @@ async function createInvoiceDataForShipment(shipment, companyId, invoiceIssueDat
         
         subtotal: invoiceTotals.subtotal,
         tax: invoiceTotals.tax,
-        total: invoiceTotals.total
+        total: invoiceTotals.total,
+        // 🍁 NEW: Quebec tax breakdown support
+        taxBreakdown: invoiceTotals.taxBreakdown,
+        hasQuebecTaxes: invoiceTotals.hasQuebecTaxes
     };
 }
 
@@ -368,15 +372,20 @@ async function createInvoiceDataForShipment(shipment, companyId, invoiceIssueDat
  */
 async function createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate = null) {
     const sequentialInvoiceNumber = await getNextInvoiceNumber(companyId);
-    const currency = 'USD';
+    const currency = detectSimpleCurrency(customerShipments);
     
     let totalCharges = 0;
     const lineItems = [];
+    const allChargeBreakdowns = [];
 
     for (const shipment of customerShipments) {
         const shipmentId = shipment.shipmentID || shipment.id;
         const charges = getSimpleShipmentCharges(shipment);
         totalCharges += charges;
+
+        // Get detailed charge breakdown for tax calculation
+        const chargeBreakdown = getSimpleChargeBreakdown(shipment, charges, currency);
+        allChargeBreakdowns.push(...chargeBreakdown);
 
         lineItems.push({
             shipmentId: shipmentId,
@@ -395,11 +404,8 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
         });
     }
 
-    const invoiceTotals = {
-        subtotal: totalCharges,
-        tax: 0,
-        total: totalCharges
-    };
+    // Calculate proper tax separation across all combined shipments
+    const invoiceTotals = calculateInvoiceTotals(allChargeBreakdowns);
 
     return {
         invoiceNumber: sequentialInvoiceNumber,
@@ -419,56 +425,5 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
     };
 }
 
-function calculateTotalWeight(shipment) {
-    try {
-        if (shipment.packages && Array.isArray(shipment.packages)) {
-            return shipment.packages.reduce((total, pkg) => {
-                const weight = parseFloat(pkg.weight) || 0;
-                const quantity = parseInt(pkg.quantity) || 1;
-                return total + (weight * quantity);
-            }, 0);
-        }
-        
-        return parseFloat(shipment.totalWeight) || 0;
-    } catch (error) {
-        console.warn(`Error calculating weight for shipment ${shipment.shipmentID || shipment.id}:`, error);
-        return 0;
-    }
-}
 
-// Helper function to get simple charges (reused from bulk generator)
-function getSimpleShipmentCharges(shipment) {
-    try {
-        // Try multiple data sources for charges in order of preference
-        
-        // 1. markupRates (customer-facing charges with markup)
-        if (shipment.markupRates?.totalCharges && shipment.markupRates.totalCharges > 0) {
-            return parseFloat(shipment.markupRates.totalCharges) || 0;
-        }
-        
-        // 2. billingDetails (manual or adjusted charges)
-        if (shipment.billingDetails?.totalCharges && shipment.billingDetails.totalCharges > 0) {
-            return parseFloat(shipment.billingDetails.totalCharges) || 0;
-        }
-        
-        // 3. selectedRate total cost
-        if (shipment.selectedRate?.totalCost && shipment.selectedRate.totalCost > 0) {
-            return parseFloat(shipment.selectedRate.totalCost) || 0;
-        }
-        
-        // 4. QuickShip manual rates total
-        if (shipment.manualRates && Array.isArray(shipment.manualRates)) {
-            const total = shipment.manualRates.reduce((sum, rate) => {
-                return sum + (parseFloat(rate.cost) || 0);
-            }, 0);
-            if (total > 0) return total;
-        }
-        
-        // 5. Fallback to 0 if no charges found
-        return 0;
-        
-    } catch (error) {
-        console.warn(`Error calculating charges for shipment ${shipment.shipmentID || shipment.id}:`, error);
-        return 0;
-    }
-} 
+ 
