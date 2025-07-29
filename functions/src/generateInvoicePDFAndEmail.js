@@ -373,13 +373,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             currentY += 20;
 
-            // Invoice number (much smaller)
-            doc.fillColor(colors.accent)
-               .fontSize(9) // Reduced from 12
-               .font('Helvetica-Bold')
-               .text(`#${invoiceData.invoiceNumber}`, leftCol, currentY);
-
-            currentY += 15; // Reduced spacing
+            // Invoice number removed from top-left - now in right-side details box
 
             // ==================== ORGANIZED COMPANY INFORMATION ====================
             doc.fillColor(colors.text)
@@ -398,7 +392,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                 'Orangeville, ON L9W 5B6, Canada',
                 '',
                 'Tel: (416) 603-0103',
-                'Email: ap@integratedcarriers.com', // ✅ CHANGED FROM save@ to ap@
+                'Email: ar@integratedcarriers.com', // ✅ CHANGED FROM ap@ to ar@
                 'Web: www.integratedcarriers.com',
                 'GST#: 84606 8013 RT0001'
             ];
@@ -415,7 +409,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // ==================== INVOICE DETAILS BOX ====================
             const detailsBoxY = margin + 45;
             const detailsBoxWidth = 160;
-            const detailsBoxHeight = 85;
+            const detailsBoxHeight = 98; // Increased from 85 to accommodate Invoice # line
 
             // Draw details box
             doc.rect(rightCol, detailsBoxY, detailsBoxWidth, detailsBoxHeight)
@@ -432,6 +426,7 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .font('Helvetica-Bold');
 
             const invoiceDetails = [
+                ['Invoice #:', invoiceData.invoiceNumber],
                 ['Invoice Date:', formatDate(invoiceData.issueDate || invoiceData.invoiceDate || new Date())],
                 ['Due Date:', formatDate(invoiceData.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))],
                 ['Terms:', 'NET 30'],
@@ -447,7 +442,9 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             });
 
             // ==================== BILL TO SECTION WITH SIMPLIFIED INVOICE SUMMARY ====================
-            currentY = Math.max(currentY, detailsBoxY + detailsBoxHeight - 15); // ✅ MOVED UP 20PX: Changed from +5 to -15
+            // ✅ DECOUPLED: Independent positioning for BILL TO section (not based on details box)
+            const billToY = detailsBoxY + detailsBoxHeight - 15; // Position BILL TO 15px above the bottom of details box (moved up 30px)
+            currentY = billToY;
 
             // Bill To section (left side)
             doc.fillColor(colors.primary)
@@ -455,15 +452,16 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .font('Helvetica-Bold')
                .text('BILL TO:', leftCol, currentY);
 
-            // Invoice Summary (moved further right, simplified)
-            const summaryX = leftCol + 400; // Moved further right
+            // ✅ INVOICE SUMMARY REPOSITIONED: Position below details box to avoid overlap
+            const summaryX = rightCol; // Align with details box
+            const summaryY = detailsBoxY + detailsBoxHeight + 15; // Position below details box
             doc.fillColor(colors.primary)
                .fontSize(9)
                .font('Helvetica-Bold')
-               .text('INVOICE TOTAL:', summaryX, currentY);
+               .text('INVOICE TOTAL:', summaryX, summaryY);
 
             // ✅ FIXED: Proper single line spacing for invoice total
-            const totalLabelY = currentY;
+            const totalLabelY = summaryY;
             const totalAmountY = totalLabelY + 12; // ✅ FIXED: Single line spacing (12px down from label)
             doc.fillColor(colors.text)
                .fontSize(12)
@@ -533,8 +531,8 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // Summary information (right side - simplified, moved closer)
 
             // ==================== SHIPMENT TABLE (WITH ENHANCED SPACING) ====================
-            currentY += 20; // ✅ NEW: Add 20px spacing between BILL TO and rate table
-            console.log('🎯 PDF Generation: Added 20px spacing before table, currentY:', currentY);
+            currentY += 10; // ✅ MOVED DOWN 20PX: Changed from -10 to +10 to provide proper spacing below BILL TO section
+            console.log('🎯 PDF Generation: Added 10px spacing below BILL TO section, currentY:', currentY);
             const tableStartY = currentY;
             // Column widths: wider origin/destination, narrower fees
             const colWidths = [60, 90, 90, 90, 65, 85, 50]; // ✅ CHANGED: ORIGIN 75→90, DESTINATION 75→90, FEES 115→85
