@@ -58,10 +58,14 @@ import { db } from '../../../firebase';
 import { useSnackbar } from 'notistack';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useCompany } from '../../../contexts/CompanyContext';
 import InvoiceForm from './InvoiceForm';
 
 const InvoiceManagement = () => {
     const { enqueueSnackbar } = useSnackbar();
+    const { currentUser, userRole } = useAuth();
+    const { connectedCompanies } = useCompany();
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const [searchQuery, setSearchQuery] = useState('');
@@ -84,39 +88,136 @@ const InvoiceManagement = () => {
     const [editingInvoiceId, setEditingInvoiceId] = useState(null);
 
     useEffect(() => {
-        fetchInvoices();
-    }, []);
+        // Only fetch if we have a userRole and auth is loaded
+        if (userRole && currentUser) {
+            fetchInvoices();
+        }
+    }, [userRole, connectedCompanies, currentUser]);
+
+    // Helper functions for shipment data processing
+    const getShipmentCurrency = (shipment) => {
+        return shipment.currency ||
+            shipment.selectedRate?.currency ||
+            shipment.markupRates?.currency ||
+            shipment.actualRates?.currency ||
+            (shipment.shipFrom?.country === 'CA' || shipment.shipTo?.country === 'CA' ? 'CAD' : 'USD') ||
+            'USD';
+    };
+
+    const getShipmentCharge = (shipment) => {
+        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+            return shipment.manualRates.reduce((sum, rate) => {
+                return sum + (parseFloat(rate.charge) || 0);
+            }, 0);
+        } else {
+            return shipment.markupRates?.totalCharges ||
+                shipment.totalCharges ||
+                shipment.selectedRate?.totalCharges || 0;
+        }
+    };
 
     const fetchInvoices = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch all invoices
-            const invoicesRef = collection(db, 'invoices');
-            const invoicesQuery = query(invoicesRef, orderBy('createdAt', 'desc'));
-            const invoicesSnapshot = await getDocs(invoicesQuery);
+            // Super admin can proceed without connected companies, regular admin needs them
+            if (userRole !== 'superadmin' && (!connectedCompanies || connectedCompanies.length === 0)) {
+                setLoading(false);
+                return;
+            }
 
-            const invoiceData = invoicesSnapshot.docs.map(doc => ({
+            console.log('🔍 Fetching invoice data from shipments for', userRole, 'with', connectedCompanies?.length || 0, 'companies');
+
+            let shipmentsSnapshot;
+
+            // Define all possible invoice statuses to use 'in' filter instead of '!= null'
+            const validInvoiceStatuses = [
+                'uninvoiced', 'draft', 'invoiced', 'sent', 'viewed',
+                'partial_payment', 'paid', 'overdue', 'cancelled'
+            ];
+
+            if (userRole === 'superadmin') {
+                // Super admin: Fetch ALL shipments with invoice statuses
+                shipmentsSnapshot = await getDocs(query(
+                    collection(db, 'shipments'),
+                    where('status', '!=', 'draft'),
+                    where('invoiceStatus', 'in', validInvoiceStatuses), // Use 'in' instead of '!= null'
+                    orderBy('createdAt', 'desc')
+                ));
+            } else {
+                // Regular admin: Filter by connected companies
+                const companyIDs = (connectedCompanies || []).map(company => company.companyID).filter(Boolean);
+
+                if (companyIDs.length > 0) {
+                    // Handle Firestore 'in' query limit of 10
+                    if (companyIDs.length <= 10) {
+                        shipmentsSnapshot = await getDocs(query(
+                            collection(db, 'shipments'),
+                            where('companyID', 'in', companyIDs),
+                            where('status', '!=', 'draft'),
+                            where('invoiceStatus', 'in', validInvoiceStatuses),
+                            orderBy('createdAt', 'desc')
+                        ));
+                    } else {
+                        // For more than 10 companies, batch the queries
+                        const batches = [];
+                        for (let i = 0; i < companyIDs.length; i += 10) {
+                            const batch = companyIDs.slice(i, i + 10);
+                            batches.push(
+                                getDocs(query(
+                                    collection(db, 'shipments'),
+                                    where('companyID', 'in', batch),
+                                    where('status', '!=', 'draft'),
+                                    where('invoiceStatus', 'in', validInvoiceStatuses),
+                                    orderBy('createdAt', 'desc')
+                                ))
+                            );
+                        }
+
+                        const results = await Promise.all(batches);
+                        const allDocs = results.flatMap(result => result.docs);
+                        shipmentsSnapshot = { docs: allDocs };
+                    }
+                } else {
+                    shipmentsSnapshot = { docs: [] };
+                }
+            }
+
+            const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
                 id: doc.id,
-                ...doc.data(),
-                // Ensure consistent field names
-                invoiceNumber: doc.data().invoiceNumber || doc.data().number || doc.id,
-                companyName: doc.data().companyName || doc.data().company,
-                status: doc.data().status || 'pending',
-                total: doc.data().total || doc.data().amount || 0,
-                issueDate: doc.data().issueDate || doc.data().date || doc.data().createdAt,
-                dueDate: doc.data().dueDate || doc.data().due_date,
-                createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : new Date(doc.data().createdAt)
+                ...doc.data()
             }));
+
+            // Convert shipments to invoice-like data structure
+            const invoiceData = shipmentsData
+                .filter(shipment => shipment.invoiceStatus && shipment.invoiceStatus !== 'uninvoiced') // Only invoiced shipments
+                .map(shipment => ({
+                    id: shipment.id,
+                    invoiceNumber: shipment.shipmentID || shipment.id,
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    companyName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
+                    status: shipment.invoiceStatus,
+                    total: getShipmentCharge(shipment),
+                    currency: getShipmentCurrency(shipment),
+                    issueDate: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
+                    dueDate: null, // TODO: Calculate due date based on payment terms
+                    createdAt: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
+                    shipmentData: shipment // Include full shipment data for reference
+                }));
 
             setInvoices(invoiceData);
             setFilteredInvoices(invoiceData);
             calculateMetrics(invoiceData);
 
+            console.log('📊 Invoice data loaded:', {
+                invoices: invoiceData.length,
+                shipments: shipmentsData.length
+            });
+
         } catch (err) {
-            console.error('Error fetching invoices:', err);
-            setError('Failed to load invoices: ' + err.message);
+            console.error('Error fetching invoice data from shipments:', err);
+            setError('Failed to load invoice data: ' + err.message);
         } finally {
             setLoading(false);
         }
@@ -148,32 +249,32 @@ const InvoiceManagement = () => {
         setMetrics(metrics);
     };
 
-    // 🔄 ENHANCED: Use the new comprehensive status update system
+    // 🔄 ENHANCED: Update shipment invoice status directly
     const handleStatusUpdate = async (invoiceId, newStatus, paymentDetails = null, notes = '') => {
         try {
-            const updateInvoiceStatusFunction = httpsCallable(functions, 'updateBillingInvoiceStatus');
-
             enqueueSnackbar(`Updating invoice status to ${newStatus}...`, { variant: 'info' });
 
-            const result = await updateInvoiceStatusFunction({
-                invoiceId: invoiceId,
-                newStatus: newStatus,
-                paymentDetails: paymentDetails,
-                notes: notes,
-                automaticUpdate: false
+            // Update the shipment's invoice status directly
+            const shipmentRef = doc(db, 'shipments', invoiceId);
+            await updateDoc(shipmentRef, {
+                invoiceStatus: newStatus,
+                updatedAt: new Date(),
+                ...(paymentDetails && { paymentDetails }),
+                ...(notes && { statusNotes: notes })
             });
 
-            if (result.data.success) {
-                enqueueSnackbar(
-                    `Invoice ${result.data.invoiceNumber} status updated to ${newStatus}`,
-                    { variant: 'success' }
-                );
+            // Find the invoice in our current list to get the shipment ID for display
+            const invoice = invoices.find(inv => inv.id === invoiceId);
+            const shipmentId = invoice?.shipmentId || invoiceId;
 
-                // Refresh invoice list to show updated data
-                fetchInvoices();
-            } else {
-                throw new Error('Failed to update invoice status');
-            }
+            enqueueSnackbar(
+                `Shipment ${shipmentId} invoice status updated to ${newStatus}`,
+                { variant: 'success' }
+            );
+
+            // Refresh invoice list to show updated data
+            fetchInvoices();
+
         } catch (error) {
             console.error('Error updating invoice status:', error);
             enqueueSnackbar('Failed to update invoice status: ' + error.message, { variant: 'error' });
@@ -471,6 +572,25 @@ const InvoiceManagement = () => {
 
     return (
         <Box sx={{ width: '100%' }}>
+            {/* Info Alert */}
+            <Alert
+                severity="info"
+                sx={{
+                    mb: 3,
+                    mx: 2,
+                    backgroundColor: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    '& .MuiAlert-message': { fontSize: '12px' }
+                }}
+            >
+                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                    Invoice Management - Shipment-Based Invoicing
+                </Typography>
+                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
+                    Displaying invoiced shipments using the universal invoice status system. Each row represents a shipment with an invoice status.
+                </Typography>
+            </Alert>
+
             {/* Metrics Cards */}
             <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
                 <Grid item xs={12} md={3}>
@@ -645,16 +765,15 @@ const InvoiceManagement = () => {
                                     label="Status Filter"
                                 >
                                     <MenuItem value="all">All Invoices</MenuItem>
+                                    <MenuItem value="uninvoiced">Uninvoiced</MenuItem>
                                     <MenuItem value="draft">Draft</MenuItem>
-                                    <MenuItem value="generated">Generated</MenuItem>
+                                    <MenuItem value="invoiced">Invoiced</MenuItem>
                                     <MenuItem value="sent">Sent</MenuItem>
                                     <MenuItem value="viewed">Viewed</MenuItem>
-                                    <MenuItem value="pending">Pending</MenuItem>
+                                    <MenuItem value="partial_payment">Partial Payment</MenuItem>
                                     <MenuItem value="paid">Paid</MenuItem>
                                     <MenuItem value="overdue">Overdue</MenuItem>
                                     <MenuItem value="cancelled">Cancelled</MenuItem>
-                                    <MenuItem value="refunded">Refunded</MenuItem>
-                                    <MenuItem value="disputed">Disputed</MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -665,12 +784,12 @@ const InvoiceManagement = () => {
                     <Table>
                         <TableHead>
                             <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice #</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Company</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Issue Date</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Shipment ID</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Customer</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice Date</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Due Date</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Amount</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Status</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice Status</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
                             </TableRow>
                         </TableHead>

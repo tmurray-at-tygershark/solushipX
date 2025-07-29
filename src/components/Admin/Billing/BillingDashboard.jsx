@@ -462,6 +462,31 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             .slice(0, 6);
     };
 
+    // Helper functions for shipment data processing (available globally)
+    const getShipmentCurrency = (shipment) => {
+        // Try to extract currency from multiple sources
+        return shipment.currency ||
+            shipment.selectedRate?.currency ||
+            shipment.markupRates?.currency ||
+            shipment.actualRates?.currency ||
+            (shipment.shipFrom?.country === 'CA' || shipment.shipTo?.country === 'CA' ? 'CAD' : 'USD') ||
+            'USD'; // Default fallback
+    };
+
+    const getShipmentCharge = (shipment) => {
+        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
+            // Sum up customer charges from manual rates
+            return shipment.manualRates.reduce((sum, rate) => {
+                return sum + (parseFloat(rate.charge) || 0);
+            }, 0);
+        } else {
+            // Use dual rate system for regular shipments
+            return shipment.markupRates?.totalCharges ||
+                shipment.totalCharges ||
+                shipment.selectedRate?.totalCharges || 0;
+        }
+    };
+
     const fetchBillingData = async () => {
         try {
             setLoading(true);
@@ -475,93 +500,96 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
             console.log('🔍 Fetching billing data for', userRole, 'with', connectedCompanies.length, 'companies');
 
-            // Helper function to get shipment currency
-            const getShipmentCurrency = (shipment) => {
-                // Try to extract currency from multiple sources
-                return shipment.currency ||
-                    shipment.selectedRate?.currency ||
-                    shipment.markupRates?.currency ||
-                    shipment.actualRates?.currency ||
-                    (shipment.shipFrom?.country === 'CA' || shipment.shipTo?.country === 'CA' ? 'CAD' : 'USD') ||
-                    'USD'; // Default fallback
-            };
+            // Helper function to calculate metrics using shipment-based invoice data
+            function calculateMetrics(shipmentsData) {
+                // Process shipments by invoice status using universal invoice status system
+                const invoiceStatusGroups = {
+                    uninvoiced: [],
+                    draft: [],
+                    invoiced: [],
+                    sent: [],
+                    viewed: [],
+                    partial_payment: [],
+                    paid: [],
+                    overdue: [],
+                    cancelled: []
+                };
 
-            // Helper function to calculate metrics (extracted for reuse)
-            function calculateMetrics(invoicesData, shipmentsData) {
-                // Calculate uninvoiced charges by currency from shipments with enhanced QuickShip support
-                const uninvoicedChargesByCurrency = { USD: 0, CAD: 0 };
-
-                shipmentsData
-                    .filter(shipment => !shipment.invoiceStatus || shipment.invoiceStatus === 'uninvoiced')
-                    .forEach(shipment => {
-                        let charge = 0;
-                        const currency = getShipmentCurrency(shipment);
-
-                        // Enhanced charge extraction to handle QuickShip orders (matching table logic)
-                        if (shipment.creationMethod === 'quickship' && shipment.manualRates && Array.isArray(shipment.manualRates)) {
-                            // Sum up customer charges from manual rates
-                            charge = shipment.manualRates.reduce((sum, rate) => {
-                                return sum + (parseFloat(rate.charge) || 0);
-                            }, 0);
-
-                        } else {
-                            // Use dual rate system for regular shipments
-                            charge = shipment.markupRates?.totalCharges ||
-                                shipment.totalCharges ||
-                                shipment.selectedRate?.totalCharges || 0;
-                        }
-
-                        uninvoicedChargesByCurrency[currency] = (uninvoicedChargesByCurrency[currency] || 0) + charge;
-                    });
-
-                const uninvoicedCharges = uninvoicedChargesByCurrency.USD + uninvoicedChargesByCurrency.CAD;
-
-                // Update state with real data
-                setInvoices(invoicesData);
-
-                // Calculate comprehensive metrics from real data by currency
-                const totalRevenueByCurrency = { USD: 0, CAD: 0 };
-                const outstandingBalanceByCurrency = { USD: 0, CAD: 0 };
-
-                invoicesData.forEach(invoice => {
-                    const currency = invoice.currency || 'USD';
-                    const amount = invoice.total || invoice.amount || 0;
-
-                    if (invoice.status === 'paid') {
-                        totalRevenueByCurrency[currency] = (totalRevenueByCurrency[currency] || 0) + amount;
-                    } else if (invoice.status === 'pending' || invoice.status === 'unpaid') {
-                        outstandingBalanceByCurrency[currency] = (outstandingBalanceByCurrency[currency] || 0) + amount;
+                // Group shipments by invoice status
+                shipmentsData.forEach(shipment => {
+                    const status = shipment.invoiceStatus || 'uninvoiced';
+                    if (invoiceStatusGroups[status]) {
+                        invoiceStatusGroups[status].push(shipment);
+                    } else {
+                        invoiceStatusGroups.uninvoiced.push(shipment); // Default fallback
                     }
                 });
 
-                const totalRevenue = totalRevenueByCurrency.USD + totalRevenueByCurrency.CAD;
-                const outstandingBalance = outstandingBalanceByCurrency.USD + outstandingBalanceByCurrency.CAD;
+                // Calculate metrics by currency
+                const uninvoicedChargesByCurrency = { USD: 0, CAD: 0 };
+                const totalRevenueByCurrency = { USD: 0, CAD: 0 };
+                const outstandingBalanceByCurrency = { USD: 0, CAD: 0 };
+                const monthlyRevenueByCurrency = { USD: 0, CAD: 0 };
 
-                const paidInvoices = invoicesData.filter(invoice => invoice.status === 'paid').length;
-                const pendingInvoices = invoicesData.filter(invoice =>
-                    invoice.status === 'pending' || invoice.status === 'unpaid').length;
-
-                // Calculate monthly revenue by currency (current month)
+                // Current month calculation
                 const now = new Date();
                 const currentMonth = now.getMonth();
                 const currentYear = now.getFullYear();
 
-                const monthlyRevenueByCurrency = { USD: 0, CAD: 0 };
-                invoicesData
-                    .filter(invoice => {
-                        if (!invoice.createdAt) return false;
-                        const invoiceDate = invoice.createdAt.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt);
-                        return invoiceDate.getMonth() === currentMonth &&
-                            invoiceDate.getFullYear() === currentYear &&
-                            invoice.status === 'paid';
-                    })
-                    .forEach(invoice => {
-                        const currency = invoice.currency || 'USD';
-                        const amount = invoice.total || invoice.amount || 0;
-                        monthlyRevenueByCurrency[currency] = (monthlyRevenueByCurrency[currency] || 0) + amount;
-                    });
+                // Process each status group
+                Object.entries(invoiceStatusGroups).forEach(([status, shipments]) => {
+                    shipments.forEach(shipment => {
+                        const currency = getShipmentCurrency(shipment);
+                        const charge = getShipmentCharge(shipment);
 
+                        if (status === 'uninvoiced') {
+                            uninvoicedChargesByCurrency[currency] = (uninvoicedChargesByCurrency[currency] || 0) + charge;
+                        } else if (status === 'paid') {
+                            totalRevenueByCurrency[currency] = (totalRevenueByCurrency[currency] || 0) + charge;
+
+                            // Check if paid this month
+                            const shipmentDate = shipment.createdAt?.toDate ? shipment.createdAt.toDate() :
+                                shipment.createdAt ? new Date(shipment.createdAt) : new Date();
+                            if (shipmentDate.getMonth() === currentMonth && shipmentDate.getFullYear() === currentYear) {
+                                monthlyRevenueByCurrency[currency] = (monthlyRevenueByCurrency[currency] || 0) + charge;
+                            }
+                        } else if (['invoiced', 'sent', 'viewed', 'partial_payment', 'overdue'].includes(status)) {
+                            outstandingBalanceByCurrency[currency] = (outstandingBalanceByCurrency[currency] || 0) + charge;
+                        }
+                    });
+                });
+
+                // Convert shipments to invoice-like data structure for UI compatibility
+                const invoicesData = [];
+                Object.entries(invoiceStatusGroups).forEach(([status, shipments]) => {
+                    shipments.forEach(shipment => {
+                        if (status !== 'uninvoiced') { // Don't create invoice records for uninvoiced shipments
+                            invoicesData.push({
+                                id: shipment.id,
+                                shipmentId: shipment.shipmentID || shipment.id,
+                                customerName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
+                                status: status,
+                                total: getShipmentCharge(shipment),
+                                currency: getShipmentCurrency(shipment),
+                                createdAt: shipment.createdAt,
+                                shipmentData: shipment // Include full shipment data
+                            });
+                        }
+                    });
+                });
+
+                const totalRevenue = totalRevenueByCurrency.USD + totalRevenueByCurrency.CAD;
+                const outstandingBalance = outstandingBalanceByCurrency.USD + outstandingBalanceByCurrency.CAD;
+                const uninvoicedCharges = uninvoicedChargesByCurrency.USD + uninvoicedChargesByCurrency.CAD;
                 const monthlyRevenue = monthlyRevenueByCurrency.USD + monthlyRevenueByCurrency.CAD;
+
+                const paidInvoices = invoiceStatusGroups.paid.length;
+                const pendingInvoices = invoiceStatusGroups.invoiced.length + invoiceStatusGroups.sent.length +
+                    invoiceStatusGroups.viewed.length + invoiceStatusGroups.partial_payment.length +
+                    invoiceStatusGroups.overdue.length;
+
+                // Update state with real data
+                setInvoices(invoicesData);
 
                 // Calculate advanced metrics
                 const totalCharges = shipmentsData.reduce((sum, shipment) => {
@@ -649,28 +677,14 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 setRevenueByCompany(companyRevenue);
             }
 
-            let shipmentsSnapshot;
-
             if (userRole === 'superadmin') {
-                // Super admin: Fetch ALL shipments and invoices
-                console.log('🔒 Super admin mode: Fetching ALL data');
-                const [invoicesSnapshot, allShipmentsSnapshot] = await Promise.all([
-                    getDocs(query(
-                        collection(db, 'invoices'),
-                        where('createdAt', '>=', getStartDate(timeRange)),
-                        orderBy('createdAt', 'desc')
-                    )),
-                    getDocs(query(
-                        collection(db, 'shipments'),
-                        where('status', '!=', 'draft'),
-                        orderBy('createdAt', 'desc')
-                    ))
-                ]);
-
-                const invoicesData = invoicesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+                // Super admin: Fetch ALL shipments (no separate invoices collection)
+                console.log('🔒 Super admin mode: Fetching ALL shipments');
+                const allShipmentsSnapshot = await getDocs(query(
+                    collection(db, 'shipments'),
+                    where('status', '!=', 'draft'),
+                    orderBy('createdAt', 'desc')
+                ));
 
                 const shipmentsData = allShipmentsSnapshot.docs.map(doc => ({
                     id: doc.id,
@@ -678,12 +692,11 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 }));
 
                 console.log('📊 Super admin data loaded:', {
-                    invoices: invoicesData.length,
                     shipments: shipmentsData.length
                 });
 
-                // Continue with metrics calculation using all data
-                calculateMetrics(invoicesData, shipmentsData);
+                // Calculate metrics using shipment-based invoice data
+                calculateMetrics(shipmentsData);
                 return;
             }
 
@@ -693,27 +706,13 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             const companyIDs = connectedCompanies.map(company => company.companyID).filter(Boolean);
             console.log('👤 Regular admin mode: Filtering by connected companies:', companyIDs);
 
-            // Fetch invoices, companies, and shipments filtered by connected companies
-            const [invoicesSnapshot, shipmentsSnapshotFiltered] = await Promise.all([
-                getDocs(query(
-                    collection(db, 'invoices'),
-                    where('createdAt', '>=', getStartDate(timeRange)),
-                    orderBy('createdAt', 'desc')
-                )),
-                // Filter shipments by connected companies
-                companyIDs.length > 0 ? getDocs(query(
-                    collection(db, 'shipments'),
-                    where('companyID', 'in', companyIDs.slice(0, 10)), // Firestore 'in' limit is 10
-                    where('status', '!=', 'draft'),
-                    orderBy('createdAt', 'desc')
-                )) : { docs: [] }
-            ]);
-            shipmentsSnapshot = shipmentsSnapshotFiltered;
-
-            const invoicesData = invoicesSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            // Fetch shipments filtered by connected companies (no separate invoices collection)
+            const shipmentsSnapshot = companyIDs.length > 0 ? await getDocs(query(
+                collection(db, 'shipments'),
+                where('companyID', 'in', companyIDs.slice(0, 10)), // Firestore 'in' limit is 10
+                where('status', '!=', 'draft'),
+                orderBy('createdAt', 'desc')
+            )) : { docs: [] };
 
             let shipmentsData = shipmentsSnapshot.docs?.map(doc => ({
                 id: doc.id,
@@ -747,13 +746,12 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             }
 
             console.log('📊 Regular admin data loaded:', {
-                invoices: invoicesData.length,
                 shipments: shipmentsData.length,
                 companies: connectedCompanies.length
             });
 
             // Use the same helper function for consistency
-            calculateMetrics(invoicesData, shipmentsData);
+            calculateMetrics(shipmentsData);
 
         } catch (err) {
             console.error('Error fetching billing data:', err);
@@ -1085,30 +1083,61 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
     const handleSearch = async () => {
         setLoading(true);
         try {
-            // Implement search logic here using the filter states
-            const invoicesRef = collection(db, 'invoices');
-            let q = query(invoicesRef);
+            // Search shipments with invoice status instead of separate invoices collection
+            const shipmentsRef = collection(db, 'shipments');
+            let q = query(
+                shipmentsRef,
+                where('status', '!=', 'draft'),
+                where('invoiceStatus', '!=', null), // Only get shipments that have an invoice status
+                orderBy('createdAt', 'desc')
+            );
 
+            // Apply date filter if specified
             if (fromDate && toDate) {
-                q = query(q, where('date', '>=', fromDate), where('date', '<=', toDate));
-            }
-
-            if (customerName) {
-                q = query(q, where('customerName', '==', customerName));
-            }
-
-            if (paymentStatus) {
-                q = query(q, where('status', '==', paymentStatus));
+                q = query(q, where('createdAt', '>=', fromDate), where('createdAt', '<=', toDate));
             }
 
             const querySnapshot = await getDocs(q);
-            const invoiceData = querySnapshot.docs.map(doc => ({
+            const shipmentsData = querySnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
+
+            // Convert shipments to invoice-like data for UI compatibility
+            const invoiceData = shipmentsData
+                .filter(shipment => {
+                    // Apply client-side filters for more complex filtering
+                    let matches = true;
+
+                    // Customer name filter
+                    if (customerName) {
+                        const customerName_lower = customerName.toLowerCase();
+                        const shipmentCustomer = (shipment.shipTo?.companyName || shipment.shipTo?.company || '').toLowerCase();
+                        matches = matches && shipmentCustomer.includes(customerName_lower);
+                    }
+
+                    // Payment status filter (invoice status)
+                    if (paymentStatus) {
+                        matches = matches && (shipment.invoiceStatus === paymentStatus);
+                    }
+
+                    return matches;
+                })
+                .map(shipment => ({
+                    id: shipment.id,
+                    shipmentId: shipment.shipmentID || shipment.id,
+                    customerName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
+                    status: shipment.invoiceStatus || 'uninvoiced',
+                    total: getShipmentCharge(shipment),
+                    currency: getShipmentCurrency(shipment),
+                    createdAt: shipment.createdAt,
+                    date: shipment.createdAt,
+                    shipmentData: shipment // Include full shipment data for details
+                }));
+
             setInvoices(invoiceData);
         } catch (error) {
-            console.error('Error fetching invoices:', error);
+            console.error('Error fetching invoice data from shipments:', error);
         }
         setLoading(false);
     };
