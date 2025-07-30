@@ -127,22 +127,14 @@ const InvoiceManagement = () => {
                 return;
             }
 
-            console.log('🔍 Fetching invoice data from shipments for', userRole, 'with', connectedCompanies?.length || 0, 'companies');
+            console.log('🔍 Fetching invoice data from shipments with charges containing invoice numbers for', userRole, 'with', connectedCompanies?.length || 0, 'companies');
 
             let shipmentsSnapshot;
 
-            // Define all possible invoice statuses to use 'in' filter instead of '!= null'
-            const validInvoiceStatuses = [
-                'uninvoiced', 'draft', 'invoiced', 'sent', 'viewed',
-                'partial_payment', 'paid', 'overdue', 'cancelled'
-            ];
-
             if (userRole === 'superadmin') {
-                // Super admin: Fetch ALL shipments with invoice statuses
+                // Super admin: Fetch ALL shipments and filter client-side 
                 shipmentsSnapshot = await getDocs(query(
                     collection(db, 'shipments'),
-                    where('status', '!=', 'draft'),
-                    where('invoiceStatus', 'in', validInvoiceStatuses), // Use 'in' instead of '!= null'
                     orderBy('createdAt', 'desc')
                 ));
             } else {
@@ -155,8 +147,6 @@ const InvoiceManagement = () => {
                         shipmentsSnapshot = await getDocs(query(
                             collection(db, 'shipments'),
                             where('companyID', 'in', companyIDs),
-                            where('status', '!=', 'draft'),
-                            where('invoiceStatus', 'in', validInvoiceStatuses),
                             orderBy('createdAt', 'desc')
                         ));
                     } else {
@@ -168,8 +158,6 @@ const InvoiceManagement = () => {
                                 getDocs(query(
                                     collection(db, 'shipments'),
                                     where('companyID', 'in', batch),
-                                    where('status', '!=', 'draft'),
-                                    where('invoiceStatus', 'in', validInvoiceStatuses),
                                     orderBy('createdAt', 'desc')
                                 ))
                             );
@@ -189,30 +177,160 @@ const InvoiceManagement = () => {
                 ...doc.data()
             }));
 
-            // Convert shipments to invoice-like data structure
-            const invoiceData = shipmentsData
-                .filter(shipment => shipment.invoiceStatus && shipment.invoiceStatus !== 'uninvoiced') // Only invoiced shipments
-                .map(shipment => ({
-                    id: shipment.id,
-                    invoiceNumber: shipment.shipmentID || shipment.id,
-                    shipmentId: shipment.shipmentID || shipment.id,
-                    companyName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
-                    status: shipment.invoiceStatus,
-                    total: getShipmentCharge(shipment),
-                    currency: getShipmentCurrency(shipment),
-                    issueDate: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
-                    dueDate: null, // TODO: Calculate due date based on payment terms
-                    createdAt: shipment.createdAt?.toDate ? shipment.createdAt.toDate() : new Date(shipment.createdAt),
-                    shipmentData: shipment // Include full shipment data for reference
-                }));
+            // Extract charges with invoice numbers from shipments
+            const chargesWithInvoices = [];
+
+            shipmentsData.forEach(shipment => {
+                const shipmentId = shipment.shipmentID || shipment.id;
+                let charges = [];
+
+                // Check different charge storage locations based on shipment type
+                if (shipment.creationMethod === 'quickship') {
+                    // QuickShip: Check manualRates
+                    charges = shipment.manualRates || [];
+                } else {
+                    // Regular shipments: Check updatedCharges, chargesBreakdown, or selectedRate.billingDetails
+                    charges = shipment.updatedCharges ||
+                        shipment.chargesBreakdown ||
+                        shipment.selectedRate?.billingDetails ||
+                        [];
+                }
+
+                // Extract charges that have valid invoice numbers
+                charges.forEach(charge => {
+                    const invoiceNumber = charge.invoiceNumber;
+                    if (invoiceNumber &&
+                        invoiceNumber !== '' &&
+                        invoiceNumber !== '-' &&
+                        invoiceNumber.trim() !== '') {
+
+                        chargesWithInvoices.push({
+                            invoiceNumber: invoiceNumber,
+                            shipmentID: shipmentId,
+                            shipmentDocId: shipment.id,
+                            companyID: shipment.companyID,
+                            customerName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
+                            amount: parseFloat(charge.actualCharge || charge.quotedCharge || charge.charge || charge.amount || 0),
+                            currency: shipment.currency || charge.currency || 'CAD',
+                            createdAt: shipment.createdAt,
+                            shipmentData: shipment,
+                            chargeData: charge
+                        });
+                    }
+                });
+            });
+
+            console.log('📊 Extracted charges with invoice numbers:', {
+                totalShipments: shipmentsData.length,
+                chargesWithInvoices: chargesWithInvoices.length
+            });
+
+            // Group charges by invoice number to create actual invoices
+            const invoiceGroups = {};
+
+            chargesWithInvoices.forEach(charge => {
+                const invoiceNumber = charge.invoiceNumber;
+                if (!invoiceGroups[invoiceNumber]) {
+                    invoiceGroups[invoiceNumber] = {
+                        invoiceNumber: invoiceNumber,
+                        charges: [],
+                        shipmentIds: [],
+                        total: 0,
+                        currency: charge.currency,
+                        companyName: charge.customerName,
+                        companyID: charge.companyID,
+                        status: 'invoiced', // Default status since they have invoice numbers
+                        issueDate: charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date(),
+                        createdAt: charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date(),
+                        dueDate: null // TODO: Calculate based on payment terms
+                    };
+                }
+
+                invoiceGroups[invoiceNumber].charges.push(charge);
+                invoiceGroups[invoiceNumber].shipmentIds.push(charge.shipmentID);
+                invoiceGroups[invoiceNumber].total += charge.amount;
+
+                // Use the most recent date if multiple charges exist
+                const chargeDate = charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date();
+                if (chargeDate > invoiceGroups[invoiceNumber].createdAt) {
+                    invoiceGroups[invoiceNumber].createdAt = chargeDate;
+                    invoiceGroups[invoiceNumber].issueDate = chargeDate;
+                }
+            });
+
+            // Convert grouped data to invoice array
+            const invoiceData = Object.values(invoiceGroups).map(invoice => {
+                // Calculate subtotal and tax breakdown from charges
+                let subtotal = 0;
+                let tax = 0;
+
+                invoice.charges.forEach(charge => {
+                    // Assume most charges are subtotal unless they're identified as tax
+                    const chargeAmount = charge.amount || 0;
+                    const chargeCode = charge.chargeData?.code || '';
+                    const chargeDescription = charge.chargeData?.description || '';
+
+                    // Simple tax detection (can be enhanced)
+                    if (chargeCode.includes('TAX') || chargeCode.includes('GST') || chargeCode.includes('HST') ||
+                        chargeCode.includes('PST') || chargeCode.includes('QST') || chargeCode.includes('QGST') ||
+                        chargeDescription.toLowerCase().includes('tax')) {
+                        tax += chargeAmount;
+                    } else {
+                        subtotal += chargeAmount;
+                    }
+                });
+
+                // Create line items from charges (group by shipment)
+                const lineItemsMap = {};
+                invoice.charges.forEach(charge => {
+                    const shipmentId = charge.shipmentID;
+                    if (!lineItemsMap[shipmentId]) {
+                        lineItemsMap[shipmentId] = {
+                            shipmentId: shipmentId,
+                            description: `Shipment ${shipmentId}`,
+                            carrier: 'Integrated Carriers', // Default carrier
+                            amount: 0,
+                            charges: []
+                        };
+                    }
+                    lineItemsMap[shipmentId].amount += charge.amount;
+                    lineItemsMap[shipmentId].charges.push(charge);
+                });
+
+                const lineItems = Object.values(lineItemsMap);
+
+                return {
+                    id: `invoice_${invoice.invoiceNumber}`,
+                    invoiceNumber: invoice.invoiceNumber,
+                    companyName: invoice.companyName,
+                    status: invoice.status,
+                    total: parseFloat(invoice.total.toFixed(2)),
+                    subtotal: parseFloat(subtotal.toFixed(2)),
+                    tax: parseFloat(tax.toFixed(2)),
+                    currency: invoice.currency,
+                    issueDate: invoice.issueDate,
+                    dueDate: invoice.dueDate,
+                    createdAt: invoice.createdAt,
+                    paymentTerms: 'NET 30', // Default payment terms
+                    shipmentCount: invoice.shipmentIds.length,
+                    shipmentIds: [...new Set(invoice.shipmentIds)], // Remove duplicates
+                    lineItems: lineItems,
+                    charges: invoice.charges
+                };
+            });
+
+            // Sort by creation date (newest first)
+            invoiceData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
             setInvoices(invoiceData);
             setFilteredInvoices(invoiceData);
             calculateMetrics(invoiceData);
 
-            console.log('📊 Invoice data loaded:', {
+            console.log('📊 Invoice data extracted from shipments:', {
                 invoices: invoiceData.length,
-                shipments: shipmentsData.length
+                totalShipments: shipmentsData.length,
+                chargesWithInvoices: chargesWithInvoices.length,
+                uniqueInvoiceNumbers: Object.keys(invoiceGroups).length
             });
 
         } catch (err) {
@@ -584,10 +702,10 @@ const InvoiceManagement = () => {
                 }}
             >
                 <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                    Invoice Management - Shipment-Based Invoicing
+                    Invoice Management - Actual Invoice Records
                 </Typography>
                 <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
-                    Displaying invoiced shipments using the universal invoice status system. Each row represents a shipment with an invoice status.
+                    Displaying invoices extracted from shipment charges. Each row represents a unique invoice number which may contain multiple shipments.
                 </Typography>
             </Alert>
 
@@ -784,8 +902,9 @@ const InvoiceManagement = () => {
                     <Table>
                         <TableHead>
                             <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Shipment ID</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice #</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Customer</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Shipments</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice Date</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Due Date</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Amount</TableCell>
@@ -796,7 +915,7 @@ const InvoiceManagement = () => {
                         <TableBody>
                             {filteredInvoices.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} align="center" sx={{ py: 4, color: '#6b7280' }}>
+                                    <TableCell colSpan={8} align="center" sx={{ py: 4, color: '#6b7280' }}>
                                         <ReceiptIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
                                         <Typography variant="body1">No invoices found</Typography>
                                     </TableCell>
@@ -823,6 +942,19 @@ const InvoiceManagement = () => {
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     {invoice.companyName}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Chip
+                                                        label={`${invoice.shipmentCount} shipment${invoice.shipmentCount !== 1 ? 's' : ''}`}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            height: '22px',
+                                                            borderColor: '#e5e7eb',
+                                                            color: '#374151'
+                                                        }}
+                                                    />
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     {formatDate(invoice.issueDate)}
@@ -1034,7 +1166,7 @@ const InvoiceManagement = () => {
                                                 <TableCell sx={{ fontSize: '12px' }}>{item.description}</TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>{item.carrier}</TableCell>
                                                 <TableCell align="right" sx={{ fontSize: '12px' }}>
-                                                    ${item.charges.toFixed(2)}
+                                                    ${item.amount.toFixed(2)}
                                                 </TableCell>
                                             </TableRow>
                                         ))}

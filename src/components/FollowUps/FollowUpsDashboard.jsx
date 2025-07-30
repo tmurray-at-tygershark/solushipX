@@ -97,7 +97,9 @@ import {
     AccountCircle as AccountIcon,
     PlayArrow as PlayIcon,
     Pause as PauseIcon,
-    Stop as StopIcon
+    Stop as StopIcon,
+    ViewList as ViewListIcon,
+    Avatar as AvatarIcon
 } from '@mui/icons-material';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -135,6 +137,9 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
     const [loadingCompanies, setLoadingCompanies] = useState(false);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+    // Shipment data for task context
+    const [shipmentData, setShipmentData] = useState({});
 
     // Filters & Search
     const [filters, setFilters] = useState({
@@ -253,6 +258,55 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         loadCustomers();
     }, [companyIdForAddress, selectedCompanyId]);
 
+    // Load shipment data for tasks
+    const loadShipmentDataForTasks = async (tasks) => {
+        try {
+            console.log('🔄 Loading shipment data for tasks...');
+            const shipmentIds = [...new Set(tasks.map(task => task.shipmentId).filter(Boolean))];
+
+            if (shipmentIds.length === 0) {
+                setShipmentData({});
+                return;
+            }
+
+            const shipmentQueries = shipmentIds.map(async (shipmentId) => {
+                try {
+                    // Try to get shipment by document ID first
+                    const shipmentDoc = await getDocs(query(
+                        collection(db, 'shipments'),
+                        where('shipmentID', '==', shipmentId),
+                        limit(1)
+                    ));
+
+                    if (!shipmentDoc.empty) {
+                        return {
+                            id: shipmentId,
+                            data: { id: shipmentDoc.docs[0].id, ...shipmentDoc.docs[0].data() }
+                        };
+                    }
+                    return { id: shipmentId, data: null };
+                } catch (error) {
+                    console.error(`Error loading shipment ${shipmentId}:`, error);
+                    return { id: shipmentId, data: null };
+                }
+            });
+
+            const shipmentResults = await Promise.all(shipmentQueries);
+            const shipmentDataMap = {};
+            shipmentResults.forEach(result => {
+                if (result.data) {
+                    shipmentDataMap[result.id] = result.data;
+                }
+            });
+
+            console.log('📋 Loaded shipment data for', Object.keys(shipmentDataMap).length, 'shipments');
+            setShipmentData(shipmentDataMap);
+        } catch (error) {
+            console.error('Error loading shipment data for tasks:', error);
+            setShipmentData({});
+        }
+    };
+
     // Load tasks with enhanced filtering
     const loadTasks = async () => {
         try {
@@ -297,7 +351,13 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             console.log('📋 Tasks data:', result.data);
             console.log('📋 Tasks array:', result.data?.tasks);
 
-            setTasks(result.data?.tasks || []);
+            const loadedTasks = result.data?.tasks || [];
+            setTasks(loadedTasks);
+
+            // Load shipment data for the tasks
+            if (loadedTasks.length > 0) {
+                await loadShipmentDataForTasks(loadedTasks);
+            }
         } catch (error) {
             console.error('Error loading tasks:', error);
             setError('Failed to load follow-up tasks');
@@ -333,25 +393,25 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const loadStaff = async () => {
         try {
             console.log('🔄 loadStaff called!');
-            // For testing - just set empty staff
-            setStaff([]);
-            return;
 
+            // Load all users for assignment filtering
             const staffQuery = query(
                 collection(db, 'users'),
-                where('role', 'in', ['admin', 'user']),
                 orderBy('firstName')
             );
 
             const staffSnapshot = await getDocs(staffQuery);
             const staffMembers = staffSnapshot.docs.map(doc => ({
                 id: doc.id,
+                uid: doc.data().uid,
                 ...doc.data()
             }));
 
+            console.log('📋 Loaded staff members:', staffMembers.length);
             setStaff(staffMembers);
         } catch (error) {
             console.error('Error loading staff:', error);
+            setStaff([]);
         }
     };
 
@@ -926,139 +986,289 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         </Box>
     );
 
-    // Enhanced task card with professional styling
-    const renderTaskCard = (task) => (
-        <Card
-            key={task.id}
-            sx={{
-                mb: 2,
-                border: '1px solid #e5e7eb',
-                boxShadow: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                    borderColor: '#3b82f6',
-                    backgroundColor: '#f8fafc'
-                }
-            }}
-            onClick={() => handleTaskClick(task)}
-        >
-            <CardContent sx={{ p: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+    // Helper function to get user display name from user ID
+    const getUserDisplayName = (userId) => {
+        if (!userId) return 'Unassigned';
+
+        const user = staff.find(u => u.uid === userId || u.id === userId);
+        if (user) {
+            if (user.firstName && user.lastName) {
+                return `${user.firstName} ${user.lastName}`;
+            }
+            return user.displayName || user.email || 'Unknown User';
+        }
+        return userId; // Fallback to showing the ID if user not found
+    };
+
+    // Helper function to get user avatar
+    const getUserAvatar = (userId) => {
+        if (!userId) return null;
+
+        const user = staff.find(u => u.uid === userId || u.id === userId);
+        if (user) {
+            return user.photoURL || user.avatar;
+        }
+        return null;
+    };
+
+    // Helper function to get user initials
+    const getUserInitials = (userId) => {
+        if (!userId) return 'U';
+
+        const user = staff.find(u => u.uid === userId || u.id === userId);
+        if (user) {
+            if (user.firstName && user.lastName) {
+                return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`;
+            }
+            return user.displayName?.charAt(0) || user.email?.charAt(0) || 'U';
+        }
+        return userId.charAt(0).toUpperCase();
+    };
+
+    // Enhanced task card with professional styling and comprehensive information
+    const renderTaskCard = (task) => {
+        const shipment = shipmentData[task.shipmentId];
+
+        return (
+            <Card
+                key={task.id}
+                sx={{
+                    mb: 2,
+                    border: '1px solid #e5e7eb',
+                    boxShadow: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                        borderColor: '#3b82f6',
+                        backgroundColor: '#f8fafc'
+                    }
+                }}
+                onClick={() => handleTaskClick(task)}
+            >
+                <CardContent sx={{ p: 2 }}>
+                    {/* Task Header */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Typography sx={{
+                            fontWeight: 600,
+                            fontSize: '14px',
+                            color: '#111827'
+                        }}>
+                            {task.title}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip
+                                label={task.priority}
+                                size="small"
+                                sx={{
+                                    height: '20px',
+                                    fontSize: '10px',
+                                    backgroundColor:
+                                        task.priority === 'high' ? '#fee2e2' :
+                                            task.priority === 'medium' ? '#fef3c7' : '#f0fdf4',
+                                    color:
+                                        task.priority === 'high' ? '#dc2626' :
+                                            task.priority === 'medium' ? '#d97706' : '#16a34a',
+                                    '& .MuiChip-label': {
+                                        fontWeight: 500,
+                                        textTransform: 'capitalize'
+                                    }
+                                }}
+                            />
+                            <EnhancedStatusChip
+                                status={task.status}
+                                size="small"
+                                sx={{
+                                    height: '20px',
+                                    fontSize: '10px',
+                                    '& .MuiChip-label': {
+                                        fontSize: '10px'
+                                    }
+                                }}
+                            />
+                        </Box>
+                    </Box>
+
+                    {/* Task Description */}
                     <Typography sx={{
-                        fontWeight: 600,
-                        fontSize: '14px',
-                        color: '#111827'
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        mb: 2,
+                        lineHeight: 1.4
                     }}>
-                        {task.title}
+                        {task.description}
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                            label={task.priority}
-                            size="small"
-                            sx={{
-                                height: '20px',
-                                fontSize: '10px',
-                                backgroundColor:
-                                    task.priority === 'high' ? '#fee2e2' :
-                                        task.priority === 'medium' ? '#fef3c7' : '#f0fdf4',
-                                color:
-                                    task.priority === 'high' ? '#dc2626' :
-                                        task.priority === 'medium' ? '#d97706' : '#16a34a',
-                                '& .MuiChip-label': {
-                                    fontWeight: 500,
-                                    textTransform: 'capitalize'
-                                }
-                            }}
-                        />
-                        <EnhancedStatusChip
-                            status={task.status}
-                            size="small"
-                            sx={{
-                                height: '20px',
-                                fontSize: '10px',
-                                '& .MuiChip-label': {
-                                    fontSize: '10px'
-                                }
-                            }}
-                        />
-                    </Box>
-                </Box>
 
-                <Typography sx={{
-                    fontSize: '12px',
-                    color: '#6b7280',
-                    mb: 1,
-                    lineHeight: 1.4
-                }}>
-                    {task.description}
-                </Typography>
-
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        {task.shipmentId && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <ShipmentIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {task.shipmentId}
-                                </Typography>
-                            </Box>
-                        )}
-                        {task.assignedTo && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <PersonIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
-                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {task.assignedTo}
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {task.dueDate && (
+                    {/* Shipment Information Section */}
+                    {shipment && (
+                        <Box sx={{
+                            mb: 2,
+                            p: 1.5,
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '6px',
+                            border: '1px solid #e5e7eb'
+                        }}>
                             <Typography sx={{
                                 fontSize: '11px',
-                                color: new Date(task.dueDate.toDate?.() || task.dueDate) < new Date() ? '#dc2626' : '#6b7280'
+                                fontWeight: 600,
+                                color: '#374151',
+                                mb: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5
                             }}>
-                                Due: {new Date(task.dueDate.toDate?.() || task.dueDate).toLocaleDateString()}
+                                <ShipmentIcon sx={{ fontSize: '12px' }} />
+                                Shipment Details
                             </Typography>
-                        )}
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditTask(task);
-                            }}
-                            sx={{
-                                color: '#6b7280',
-                                '&:hover': {
-                                    backgroundColor: '#f3f4f6'
-                                }
-                            }}
-                        >
-                            <EditIcon sx={{ fontSize: '14px' }} />
-                        </IconButton>
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteTask(task);
-                            }}
-                            sx={{
-                                color: '#6b7280',
-                                '&:hover': {
-                                    backgroundColor: '#f3f4f6',
-                                    color: '#dc2626'
-                                }
-                            }}
-                        >
-                            <DeleteIcon sx={{ fontSize: '14px' }} />
-                        </IconButton>
+
+                            {/* Company and Customer Info */}
+                            <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                                {shipment.shipFrom?.companyName && (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <CompanyIcon sx={{ fontSize: '10px', color: '#6b7280' }} />
+                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                            From: {shipment.shipFrom.companyName}
+                                        </Typography>
+                                    </Box>
+                                )}
+                                {shipment.shipTo?.companyName && (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <PersonIcon sx={{ fontSize: '10px', color: '#6b7280' }} />
+                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                            To: {shipment.shipTo.companyName}
+                                        </Typography>
+                                    </Box>
+                                )}
+                            </Box>
+
+                            {/* Route Information */}
+                            {(shipment.shipFrom?.city || shipment.shipTo?.city) && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                                    <TrackingIcon sx={{ fontSize: '10px', color: '#6b7280' }} />
+                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                        Route: {shipment.shipFrom?.city || 'Unknown'} → {shipment.shipTo?.city || 'Unknown'}
+                                    </Typography>
+                                </Box>
+                            )}
+
+                            {/* Shipment Status and Tracking */}
+                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                                {shipment.status && (
+                                    <EnhancedStatusChip
+                                        status={shipment.status}
+                                        size="small"
+                                        sx={{
+                                            height: '16px',
+                                            fontSize: '8px',
+                                            '& .MuiChip-label': {
+                                                fontSize: '8px',
+                                                px: 1
+                                            }
+                                        }}
+                                    />
+                                )}
+                                {(shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber) && (
+                                    <Typography sx={{ fontSize: '9px', color: '#6b7280', fontFamily: 'monospace' }}>
+                                        #{shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber}
+                                    </Typography>
+                                )}
+                            </Box>
+                        </Box>
+                    )}
+
+                    {/* Task Footer */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            {task.shipmentId && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <ShipmentIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>
+                                        {task.shipmentId}
+                                    </Typography>
+                                </Box>
+                            )}
+                            {task.assignedTo && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Avatar
+                                        src={getUserAvatar(task.assignedTo)}
+                                        sx={{
+                                            width: 16,
+                                            height: 16,
+                                            fontSize: '8px',
+                                            bgcolor: '#8b5cf6'
+                                        }}
+                                    >
+                                        {getUserInitials(task.assignedTo)}
+                                    </Avatar>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        {getUserDisplayName(task.assignedTo)}
+                                    </Typography>
+                                </Box>
+                            )}
+                            {task.category && (
+                                <Chip
+                                    label={task.category}
+                                    size="small"
+                                    sx={{
+                                        height: '16px',
+                                        fontSize: '8px',
+                                        backgroundColor: '#f3f4f6',
+                                        color: '#6b7280',
+                                        '& .MuiChip-label': {
+                                            fontSize: '8px',
+                                            px: 1,
+                                            textTransform: 'capitalize'
+                                        }
+                                    }}
+                                />
+                            )}
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {task.dueDate && (
+                                <Typography sx={{
+                                    fontSize: '11px',
+                                    color: new Date(task.dueDate.toDate?.() || task.dueDate) < new Date() ? '#dc2626' : '#6b7280'
+                                }}>
+                                    Due: {new Date(task.dueDate.toDate?.() || task.dueDate).toLocaleDateString()}
+                                </Typography>
+                            )}
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditTask(task);
+                                }}
+                                sx={{
+                                    color: '#6b7280',
+                                    '&:hover': {
+                                        backgroundColor: '#f3f4f6'
+                                    }
+                                }}
+                            >
+                                <EditIcon sx={{ fontSize: '14px' }} />
+                            </IconButton>
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTask(task);
+                                }}
+                                sx={{
+                                    color: '#6b7280',
+                                    '&:hover': {
+                                        backgroundColor: '#f3f4f6',
+                                        color: '#dc2626'
+                                    }
+                                }}
+                            >
+                                <DeleteIcon sx={{ fontSize: '14px' }} />
+                            </IconButton>
+                        </Box>
                     </Box>
-                </Box>
-            </CardContent>
-        </Card>
-    );
+                </CardContent>
+            </Card>
+        );
+    };
 
     // Enhanced tasks list with professional styling
     const renderTasksList = () => (
@@ -1109,20 +1319,136 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             }
                         }}
                     />
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<FilterIcon />}
-                        sx={{
-                            fontSize: '12px',
-                            textTransform: 'none',
-                            borderColor: '#d1d5db',
-                            color: '#374151'
-                        }}
-                    >
-                        Filter
-                    </Button>
                 </Box>
+            </Box>
+
+            {/* Task Filters */}
+            <Box sx={{
+                display: 'flex',
+                gap: 2,
+                mb: 3,
+                p: 2,
+                backgroundColor: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb'
+            }}>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                    <Select
+                        value={filters.status}
+                        onChange={(e) => handleFilterChange('status', e.target.value)}
+                        label="Status"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Status</MenuItem>
+                        <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
+                        <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
+                        <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
+                        <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
+                    </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
+                    <Select
+                        value={filters.priority}
+                        onChange={(e) => handleFilterChange('priority', e.target.value)}
+                        label="Priority"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Priority</MenuItem>
+                        <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
+                        <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
+                        <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
+                        <MenuItem value="urgent" sx={{ fontSize: '12px' }}>Urgent</MenuItem>
+                    </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <InputLabel sx={{ fontSize: '12px' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <PersonIcon sx={{ fontSize: 14 }} />
+                            Assigned To
+                        </Box>
+                    </InputLabel>
+                    <Select
+                        value={filters.assignedTo}
+                        onChange={(e) => handleFilterChange('assignedTo', e.target.value)}
+                        label={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <PersonIcon sx={{ fontSize: 14 }} />
+                                Assigned To
+                            </Box>
+                        }
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <ViewListIcon sx={{ fontSize: 16, color: '#6b7280' }} />
+                                All Users
+                            </Box>
+                        </MenuItem>
+                        {staff.map(user => (
+                            <MenuItem
+                                key={user.id}
+                                value={user.uid || user.id}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Avatar
+                                        src={user.photoURL || user.avatar}
+                                        sx={{
+                                            width: 16,
+                                            height: 16,
+                                            fontSize: '8px',
+                                            bgcolor: '#8b5cf6'
+                                        }}
+                                    >
+                                        {(user.firstName?.charAt(0) || user.displayName?.charAt(0) || user.email?.charAt(0) || 'U')}
+                                    </Avatar>
+                                    <Typography sx={{ fontSize: '12px' }}>
+                                        {user.firstName && user.lastName
+                                            ? `${user.firstName} ${user.lastName}`
+                                            : user.displayName || user.email || 'Unknown User'
+                                        }
+                                    </Typography>
+                                </Box>
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                    <Select
+                        value={filters.category}
+                        onChange={(e) => handleFilterChange('category', e.target.value)}
+                        label="Category"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Categories</MenuItem>
+                        <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual</MenuItem>
+                        <MenuItem value="automated" sx={{ fontSize: '12px' }}>Automated</MenuItem>
+                        <MenuItem value="scheduled" sx={{ fontSize: '12px' }}>Scheduled</MenuItem>
+                    </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel sx={{ fontSize: '12px' }}>Due Date</InputLabel>
+                    <Select
+                        value={filters.dueDate}
+                        onChange={(e) => handleFilterChange('dueDate', e.target.value)}
+                        label="Due Date"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Dates</MenuItem>
+                        <MenuItem value="overdue" sx={{ fontSize: '12px' }}>Overdue</MenuItem>
+                        <MenuItem value="today" sx={{ fontSize: '12px' }}>Due Today</MenuItem>
+                        <MenuItem value="tomorrow" sx={{ fontSize: '12px' }}>Due Tomorrow</MenuItem>
+                        <MenuItem value="this_week" sx={{ fontSize: '12px' }}>This Week</MenuItem>
+                        <MenuItem value="next_week" sx={{ fontSize: '12px' }}>Next Week</MenuItem>
+                    </Select>
+                </FormControl>
             </Box>
 
             {loading ? (
@@ -1302,21 +1628,98 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             }
                         }}
                     >
-                        <InputLabel>Company</InputLabel>
+                        <InputLabel id="company-select-label">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <CompanyIcon sx={{ fontSize: 16 }} />
+                                Company
+                            </Box>
+                        </InputLabel>
                         <Select
+                            labelId="company-select-label"
                             value={selectedCompanyId}
                             onChange={handleCompanyChange}
-                            label="Company"
+                            label={
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <CompanyIcon sx={{ fontSize: 16 }} />
+                                    Company
+                                </Box>
+                            }
                             disabled={loadingCompanies}
                         >
-                            <MenuItem value="all" sx={{ fontSize: '12px' }}>All Companies</MenuItem>
+                            {/* All Companies Option */}
+                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                    <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        All Companies
+                                    </Typography>
+                                    <Chip
+                                        label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                        size="small"
+                                        color="primary"
+                                        sx={{
+                                            height: 20,
+                                            fontSize: '10px',
+                                            ml: 'auto'
+                                        }}
+                                    />
+                                </Box>
+                            </MenuItem>
+
+                            {/* Individual Companies */}
                             {availableCompanies.map(company => (
                                 <MenuItem
                                     key={company.id}
                                     value={company.companyID}
                                     sx={{ fontSize: '12px' }}
                                 >
-                                    {company.name}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        {/* Company Logo/Avatar */}
+                                        <Avatar
+                                            src={company.logo || company.logoUrl || company.companyLogo}
+                                            sx={{
+                                                width: 20,
+                                                height: 20,
+                                                fontSize: '10px',
+                                                bgcolor: '#3b82f6'
+                                            }}
+                                        >
+                                            {company.name?.charAt(0) || 'C'}
+                                        </Avatar>
+
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {company.name}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                ({company.companyID})
+                                            </Typography>
+                                        </Box>
+
+                                        {/* Status Chip */}
+                                        {company.status === 'active' ? (
+                                            <Chip
+                                                label="Active"
+                                                size="small"
+                                                color="success"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
+                                                }}
+                                            />
+                                        ) : (
+                                            <Chip
+                                                label="Inactive"
+                                                size="small"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
+                                                }}
+                                            />
+                                        )}
+                                    </Box>
                                 </MenuItem>
                             ))}
                         </Select>
@@ -1336,21 +1739,100 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             }
                         }}
                     >
-                        <InputLabel>Customer</InputLabel>
+                        <InputLabel id="customer-select-label">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <PersonIcon sx={{ fontSize: 16 }} />
+                                Customer
+                            </Box>
+                        </InputLabel>
                         <Select
+                            labelId="customer-select-label"
                             value={selectedCustomerId}
                             onChange={handleCustomerChange}
-                            label="Customer"
+                            label={
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <PersonIcon sx={{ fontSize: 16 }} />
+                                    Customer
+                                </Box>
+                            }
                             disabled={loadingCustomers}
                         >
-                            <MenuItem value="all" sx={{ fontSize: '12px' }}>All Customers</MenuItem>
+                            {/* All Customers Option */}
+                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                    <ViewListIcon sx={{ fontSize: 18, color: '#10b981' }} />
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        All Customers
+                                    </Typography>
+                                    <Chip
+                                        label={`${availableCustomers.length} Available`}
+                                        size="small"
+                                        color="success"
+                                        sx={{
+                                            height: 20,
+                                            fontSize: '10px',
+                                            ml: 'auto'
+                                        }}
+                                    />
+                                </Box>
+                            </MenuItem>
+
+                            {/* Individual Customers */}
                             {availableCustomers.map(customer => (
                                 <MenuItem
                                     key={customer.id}
                                     value={customer.id}
                                     sx={{ fontSize: '12px' }}
                                 >
-                                    {customer.name}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        {/* Customer Logo/Avatar */}
+                                        <Avatar
+                                            src={customer.logo || customer.logoUrl || customer.customerLogo}
+                                            sx={{
+                                                width: 20,
+                                                height: 20,
+                                                fontSize: '10px',
+                                                bgcolor: '#10b981'
+                                            }}
+                                        >
+                                            {customer.name?.charAt(0) || 'C'}
+                                        </Avatar>
+
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {customer.name}
+                                            </Typography>
+                                            {customer.customerID && (
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                    ({customer.customerID})
+                                                </Typography>
+                                            )}
+                                        </Box>
+
+                                        {/* Customer Type/Status */}
+                                        {customer.status === 'active' ? (
+                                            <Chip
+                                                label="Active"
+                                                size="small"
+                                                color="success"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
+                                                }}
+                                            />
+                                        ) : (
+                                            <Chip
+                                                label="Inactive"
+                                                size="small"
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: '10px',
+                                                    ml: 'auto'
+                                                }}
+                                            />
+                                        )}
+                                    </Box>
                                 </MenuItem>
                             ))}
                         </Select>
@@ -1377,17 +1859,42 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             }}>
                                 Recent Activity
                             </Typography>
-                            <Alert
-                                severity="info"
-                                sx={{
-                                    fontSize: '12px',
-                                    backgroundColor: '#f0f9ff',
-                                    border: '1px solid #e0f2fe',
-                                    color: '#0369a1'
-                                }}
-                            >
-                                Follow-up dashboard is loading recent activity...
-                            </Alert>
+                            {loading ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                                    <CircularProgress size={24} />
+                                </Box>
+                            ) : tasks.length === 0 ? (
+                                <Alert
+                                    severity="info"
+                                    sx={{
+                                        fontSize: '12px',
+                                        backgroundColor: '#f0f9ff',
+                                        border: '1px solid #e0f2fe',
+                                        color: '#0369a1'
+                                    }}
+                                >
+                                    No follow-up tasks found. Tasks will appear here when created.
+                                </Alert>
+                            ) : (
+                                <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
+                                    {tasks.slice(0, 10).map(task => renderTaskCard(task))}
+                                    {tasks.length > 10 && (
+                                        <Box sx={{ textAlign: 'center', mt: 2 }}>
+                                            <Button
+                                                onClick={() => setSelectedTab('tasks')}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '12px',
+                                                    textTransform: 'none',
+                                                    color: '#6366f1'
+                                                }}
+                                            >
+                                                View all {tasks.length} tasks →
+                                            </Button>
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
                         </Box>
                     </Box>
                 );
