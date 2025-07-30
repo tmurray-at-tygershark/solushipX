@@ -2,7 +2,8 @@
     {
         "origin": [
             "https://solushipx.web.app",
-            "https://solushipx.firebaseapp.com"
+            "https://solushipx.firebaseapp.com",
+            "https://devx.integratedcarriers.com"
         ],
         "method": [
             "GET",

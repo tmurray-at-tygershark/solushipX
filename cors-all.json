@@ -1,1 +1,24 @@
-[{"origin":["https://solushipx.web.app","https://solushipx.firebaseapp.com","http://localhost:3000"],"method":["GET","POST","PUT","DELETE","HEAD"],"maxAgeSeconds":3600,"responseHeader":["Content-Type","Content-Disposition","Content-Length","Authorization"]}]
+[
+    {
+        "origin": [
+            "https://solushipx.web.app",
+            "https://solushipx.firebaseapp.com",
+            "https://devx.integratedcarriers.com",
+            "http://localhost:3000"
+        ],
+        "method": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "HEAD"
+        ],
+        "maxAgeSeconds": 3600,
+        "responseHeader": [
+            "Content-Type",
+            "Content-Disposition",
+            "Content-Length",
+            "Authorization"
+        ]
+    }
+]

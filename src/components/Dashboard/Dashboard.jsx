@@ -127,6 +127,11 @@ const QuickShipComponent = lazy(() => import('../CreateShipment/QuickShip'));
 // Lazy load the Customers component for the modal
 const CustomersComponent = lazy(() => import('../Customers/Customers'));
 
+// Lazy load the customer action components for modals
+const AddCustomerComponent = lazy(() => import('../Customers/AddCustomer'));
+const EditCustomerComponent = lazy(() => import('../Customers/EditCustomer'));
+const CustomerDetailComponent = lazy(() => import('../Customers/CustomerDetail'));
+
 // Lazy load the Carriers component for the modal
 const CarriersComponent = lazy(() => import('../Carriers/Carriers'));
 
@@ -2404,7 +2409,11 @@ const Dashboard = () => {
     const [isSemanticMode, setIsSemanticMode] = useState(false);
     const [searchConfidence, setSearchConfidence] = useState(0);
     const [isCreateShipmentModalOpen, setIsCreateShipmentModalOpen] = useState(false);
-    // const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false); // Replaced with Billing link
+    const [isCustomersModalOpen, setIsCustomersModalOpen] = useState(false);
+    const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+    const [isEditCustomerModalOpen, setIsEditCustomerModalOpen] = useState(false);
+    const [isCustomerDetailModalOpen, setIsCustomerDetailModalOpen] = useState(false);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [isCarriersModalOpen, setIsCarriersModalOpen] = useState(false);
     const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
     const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
@@ -2872,21 +2881,34 @@ const Dashboard = () => {
         if (modal && !loading && !companyLoading) {
             console.log('Processing deep link:', { modal, customerId, noteId });
 
-            if (modal === 'customers' && customerId) {
-                // Set deep link parameters for the customers component
-                setCustomersDeepLinkParams({
-                    customerId: customerId,
-                    noteId: noteId
-                });
+            if (modal === 'customers') {
+                const action = urlParams.get('action');
 
-                // Open customers modal with specific customer and note
-                // setIsCustomersModalOpen(true); // Commented out - Customers replaced with Billing
+                if (action === 'add') {
+                    // Open add customer modal
+                    setIsAddCustomerModalOpen(true);
+                } else if (action === 'edit' && customerId) {
+                    // Open edit customer modal
+                    setSelectedCustomerId(customerId);
+                    setIsEditCustomerModalOpen(true);
+                } else if (customerId) {
+                    // Open customer detail modal
+                    setSelectedCustomerId(customerId);
+                    setIsCustomerDetailModalOpen(true);
+                } else {
+                    // Open customers list modal
+                    setCustomersDeepLinkParams({
+                        customerId: customerId,
+                        action: action
+                    });
+                    setIsCustomersModalOpen(true);
+                }
 
                 // Clear URL parameters after processing to avoid re-triggering
                 const newUrl = window.location.pathname;
                 window.history.replaceState({}, '', newUrl);
 
-                console.log('Opened customers modal via deep link for customer:', customerId, 'note:', noteId);
+                console.log('Opened customers modal via deep link for customer:', customerId, 'action:', action);
             }
             // Add more modal types as needed (shipments, carriers, etc.)
         }
@@ -3769,6 +3791,7 @@ const Dashboard = () => {
             ]
         },
         { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
+        { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
         { text: 'Address Book', icon: <ContactMailIcon />, action: () => setIsAddressBookModalOpen(true) },
         { text: 'Billing', icon: <AccountBalanceWalletIcon />, action: () => setIsBillingModalOpen(true) },
         { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
@@ -5258,6 +5281,186 @@ const Dashboard = () => {
                             isModal={true}
                             onClose={() => setIsCompanyModalOpen(false)}
                             showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Customers Fullscreen Modal */}
+            <Dialog
+                open={isCustomersModalOpen}
+                onClose={() => setIsCustomersModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CustomersComponent
+                            isModal={true}
+                            onClose={() => setIsCustomersModalOpen(false)}
+                            showCloseButton={true}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Add Customer Modal */}
+            <Dialog
+                open={isAddCustomerModalOpen}
+                onClose={() => setIsAddCustomerModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <AddCustomerComponent
+                            isModal={true}
+                            onClose={() => setIsAddCustomerModalOpen(false)}
+                            onCustomerCreated={(customerId) => {
+                                setIsAddCustomerModalOpen(false);
+                                // Optionally refresh customers list
+                            }}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Edit Customer Modal */}
+            <Dialog
+                open={isEditCustomerModalOpen}
+                onClose={() => setIsEditCustomerModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <EditCustomerComponent
+                            customerFirestoreId={selectedCustomerId}
+                            isModal={true}
+                            onClose={() => setIsEditCustomerModalOpen(false)}
+                            onCustomerUpdated={(customerId) => {
+                                setIsEditCustomerModalOpen(false);
+                                // Optionally refresh customers list
+                            }}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Customer Detail Modal */}
+            <Dialog
+                open={isCustomerDetailModalOpen}
+                onClose={() => setIsCustomerDetailModalOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <CustomerDetailComponent
+                            customerId={selectedCustomerId}
+                            isModal={true}
+                            onClose={() => setIsCustomerDetailModalOpen(false)}
+                            onNavigateToShipments={() => setIsShipmentsModalOpen(true)}
                         />
                     </LazyComponentWrapper>
                 </Box>

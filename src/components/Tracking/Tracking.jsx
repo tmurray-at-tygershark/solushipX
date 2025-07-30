@@ -825,19 +825,34 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         };
     }, [eventUnsubscribe]);
 
-    // Effect to handle URL tracking ID
+    // Effect to handle URL tracking ID and prop tracking identifier
     useEffect(() => {
-        console.log('🔍 [Tracking] URL Effect - trackingId:', trackingId, 'propTrackingIdentifier:', propTrackingIdentifier, 'hasAutoSearched:', hasAutoSearched);
+        console.log('🔍 [Tracking] URL Effect - trackingId:', trackingId, 'propTrackingIdentifier:', propTrackingIdentifier, 'hasAutoSearched:', hasAutoSearched, 'isDrawer:', isDrawer);
 
-        if (!hasAutoSearched && (trackingId || propTrackingIdentifier)) {
-            const identifier = trackingId || propTrackingIdentifier;
-            console.log('🔍 [Tracking] Auto-searching from URL/prop:', identifier);
+        const identifier = trackingId || propTrackingIdentifier;
 
-            setTrackingNumberInput(identifier);
-            setHasAutoSearched(true);
-            searchShipment(identifier);
+        if (identifier) {
+            // For drawer mode, always search when trackingIdentifier changes (even if we've searched before)
+            // For standalone mode, only search if we haven't auto-searched yet
+            const shouldSearch = isDrawer || !hasAutoSearched;
+
+            if (shouldSearch) {
+                console.log('🔍 [Tracking] Auto-searching from URL/prop:', identifier, '(drawer mode:', isDrawer, ')');
+
+                setTrackingNumberInput(identifier);
+                setHasAutoSearched(true);
+                searchShipment(identifier);
+            }
         }
-    }, [trackingId, propTrackingIdentifier, hasAutoSearched]);
+    }, [trackingId, propTrackingIdentifier, hasAutoSearched, isDrawer, searchShipment]);
+
+    // Reset hasAutoSearched when propTrackingIdentifier changes (for drawer mode)
+    useEffect(() => {
+        if (isDrawer && propTrackingIdentifier) {
+            console.log('🔄 [Tracking] Drawer mode - resetting hasAutoSearched for new tracking identifier:', propTrackingIdentifier);
+            setHasAutoSearched(false);
+        }
+    }, [propTrackingIdentifier, isDrawer]);
 
     // Main content component
     const MainContent = (

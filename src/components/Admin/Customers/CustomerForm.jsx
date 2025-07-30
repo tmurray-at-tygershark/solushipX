@@ -43,7 +43,8 @@ import {
     where,
     getDocs,
     orderBy,
-    serverTimestamp
+    serverTimestamp,
+    limit
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getApp } from 'firebase/app';
@@ -253,14 +254,79 @@ const CustomerForm = () => {
         try {
             setPageLoading(true);
 
-            // Fetch customer data
-            const customerDoc = await getDoc(doc(db, 'customers', customerFirestoreId));
-            if (!customerDoc.exists()) {
-                setError('Customer not found');
-                return;
+            let customerData = null;
+            let actualDocumentId = null;
+
+            // First try to fetch by document ID
+            console.log('[AdminCustomerForm] Trying to fetch customer by document ID:', customerFirestoreId);
+            const customerDocRef = doc(db, 'customers', customerFirestoreId);
+            const customerDoc = await getDoc(customerDocRef);
+
+            if (customerDoc.exists()) {
+                customerData = customerDoc.data();
+                actualDocumentId = customerDoc.id;
+                console.log('[AdminCustomerForm] Customer found by document ID:', customerData);
+            } else {
+                // If not found by document ID, try to find by customerID field
+                console.log('[AdminCustomerForm] Customer not found by document ID, trying customerID field:', customerFirestoreId);
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', customerFirestoreId)
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (!customerSnapshot.empty) {
+                    const customerDocFromQuery = customerSnapshot.docs[0];
+                    customerData = customerDocFromQuery.data();
+                    actualDocumentId = customerDocFromQuery.id;
+                    console.log('[AdminCustomerForm] Customer found by customerID field:', customerData);
+                } else {
+                    setError('Customer not found');
+                    return;
+                }
             }
 
-            const customerData = customerDoc.data();
+            // If no contact information in customer document, try to load from addressBook
+            if (customerData && (!customerData.mainContactName || !customerData.mainContactAddress1)) {
+                console.log('[AdminCustomerForm] No contact info in customer document, checking addressBook...');
+
+                if (customerData.customerID) {
+                    try {
+                        const mainContactQuery = query(
+                            collection(db, 'addressBook'),
+                            where('addressClass', '==', 'customer'),
+                            where('addressClassID', '==', customerData.customerID),
+                            where('addressType', '==', 'contact'),
+                            limit(1)
+                        );
+                        const mainContactSnapshot = await getDocs(mainContactQuery);
+
+                        if (!mainContactSnapshot.empty) {
+                            const contactData = mainContactSnapshot.docs[0].data();
+                            console.log('[AdminCustomerForm] Found contact in addressBook:', contactData);
+
+                            // Merge contact data into customer data
+                            customerData = {
+                                ...customerData,
+                                mainContactName: `${contactData.firstName || ''} ${contactData.lastName || ''}`.trim() || contactData.attention || '',
+                                mainContactCompany: contactData.companyName || customerData.name || '',
+                                mainContactAddress1: contactData.street || contactData.address1 || '',
+                                mainContactAddress2: contactData.street2 || contactData.address2 || '',
+                                mainContactCity: contactData.city || '',
+                                mainContactState: contactData.state || contactData.stateProv || '',
+                                mainContactPostalCode: contactData.postalCode || contactData.zipPostal || '',
+                                mainContactCountry: contactData.country || contactData.countryCode || 'CA',
+                                mainContactPhone: contactData.phone || '',
+                                mainContactEmail: contactData.email || ''
+                            };
+                        } else {
+                            console.log('[AdminCustomerForm] No contact found in addressBook for customerID:', customerData.customerID);
+                        }
+                    } catch (addressError) {
+                        console.error('[AdminCustomerForm] Error loading contact from addressBook:', addressError);
+                    }
+                }
+            }
 
             // Find the selected company
             const selectedCompany = companies.find(c => c.companyID === customerData.companyID);

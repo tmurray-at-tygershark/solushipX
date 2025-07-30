@@ -640,8 +640,24 @@ const TrackingRouteMap = ({
                 hasMapsApiKey: !!mapsApiKey,
                 hasShipmentData: !!shipmentData,
                 hasAddresses: !!(shipmentData?.shipFrom && shipmentData?.shipTo),
-                isGoogleMapsLoaded: !!isGoogleMapsLoaded
+                isGoogleMapsLoaded: !!isGoogleMapsLoaded,
+                shipFromData: shipmentData?.shipFrom ? 'Present' : 'Missing',
+                shipToData: shipmentData?.shipTo ? 'Present' : 'Missing',
+                mapsApiKeyLength: mapsApiKey ? `${mapsApiKey.length} chars` : 'None'
             });
+
+            // Call onDebugInfo to send debug info to parent component
+            if (onDebugInfo) {
+                onDebugInfo({
+                    status: 'waiting_for_dependencies',
+                    missing: {
+                        mapsApiKey: !mapsApiKey,
+                        shipmentData: !shipmentData,
+                        addresses: !shipmentData?.shipFrom || !shipmentData?.shipTo,
+                        googleMapsLoaded: !isGoogleMapsLoaded
+                    }
+                });
+            }
         }
     }, [mapsApiKey, shipmentData, isGoogleMapsLoaded]);
 
@@ -681,6 +697,39 @@ const TrackingRouteMap = ({
                     sx={{ maxWidth: 400 }}
                 >
                     {mapError}
+                </Alert>
+            </Box>
+        );
+    }
+
+    // Show helpful message if conditions aren't met
+    if (!mapsApiKey || !shipmentData?.shipFrom || !shipmentData?.shipTo || !isGoogleMapsLoaded) {
+        const missingItems = [];
+        if (!mapsApiKey) missingItems.push('Maps API key');
+        if (!shipmentData?.shipFrom) missingItems.push('Origin address');
+        if (!shipmentData?.shipTo) missingItems.push('Destination address');
+        if (!isGoogleMapsLoaded) missingItems.push('Google Maps library');
+
+        return (
+            <Box sx={{
+                height: height,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#f8fafc',
+                border: '1px solid #e2e8f0'
+            }}>
+                <Alert
+                    severity="info"
+                    icon={<ScheduleIcon />}
+                    sx={{ maxWidth: 400, textAlign: 'center' }}
+                >
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Route map unavailable
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary' }}>
+                        Missing: {missingItems.join(', ')}
+                    </Typography>
                 </Alert>
             </Box>
         );

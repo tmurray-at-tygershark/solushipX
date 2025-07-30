@@ -1464,7 +1464,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onClose={handleCloseTrackingDrawer}
                     PaperProps={{
                         sx: {
-                            width: { xs: '90vw', sm: 400, md: 450 },
+                            width: '50vw',
                             height: '100%',
                             bgcolor: '#0a0a0a',
                             zIndex: 1500,
@@ -1478,7 +1478,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         sx: { zIndex: 1500 }
                     }}
                 >
-                    <Box sx={{ width: { xs: '90vw', sm: 400, md: 450 }, height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
+                    <Box sx={{ width: '50vw', height: '100%', bgcolor: '#0a0a0a' }} role="presentation">
                         <TrackingDrawer
                             trackingIdentifier={selectedTrackingNumber}
                             isDrawer={true}

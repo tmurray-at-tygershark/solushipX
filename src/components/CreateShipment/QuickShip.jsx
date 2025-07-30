@@ -519,7 +519,7 @@ const QuickShip = ({
 
     // Customer selection state for super admins  
     const [availableCustomers, setAvailableCustomers] = useState([]);
-    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     // Dynamic charge types state
@@ -583,7 +583,7 @@ const QuickShip = ({
     const loadCustomersForCompany = useCallback(async (companyId) => {
         if (!companyId || companyId === 'all') {
             setAvailableCustomers([]);
-            setSelectedCustomerId('all');
+            setSelectedCustomerId(null);
             return;
         }
 
@@ -2352,8 +2352,8 @@ const QuickShip = ({
                 },
 
                 // Customer selection for proper recall
-                customerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
-                customerID: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+                customerId: selectedCustomerId || null,
+                customerID: selectedCustomerId || null,
 
                 // Addresses - properly structured from address book with validation
                 shipFrom: {
@@ -2373,7 +2373,7 @@ const QuickShip = ({
                     addressId: shipToAddress.id,
                     customerID: (() => {
                         // Find the selected customer and use their customerID field, not document ID
-                        if (selectedCustomerId && selectedCustomerId !== 'all') {
+                        if (selectedCustomerId) {
                             const selectedCustomer = availableCustomers.find(c =>
                                 c.id === selectedCustomerId || c.customerID === selectedCustomerId
                             );
@@ -3433,7 +3433,7 @@ const QuickShip = ({
                 sendEmailNotifications: sendEmailNotifications,
 
                 // Customer selection (for admin users)
-                selectedCustomerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+                selectedCustomerId: selectedCustomerId || null,
 
                 // Draft specific fields
                 isDraft: true,
@@ -4044,7 +4044,7 @@ const QuickShip = ({
     // Load company data when company context changes (not customer filter)
     useEffect(() => {
         // For company admins/admins/super admins, prioritize selectedCompanyId over companyIdForAddress to prevent auto switchback
-        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
             ? selectedCompanyId
             : companyIdForAddress;
 
@@ -4062,7 +4062,7 @@ const QuickShip = ({
 
     // Customer filter effect - reload addresses when customer selection changes
     useEffect(() => {
-        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+        const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
             ? selectedCompanyId
             : companyIdForAddress;
 
@@ -4277,8 +4277,8 @@ const QuickShip = ({
                 sendEmailNotifications,
 
                 // CUSTOMER SELECTION for recall
-                customerId: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
-                customerID: selectedCustomerId && selectedCustomerId !== 'all' ? selectedCustomerId : null,
+                customerId: selectedCustomerId || null,
+                customerID: selectedCustomerId || null,
 
                 // PRESERVE EXISTING SHIPMENT DATA
                 isDraft: false,
@@ -4802,7 +4802,7 @@ const QuickShip = ({
                     creationMethod: 'quickship',
                     status: 'draft',
                     lastUpdated: new Date().toISOString(),
-                    selectedCustomerId: selectedCustomerId || 'all'
+                    selectedCustomerId: selectedCustomerId || null
                 };
 
                 // Update the draft with latest data
@@ -4860,9 +4860,7 @@ const QuickShip = ({
             return null; // This will show the loading state
         }
 
-        if (selectedCustomerId === 'all') {
-            return { id: 'all', name: 'All Customers', customerID: 'all' };
-        }
+
 
         // Try to find customer by customerID first, then by id
         let foundCustomer = availableCustomers.find(customer => customer.customerID === selectedCustomerId);
@@ -5012,30 +5010,24 @@ const QuickShip = ({
                             />
                         )}
 
-                    {/* Customer Filter for Super Admins, Admins, and Company Admins - Show when company is selected and customers are loaded */}
-                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
+                    {/* Customer Selection for Super Admins, Admins, Company Admins, and Company Staff - Show when company is selected and customers are loaded */}
+                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
                         <Box sx={{ mb: 3 }}>
                             <Autocomplete
                                 loading={loadingCustomers}
-                                options={[{ id: 'all', name: 'All Customers', customerID: 'all' }, ...availableCustomers]}
+                                options={availableCustomers}
+                                required
                                 getOptionLabel={(option) => {
-                                    if (option.customerID === 'all' || option.id === 'all') {
-                                        return 'All Customers';
-                                    }
                                     return option.name || 'Unknown Customer';
                                 }}
                                 value={customerAutocompleteValue}
                                 onChange={(event, newValue) => {
                                     // Prefer customerID over id for consistency with how data is queried
-                                    const newCustomerId = newValue ? (newValue.customerID || newValue.id || 'all') : 'all';
+                                    const newCustomerId = newValue ? (newValue.customerID || newValue.id) : null;
                                     setSelectedCustomerId(newCustomerId);
 
-                                    // Track if user manually cleared the customer to prevent auto-reapplication
-                                    if (newCustomerId === 'all' && selectedCustomerId !== 'all') {
-                                        console.log('🚫 Customer manually cleared by user - preventing auto-reapplication');
-                                        setCustomerManuallyCleared(true);
-                                    } else if (newCustomerId !== 'all') {
-                                        // User selected a customer - reset the manual clear flag
+                                    // Reset the manual clear flag when a customer is selected
+                                    if (newCustomerId) {
                                         setCustomerManuallyCleared(false);
                                     }
                                 }}
@@ -5063,7 +5055,7 @@ const QuickShip = ({
                                 disabled={loadingCustomers}
                                 renderInput={(params) => {
                                     const selectedCustomer = availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId);
-                                    const isAllSelected = !selectedCustomer || selectedCustomerId === 'all';
+                                    const isCustomerSelected = !!selectedCustomer;
 
                                     return (
                                         <TextField
@@ -5071,18 +5063,18 @@ const QuickShip = ({
                                             label={
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                     <PersonIcon sx={{ fontSize: '16px' }} />
-                                                    Filter by Customer
+                                                    Select Customer
                                                 </Box>
                                             }
-                                            placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
+                                            placeholder={loadingCustomers ? "Loading customers..." : "Choose a customer..."}
                                             size="small"
                                             sx={{
                                                 '& .MuiInputBase-input': {
                                                     fontSize: '12px',
                                                     // Hide the input field completely when a customer is selected
-                                                    opacity: !isAllSelected && selectedCustomer ? 0 : 1,
-                                                    width: !isAllSelected && selectedCustomer ? 0 : 'auto',
-                                                    padding: !isAllSelected && selectedCustomer ? 0 : undefined
+                                                    opacity: isCustomerSelected ? 0 : 1,
+                                                    width: isCustomerSelected ? 0 : 'auto',
+                                                    padding: isCustomerSelected ? 0 : undefined
                                                 },
                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
                                             }}
@@ -5096,7 +5088,7 @@ const QuickShip = ({
                                             }}
                                             InputProps={{
                                                 ...params.InputProps,
-                                                startAdornment: !isAllSelected && selectedCustomer ? (
+                                                startAdornment: isCustomerSelected ? (
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5, width: '100%' }}>
                                                         <Avatar
                                                             src={selectedCustomer.logo || selectedCustomer.logoUrl}
@@ -5207,14 +5199,14 @@ const QuickShip = ({
 
                     {/* Show form only when company is selected or user is not admin/super admin */}
                     {(() => {
-                        const shouldShowForm = (((userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && companyIdForAddress));
+                        const shouldShowForm = (((userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && userRole !== 'company_staff' && companyIdForAddress));
                         console.log('🔍 QuickShip Form Visibility Debug:', {
                             userRole,
                             companyIdForAddress,
                             selectedCompanyId,
                             shouldShowForm,
-                            'adminCondition': (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && companyIdForAddress
+                            'adminCondition': (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
+                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && userRole !== 'company_staff' && companyIdForAddress
                         });
                         return shouldShowForm;
                     })() && (
@@ -6049,7 +6041,7 @@ const QuickShip = ({
                                                             setShipFromAddress(null);
 
                                                             // Refresh addresses with the determined customer context
-                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
                                                                 ? selectedCompanyId
                                                                 : companyIdForAddress;
                                                             if (currentCompanyId) {
@@ -6387,7 +6379,7 @@ const QuickShip = ({
                                                             setShipToAddress(null);
 
                                                             // Refresh addresses with the determined customer context
-                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user') && selectedCompanyId
+                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
                                                                 ? selectedCompanyId
                                                                 : companyIdForAddress;
                                                             if (currentCompanyId) {
@@ -7834,7 +7826,7 @@ const QuickShip = ({
                             onCancel={handleBackToQuickShip}
                             onSuccess={handleAddressCreated}
                             companyId={companyIdForAddress}
-                            customerId={selectedCustomerId !== 'all' ? selectedCustomerId : null}
+                            customerId={selectedCustomerId}
                         />
                     )}
                 </Box>

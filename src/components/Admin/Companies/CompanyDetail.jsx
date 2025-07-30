@@ -17,7 +17,12 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Switch,
+    Avatar,
     IconButton,
     Tooltip
 } from '@mui/material';
@@ -25,10 +30,11 @@ import {
     Edit as EditIcon,
     LocalShipping as LocalShippingIcon,
     Business as BusinessIcon,
-    People as PeopleIcon
+    People as PeopleIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
 import { formatDateString } from '../../../utils/dateUtils';
 import { useSnackbar } from 'notistack';
@@ -47,6 +53,91 @@ const CompanyDetail = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    // Carrier management dialog states
+    const [carrierDialogOpen, setCarrierDialogOpen] = useState(false);
+    const [allCarriers, setAllCarriers] = useState([]);
+    const [carrierLoading, setCarrierLoading] = useState(false);
+
+    // Load all available carriers
+    const loadCarriers = useCallback(async () => {
+        setCarrierLoading(true);
+        try {
+            const carriersSnapshot = await getDocs(collection(db, 'carriers'));
+            const carriers = carriersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setAllCarriers(carriers);
+        } catch (err) {
+            console.error('Error loading carriers:', err);
+            enqueueSnackbar('Failed to load carriers', { variant: 'error' });
+        }
+        setCarrierLoading(false);
+    }, [enqueueSnackbar]);
+
+    // Handle carrier toggle for this company
+    const handleCarrierToggle = useCallback(async (carrier, enabled) => {
+        try {
+            const companyRef = doc(db, 'companies', companyFirestoreId);
+            const currentConnectedCarriers = company?.connectedCarriers || [];
+
+            let updatedConnectedCarriers;
+
+            if (enabled) {
+                // Add carrier if not already connected
+                const existingIndex = currentConnectedCarriers.findIndex(cc =>
+                    cc.carrierID === carrier.carrierID
+                );
+
+                if (existingIndex === -1) {
+                    updatedConnectedCarriers = [...currentConnectedCarriers, {
+                        carrierID: carrier.carrierID,
+                        carrierName: carrier.name,
+                        enabled: true,
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    }];
+                } else {
+                    updatedConnectedCarriers = currentConnectedCarriers.map((cc, index) =>
+                        index === existingIndex ? { ...cc, enabled: true, updatedAt: new Date() } : cc
+                    );
+                }
+            } else {
+                // Disable carrier (keep in array but set enabled: false)
+                updatedConnectedCarriers = currentConnectedCarriers.map(cc =>
+                    cc.carrierID === carrier.carrierID
+                        ? { ...cc, enabled: false, updatedAt: new Date() }
+                        : cc
+                );
+            }
+
+            await updateDoc(companyRef, {
+                connectedCarriers: updatedConnectedCarriers,
+                updatedAt: serverTimestamp()
+            });
+
+            // Update local state
+            setCompany(prev => ({
+                ...prev,
+                connectedCarriers: updatedConnectedCarriers
+            }));
+
+            enqueueSnackbar(
+                `${carrier.name} ${enabled ? 'enabled' : 'disabled'} for this company`,
+                { variant: 'success' }
+            );
+
+        } catch (err) {
+            console.error('Error updating carrier connection:', err);
+            enqueueSnackbar('Failed to update carrier connection', { variant: 'error' });
+        }
+    }, [company, companyFirestoreId, enqueueSnackbar]);
+
+    // Check if carrier is enabled for this company
+    const isCarrierEnabled = useCallback((carrierID) => {
+        const connectedCarrier = company?.connectedCarriers?.find(cc => cc.carrierID === carrierID);
+        return connectedCarrier?.enabled === true;
+    }, [company]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -478,8 +569,10 @@ const CompanyDetail = () => {
                                         variant="outlined"
                                         size="small"
                                         startIcon={<LocalShippingIcon />}
-                                        component={RouterLink}
-                                        to={`/admin/carriers`}
+                                        onClick={() => {
+                                            setCarrierDialogOpen(true);
+                                            loadCarriers();
+                                        }}
                                         sx={{ fontSize: '12px' }}
                                     >
                                         Manage Carriers
@@ -531,6 +624,145 @@ const CompanyDetail = () => {
                 </Box>
             </Box>
 
+            {/* Carrier Management Dialog */}
+            <Dialog
+                open={carrierDialogOpen}
+                onClose={() => setCarrierDialogOpen(false)}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: '8px',
+                        minHeight: '500px'
+                    }
+                }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    pb: 2,
+                    borderBottom: '1px solid #e5e7eb'
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LocalShippingIcon sx={{ color: '#6366f1' }} />
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
+                            Manage Carriers for {company?.companyName}
+                        </Typography>
+                    </Box>
+                    <IconButton
+                        onClick={() => setCarrierDialogOpen(false)}
+                        size="small"
+                        sx={{ color: '#6b7280' }}
+                    >
+                        <CloseIcon />
+                    </IconButton>
+                </DialogTitle>
+
+                <DialogContent sx={{ p: 3 }}>
+                    {carrierLoading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+                            <CircularProgress />
+                        </Box>
+                    ) : (
+                        <>
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                                Enable or disable carriers for this company. Enabled carriers will be available when creating shipments.
+                            </Typography>
+
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {allCarriers.map((carrier) => (
+                                    <Paper
+                                        key={carrier.id}
+                                        sx={{
+                                            p: 2,
+                                            border: '1px solid #e5e7eb',
+                                            borderRadius: '6px',
+                                            backgroundColor: isCarrierEnabled(carrier.carrierID) ? '#f0f9ff' : '#ffffff'
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                <Avatar
+                                                    src={carrier.logo}
+                                                    sx={{
+                                                        width: 40,
+                                                        height: 40,
+                                                        backgroundColor: '#f3f4f6',
+                                                        color: '#6b7280',
+                                                        fontSize: '14px',
+                                                        fontWeight: 600
+                                                    }}
+                                                >
+                                                    {carrier.name?.charAt(0)?.toUpperCase()}
+                                                </Avatar>
+                                                <Box>
+                                                    <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                        {carrier.name}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        ID: {carrier.carrierID} • Type: {carrier.carrierType || 'Not specified'}
+                                                    </Typography>
+                                                    {carrier.connectionType && (
+                                                        <Chip
+                                                            label={carrier.connectionType.toUpperCase()}
+                                                            size="small"
+                                                            sx={{
+                                                                fontSize: '10px',
+                                                                height: '20px',
+                                                                mt: 0.5,
+                                                                backgroundColor: carrier.connectionType === 'api' ? '#dcfce7' : '#fef3c7',
+                                                                color: carrier.connectionType === 'api' ? '#166534' : '#92400e'
+                                                            }}
+                                                        />
+                                                    )}
+                                                </Box>
+                                            </Box>
+
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Chip
+                                                    label={isCarrierEnabled(carrier.carrierID) ? 'Enabled' : 'Disabled'}
+                                                    size="small"
+                                                    sx={{
+                                                        backgroundColor: isCarrierEnabled(carrier.carrierID) ? '#f1f8f5' : '#fef2f2',
+                                                        color: isCarrierEnabled(carrier.carrierID) ? '#0a875a' : '#dc2626',
+                                                        fontWeight: 500,
+                                                        fontSize: '11px'
+                                                    }}
+                                                />
+                                                <Switch
+                                                    checked={isCarrierEnabled(carrier.carrierID)}
+                                                    onChange={(e) => handleCarrierToggle(carrier, e.target.checked)}
+                                                    size="small"
+                                                    sx={{
+                                                        '& .MuiSwitch-switchBase.Mui-checked': {
+                                                            color: '#10b981'
+                                                        },
+                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                            backgroundColor: '#10b981'
+                                                        }
+                                                    }}
+                                                />
+                                            </Box>
+                                        </Box>
+                                    </Paper>
+                                ))}
+                            </Box>
+                        </>
+                    )}
+                </DialogContent>
+
+                <DialogActions sx={{ p: 3, borderTop: '1px solid #e5e7eb' }}>
+                    <Button
+                        variant="outlined"
+                        onClick={() => setCarrierDialogOpen(false)}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
         </Box>
     );

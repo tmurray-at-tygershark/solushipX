@@ -1,1322 +1,566 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Box,
     Paper,
     Typography,
-    TextField,
     Table,
     TableBody,
     TableCell,
-    TableContainer,
     TableHead,
     TableRow,
     IconButton,
-    Chip,
-    InputBase,
     Button,
-    TablePagination,
+    Chip,
+    TextField,
+    InputAdornment,
     Menu,
     MenuItem,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
+    ListItemIcon,
+    ListItemText,
+    Stack,
+    Collapse,
     FormControl,
     InputLabel,
     Select,
-    Toolbar,
-    Tabs,
-    Tab,
-    Stack,
-    CircularProgress,
-    InputAdornment,
-    Collapse,
+    Checkbox,
+    FormControlLabel,
     Grid,
-    Checkbox
+    Alert,
+    Tooltip,
+    Avatar,
+    Snackbar,
+    Link,
+    CircularProgress
 } from '@mui/material';
 import {
     Search as SearchIcon,
-    MoreVert as MoreVertIcon,
-    Visibility as VisibilityIcon,
-    GetApp,
-    GetApp as ExportIcon,
-    FilterList as FilterIcon,
-    Sort as SortIcon,
-    Clear as ClearIcon,
-    Edit as EditIcon,
-    Delete as DeleteIcon,
-    SearchOff as SearchOffIcon,
-    Home as HomeIcon,
-    NavigateNext as NavigateNextIcon,
     Add as AddIcon,
-    ArrowBackIosNew as ArrowBackIosNewIcon,
+    Delete as DeleteIcon,
+    Edit as EditIcon,
+    Visibility as ViewIcon,
+    MoreVert as MoreVertIcon,
+    FilterList as FilterListIcon,
+    FileDownload as ExportIcon,
+    Person as PersonIcon,
+    ContentCopy as ContentCopyIcon,
     Close as CloseIcon,
-    ContentCopy as ContentCopyIcon
+    Business as BusinessIcon
 } from '@mui/icons-material';
-import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { db } from '../../firebase';
-import './Customers.css';
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { format } from 'date-fns';
 import { useCompany } from '../../contexts/CompanyContext';
-import html2pdf from 'html2pdf.js';
 
-// Import common components
+// Import reusable components
 import ModalHeader from '../common/ModalHeader';
-import PdfViewerDialog from '../Shipments/components/PdfViewerDialog';
-import ShipmentsPagination from '../Shipments/components/ShipmentsPagination';
-
-// Import hooks
-import useModalNavigation from '../../hooks/useModalNavigation';
-
-// Lazy load the CustomerDetail component for the slide-over view
-const CustomerDetail = React.lazy(() => import('./CustomerDetail'));
-const AddCustomer = React.lazy(() => import('./AddCustomer'));
 
 const Customers = ({ isModal = false, onClose = null, showCloseButton = false, onNavigateToShipments = null, deepLinkParams = null }) => {
-    const navigate = useNavigate();
     const { companyIdForAddress } = useCompany();
 
-    // Modal navigation system
-    const modalNavigation = useModalNavigation({
-        title: 'Customers',
-        shortTitle: 'Customers',
-        component: 'customers'
-    });
-
+    // Main data states
     const [customers, setCustomers] = useState([]);
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(50);
+    const [allCustomers, setAllCustomers] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [filtersOpen, setFiltersOpen] = useState(false);
-    const [selectedTab, setSelectedTab] = useState('all');
+    const [shipmentCounts, setShipmentCounts] = useState({});
+
+    // Filter states
+    const [page, setPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [selected, setSelected] = useState([]);
+
+    // Filter states
+    const [filters, setFilters] = useState({
+        status: 'all',
+        hasAddresses: 'all'
+    });
     const [searchFields, setSearchFields] = useState({
-        customerId: '',
-        name: '',
-        email: '',
-        contactName: ''
+        customerName: ''
+    });
+    const [filtersOpen, setFiltersOpen] = useState(false);
+
+    // UI states
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
     });
 
-    const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-    const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-    const [isExporting, setIsExporting] = useState(false);
+    // Dialog states
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
 
-    // PDF viewer state
-    const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
-    const [currentPdfUrl, setCurrentPdfUrl] = useState(null);
-    const [currentPdfTitle, setCurrentPdfTitle] = useState('');
+    const navigate = useNavigate();
+    const location = useLocation();
 
-    // Selection state for export
-    const [selectedCustomers, setSelectedCustomers] = useState(new Set());
+    // Helper function to show snackbar
+    const showSnackbar = useCallback((message, severity = 'info') => {
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
+    }, []);
 
-    // Add sliding view state for customer detail
-    const [currentView, setCurrentView] = useState('table'); // 'table', 'detail', or 'add'
-    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-    const [isSliding, setIsSliding] = useState(false);
-    const [isCustomerInEditMode, setIsCustomerInEditMode] = useState(false);
+    // Calculate stats
+    const stats = useMemo(() => {
+        const total = allCustomers.length;
+        const active = allCustomers.filter(c => c.status === 'active').length;
+        const inactive = allCustomers.filter(c => c.status === 'inactive').length;
+        const withAddresses = allCustomers.filter(c => c.addressCount > 0).length;
 
-    // Ref to CustomerDetail component for direct method calls
-    const customerDetailRef = React.useRef(null);
+        return {
+            total,
+            active,
+            inactive,
+            withAddresses
+        };
+    }, [allCustomers]);
 
-    useEffect(() => {
-        fetchCustomers();
-    }, [page, rowsPerPage]);
-
-    // Handle deep link navigation from email notifications
-    useEffect(() => {
-        if (deepLinkParams && deepLinkParams.customerId && customers.length > 0) {
-            console.log('Processing deep link in Customers component:', deepLinkParams);
-
-            // Find the customer in the loaded customers
-            const customer = customers.find(c => c.id === deepLinkParams.customerId);
-            if (customer) {
-                console.log('Found customer for deep link:', customer.name);
-                // Navigate to customer detail view
-                handleViewCustomerDetail(deepLinkParams.customerId);
-            } else {
-                console.log('Customer not found in current list, customer may be on different page or filtered out');
-            }
-        }
-    }, [deepLinkParams, customers]);
-
-    useEffect(() => {
-        if (companyIdForAddress) {
-            console.log('Selected companyId for logged-in customer:', companyIdForAddress);
-        }
-    }, [companyIdForAddress]);
-
-    const fetchCustomers = async () => {
+    // Load customers data
+    const loadCustomers = useCallback(async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            console.log('Fetching customers with companyIdForAddress:', companyIdForAddress);
+            // Fetch customers for current company only
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyID', '==', companyIdForAddress),
+                orderBy('name')
+            );
+            const customersSnapshot = await getDocs(customersQuery);
 
-            const customersRef = collection(db, 'customers');
-            let clauses = [];
+            // Fetch address book data to count addresses
+            const addressBookQuery = query(
+                collection(db, 'addressBook'),
+                where('addressClass', '==', 'customer'),
+                where('ownerCompanyID', '==', companyIdForAddress)
+            );
+            const addressBookSnapshot = await getDocs(addressBookQuery);
 
-            if (companyIdForAddress) {
-                console.log('Adding companyID filter:', companyIdForAddress);
-                clauses.push(where('companyID', '==', companyIdForAddress));
-            } else {
-                console.log('No companyIdForAddress available, fetching all customers');
-            }
-
-            // Remove status filter from database query - we'll filter client-side for better tab functionality
-            console.log('Adding sort clause: name, asc');
-            clauses.push(orderBy('name', 'asc'));
-            // Remove limit to get all customers for proper filtering
-
-            const q = clauses.length > 0 ? query(customersRef, ...clauses) : customersRef;
-            console.log('Executing query with clauses:', clauses);
-
-            const querySnapshot = await getDocs(q);
-            console.log(`Found ${querySnapshot.size} customers`);
-
-            const customersDataPromises = querySnapshot.docs.map(async (doc) => {
-                const data = doc.data();
-                let contactData = null;
-
-                // Fetch main contact from addressBook
-                if (data.customerID) {
-                    const contactQuery = query(
-                        collection(db, 'addressBook'),
-                        where('addressClass', '==', 'customer'),
-                        where('addressClassID', '==', data.customerID),
-                        where('addressType', '==', 'contact'),
-                        limit(1)
-                    );
-                    const contactSnapshot = await getDocs(contactQuery);
-                    if (!contactSnapshot.empty) {
-                        contactData = contactSnapshot.docs[0].data();
-                        console.log('Found contact for customer', data.customerID, contactData);
-                    } else {
-                        console.log('No contact found for customer', data.customerID);
-                    }
+            // Count addresses per customer
+            const addressCounts = {};
+            addressBookSnapshot.docs.forEach(doc => {
+                const address = doc.data();
+                const customerID = address.addressClassID;
+                if (customerID) {
+                    addressCounts[customerID] = (addressCounts[customerID] || 0) + 1;
                 }
+            });
 
-                const customerObj = {
-                    id: doc.id,
-                    ...data,
-                    contact: contactData // Add contact data to customer object
+            // Process customers data
+            const customersData = customersSnapshot.docs.map(doc => {
+                const customer = { id: doc.id, ...doc.data() };
+                return {
+                    ...customer,
+                    addressCount: addressCounts[customer.customerID] || 0
                 };
-                console.log('Customer data with contact:', customerObj);
-                return customerObj;
             });
 
-            const customersData = await Promise.all(customersDataPromises);
-
-            console.log('All customers fetched from Firestore with contacts:', customersData);
-
-            setCustomers(customersData);
+            setAllCustomers(customersData);
+            applyFilters(customersData);
             setTotalCount(customersData.length);
+
         } catch (error) {
-            console.error('Error fetching customers:', error);
-            console.error('Error details:', {
-                message: error.message,
-                code: error.code,
-                stack: error.stack
-            });
+            console.error('Error loading customers:', error);
+            showSnackbar('Error loading customers', 'error');
         } finally {
             setLoading(false);
         }
-    };
+    }, [companyIdForAddress]);
 
-    // Removed old filter menu handlers - now using collapsible panel
+    // Apply filters
+    const applyFilters = useCallback((customersData) => {
+        let filtered = [...customersData];
 
-    const handleExport = () => {
-        setIsExportDialogOpen(true);
-    };
-
-    const handleExportClose = () => {
-        setIsExportDialogOpen(false);
-        setIsExporting(false);
-    };
-
-    const handleExportConfirm = async () => {
-        setIsExporting(true);
-
-        try {
-            switch (selectedExportFormat) {
-                case 'csv':
-                    await exportToCSV();
-                    break;
-                case 'excel':
-                    await exportToExcel();
-                    break;
-                case 'pdf':
-                    await exportToPDF();
-                    break;
-                default:
-                    console.error('Unknown export format:', selectedExportFormat);
-            }
-        } catch (error) {
-            console.error('Export failed:', error);
-            alert('Export failed. Please try again.');
-        } finally {
-            setIsExporting(false);
-            setIsExportDialogOpen(false);
-        }
-    };
-
-    const exportToCSV = async () => {
-        const customersToExport = selectedCustomers.size > 0
-            ? filteredCustomers.filter(customer => selectedCustomers.has(customer.id))
-            : filteredCustomers;
-
-        const headers = [
-            'Customer ID', 'Company Name', 'Contact Person', 'Contact First Name', 'Contact Last Name',
-            'Contact Email', 'Contact Phone', 'Contact Street', 'Contact Street 2', 'Contact City',
-            'Contact State', 'Contact Postal Code', 'Contact Country', 'Status', 'Created At',
-            'Updated At', 'Company ID', 'Notes', 'Customer Type', 'Payment Terms', 'Credit Limit'
-        ];
-        const csvContent = [
-            headers.join(','),
-            ...customersToExport.map(customer => [
-                `"${customer.customerID || ''}"`,
-                `"${customer.name || ''}"`,
-                `"${customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : '')}"`,
-                `"${customer.contact?.firstName || ''}"`,
-                `"${customer.contact?.lastName || ''}"`,
-                `"${customer.contact?.email || ''}"`,
-                `"${customer.contact?.phone || ''}"`,
-                `"${customer.contact?.street || ''}"`,
-                `"${customer.contact?.street2 || ''}"`,
-                `"${customer.contact?.city || ''}"`,
-                `"${customer.contact?.state || ''}"`,
-                `"${customer.contact?.postalCode || ''}"`,
-                `"${customer.contact?.country || ''}"`,
-                `"${customer.status || ''}"`,
-                `"${customer.createdAt?.toDate ? customer.createdAt.toDate().toLocaleDateString() : (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : '')}"`,
-                `"${customer.updatedAt?.toDate ? customer.updatedAt.toDate().toLocaleDateString() : (customer.updatedAt ? new Date(customer.updatedAt).toLocaleDateString() : '')}"`,
-                `"${customer.companyID || ''}"`,
-                `"${customer.notes || ''}"`,
-                `"${customer.customerType || ''}"`,
-                `"${customer.paymentTerms || ''}"`,
-                `"${customer.creditLimit || ''}"`
-            ].join(','))
-        ].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `customers_export_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
-
-    const exportToExcel = async () => {
-        // For now, export as CSV with .xlsx extension
-        // In a real implementation, you'd use a library like xlsx
-        const customersToExport = selectedCustomers.size > 0
-            ? filteredCustomers.filter(customer => selectedCustomers.has(customer.id))
-            : filteredCustomers;
-
-        const headers = [
-            'Customer ID', 'Company Name', 'Contact Person', 'Contact First Name', 'Contact Last Name',
-            'Contact Email', 'Contact Phone', 'Contact Street', 'Contact Street 2', 'Contact City',
-            'Contact State', 'Contact Postal Code', 'Contact Country', 'Status', 'Created At',
-            'Updated At', 'Company ID', 'Notes', 'Customer Type', 'Payment Terms', 'Credit Limit'
-        ];
-        const csvContent = [
-            headers.join('\t'), // Use tabs for better Excel compatibility
-            ...customersToExport.map(customer => [
-                customer.customerID || '',
-                customer.name || '',
-                customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : ''),
-                customer.contact?.firstName || '',
-                customer.contact?.lastName || '',
-                customer.contact?.email || '',
-                customer.contact?.phone || '',
-                customer.contact?.street || '',
-                customer.contact?.street2 || '',
-                customer.contact?.city || '',
-                customer.contact?.state || '',
-                customer.contact?.postalCode || '',
-                customer.contact?.country || '',
-                customer.status || '',
-                customer.createdAt?.toDate ? customer.createdAt.toDate().toLocaleDateString() : (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : ''),
-                customer.updatedAt?.toDate ? customer.updatedAt.toDate().toLocaleDateString() : (customer.updatedAt ? new Date(customer.updatedAt).toLocaleDateString() : ''),
-                customer.companyID || '',
-                customer.notes || '',
-                customer.customerType || '',
-                customer.paymentTerms || '',
-                customer.creditLimit || ''
-            ].join('\t'))
-        ].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `customers_export_${new Date().toISOString().split('T')[0]}.xlsx`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
-
-    const exportToPDF = async () => {
-        const customersToExport = selectedCustomers.size > 0
-            ? filteredCustomers.filter(customer => selectedCustomers.has(customer.id))
-            : filteredCustomers;
-
-        // Create a temporary container for PDF generation
-        const tempContainer = document.createElement('div');
-        tempContainer.style.position = 'absolute';
-        tempContainer.style.left = '-9999px';
-        tempContainer.style.top = '-9999px';
-        tempContainer.style.width = '210mm'; // A4 width
-        tempContainer.style.padding = '20mm';
-        tempContainer.style.fontFamily = 'Arial, sans-serif';
-        tempContainer.style.fontSize = '12px';
-        tempContainer.style.backgroundColor = 'white';
-
-        // Generate HTML content for PDF
-        const currentDate = new Date().toLocaleDateString();
-        const htmlContent = `
-            <div style="margin-bottom: 30px;">
-                <h1 style="color: #1976d2; margin-bottom: 10px; font-size: 24px;">Customer Export Report</h1>
-                <p style="color: #666; margin: 0; font-size: 14px;">Generated on ${currentDate}</p>
-                <p style="color: #666; margin: 0; font-size: 14px;">Total Customers: ${customersToExport.length}</p>
-                ${selectedCustomers.size > 0 ? `<p style="color: #666; margin: 0; font-size: 14px;">Selected: ${selectedCustomers.size} of ${filteredCustomers.length} customers</p>` : ''}
-            </div>
-            
-            <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px;">
-                <thead>
-                    <tr style="background-color: #f5f5f5;">
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Customer ID</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Company</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Contact</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Email</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Phone</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Address</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Status</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">Created</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${customersToExport.map(customer => `
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.customerID || 'N/A'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.name || 'N/A'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.contact?.email || 'N/A'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.contact?.phone || 'N/A'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.contact ? [customer.contact.street, customer.contact.city, customer.contact.state, customer.contact.postalCode].filter(Boolean).join(', ') : 'N/A'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.status || 'Unknown'}</td>
-                            <td style="border: 1px solid #ddd; padding: 6px;">${customer.createdAt?.toDate ? customer.createdAt.toDate().toLocaleDateString() : (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'N/A')}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-
-        tempContainer.innerHTML = htmlContent;
-        document.body.appendChild(tempContainer);
-
-        try {
-            const opt = {
-                margin: [10, 10, 10, 10],
-                filename: `customers_export_${new Date().toISOString().split('T')[0]}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-            };
-
-            // Generate PDF as blob for viewer
-            const pdfBlob = await html2pdf().set(opt).from(tempContainer).outputPdf('blob');
-            const pdfUrl = URL.createObjectURL(pdfBlob);
-
-            // Open in PDF viewer dialog
-            setCurrentPdfUrl(pdfUrl);
-            setCurrentPdfTitle(`Customer Export - ${currentDate}`);
-            setPdfViewerOpen(true);
-
-        } finally {
-            document.body.removeChild(tempContainer);
-        }
-    };
-
-    const handleTabChange = (event, newValue) => {
-        setSelectedTab(newValue);
-    };
-
-    const getStatusColor = (status) => {
-        switch (status?.toLowerCase()) {
-            case 'active':
-                return 'success';
-            case 'inactive':
-                return 'default';
-            case 'suspended':
-                return 'error';
-            case 'pending':
-                return 'warning';
-            default:
-                return 'default';
-        }
-    };
-
-    const handleCopyEmail = (email, event) => {
-        event.stopPropagation();
-        if (email && email !== 'N/A') {
-            navigator.clipboard.writeText(email).then(() => {
-                // You could add a snackbar notification here if desired
-                console.log('Email copied to clipboard:', email);
-            }).catch(err => {
-                console.error('Failed to copy email:', err);
-            });
-        }
-    };
-
-    const handleCompanyNameClick = (customerId, event) => {
-        event.stopPropagation();
-        handleViewCustomerDetail(customerId);
-    };
-
-    // Selection handlers for export
-    const handleSelectAll = (event) => {
-        if (event.target.checked) {
-            const newSelected = new Set(filteredCustomers.map(customer => customer.id));
-            setSelectedCustomers(newSelected);
-        } else {
-            setSelectedCustomers(new Set());
-        }
-    };
-
-    const handleSelectCustomer = (customerId, event) => {
-        event.stopPropagation();
-        const newSelected = new Set(selectedCustomers);
-        if (newSelected.has(customerId)) {
-            newSelected.delete(customerId);
-        } else {
-            newSelected.add(customerId);
-        }
-        setSelectedCustomers(newSelected);
-    };
-
-    // Define filteredCustomers first before using it in selection logic
-    const filteredCustomers = customers.filter(customer => {
-        // Status filter (tab filter)
-        let matchesStatusFilter = true;
-        if (selectedTab !== 'all') {
-            matchesStatusFilter = customer.status?.toLowerCase() === selectedTab.toLowerCase();
-        }
-
-        // Quick search (toolbar search)
-        const searchLower = searchQuery.toLowerCase();
-        let matchesQuickSearch = true;
-        if (searchQuery.trim() !== '') {
-            matchesQuickSearch = (
-                customer.name?.toLowerCase().includes(searchLower) ||
-                customer.customerID?.toLowerCase().includes(searchLower) ||
-                (customer.contactName && typeof customer.contactName === 'string' && customer.contactName.toLowerCase().includes(searchLower)) ||
-                (customer.contact?.firstName && `${customer.contact.firstName} ${customer.contact.lastName || ''}`.toLowerCase().includes(searchLower)) ||
-                (customer.contact?.lastName && `${customer.contact.firstName || ''} ${customer.contact.lastName}`.toLowerCase().includes(searchLower)) ||
-                (customer.contact?.email && typeof customer.contact.email === 'string' && customer.contact.email.toLowerCase().includes(searchLower))
+        // Apply search filters
+        if (searchFields.customerName) {
+            const searchTerm = searchFields.customerName.toLowerCase();
+            filtered = filtered.filter(customer =>
+                customer.name?.toLowerCase().includes(searchTerm) ||
+                customer.customerID?.toLowerCase().includes(searchTerm) ||
+                customer.mainContactName?.toLowerCase().includes(searchTerm) ||
+                customer.mainContactEmail?.toLowerCase().includes(searchTerm)
             );
         }
 
-        // Advanced search fields
-        let matchesAdvancedSearch = true;
-        if (searchFields.customerId.trim() !== '') {
-            matchesAdvancedSearch = matchesAdvancedSearch && customer.customerID?.toLowerCase().includes(searchFields.customerId.toLowerCase());
-        }
-        if (searchFields.name.trim() !== '') {
-            matchesAdvancedSearch = matchesAdvancedSearch && customer.name?.toLowerCase().includes(searchFields.name.toLowerCase());
-        }
-        if (searchFields.contactName.trim() !== '') {
-            const fullContactName = customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : (customer.contactName || '');
-            matchesAdvancedSearch = matchesAdvancedSearch && fullContactName.toLowerCase().includes(searchFields.contactName.toLowerCase());
-        }
-        if (searchFields.email.trim() !== '') {
-            matchesAdvancedSearch = matchesAdvancedSearch && customer.contact?.email?.toLowerCase().includes(searchFields.email.toLowerCase());
+        // Apply status filter
+        if (filters.status !== 'all') {
+            filtered = filtered.filter(customer => customer.status === filters.status);
         }
 
-        return matchesStatusFilter && matchesQuickSearch && matchesAdvancedSearch;
-    });
+        // Apply address filter
+        if (filters.hasAddresses !== 'all') {
+            const hasAddresses = filters.hasAddresses === 'yes';
+            filtered = filtered.filter(customer => (customer.addressCount > 0) === hasAddresses);
+        }
 
-    const isSelected = (customerId) => selectedCustomers.has(customerId);
-    const isIndeterminate = selectedCustomers.size > 0 && selectedCustomers.size < filteredCustomers.length;
-    const isAllSelected = filteredCustomers.length > 0 && selectedCustomers.size === filteredCustomers.length;
+        setCustomers(filtered);
+    }, [searchFields, filters]);
 
-    // Calculate tab counts
-    const getTabCounts = () => {
-        const allCount = customers.length;
-        const activeCount = customers.filter(c => c.status?.toLowerCase() === 'active').length;
-        const inactiveCount = customers.filter(c => c.status?.toLowerCase() === 'inactive').length;
-
-        return {
-            all: allCount,
-            active: activeCount,
-            inactive: inactiveCount
-        };
-    };
-
-    const tabCounts = getTabCounts();
-
-    // Clear selections when filters change
+    // Re-apply filters when search or filter state changes
     useEffect(() => {
-        setSelectedCustomers(new Set());
-    }, [searchQuery, searchFields, selectedTab]);
+        applyFilters(allCustomers);
+    }, [applyFilters, allCustomers]);
 
-    // Add handlers for sliding between views (similar to ShipmentsX)
-    const handleViewCustomerDetail = (customerId) => {
-        // Find the customer to get its details for the title
-        const customer = customers.find(c => c.id === customerId) || { name: 'Customer' };
-
-        // Add customer detail page to navigation stack
-        modalNavigation.navigateTo({
-            title: customer.name || 'Customer Details',
-            shortTitle: customer.name || 'Customer',
-            component: 'customer-detail',
-            data: { customerId }
-        });
-
-        setSelectedCustomerId(customerId);
-        setIsSliding(true);
-
-        // Small delay to allow state to update before animation
-        setTimeout(() => {
-            setCurrentView('detail');
-            setTimeout(() => {
-                setIsSliding(false);
-            }, 300); // Match CSS transition duration
-        }, 50);
-    };
-
-    const handleViewAddCustomer = () => {
-        // Add new customer page to navigation stack
-        modalNavigation.navigateTo({
-            title: 'Create New Customer',
-            shortTitle: 'New Customer',
-            component: 'add-customer',
-            data: {}
-        });
-
-        setIsSliding(true);
-
-        // Small delay to allow state to update before animation
-        setTimeout(() => {
-            setCurrentView('add');
-            setTimeout(() => {
-                setIsSliding(false);
-            }, 300); // Match CSS transition duration
-        }, 50);
-    };
-
-    const handleBackToTable = () => {
-        setCurrentView('table');
-        setSelectedCustomerId(null);
-        setIsCustomerInEditMode(false); // Reset edit state
-        modalNavigation.goBack();
-    };
-
-    const handleCustomerCreated = (newCustomerId) => {
-        console.log('New customer created with ID:', newCustomerId);
-        fetchCustomers();
-        handleViewCustomerDetail(newCustomerId);
-    };
-
-    // Handle edit state changes from CustomerDetail
-    const handleCustomerEditStateChange = (isInEditMode) => {
-        setIsCustomerInEditMode(isInEditMode);
-    };
-
-    // Add navigation object function for ModalHeader (similar to ShipmentsX)
-    const getNavigationObject = () => {
-        const currentPage = modalNavigation.getCurrentPage();
-        const canGoBackNow = (currentPage?.component === 'customer-detail' || currentPage?.component === 'add-customer') || modalNavigation.canGoBack;
-
-        // Update title based on edit state
-        let title = 'Customers';
-        if (currentView === 'detail') {
-            title = isCustomerInEditMode ? 'Edit Customer' : 'Customer Details';
-        } else if (currentView === 'add') {
-            title = 'Add Customer';
+    // Load data on mount
+    useEffect(() => {
+        if (companyIdForAddress) {
+            loadCustomers();
         }
+    }, [companyIdForAddress, loadCustomers]);
 
-        // Determine the correct back handler based on current state
-        let backHandler = null;
-        let backText = 'Back';
-        if (canGoBackNow) {
-            if (isCustomerInEditMode) {
-                // When in edit mode, back button should go back to customer detail view
-                // Call the CustomerDetail component's handleBackToDetail method directly
-                backHandler = () => {
-                    if (customerDetailRef.current && customerDetailRef.current.handleBackToDetail) {
-                        customerDetailRef.current.handleBackToDetail();
-                    } else {
-                        // Fallback: just change the edit state
-                        setIsCustomerInEditMode(false);
-                    }
-                };
-                backText = 'Back'; // Show "Back" when in edit mode
-            } else {
-                // Normal back navigation to customers list
-                backHandler = handleBackToTable;
-                backText = modalNavigation.navigationStack[modalNavigation.currentIndex - 1]
-                    ? modalNavigation.navigationStack[modalNavigation.currentIndex - 1].shortTitle || 'Back'
-                    : 'Back';
-            }
+    // Handle deep link params for direct navigation
+    useEffect(() => {
+        if (deepLinkParams && isModal) {
+            const { customerId, action } = deepLinkParams;
+            console.log('Processing deep link params:', deepLinkParams);
+
+            // The Dashboard will handle opening the appropriate modal
+            // We just need to process the parameters here if needed
         }
+    }, [deepLinkParams, isModal]);
 
-        return {
-            title: title,
-            canGoBack: canGoBackNow,
-            onBack: backHandler,
-            backText: backText
-        };
+    // Copy to clipboard function
+    const handleCopyToClipboard = async (text, label) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            showSnackbar(`${label} copied to clipboard`, 'success');
+        } catch (error) {
+            showSnackbar(`Failed to copy ${label}`, 'error');
+        }
     };
 
+    // Navigation handlers - simplified for modal mode
+    const handleCustomerClick = (customerId) => {
+        // For modal mode, we'll use URL navigation to trigger new modals
+        if (isModal) {
+            navigate(`/dashboard?modal=customers&customerId=${customerId}`);
+        } else {
+            navigate(`/dashboard?modal=customers&customerId=${customerId}`);
+        }
+    };
+
+    const handleAddCustomer = () => {
+        // For modal mode, we'll use URL navigation to trigger new modals
+        if (isModal) {
+            navigate('/dashboard?modal=customers&action=add');
+        } else {
+            navigate('/dashboard?modal=customers&action=add');
+        }
+    };
+
+    const handleEditCustomer = (customerId) => {
+        // For modal mode, we'll use URL navigation to trigger new modals
+        if (isModal) {
+            navigate(`/dashboard?modal=customers&customerId=${customerId}&action=edit`);
+        } else {
+            navigate(`/dashboard?modal=customers&customerId=${customerId}&action=edit`);
+        }
+    };
+
+    // Main table view
     return (
-        <div style={{ backgroundColor: 'transparent', width: '100%', height: '100%' }}>
-            <Box sx={{
-                width: '100%',
-                height: '100%',
-                overflow: isModal ? 'auto' : 'hidden',
-                position: 'relative',
-                maxHeight: isModal ? '100vh' : 'none'
-            }}>
-                {/* Modal Header - show when in table, detail, or add view */}
-                {isModal && (currentView === 'table' || currentView === 'detail' || currentView === 'add') && (
-                    <ModalHeader
-                        navigation={getNavigationObject()}
-                        onClose={showCloseButton ? onClose : null}
-                        showCloseButton={showCloseButton}
-                    />
-                )}
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+        }}>
+            {/* Modal Header for modal mode */}
+            {isModal && (
+                <ModalHeader
+                    title="Customers"
+                    onClose={onClose}
+                    showCloseButton={showCloseButton}
+                />
+            )}
 
-                {/* Sliding Container */}
-                <Box
-                    sx={{
-                        display: 'flex',
-                        width: '300%',
-                        height: '100%',
-                        transform: currentView === 'table' ? 'translateX(0%)' : currentView === 'detail' ? 'translateX(-33.33%)' : 'translateX(-66.66%)',
-                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        willChange: 'transform'
-                    }}
-                >
-                    {/* Main Table View */}
-                    <Box sx={{
-                        width: '33.33%',
-                        minHeight: '100%',
-                        height: isModal ? '100%' : 'auto',
-                        overflow: isModal ? 'auto' : 'visible',
-                        '& .customers-container': {
-                            maxWidth: 'none !important',
-                            width: '100% !important',
-                            padding: '0 !important'
-                        }
-                    }}>
-                        <Box sx={{
-                            width: '100%',
-                            maxWidth: '100%',
-                            overflow: 'hidden',
-                            position: 'relative'
-                        }}>
-                            {/* Breadcrumb - only show when not in modal */}
-                            {!isModal && (
-                                <Box sx={{ px: 2, pt: 2 }}>
-                                    <div className="breadcrumb-container">
-                                        <Link to="/dashboard" className="breadcrumb-link">
-                                            <HomeIcon />
-                                            <Typography variant="body2">Dashboard</Typography>
-                                        </Link>
-                                        <div className="breadcrumb-separator">
-                                            <NavigateNextIcon />
-                                        </div>
-                                        <Typography variant="body2" className="breadcrumb-current">
-                                            Customers
-                                        </Typography>
-                                    </div>
-                                </Box>
-                            )}
-
-                            {/* Page Title - only show when not in modal */}
-                            {!isModal && (
-                                <Box sx={{ px: 2, pt: 2, pb: 1 }}>
-                                    <Typography variant="h4" component="h1">
-                                        Customers
-                                    </Typography>
-                                </Box>
-                            )}
-
-                            {/* Main Content */}
-                            <Paper sx={{ bgcolor: 'transparent', boxShadow: 'none', mx: 2 }}>
-                                <Toolbar sx={{ borderBottom: 1, borderColor: '#e2e8f0', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Tabs
-                                        value={selectedTab}
-                                        onChange={handleTabChange}
-                                        sx={{
-                                            '& .MuiTab-root': {
-                                                fontSize: '11px',
-                                                minHeight: '36px',
-                                                textTransform: 'none',
-                                                fontWeight: 500,
-                                                padding: '6px 12px'
-                                            }
-                                        }}
-                                    >
-                                        <Tab label={`All (${tabCounts.all})`} value="all" />
-                                        <Tab label={`Active (${tabCounts.active})`} value="active" />
-                                        <Tab label={`Inactive (${tabCounts.inactive})`} value="inactive" />
-                                    </Tabs>
-
-                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                        {selectedCustomers.size > 0 && (
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#1976d2' }}>
-                                                    {selectedCustomers.size} selected
-                                                </Typography>
-                                                <Button
-                                                    variant="text"
-                                                    size="small"
-                                                    onClick={() => setSelectedCustomers(new Set())}
-                                                    sx={{ fontSize: '11px', textTransform: 'none', minWidth: 'auto', padding: '2px 8px' }}
-                                                >
-                                                    Clear
-                                                </Button>
-                                            </Box>
-                                        )}
-                                        <TextField
-                                            placeholder="Search customers..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            InputProps={{
-                                                startAdornment: (
-                                                    <InputAdornment position="start">
-                                                        <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                    </InputAdornment>
-                                                ),
-                                                endAdornment: searchQuery && (
-                                                    <InputAdornment position="end">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => setSearchQuery('')}
-                                                        >
-                                                            <ClearIcon />
-                                                        </IconButton>
-                                                    </InputAdornment>
-                                                )
-                                            }}
-                                            size="small"
-                                            sx={{
-                                                width: 250,
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                        />
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<FilterIcon />}
-                                            onClick={() => setFiltersOpen(!filtersOpen)}
-                                            size="small"
-                                            sx={{ fontSize: '11px', textTransform: 'none' }}
-                                        >
-                                            {filtersOpen ? 'Hide' : 'Show'}
-                                        </Button>
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<ExportIcon />}
-                                            onClick={handleExport}
-                                            size="small"
-                                            sx={{ fontSize: '11px', textTransform: 'none' }}
-                                        >
-                                            Export
-                                        </Button>
-                                        <Button
-                                            variant="outlined"
-                                            startIcon={<GetApp />}
-                                            disabled
-                                            size="small"
-                                            sx={{
-                                                fontSize: '11px',
-                                                textTransform: 'none',
-                                                opacity: 0.5,
-                                                cursor: 'not-allowed'
-                                            }}
-                                        >
-                                            Import
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            startIcon={<AddIcon />}
-                                            onClick={handleViewAddCustomer}
-                                            size="small"
-                                            sx={{ fontSize: '11px', textTransform: 'none' }}
-                                        >
-                                            New
-                                        </Button>
-                                    </Box>
-                                </Toolbar>
-
-                                {/* Search and Filter Section */}
-                                <Collapse in={filtersOpen}>
-                                    <Box sx={{ p: 3, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                        <Grid container spacing={2} alignItems="center">
-                                            {/* Customer ID Search */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Customer ID"
-                                                    placeholder="Search by Customer ID"
-                                                    value={searchFields.customerId}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, customerId: e.target.value }))}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.customerId && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, customerId: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Company Name */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Company Name"
-                                                    placeholder="Search by company name"
-                                                    value={searchFields.name}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, name: e.target.value }))}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.name && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, name: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Contact Name */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Contact Name"
-                                                    placeholder="Search by contact name"
-                                                    value={searchFields.contactName}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, contactName: e.target.value }))}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.contactName && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, contactName: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-
-                                            {/* Email */}
-                                            <Grid item xs={12} sm={6} md={3}>
-                                                <TextField
-                                                    fullWidth
-                                                    label="Email"
-                                                    placeholder="Search by email"
-                                                    value={searchFields.email}
-                                                    onChange={(e) => setSearchFields(prev => ({ ...prev, email: e.target.value }))}
-                                                    size="small"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                    InputProps={{
-                                                        startAdornment: (
-                                                            <InputAdornment position="start">
-                                                                <SearchIcon sx={{ fontSize: '14px', color: '#64748b' }} />
-                                                            </InputAdornment>
-                                                        ),
-                                                        endAdornment: searchFields.email && (
-                                                            <InputAdornment position="end">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => setSearchFields(prev => ({ ...prev, email: '' }))}
-                                                                >
-                                                                    <ClearIcon />
-                                                                </IconButton>
-                                                            </InputAdornment>
-                                                        )
-                                                    }}
-                                                />
-                                            </Grid>
-                                        </Grid>
-                                    </Box>
-                                </Collapse>
-
-                                {loading ? (
-                                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-                                        <CircularProgress />
-                                    </Box>
-                                ) : filteredCustomers.length === 0 ? (
-                                    <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-                                        <Stack spacing={2} alignItems="center">
-                                            <SearchOffIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
-                                            <Typography variant="h6" color="text.secondary">
-                                                No customers found
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Try adjusting your search or filters
-                                            </Typography>
-                                        </Stack>
-                                    </Box>
-                                ) : (
-                                    <Box sx={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        height: isModal ? 'calc(100vh - 200px)' : '100%'
-                                    }}>
-                                        {/* Scrollable table area */}
-                                        <Box sx={{
-                                            flex: 1,
-                                            overflow: 'auto',
-                                            minHeight: 0,
-                                            maxHeight: isModal ? 'calc(100vh - 300px)' : 'none'
-                                        }}>
-                                            <Box sx={{ width: '100%', px: 2 }}>
-                                                <Table sx={{
-                                                    width: '100%',
-                                                    tableLayout: 'fixed',
-                                                    '& .MuiTableCell-root': {
-                                                        fontSize: '12px',
-                                                        padding: '8px 12px',
-                                                        borderBottom: '1px solid #e2e8f0'
-                                                    }
-                                                }}>
-                                                    <TableHead sx={{
-                                                        position: 'sticky',
-                                                        top: 0,
-                                                        zIndex: 100,
-                                                        '& .MuiTableRow-root': {
-                                                            backgroundColor: '#f8fafc !important'
-                                                        },
-                                                        '& .MuiTableCell-root': {
-                                                            backgroundColor: '#f8fafc !important',
-                                                            borderBottom: '2px solid #e2e8f0 !important'
-                                                        }
-                                                    }}>
-                                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '50px', padding: '8px 12px' }}>
-                                                                <Checkbox
-                                                                    indeterminate={isIndeterminate}
-                                                                    checked={isAllSelected}
-                                                                    onChange={handleSelectAll}
-                                                                    size="small"
-                                                                    sx={{ padding: '4px' }}
-                                                                />
-                                                            </TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important' }}>Company Name</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '140px' }}>Contact</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '280px' }}>Email</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '200px' }}>Address</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '120px' }}>Phone</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '80px' }}>Created</TableCell>
-                                                            <TableCell sx={{ fontWeight: 600, color: '#374151', backgroundColor: '#f8fafc !important', width: '100px' }}>Status</TableCell>
-                                                        </TableRow>
-                                                    </TableHead>
-                                                    <TableBody>
-                                                        {filteredCustomers.map((customer) => (
-                                                            <TableRow
-                                                                key={customer.id}
-                                                                hover
-                                                                sx={{
-                                                                    '&:hover': {
-                                                                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                                                    },
-                                                                    '& .MuiTableCell-root': {
-                                                                        verticalAlign: 'top'
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <TableCell sx={{ padding: '8px 12px' }}>
-                                                                    <Checkbox
-                                                                        checked={isSelected(customer.id)}
-                                                                        onChange={(event) => handleSelectCustomer(customer.id, event)}
-                                                                        size="small"
-                                                                        sx={{ padding: '4px' }}
-                                                                    />
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    <Button
-                                                                        variant="text"
-                                                                        onClick={(event) => handleCompanyNameClick(customer.id, event)}
-                                                                        sx={{
-                                                                            fontSize: '12px',
-                                                                            textTransform: 'none',
-                                                                            padding: 0,
-                                                                            minWidth: 'auto',
-                                                                            color: '#1976d2',
-                                                                            textDecoration: 'none !important',
-                                                                            justifyContent: 'flex-start',
-                                                                            textAlign: 'left',
-                                                                            '&:hover': {
-                                                                                backgroundColor: 'transparent',
-                                                                                textDecoration: 'none !important'
-                                                                            },
-                                                                            '&:focus': {
-                                                                                textDecoration: 'none !important'
-                                                                            },
-                                                                            '&:active': {
-                                                                                textDecoration: 'none !important'
-                                                                            }
-                                                                        }}
-                                                                    >
-                                                                        {customer.name || 'N/A'}
-                                                                    </Button>
-                                                                </TableCell>
-                                                                <TableCell>{customer.contactName || (customer.contact ? `${customer.contact.firstName || ''} ${customer.contact.lastName || ''}`.trim() : 'N/A')}</TableCell>
-                                                                <TableCell>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                                                                        <span>{customer.contact?.email || 'N/A'}</span>
-                                                                        {customer.contact?.email && customer.contact.email !== 'N/A' && (
-                                                                            <IconButton
-                                                                                size="small"
-                                                                                onClick={(event) => handleCopyEmail(customer.contact.email, event)}
-                                                                                sx={{
-                                                                                    padding: '2px',
-                                                                                    '&:hover': {
-                                                                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                                                                    }
-                                                                                }}
-                                                                                title="Copy email to clipboard"
-                                                                            >
-                                                                                <ContentCopyIcon sx={{ fontSize: '14px' }} />
-                                                                            </IconButton>
-                                                                        )}
-                                                                    </Box>
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    {customer.contact ? (
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.3' }}>
-                                                                            {customer.contact.street && <div>{customer.contact.street}</div>}
-                                                                            {customer.contact.street2 && <div>{customer.contact.street2}</div>}
-                                                                            {(customer.contact.city || customer.contact.state || customer.contact.postalCode) && (
-                                                                                <div>
-                                                                                    {[customer.contact.city, customer.contact.state, customer.contact.postalCode].filter(Boolean).join(', ')}
-                                                                                </div>
-                                                                            )}
-                                                                            {customer.contact.country && customer.contact.country !== 'US' && <div>{customer.contact.country}</div>}
-                                                                        </div>
-                                                                    ) : 'N/A'}
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    {customer.contact?.phone || 'N/A'}
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    {customer.createdAt?.toDate ?
-                                                                        customer.createdAt.toDate().toLocaleDateString() :
-                                                                        (customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'N/A')}
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    <Chip
-                                                                        label={customer.status || 'Unknown'}
-                                                                        color={getStatusColor(customer.status)}
-                                                                        size="small"
-                                                                    />
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
-                                                    </TableBody>
-                                                </Table>
-                                            </Box>
-                                        </Box>
-
-                                        {/* Pagination Footer */}
-                                        <Box sx={{ flexShrink: 0, borderTop: '1px solid #e2e8f0', bgcolor: '#fafafa', p: 1 }}>
-                                            <ShipmentsPagination
-                                                totalCount={filteredCustomers.length}
-                                                page={page}
-                                                rowsPerPage={rowsPerPage}
-                                                onPageChange={(event, newPage) => setPage(newPage)}
-                                                onRowsPerPageChange={(event) => {
-                                                    setRowsPerPage(parseInt(event.target.value, 10));
-                                                    setPage(0);
-                                                }}
-                                            />
-                                        </Box>
-                                    </Box>
-                                )}
-                            </Paper>
-                        </Box>
-                    </Box>
-
-                    {/* Customer Detail View */}
-                    <Box sx={{ width: '33.33%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                        {currentView === 'detail' && selectedCustomerId && (
-                            <Box sx={{
-                                position: 'relative',
-                                height: '100%',
-                                overflow: 'auto',
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}>
-                                {/* Customer Detail Content */}
-                                <Suspense fallback={
-                                    <Box sx={{
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        height: '100%',
-                                        pt: 8
-                                    }}>
-                                        <CircularProgress />
-                                    </Box>
-                                }>
-                                    <CustomerDetail
-                                        ref={customerDetailRef}
-                                        key={selectedCustomerId}
-                                        customerId={selectedCustomerId}
-                                        onBackToTable={handleBackToTable}
-                                        onNavigateToShipments={onNavigateToShipments}
-                                        isModal={true}
-                                        highlightNoteId={deepLinkParams?.noteId}
-                                        onEditStateChange={handleCustomerEditStateChange}
-                                    />
-                                </Suspense>
-                            </Box>
+            {/* Header Section */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                {/* Title and Actions Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Box>
+                        {!isModal && (
+                            <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
+                                Customers
+                            </Typography>
                         )}
                     </Box>
-
-                    {/* Add Customer View */}
-                    <Box sx={{ width: '33.33%', minHeight: '100%', position: 'relative' }}>
-                        {currentView === 'add' && (
-                            <Box sx={{ position: 'relative', height: '100%' }}>
-                                {/* Add Customer Content */}
-                                <Suspense fallback={
-                                    <Box sx={{
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        height: '100%',
-                                        pt: 8
-                                    }}>
-                                        <CircularProgress />
-                                    </Box>
-                                }>
-                                    <AddCustomer
-                                        onBackToTable={handleBackToTable}
-                                        onCustomerCreated={handleCustomerCreated}
-                                        isModal={true}
-                                    />
-                                </Suspense>
-                            </Box>
-                        )}
+                    {/* Action Buttons */}
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddCustomer}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Add
+                        </Button>
                     </Box>
                 </Box>
+
+                {/* Stats Row */}
+                <Grid container spacing={2} sx={{ mb: 3 }}>
+                    <Grid item xs={6} sm={3}>
+                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Typography sx={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>
+                                {stats.total}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                Total Customers
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#f0f9f4', border: '1px solid #bbf7d0' }}>
+                            <Typography sx={{ fontSize: '20px', fontWeight: 600, color: '#15803d' }}>
+                                {stats.active}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px', color: '#15803d' }}>
+                                Active
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#fef2f2', border: '1px solid #fecaca' }}>
+                            <Typography sx={{ fontSize: '20px', fontWeight: 600, color: '#dc2626' }}>
+                                {stats.inactive}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px', color: '#dc2626' }}>
+                                Inactive
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                            <Typography sx={{ fontSize: '20px', fontWeight: 600, color: '#2563eb' }}>
+                                {stats.withAddresses}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px', color: '#2563eb' }}>
+                                With Addresses
+                            </Typography>
+                        </Paper>
+                    </Grid>
+                </Grid>
+
+                {/* Search Row */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <TextField
+                            size="small"
+                            placeholder="Search customers, IDs, contacts, emails..."
+                            value={searchFields.customerName}
+                            onChange={(e) => setSearchFields(prev => ({
+                                ...prev,
+                                customerName: e.target.value
+                            }))}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                    </InputAdornment>
+                                ),
+                                sx: { fontSize: '12px', width: '390px' }
+                            }}
+                        />
+                    </Box>
+
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FilterListIcon />}
+                        onClick={() => setFiltersOpen(!filtersOpen)}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Filters
+                    </Button>
+                </Box>
+
+                {/* Collapsible Filters */}
+                <Collapse in={filtersOpen}>
+                    <Paper sx={{ p: 2, mb: 2, bgcolor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                    <Select
+                                        value={filters.status}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                                        label="Status"
+                                        sx={{
+                                            fontSize: '12px',
+                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                        }}
+                                    >
+                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Status</MenuItem>
+                                        <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                        <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel sx={{ fontSize: '12px' }}>Addresses</InputLabel>
+                                    <Select
+                                        value={filters.hasAddresses}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, hasAddresses: e.target.value }))}
+                                        label="Addresses"
+                                        sx={{
+                                            fontSize: '12px',
+                                            '& .MuiSelect-select': { fontSize: '12px' }
+                                        }}
+                                    >
+                                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Customers</MenuItem>
+                                        <MenuItem value="yes" sx={{ fontSize: '12px' }}>With Addresses</MenuItem>
+                                        <MenuItem value="no" sx={{ fontSize: '12px' }}>Without Addresses</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        </Grid>
+                    </Paper>
+                </Collapse>
             </Box>
 
-            {/* Export Dialog */}
-            <Dialog open={isExportDialogOpen} onClose={handleExportClose}>
-                <DialogTitle>Export Customers</DialogTitle>
-                <DialogContent>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        {selectedCustomers.size > 0
-                            ? `Exporting ${selectedCustomers.size} selected customer${selectedCustomers.size !== 1 ? 's' : ''} of ${filteredCustomers.length} total`
-                            : `Exporting all ${filteredCustomers.length} customer${filteredCustomers.length !== 1 ? 's' : ''}`
-                        }
-                    </Typography>
-                    <FormControl fullWidth sx={{ mt: 2 }}>
-                        <InputLabel>Format</InputLabel>
-                        <Select
-                            value={selectedExportFormat}
-                            onChange={(e) => setSelectedExportFormat(e.target.value)}
-                            label="Format"
-                            disabled={isExporting}
-                        >
-                            <MenuItem value="csv">CSV (Comma Separated Values)</MenuItem>
-                            <MenuItem value="excel">Excel (Tab Separated)</MenuItem>
-                            <MenuItem value="pdf">PDF (Portable Document Format)</MenuItem>
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleExportClose} disabled={isExporting}>
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleExportConfirm}
-                        variant="contained"
-                        disabled={isExporting || filteredCustomers.length === 0}
-                    >
-                        {isExporting ? (
-                            <>
-                                <CircularProgress size={16} sx={{ mr: 1 }} />
-                                Exporting...
-                            </>
-                        ) : (
-                            'Export'
-                        )}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            {/* Table Section */}
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+                {loading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px' }}>
+                        <CircularProgress />
+                    </Box>
+                ) : (
+                    <Table>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>
+                                    Customer
+                                </TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Customer ID</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Activity</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Addresses</TableCell>
+                                <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Actions</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {customers.map((customer) => (
+                                <TableRow key={customer.id} hover>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar
+                                                src={customer.logoUrl}
+                                                sx={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    bgcolor: '#3b82f6',
+                                                    fontSize: '12px',
+                                                    border: '1px solid #e5e7eb'
+                                                }}
+                                            >
+                                                {customer.name?.charAt(0).toUpperCase()}
+                                            </Avatar>
+                                            <Box>
+                                                <Typography
+                                                    sx={{
+                                                        textDecoration: 'none',
+                                                        color: '#3b82f6',
+                                                        fontSize: '12px',
+                                                        fontWeight: 500,
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            textDecoration: 'underline',
+                                                            color: '#1d4ed8'
+                                                        }
+                                                    }}
+                                                    onClick={() => handleCustomerClick(customer.id)}
+                                                >
+                                                    {customer.name}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography sx={{ fontSize: '12px' }}>
+                                                {customer.customerID || 'N/A'}
+                                            </Typography>
+                                            {customer.customerID && (
+                                                <Tooltip title="Copy Customer ID">
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => handleCopyToClipboard(customer.customerID, 'Customer ID')}
+                                                    >
+                                                        <ContentCopyIcon sx={{ fontSize: '14px' }} />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box>
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                {customer.createdAt ? format(customer.createdAt.toDate(), 'MMM dd, yyyy') : 'N/A'}
+                                            </Typography>
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                Created
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography
+                                            sx={{
+                                                fontSize: '12px',
+                                                color: customer.addressCount > 0 ? '#3b82f6' : '#6b7280',
+                                                cursor: customer.addressCount > 0 ? 'pointer' : 'default',
+                                                '&:hover': customer.addressCount > 0 ? {
+                                                    textDecoration: 'underline'
+                                                } : {}
+                                            }}
+                                            onClick={() => {
+                                                if (customer.addressCount > 0) {
+                                                    handleCustomerClick(customer.id);
+                                                }
+                                            }}
+                                        >
+                                            {customer.addressCount || 0}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <Tooltip title="View Customer">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleCustomerClick(customer.id)}
+                                                    sx={{ color: '#3b82f6' }}
+                                                >
+                                                    <ViewIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Edit Customer">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleEditCustomer(customer.id)}
+                                                    sx={{ color: '#6366f1' }}
+                                                >
+                                                    <EditIcon sx={{ fontSize: '16px' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
+            </Box>
 
-            {/* PDF Viewer Dialog */}
-            <PdfViewerDialog
-                open={pdfViewerOpen}
-                onClose={() => {
-                    setPdfViewerOpen(false);
-                    if (currentPdfUrl?.startsWith('blob:')) {
-                        URL.revokeObjectURL(currentPdfUrl);
-                    }
-                    setCurrentPdfUrl(null);
-                    setCurrentPdfTitle('');
-                }}
-                pdfUrl={currentPdfUrl}
-                title={currentPdfTitle}
+            {/* Snackbar */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={6000}
+                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                message={snackbar.message}
             />
-        </div>
+        </Box>
     );
 };
 

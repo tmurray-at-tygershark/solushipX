@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import {
     Box,
     Paper,
@@ -98,6 +98,8 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [selectedTab, setSelectedTab] = useState('all');
 
+
+
     // Enhanced search fields matching ShipmentsX pattern
     const [searchFields, setSearchFields] = useState({
         companyName: '',
@@ -148,10 +150,6 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
     // Import state
     const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
-    useEffect(() => {
-        fetchAddresses();
-    }, [companyIdForAddress, page, rowsPerPage]);
-
     const fetchAddresses = async () => {
         if (!companyIdForAddress) return;
 
@@ -163,6 +161,8 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
             const q = query(
                 addressesRef,
                 where('companyID', '==', companyIdForAddress),
+                where('addressClass', '==', 'customer'),
+                where('addressType', '==', 'destination'),
                 where('status', '!=', 'deleted'),
                 orderBy('status'),
                 orderBy('companyName', 'asc')
@@ -176,8 +176,17 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                 ...doc.data()
             }));
 
-            setAddresses(addressesData);
-            setTotalCount(addressesData.length);
+            // Remove duplicates based on a combination of address fields
+            const uniqueAddresses = addressesData.filter((address, index, array) => {
+                const addressKey = `${address.companyName}-${address.street}-${address.city}-${address.state}-${address.postalCode}`;
+                return array.findIndex(a =>
+                    `${a.companyName}-${a.street}-${a.city}-${a.state}-${a.postalCode}` === addressKey
+                ) === index;
+            });
+
+            console.log(`After deduplication: ${uniqueAddresses.length} unique addresses`);
+            setAddresses(uniqueAddresses);
+            setTotalCount(uniqueAddresses.length);
         } catch (error) {
             console.error('Error fetching addresses:', error);
             enqueueSnackbar('Failed to fetch addresses', { variant: 'error' });
@@ -185,6 +194,15 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
             setLoading(false);
         }
     };
+
+
+
+    // useEffect hooks
+    useEffect(() => {
+        fetchAddresses();
+    }, [companyIdForAddress, page, rowsPerPage]);
+
+
 
     // Enhanced comprehensive search function
     const searchAddress = (address, searchTerm) => {
@@ -995,6 +1013,8 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                             </Stack>
                                         </Grid>
                                     </Grid>
+
+
 
                                     {/* Enhanced Advanced Filters - ShipmentsX Style */}
                                     <Collapse in={filtersOpen}>

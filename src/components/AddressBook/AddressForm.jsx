@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Box,
     Paper,
@@ -19,7 +19,10 @@ import {
     CardHeader,
     Collapse,
     FormGroup,
-    Divider
+    Divider,
+    FormControl,
+    InputLabel,
+    Select
 } from '@mui/material';
 import {
     LocationOn as LocationIcon,
@@ -36,7 +39,7 @@ import {
     ExpandMore as ExpandMoreIcon,
     ExpandLess as ExpandLessIcon
 } from '@mui/icons-material';
-import { doc, setDoc, getDoc, addDoc, collection, Timestamp, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, addDoc, collection, Timestamp, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -91,6 +94,11 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
     const [showManualEntry, setShowManualEntry] = useState(false);
     const [expandedDays, setExpandedDays] = useState(false);
 
+    // Customer selector state
+    const [availableCustomers, setAvailableCustomers] = useState([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState('');
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
+
     // Google autocomplete state
     const [addressSuggestions, setAddressSuggestions] = useState([]);
     const [selectedPlace, setSelectedPlace] = useState(null);
@@ -98,6 +106,30 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
     const placesService = useRef(null);
 
     const isEditing = !!addressId;
+
+    // Load available customers for address assignment
+    const loadAvailableCustomers = useCallback(async () => {
+        if (!companyIdForAddress) return;
+
+        setLoadingCustomers(true);
+        try {
+            const customersQuery = query(
+                collection(db, 'customers'),
+                where('companyID', '==', companyIdForAddress),
+                orderBy('name')
+            );
+            const customersSnapshot = await getDocs(customersQuery);
+            const customersData = customersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setAvailableCustomers(customersData);
+        } catch (error) {
+            console.error('Error loading customers:', error);
+        } finally {
+            setLoadingCustomers(false);
+        }
+    }, [companyIdForAddress]);
 
     const daysOfWeek = [
         { key: 'monday', label: 'Monday' },
@@ -115,6 +147,19 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
             loadAddressData();
         }
     }, [addressId, isEditing]);
+
+    // Load customers when component mounts
+    useEffect(() => {
+        loadAvailableCustomers();
+    }, [loadAvailableCustomers]);
+
+    // Initialize customer selection from props
+    useEffect(() => {
+        if (customerId && !isEditing) {
+            setSelectedCustomerId(customerId);
+            console.log('[AddressForm] Initialized customer from props:', customerId);
+        }
+    }, [customerId, isEditing]);
 
     const initializeGoogleMaps = async () => {
         try {
@@ -217,6 +262,11 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                     isResidential: data.isResidential || false,
                     ...hoursData
                 });
+
+                // CRITICAL FIX: Restore customer selection when editing
+                if (data.addressClass === 'customer' && data.addressClassID) {
+                    setSelectedCustomerId(data.addressClassID);
+                }
 
                 // When editing, show manual entry instead of autocomplete
                 setShowManualEntry(true);
@@ -406,6 +456,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
         if (!formData.postalCode.trim()) {
             newErrors.postalCode = 'Postal/Zip code is required';
         }
+        if (!selectedCustomerId) {
+            newErrors.selectedCustomerId = 'Please select a customer to assign this address to';
+        }
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -447,14 +500,14 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
             };
 
             // Determine if this is a customer address based on the props
-            const isCustomerAddress = customerId && companyId;
+            const isCustomerAddress = selectedCustomerId && selectedCustomerId !== '';
 
             // Fetch company information if this is a customer address
             let companyInfo = null;
             if (isCustomerAddress) {
                 try {
                     const companiesRef = collection(db, 'companies');
-                    const companyQuery = query(companiesRef, where('companyID', '==', companyId));
+                    const companyQuery = query(companiesRef, where('companyID', '==', companyIdForAddress));
                     const companySnapshot = await getDocs(companyQuery);
 
                     if (!companySnapshot.empty) {
@@ -498,10 +551,10 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 companyID: companyId || companyIdForAddress,
                 createdBy: currentUser?.uid || 'system',
                 updatedAt: Timestamp.now(),
-                // Set address classification based on whether this is a customer address
-                addressClass: isCustomerAddress ? 'customer' : (formData.addressClass || 'company'),
-                addressClassID: isCustomerAddress ? customerId : (formData.addressClassID || companyId || companyIdForAddress),
-                addressType: isCustomerAddress ? 'destination' : (formData.addressType || 'contact'),
+                // Set address classification - always customer since company addresses are not allowed
+                addressClass: 'customer',
+                addressClassID: selectedCustomerId,
+                addressType: 'destination',
                 // Add company owner information for customer addresses
                 ...(isCustomerAddress && companyInfo ? {
                     ownerCompanyName: companyInfo.name,
@@ -517,6 +570,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 isCustomerAddress,
                 companyId,
                 customerId,
+                selectedCustomerId,
                 addressClass: addressData.addressClass,
                 addressClassID: addressData.addressClassID,
                 addressType: addressData.addressType,
@@ -629,6 +683,65 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
 
 
             <Grid container spacing={3}>
+                {/* Customer Assignment Selector */}
+                <Grid item xs={12}>
+                    <Card sx={{ border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                        <CardHeader
+                            title={
+                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                    Address Assignment
+                                </Typography>
+                            }
+                            sx={{ pb: 1 }}
+                        />
+                        <CardContent sx={{ pt: 1 }}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} sm={6}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>
+                                            Select Customer *
+                                        </InputLabel>
+                                        <Select
+                                            value={selectedCustomerId}
+                                            onChange={(e) => setSelectedCustomerId(e.target.value)}
+                                            sx={{
+                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                            disabled={loadingCustomers}
+                                            required
+                                            error={!!errors.selectedCustomerId}
+                                        >
+                                            {availableCustomers.map((customer) => (
+                                                <MenuItem
+                                                    key={customer.id}
+                                                    value={customer.customerID || customer.id}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    {customer.name} ({customer.customerID || customer.id})
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                        {errors.selectedCustomerId && (
+                                            <Typography variant="caption" color="error" sx={{ fontSize: '11px', mt: 0.5 }}>
+                                                {errors.selectedCustomerId}
+                                            </Typography>
+                                        )}
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} sm={6}>
+                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1 }}>
+                                        {selectedCustomerId
+                                            ? 'This address will be specifically assigned to the selected customer.'
+                                            : 'Please select a customer to assign this address to.'
+                                        }
+                                    </Typography>
+                                </Grid>
+                            </Grid>
+                        </CardContent>
+                    </Card>
+                </Grid>
+
                 {/* Customer Details */}
                 <Grid item xs={12}>
                     <Card sx={{ border: '1px solid #e2e8f0' }}>
