@@ -252,6 +252,9 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     // Check if mobile device for responsive design
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
+    // Create a stable fallback date to prevent infinite re-renders
+    const stableFallbackDate = useMemo(() => new Date(), []);
+
     // Use smart status update hook
     const { updateShipmentStatus } = useSmartStatusUpdate();
 
@@ -310,13 +313,13 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
         setTrackingNumberInput(e.target.value);
     };
 
-    const parseTimestamp = (timestamp) => {
+    const parseTimestamp = (timestamp, fallbackDate = stableFallbackDate) => {
         if (!timestamp) return null;
 
         try {
             // Handle serverTimestamp placeholders
             if (timestamp._methodName === 'serverTimestamp') {
-                return new Date(); // Use current date for pending timestamps
+                return fallbackDate; // Use stable date for pending timestamps
             }
 
             // Handle Firestore Timestamp
@@ -497,7 +500,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         status: formattedStatus,
                         description: event.description || event.message || `Event: ${formattedStatus}`,
                         location: event.location || { city: '', state: '', postalCode: '' },
-                        timestamp: parseTimestamp(event.timestamp) || new Date(),
+                        timestamp: parseTimestamp(event.timestamp) || stableFallbackDate,
                         color: getStatusColor(event.eventType || event.status || event.title),
                         icon: getStatusIcon(event.eventType || event.status || event.title),
                         eventType: event.eventType || event.status || event.title,
@@ -527,7 +530,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                         status: 'Created',
                         description: isQuickShip ? 'QuickShip shipment was created' : 'Shipment was created',
                         location: { city: '', state: '', postalCode: '' },
-                        timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                        timestamp: parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                         color: getStatusColor('created'),
                         icon: getStatusIcon('created'),
                         eventType: 'created',
@@ -553,7 +556,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 `QuickShip shipment booked with ${carrierName}` :
                                 'Shipment was booked with carrier',
                             location: { city: '', state: '', postalCode: '' },
-                            timestamp: parseTimestamp(bookingTimestamp) || new Date(),
+                            timestamp: parseTimestamp(bookingTimestamp) || stableFallbackDate,
                             color: getStatusColor('booked'),
                             icon: getStatusIcon('booked'),
                             eventType: 'booked',
@@ -576,7 +579,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                             status: formattedStatus,
                             description: `Shipment status updated to ${formattedStatus}`,
                             location: { city: '', state: '', postalCode: '' },
-                            timestamp: parseTimestamp(fixedShipmentData.updatedAt) || parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                            timestamp: parseTimestamp(fixedShipmentData.updatedAt) || parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                             color: getStatusColor(fixedShipmentData.status),
                             icon: getStatusIcon(fixedShipmentData.status),
                             eventType: fixedShipmentData.status,
@@ -597,7 +600,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 status: 'Rate Entry',
                                 description: `Manual rates entered (${fixedShipmentData.manualRates.length} line items)`,
                                 location: { city: '', state: '', postalCode: '' },
-                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                                 color: getStatusColor('rate_entry'),
                                 icon: getStatusIcon('rate_entry'),
                                 eventType: 'rate_entry',
@@ -617,7 +620,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 status: 'Carrier Selected',
                                 description: `Carrier selected: ${carrierName}`,
                                 location: { city: '', state: '', postalCode: '' },
-                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                timestamp: parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                                 color: getStatusColor('carrier_selection'),
                                 icon: getStatusIcon('carrier_selection'),
                                 eventType: 'carrier_selection',
@@ -636,7 +639,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 status: 'Documents Generated',
                                 description: 'BOL and carrier confirmation documents generated',
                                 location: { city: '', state: '', postalCode: '' },
-                                timestamp: parseTimestamp(bookingTimestamp) || parseTimestamp(fixedShipmentData.createdAt) || new Date(),
+                                timestamp: parseTimestamp(bookingTimestamp) || parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                                 color: getStatusColor('document_generated'),
                                 icon: getStatusIcon('document_generated'),
                                 eventType: 'document_generated',
@@ -844,7 +847,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                 searchShipment(identifier);
             }
         }
-    }, [trackingId, propTrackingIdentifier, hasAutoSearched, isDrawer, searchShipment]);
+    }, [trackingId, propTrackingIdentifier, hasAutoSearched, isDrawer]);
 
     // Reset hasAutoSearched when propTrackingIdentifier changes (for drawer mode)
     useEffect(() => {
@@ -857,80 +860,82 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
     // Main content component
     const MainContent = (
         <Box sx={{ minHeight: '100vh', bgcolor: '#f8f9fa' }}>
-            {/* Compact Search Section */}
-            <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
-                <Paper elevation={0} sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    background: 'linear-gradient(135deg, #1c277d 0%, #2563eb 100%)',
-                    color: 'white'
-                }}>
-                    <Typography variant="h6" sx={{
-                        fontWeight: 600,
-                        fontSize: '16px',
-                        mb: 1,
-                        textAlign: 'center'
+            {/* Compact Search Section - Hide in drawer mode */}
+            {!isDrawer && (
+                <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
+                    <Paper elevation={0} sx={{
+                        p: 2,
+                        borderRadius: 2,
+                        background: 'linear-gradient(135deg, #1c277d 0%, #2563eb 100%)',
+                        color: 'white'
                     }}>
-                        Track Your Shipment
-                    </Typography>
-                    <Typography variant="body2" sx={{
-                        fontSize: '12px',
-                        mb: 2,
-                        opacity: 0.9,
-                        textAlign: 'center'
-                    }}>
-                        Enter your shipment ID or carrier tracking number
-                    </Typography>
+                        <Typography variant="h6" sx={{
+                            fontWeight: 600,
+                            fontSize: '16px',
+                            mb: 1,
+                            textAlign: 'center'
+                        }}>
+                            Track Your Shipment
+                        </Typography>
+                        <Typography variant="body2" sx={{
+                            fontSize: '12px',
+                            mb: 2,
+                            opacity: 0.9,
+                            textAlign: 'center'
+                        }}>
+                            Enter your shipment ID or carrier tracking number
+                        </Typography>
 
-                    <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', gap: 1, maxWidth: '500px', mx: 'auto' }}>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            variant="outlined"
-                            placeholder="e.g., IC-DWSLOGISTICS-22OC79"
-                            value={trackingNumberInput}
-                            onChange={handleInputChange}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon sx={{ fontSize: '16px', color: 'action.main' }} />
-                                    </InputAdornment>
-                                ),
-                                sx: {
-                                    bgcolor: 'white',
-                                    fontSize: '12px',
-                                    '& input': {
+                        <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', gap: 1, maxWidth: '500px', mx: 'auto' }}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                variant="outlined"
+                                placeholder="e.g., IC-DWSLOGISTICS-22OC79"
+                                value={trackingNumberInput}
+                                onChange={handleInputChange}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon sx={{ fontSize: '16px', color: 'action.main' }} />
+                                        </InputAdornment>
+                                    ),
+                                    sx: {
+                                        bgcolor: 'white',
                                         fontSize: '12px',
-                                        padding: '8px 12px'
+                                        '& input': {
+                                            fontSize: '12px',
+                                            padding: '8px 12px'
+                                        }
                                     }
-                                }
-                            }}
-                        />
-                        <Button
-                            type="submit"
-                            variant="contained"
-                            size="small"
-                            disabled={loading}
-                            sx={{
-                                bgcolor: 'rgba(255,255,255,0.2)',
-                                color: 'white',
-                                border: '1px solid rgba(255,255,255,0.3)',
-                                '&:hover': {
-                                    bgcolor: 'rgba(255,255,255,0.3)'
-                                },
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                px: 3,
-                                whiteSpace: 'nowrap'
-                            }}
-                        >
-                            {loading ? <CircularProgress size={16} color="inherit" /> : 'Track'}
-                        </Button>
-                    </Box>
+                                }}
+                            />
+                            <Button
+                                type="submit"
+                                variant="contained"
+                                size="small"
+                                disabled={loading}
+                                sx={{
+                                    bgcolor: 'rgba(255,255,255,0.2)',
+                                    color: 'white',
+                                    border: '1px solid rgba(255,255,255,0.3)',
+                                    '&:hover': {
+                                        bgcolor: 'rgba(255,255,255,0.3)'
+                                    },
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    px: 3,
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {loading ? <CircularProgress size={16} color="inherit" /> : 'Track'}
+                            </Button>
+                        </Box>
 
 
-                </Paper>
-            </Container>
+                    </Paper>
+                </Container>
+            )}
 
 
 
@@ -959,17 +964,25 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
             {/* Results Section */}
             {shipmentData && !loading && (
-                <Container maxWidth="lg" sx={{ py: 2 }}>
+                <Container
+                    maxWidth={isDrawer ? false : "lg"}
+                    sx={{
+                        py: isDrawer ? 1 : 2,
+                        px: isDrawer ? 2 : 3,
+                        maxWidth: isDrawer ? 'none' : undefined
+                    }}
+                >
                     <Paper elevation={0} sx={{
-                        p: 2,
+                        p: isDrawer ? 1.5 : 2,
                         bgcolor: '#ffffff',
                         borderRadius: 2,
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                        boxShadow: isDrawer ? 'none' : '0 2px 4px rgba(0,0,0,0.05)',
+                        border: isDrawer ? '1px solid #e5e7eb' : 'none'
                     }}>
                         {/* Compact Tracking Info Cards */}
-                        <Grid container spacing={2} sx={{ mb: 3 }}>
-                            <Grid item xs={12} sm={6}>
-                                <Paper elevation={1} sx={{ p: 2, borderRadius: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                        <Grid container spacing={2} sx={{ mb: isDrawer ? 2 : 3 }}>
+                            <Grid item xs={12} sm={isDrawer ? 12 : 6}>
+                                <Paper elevation={1} sx={{ p: isDrawer ? 1.5 : 2, borderRadius: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
                                     <Typography variant="overline" sx={{ fontSize: '10px', fontWeight: 600, opacity: 0.8 }}>
                                         SolushipX ID
                                     </Typography>
@@ -990,8 +1003,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 </Paper>
                             </Grid>
 
-                            <Grid item xs={12} sm={6}>
-                                <Paper elevation={1} sx={{ p: 2, borderRadius: 2, bgcolor: 'secondary.light', color: 'secondary.contrastText' }}>
+                            <Grid item xs={12} sm={isDrawer ? 12 : 6}>
+                                <Paper elevation={1} sx={{ p: isDrawer ? 1.5 : 2, borderRadius: 2, bgcolor: 'secondary.light', color: 'secondary.contrastText' }}>
                                     <Typography variant="overline" sx={{ fontSize: '10px', fontWeight: 600, opacity: 0.8 }}>
                                         Carrier Tracking #
                                     </Typography>
@@ -1042,11 +1055,11 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                             </Grid>
                         </Grid>
 
-                        <Grid container spacing={3}>
+                        <Grid container spacing={isDrawer ? 2 : 3}>
                             {/* Left Column: Route Map & Shipment Details */}
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={isDrawer ? 12 : 6}>
                                 {/* Compact Route Map */}
-                                <Box sx={{ mb: 3 }}>
+                                <Box sx={{ mb: isDrawer ? 2 : 3 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '14px', color: 'text.primary' }}>
                                         Route Overview
                                     </Typography>
@@ -1054,7 +1067,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         <TrackingRouteMap
                                             shipmentData={shipmentData}
                                             carrier={carrier}
-                                            height={200}
+                                            height={isDrawer ? 140 : 200}
                                             loading={loading}
 
                                         />
@@ -1062,8 +1075,8 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                 </Box>
 
                                 {/* Shipment Details */}
-                                <Box>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Box sx={{ mb: isDrawer ? 2 : 3 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: isDrawer ? 1 : 2 }}>
                                         <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '14px', color: 'primary.main' }}>
                                             Shipment Details
                                         </Typography>
@@ -1079,7 +1092,11 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                         )}
                                     </Box>
 
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexDirection: isDrawer ? 'column' : 'column',
+                                        gap: isDrawer ? 1.5 : 2
+                                    }}>
                                         <Box>
                                             <Typography variant="overline" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 600, display: 'block', mb: 0.5 }}>
                                                 Carrier
@@ -1151,7 +1168,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                             </Grid>
 
                             {/* Right Column: Tracking History */}
-                            <Grid item xs={12} md={6}>
+                            <Grid item xs={12} md={isDrawer ? 12 : 6}>
                                 <Box>
                                     <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '14px', color: 'text.primary' }}>
                                         Tracking History
@@ -1159,6 +1176,7 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                                     <Box sx={{
                                         overflowY: 'auto',
                                         pr: 1,
+                                        maxHeight: isDrawer ? '400px' : 'none',
                                         '&::-webkit-scrollbar': { width: '4px' },
                                         '&::-webkit-scrollbar-thumb': { backgroundColor: 'grey.300', borderRadius: '2px' }
                                     }}>

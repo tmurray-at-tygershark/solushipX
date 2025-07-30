@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -15,8 +15,8 @@ import {
     Schedule as ScheduleIcon,
     Straighten as DistanceIcon
 } from '@mui/icons-material';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { loadGoogleMaps, isGoogleMapsLoaded } from '../../utils/googleMapsLoader';
+import { getMapsApiKey } from '../../utils/maps';
 
 const TrackingRouteMap = ({
     shipmentData,
@@ -29,8 +29,7 @@ const TrackingRouteMap = ({
     const [mapError, setMapError] = useState(null);
     const [isCalculating, setIsCalculating] = useState(false);
     const [routeInfo, setRouteInfo] = useState(null);
-    const [mapsApiKey, setMapsApiKey] = useState(null);
-    const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+    const [mapLoading, setMapLoading] = useState(false);
 
     // Format addresses for API
     const formatAddress = (address) => {
@@ -48,7 +47,8 @@ const TrackingRouteMap = ({
     // Function to calculate optimal zoom level and center for two points
     const calculateOptimalZoomAndCenter = async (originAddress, destinationAddress) => {
         try {
-            const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?key=${mapsApiKey}`;
+            const apiKey = await getMapsApiKey();
+            const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?key=${apiKey}`;
 
             // Geocode both addresses
             const [originResponse, destResponse] = await Promise.all([
@@ -78,14 +78,28 @@ const TrackingRouteMap = ({
 
                 // Calculate zoom level based on distance
                 let zoom;
-                if (maxDiff > 50) zoom = 3;       // Continental (very far apart)
-                else if (maxDiff > 20) zoom = 4;  // Multi-country/state
-                else if (maxDiff > 10) zoom = 5;  // Regional
-                else if (maxDiff > 5) zoom = 6;   // State-level
-                else if (maxDiff > 2) zoom = 7;   // Metropolitan area
-                else if (maxDiff > 1) zoom = 8;   // City-level
-                else if (maxDiff > 0.5) zoom = 9; // Local area
-                else zoom = 10;                   // Neighborhood
+                let routeType;
+                if (maxDiff > 50) { zoom = 3; routeType = 'Continental'; }
+                else if (maxDiff > 20) { zoom = 4; routeType = 'Multi-country/state'; }
+                else if (maxDiff > 10) { zoom = 5; routeType = 'Regional'; }
+                else if (maxDiff > 5) { zoom = 6; routeType = 'State-level'; }
+                else if (maxDiff > 2) { zoom = 7; routeType = 'Metropolitan area'; }
+                else if (maxDiff > 1) { zoom = 8; routeType = 'City-level'; }
+                else if (maxDiff > 0.5) { zoom = 9; routeType = 'Local area'; }
+                else if (maxDiff > 0.1) { zoom = 11; routeType = 'Large neighborhood'; }
+                else if (maxDiff > 0.05) { zoom = 13; routeType = 'Small neighborhood'; }
+                else if (maxDiff > 0.01) { zoom = 15; routeType = 'Street level (same city)'; }
+                else { zoom = 16; routeType = 'Very close addresses (same block)'; }
+
+                console.log(`🔍 [TrackingRouteMap] Route analysis:`, {
+                    maxDiff: maxDiff.toFixed(6),
+                    zoom,
+                    routeType,
+                    coordinates: {
+                        origin: `${originLat.toFixed(6)}, ${originLng.toFixed(6)}`,
+                        destination: `${destLat.toFixed(6)}, ${destLng.toFixed(6)}`
+                    }
+                });
 
                 return {
                     center: `${centerLat},${centerLng}`,
@@ -101,7 +115,7 @@ const TrackingRouteMap = ({
         }
     };
 
-    const calculateRouteAndGenerateMap = async () => {
+    const calculateRouteAndGenerateMap = useCallback(async () => {
         setIsCalculating(true);
         setMapError(null);
 
@@ -113,10 +127,13 @@ const TrackingRouteMap = ({
             return;
         }
 
-        // Check if API key is available
-        if (!mapsApiKey) {
-            console.error('❌ [TrackingRouteMap] Google Maps API key not available');
-            setMapError('Google Maps API key not available. Please wait...');
+        // Get API key
+        let apiKey;
+        try {
+            apiKey = await getMapsApiKey();
+        } catch (error) {
+            console.error('❌ [TrackingRouteMap] Failed to get Maps API key:', error);
+            setMapError('Failed to load maps configuration');
             setIsCalculating(false);
             return;
         }
@@ -220,7 +237,7 @@ const TrackingRouteMap = ({
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Goog-Api-Key': mapsApiKey,
+                    'X-Goog-Api-Key': apiKey,
                     'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs'
                 },
                 body: JSON.stringify(routeRequestBody)
@@ -288,21 +305,36 @@ const TrackingRouteMap = ({
             const centerLat = center.lat();
             const centerLng = center.lng();
 
-            // Calculate zoom based on distance (more conservative for long routes)
+            // Calculate zoom based on distance (enhanced for same-city routes)
             const latDiff = Math.abs(originResult.geometry.location.lat() - destinationResult.geometry.location.lat());
             const lngDiff = Math.abs(originResult.geometry.location.lng() - destinationResult.geometry.location.lng());
             const maxDiff = Math.max(latDiff, lngDiff);
 
             let zoom;
-            if (maxDiff > 50) zoom = 2;      // Trans-continental routes
-            else if (maxDiff > 25) zoom = 3; // Very long routes like Toronto-Orlando  
-            else if (maxDiff > 15) zoom = 4; // Long cross-country
-            else if (maxDiff > 10) zoom = 5; // Regional long distance
-            else if (maxDiff > 5) zoom = 6;  // State-to-state
-            else if (maxDiff > 2) zoom = 7;  // Regional
-            else if (maxDiff > 1) zoom = 8;  // City-to-city
-            else if (maxDiff > 0.5) zoom = 9; // Local
-            else zoom = 10;                   // Very local
+            let routeType;
+            if (maxDiff > 50) { zoom = 2; routeType = 'Trans-continental'; }
+            else if (maxDiff > 25) { zoom = 3; routeType = 'Very long distance'; }
+            else if (maxDiff > 15) { zoom = 4; routeType = 'Cross-country'; }
+            else if (maxDiff > 10) { zoom = 5; routeType = 'Regional long distance'; }
+            else if (maxDiff > 5) { zoom = 6; routeType = 'State-to-state'; }
+            else if (maxDiff > 2) { zoom = 7; routeType = 'Regional'; }
+            else if (maxDiff > 1) { zoom = 8; routeType = 'City-to-city'; }
+            else if (maxDiff > 0.5) { zoom = 9; routeType = 'Local area'; }
+            else if (maxDiff > 0.1) { zoom = 11; routeType = 'Large neighborhood'; }
+            else if (maxDiff > 0.05) { zoom = 13; routeType = 'Small neighborhood'; }
+            else if (maxDiff > 0.01) { zoom = 15; routeType = 'Street level (same city)'; }
+            else { zoom = 16; routeType = 'Very close addresses (same block)'; }
+
+            // Safety check: Don't zoom in too much for inter-city routes
+            // If addresses are in different cities/provinces, ensure minimum zoom level
+            const isDifferentCities = originAddress.includes(',') && destinationAddress.includes(',') &&
+                originAddress.split(',')[1]?.trim() !== destinationAddress.split(',')[1]?.trim();
+
+            if (isDifferentCities && zoom > 9) {
+                zoom = 8; // Force city-to-city level for different cities
+                routeType = 'Inter-city (safety override)';
+                console.log('🔄 [TrackingRouteMap] Applied inter-city safety override - different cities detected');
+            }
 
             console.log('🗺️ [TrackingRouteMap] Route bounds calculation:', {
                 originLat: originResult.geometry.location.lat(),
@@ -311,8 +343,10 @@ const TrackingRouteMap = ({
                 destinationLng: destinationResult.geometry.location.lng(),
                 latDiff,
                 lngDiff,
-                maxDiff,
-                calculatedZoom: zoom
+                maxDiff: maxDiff.toFixed(6),
+                calculatedZoom: zoom,
+                routeType,
+                addressPair: `${originAddress} → ${destinationAddress}`
             });
 
             // Step 4: Generate static map URL with advanced polyline (square format for better height)
@@ -323,7 +357,7 @@ const TrackingRouteMap = ({
                 `maptype=roadmap&` +
                 `zoom=${zoom}&` +
                 `center=${centerLat},${centerLng}&` +
-                `key=${mapsApiKey}&` +
+                `key=${apiKey}&` +
                 `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
                 `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
 
@@ -400,7 +434,7 @@ const TrackingRouteMap = ({
                 const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?` +
                     `origin=${encodeURIComponent(originAddress)}&` +
                     `destination=${encodeURIComponent(destinationAddress)}&` +
-                    `key=${mapsApiKey}`;
+                    `key=${apiKey}`;
 
                 const directionsResponse = await fetch(directionsUrl);
 
@@ -423,7 +457,7 @@ const TrackingRouteMap = ({
                                 `format=png&` +
                                 `maptype=roadmap&` +
                                 `zoom=${zoom}&` +
-                                `key=${mapsApiKey}&` +
+                                `key=${apiKey}&` +
                                 `markers=size:mid|color:green|label:A|${encodeURIComponent(originAddress)}&` +
                                 `markers=size:mid|color:red|label:B|${encodeURIComponent(destinationAddress)}`;
 
@@ -470,7 +504,7 @@ const TrackingRouteMap = ({
                     `format=png&` +
                     `maptype=roadmap&` +
                     `zoom=${fallbackZoom}&` +
-                    `key=${mapsApiKey}&` +
+                    `key=${apiKey}&` +
                     `markers=size:mid|color:green|label:A|${encodeURIComponent(fallbackOriginAddress)}&` +
                     `markers=size:mid|color:red|label:B|${encodeURIComponent(fallbackDestinationAddress)}`;
 
@@ -507,7 +541,7 @@ const TrackingRouteMap = ({
                     `maptype=roadmap&` +
                     `zoom=6&` +
                     `center=45.421532,-75.697189&` + // Ottawa, Canada as default center
-                    `key=${mapsApiKey}`;
+                    `key=${apiKey}`;
 
                 console.log('🆘 [TrackingRouteMap] Using last resort map');
                 console.log('🆘 [TrackingRouteMap] Last resort URL:', lastResortUrl);
@@ -515,135 +549,51 @@ const TrackingRouteMap = ({
                 setIsCalculating(false);
             }
         }
-    };
+    }, [shipmentData]); // Only depend on shipmentData since other dependencies are stable
 
     useEffect(() => {
-        const fetchMapsApiKey = async () => {
+        const initializeGoogleMaps = async () => {
             try {
-                console.log('🗺️ [TrackingRouteMap] Fetching Maps API key...');
+                setMapLoading(true);
+                setMapError(null);
 
-                // Mobile debugging information
-                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                console.log('🗺️ [TrackingRouteMap] Device Info:', {
-                    isMobile,
-                    userAgent: navigator.userAgent,
-                    onLine: navigator.onLine
-                });
+                console.log('🗺️ [TrackingRouteMap] Initializing Google Maps...');
 
-                const keysRef = collection(db, 'keys');
-                console.log('🗺️ [TrackingRouteMap] About to query keys collection...');
-                console.log('🗺️ [TrackingRouteMap] Keys collection reference:', keysRef);
+                // Use the centralized Google Maps loader utility
+                await loadGoogleMaps();
 
-                // Add timeout to detect hanging queries
-                const queryPromise = getDocs(keysRef);
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Firestore query timeout after 10 seconds')), 10000)
-                );
-
-                console.log('🗺️ [TrackingRouteMap] Starting Firestore query with 10s timeout...');
-                const keysSnapshot = await Promise.race([queryPromise, timeoutPromise]);
-                console.log('🗺️ [TrackingRouteMap] Keys query completed. Empty?:', keysSnapshot.empty, 'Size:', keysSnapshot.size);
-
-                if (!keysSnapshot.empty) {
-                    const firstDoc = keysSnapshot.docs[0];
-                    const keyData = firstDoc.data();
-                    const key = keyData.googleAPI;
-                    if (key) {
-                        console.log('✅ [TrackingRouteMap] Maps API key found and loaded successfully');
-
-                        setMapsApiKey(key);
-
-                        // Load Google Maps script if not already loaded
-                        if (!window.google || !window.google.maps) {
-                            console.log('🔄 [TrackingRouteMap] Loading Google Maps script...');
-                            const script = document.createElement('script');
-                            script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,places`;
-                            script.async = true;
-                            script.defer = true;
-
-                            script.onload = () => {
-                                console.log('✅ [TrackingRouteMap] Google Maps script loaded successfully');
-                                setIsGoogleMapsLoaded(true);
-                                // Don't trigger route calculation here - let the second useEffect handle it
-                                // when both mapsApiKey state and Google Maps are ready
-                            };
-
-                            script.onerror = (error) => {
-                                console.error('❌ [TrackingRouteMap] Failed to load Google Maps script:', error);
-                                setMapError('Failed to load Google Maps script');
-                            };
-
-                            // Check if script already exists
-                            const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
-                            if (!existingScript) {
-                                document.head.appendChild(script);
-                            } else {
-                                console.log('🔄 [TrackingRouteMap] Google Maps script already exists, waiting for load...');
-                                // Wait for existing script to load
-                                const checkMaps = setInterval(() => {
-                                    if (window.google && window.google.maps) {
-                                        console.log('✅ [TrackingRouteMap] Google Maps loaded from existing script');
-                                        setIsGoogleMapsLoaded(true);
-                                        clearInterval(checkMaps);
-                                        // Don't trigger route calculation here - let the second useEffect handle it
-                                        // when both mapsApiKey state and Google Maps are ready
-                                    }
-                                }, 500);
-
-                                // Clean up after 15 seconds if not loaded
-                                setTimeout(() => {
-                                    clearInterval(checkMaps);
-                                    if (!window.google || !window.google.maps) {
-                                        console.log('⚠️ [TrackingRouteMap] Google Maps failed to load within 15 seconds');
-                                        setMapError('Failed to load Google Maps within timeout');
-                                    }
-                                }, 15000);
-                            }
-                        } else {
-                            console.log('✅ [TrackingRouteMap] Google Maps already loaded');
-                        }
-                    } else {
-                        console.warn('❌ [TrackingRouteMap] Google Maps API key not found in keys collection');
-
-                        setMapError('Maps configuration not available');
-                    }
-                } else {
-                    console.warn('❌ [TrackingRouteMap] Keys collection is empty');
-                    setMapError('Maps configuration not available');
-                }
+                console.log('✅ [TrackingRouteMap] Google Maps loaded successfully');
             } catch (error) {
-                console.error('❌ [TrackingRouteMap] Error fetching Maps API key:', error);
-
-                console.error('❌ [TrackingRouteMap] Error details:', {
-                    message: error.message,
-                    code: error.code,
-                    stack: error.stack
-                });
-                setMapError('Failed to load maps configuration');
+                console.error('❌ [TrackingRouteMap] Failed to load Google Maps:', error);
+                setMapError('Failed to load Google Maps library. Please check your connection and try again.');
+            } finally {
+                setMapLoading(false);
             }
         };
 
-        fetchMapsApiKey();
+        initializeGoogleMaps();
     }, []);
 
     useEffect(() => {
-        if (mapsApiKey && shipmentData && shipmentData.shipFrom && shipmentData.shipTo && isGoogleMapsLoaded) {
+        const mapsLoaded = isGoogleMapsLoaded();
+        if (mapsLoaded && shipmentData && shipmentData.shipFrom && shipmentData.shipTo && !mapLoading && !isCalculating) {
             console.log('🗺️ [TrackingRouteMap] All conditions met, calculating route...', {
-                hasMapsApiKey: !!mapsApiKey,
                 hasShipmentData: !!shipmentData,
                 hasAddresses: !!(shipmentData?.shipFrom && shipmentData?.shipTo),
-                isGoogleMapsLoaded: !!isGoogleMapsLoaded
+                isGoogleMapsLoaded: mapsLoaded,
+                mapLoading,
+                isCalculating
             });
             calculateRouteAndGenerateMap();
         } else {
             console.log('🗺️ [TrackingRouteMap] Waiting for dependencies...', {
-                hasMapsApiKey: !!mapsApiKey,
                 hasShipmentData: !!shipmentData,
                 hasAddresses: !!(shipmentData?.shipFrom && shipmentData?.shipTo),
-                isGoogleMapsLoaded: !!isGoogleMapsLoaded,
+                isGoogleMapsLoaded: mapsLoaded,
+                mapLoading,
+                isCalculating,
                 shipFromData: shipmentData?.shipFrom ? 'Present' : 'Missing',
-                shipToData: shipmentData?.shipTo ? 'Present' : 'Missing',
-                mapsApiKeyLength: mapsApiKey ? `${mapsApiKey.length} chars` : 'None'
+                shipToData: shipmentData?.shipTo ? 'Present' : 'Missing'
             });
 
             // Call onDebugInfo to send debug info to parent component
@@ -651,15 +601,16 @@ const TrackingRouteMap = ({
                 onDebugInfo({
                     status: 'waiting_for_dependencies',
                     missing: {
-                        mapsApiKey: !mapsApiKey,
                         shipmentData: !shipmentData,
                         addresses: !shipmentData?.shipFrom || !shipmentData?.shipTo,
-                        googleMapsLoaded: !isGoogleMapsLoaded
+                        googleMapsLoaded: !mapsLoaded,
+                        mapLoading: mapLoading,
+                        isCalculating: isCalculating
                     }
                 });
             }
         }
-    }, [mapsApiKey, shipmentData, isGoogleMapsLoaded]);
+    }, [shipmentData, mapLoading]);
 
     if (loading || isCalculating) {
         return (
@@ -703,12 +654,13 @@ const TrackingRouteMap = ({
     }
 
     // Show helpful message if conditions aren't met
-    if (!mapsApiKey || !shipmentData?.shipFrom || !shipmentData?.shipTo || !isGoogleMapsLoaded) {
+    const mapsLoaded = isGoogleMapsLoaded();
+    if (mapLoading || !shipmentData?.shipFrom || !shipmentData?.shipTo || !mapsLoaded) {
         const missingItems = [];
-        if (!mapsApiKey) missingItems.push('Maps API key');
+        if (mapLoading) missingItems.push('Loading...');
         if (!shipmentData?.shipFrom) missingItems.push('Origin address');
         if (!shipmentData?.shipTo) missingItems.push('Destination address');
-        if (!isGoogleMapsLoaded) missingItems.push('Google Maps library');
+        if (!mapsLoaded && !mapLoading) missingItems.push('Google Maps library');
 
         return (
             <Box sx={{
