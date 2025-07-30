@@ -43,6 +43,7 @@ import {
 } from '@mui/icons-material';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../../firebase/firebase';
 import { formatDateString } from '../../../utils/dateUtils';
 import { useSnackbar } from 'notistack';
@@ -64,6 +65,8 @@ const CustomerDetail = () => {
     const [error, setError] = useState(null);
     const [showAddAddressDialog, setShowAddAddressDialog] = useState(false);
     const [showViewAddressesDialog, setShowViewAddressesDialog] = useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -227,6 +230,42 @@ const CustomerDetail = () => {
         setShowViewAddressesDialog(false);
     };
 
+    // Delete customer handlers
+    const handleDeleteClick = () => {
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleDeleteCancel = () => {
+        setDeleteConfirmOpen(false);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!customer) return;
+
+        setDeleteLoading(true);
+        try {
+            const functions = getFunctions();
+            const adminDeleteCustomer = httpsCallable(functions, 'adminDeleteCustomer');
+
+            const result = await adminDeleteCustomer({
+                customerId: customer.id
+            });
+
+            enqueueSnackbar(result.data.message, { variant: 'success' });
+
+            // Navigate back to customer list
+            navigate('/admin/customers');
+
+        } catch (error) {
+            console.error('Error deleting customer:', error);
+            const errorMessage = error.message || 'Failed to delete customer';
+            enqueueSnackbar(errorMessage, { variant: 'error' });
+        } finally {
+            setDeleteLoading(false);
+            setDeleteConfirmOpen(false);
+        }
+    };
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
@@ -279,6 +318,16 @@ const CustomerDetail = () => {
                             sx={{ fontSize: '12px' }}
                         >
                             Edit
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={handleDeleteClick}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Delete
                         </Button>
                     </Box>
                 </Box>
@@ -890,6 +939,63 @@ const CustomerDetail = () => {
                         sx={{ fontSize: '12px' }}
                     >
                         Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={handleDeleteCancel}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    Delete Customer
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to delete this customer? This action cannot be undone.
+                    </Typography>
+                    {customer && (
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: '#f8fafc',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 1
+                        }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                Customer Details:
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                <strong>Name:</strong> {customer.name}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                <strong>Customer ID:</strong> {customer.customerID}
+                            </Typography>
+                        </Box>
+                    )}
+                    <Alert severity="warning" sx={{ mt: 2, fontSize: '12px' }}>
+                        This will also delete all associated addresses for this customer.
+                    </Alert>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, gap: 1 }}>
+                    <Button
+                        onClick={handleDeleteCancel}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteConfirm}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        disabled={deleteLoading}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {deleteLoading ? 'Deleting...' : 'Delete Customer'}
                     </Button>
                 </DialogActions>
             </Dialog>

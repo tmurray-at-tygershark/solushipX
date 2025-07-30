@@ -30,7 +30,11 @@ import {
     Tooltip,
     Avatar,
     Snackbar,
-    Link
+    Link,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -47,6 +51,7 @@ import {
     Business as BusinessIcon
 } from '@mui/icons-material';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../../firebase/firebase';
 import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -245,6 +250,9 @@ const CustomerList = ({ isModal = false, onClose = null, showCloseButton = false
     // Dialog states
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [actionMenuAnchorEl, setActionMenuAnchorEl] = useState(null);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [customerToDelete, setCustomerToDelete] = useState(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -332,6 +340,48 @@ const CustomerList = ({ isModal = false, onClose = null, showCloseButton = false
     const handleActionMenuClose = () => {
         setSelectedCustomer(null);
         setActionMenuAnchorEl(null);
+    };
+
+    // Delete customer handlers
+    const handleDeleteClick = (customer) => {
+        setCustomerToDelete(customer);
+        setDeleteConfirmOpen(true);
+        handleActionMenuClose();
+    };
+
+    const handleDeleteCancel = () => {
+        setDeleteConfirmOpen(false);
+        setCustomerToDelete(null);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!customerToDelete) return;
+
+        setDeleteLoading(true);
+        try {
+            const functions = getFunctions();
+            const adminDeleteCustomer = httpsCallable(functions, 'adminDeleteCustomer');
+
+            const result = await adminDeleteCustomer({
+                customerId: customerToDelete.id
+            });
+
+            showSnackbar(result.data.message, 'success');
+
+            // Refresh customer list
+            await loadCustomers();
+
+            // Close dialog
+            setDeleteConfirmOpen(false);
+            setCustomerToDelete(null);
+
+        } catch (error) {
+            console.error('Error deleting customer:', error);
+            const errorMessage = error.message || 'Failed to delete customer';
+            showSnackbar(errorMessage, 'error');
+        } finally {
+            setDeleteLoading(false);
+        }
     };
 
     // Copy to clipboard handler
@@ -1029,7 +1079,75 @@ const CustomerList = ({ isModal = false, onClose = null, showCloseButton = false
                         <Typography sx={{ fontSize: '12px' }}>Edit Customer</Typography>
                     </ListItemText>
                 </MenuItem>
+                <MenuItem
+                    onClick={() => handleDeleteClick(selectedCustomer)}
+                    sx={{ color: 'error.main' }}
+                >
+                    <ListItemIcon>
+                        <DeleteIcon fontSize="small" sx={{ color: 'error.main' }} />
+                    </ListItemIcon>
+                    <ListItemText>
+                        <Typography sx={{ fontSize: '12px' }}>Delete Customer</Typography>
+                    </ListItemText>
+                </MenuItem>
             </Menu>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={handleDeleteCancel}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                    Delete Customer
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to delete this customer? This action cannot be undone.
+                    </Typography>
+                    {customerToDelete && (
+                        <Box sx={{
+                            p: 2,
+                            bgcolor: '#f8fafc',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 1
+                        }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                                Customer Details:
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                <strong>Name:</strong> {customerToDelete.name}
+                            </Typography>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                <strong>Customer ID:</strong> {customerToDelete.customerID}
+                            </Typography>
+                        </Box>
+                    )}
+                    <Alert severity="warning" sx={{ mt: 2, fontSize: '12px' }}>
+                        This will also delete all associated addresses for this customer.
+                    </Alert>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, gap: 1 }}>
+                    <Button
+                        onClick={handleDeleteCancel}
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteConfirm}
+                        color="error"
+                        variant="contained"
+                        size="small"
+                        disabled={deleteLoading}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {deleteLoading ? 'Deleting...' : 'Delete Customer'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Snackbar */}
             <Snackbar
