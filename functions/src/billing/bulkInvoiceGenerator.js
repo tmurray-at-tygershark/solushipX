@@ -188,20 +188,54 @@ exports.generateBulkInvoices = onRequest(
         }
 
         let shipments = [];
+        const filteringDetails = {
+            requestedShipmentIds: filters.shipmentIds || [],
+            foundShipmentIds: [],
+            filteredOut: [],
+            customerFiltered: [],
+            chargeFiltered: []
+        };
 
         if (filters.shipmentIds && filters.shipmentIds.length > 0) {
             // SPECIFIC SHIPMENT IDs MODE (with date/status filtering)
             console.log(`Filtering by ${filters.shipmentIds.length} specific shipment IDs with date/status filters`);
             
-            // Firestore 'in' queries are limited to 10 items, so we need to batch
-            const batches = [];
+            // First, check which shipments exist at all (without additional filters)
+            const allBatches = [];
             for (let i = 0; i < filters.shipmentIds.length; i += 10) {
                 const batch = filters.shipmentIds.slice(i, i + 10);
-                batches.push(batch);
+                allBatches.push(batch);
             }
 
-            // Execute all batches in parallel with additional filters
-            const batchPromises = batches.map(batch => {
+            // Check existence without filters to identify missing shipments
+            const existencePromises = allBatches.map(batch => 
+                db.collection('shipments')
+                    .where('companyID', '==', companyId)
+                    .where('shipmentID', 'in', batch)
+                    .get()
+            );
+
+            const existenceResults = await Promise.all(existencePromises);
+            const foundShipmentIds = [];
+            existenceResults.forEach(snapshot => {
+                snapshot.docs.forEach(doc => {
+                    foundShipmentIds.push(doc.data().shipmentID);
+                });
+            });
+
+            filteringDetails.foundShipmentIds = foundShipmentIds;
+            
+            // Identify missing shipments
+            const missingShipmentIds = filters.shipmentIds.filter(id => !foundShipmentIds.includes(id));
+            missingShipmentIds.forEach(id => {
+                filteringDetails.filteredOut.push({
+                    shipmentId: id,
+                    reason: 'Shipment not found in database or wrong company'
+                });
+            });
+
+            // Now apply filters to found shipments
+            const batchPromises = allBatches.map(batch => {
                 let batchQuery = db.collection('shipments')
                     .where('companyID', '==', companyId)
                     .where('shipmentID', 'in', batch)
@@ -236,6 +270,21 @@ exports.generateBulkInvoices = onRequest(
                 });
             });
 
+            // Identify shipments filtered out by date/status
+            const afterFilterShipmentIds = shipments.map(s => s.shipmentID);
+            const dateStatusFiltered = foundShipmentIds.filter(id => !afterFilterShipmentIds.includes(id));
+            dateStatusFiltered.forEach(id => {
+                let reason = 'Filtered by: ';
+                const reasons = [];
+                if (filters.dateFrom || filters.dateTo) reasons.push('date range');
+                if (filters.status) reasons.push(`status (not ${filters.status})`);
+                if (reasons.length === 0) reasons.push('draft status');
+                filteringDetails.filteredOut.push({
+                    shipmentId: id,
+                    reason: reason + reasons.join(', ')
+                });
+            });
+
             console.log(`Found ${shipments.length} shipments matching specific IDs with additional filters`);
 
         } else {
@@ -251,6 +300,7 @@ exports.generateBulkInvoices = onRequest(
             console.log(`Filtering by ${filters.customers.length} specific customers`);
             
             const originalCount = shipments.length;
+            const beforeCustomerFilter = [...shipments];
             shipments = shipments.filter(shipment => {
                 // Check multiple customer ID fields
                 const customerMatches = [
@@ -259,6 +309,13 @@ exports.generateBulkInvoices = onRequest(
                     shipment.shipFrom?.customerID
                 ].some(customerId => filters.customers.includes(customerId));
 
+                if (!customerMatches) {
+                    filteringDetails.customerFiltered.push({
+                        shipmentId: shipment.shipmentID,
+                        reason: `Customer mismatch - shipment belongs to: ${shipment.shipTo?.customerID || shipment.customerID || 'unknown'}, required: ${filters.customers.join(', ')}`
+                    });
+                }
+
                 return customerMatches;
             });
 
@@ -266,9 +323,19 @@ exports.generateBulkInvoices = onRequest(
         }
 
         // 3. VALIDATE CHARGES (existing logic)
+        const beforeChargeValidation = [...shipments];
         const validShipments = shipments.filter(shipment => {
             const charges = getSimpleShipmentCharges(shipment);
-            return charges > 0;
+            const hasValidCharges = charges > 0;
+            
+            if (!hasValidCharges) {
+                filteringDetails.chargeFiltered.push({
+                    shipmentId: shipment.shipmentID,
+                    reason: `No valid charges found (charges: $${charges})`
+                });
+            }
+            
+            return hasValidCharges;
         });
 
         console.log(`${validShipments.length} shipments have valid charges (${shipments.length - validShipments.length} filtered out)`);
@@ -400,6 +467,18 @@ exports.generateBulkInvoices = onRequest(
             appliedFilters.push(`Shipment ID Filter: ${filters.shipmentIds.length} specific shipment IDs`);
         }
 
+        // Create detailed filtering breakdown
+        const allFilteredOut = [
+            ...filteringDetails.filteredOut,
+            ...filteringDetails.customerFiltered,
+            ...filteringDetails.chargeFiltered
+        ];
+
+        const filteringBreakdown = allFilteredOut.length > 0 ? 
+            `\nFiltered Out Shipments (${allFilteredOut.length} total):
+${allFilteredOut.map(item => `- ${item.shipmentId}: ${item.reason}`).join('\n')}` : 
+            '\nFiltered Out Shipments: None';
+
         const summaryContent = `Auto Invoice Generation Summary
 Generated: ${new Date().toISOString()}
 Company: ${companyName || companyId} (${companyId})
@@ -419,11 +498,14 @@ ${Object.entries(customerGroups).map(([customer, shipments]) =>
 ).join('\n')}
 
 Filter Details:
-- Original query returned: ${shipments.length} shipments
+- Requested shipment IDs: ${filteringDetails.requestedShipmentIds.length}
+- Found in database: ${filteringDetails.foundShipmentIds.length}
+- After date/status filters: ${shipments.length} shipments
+- After customer filter: ${shipments.length} shipments
 - After charge validation: ${validShipments.length} shipments
 - Date range: ${filters.dateFrom || 'any'} to ${filters.dateTo || 'any'}
 - Status filter: ${filters.status || 'all'}
-- ZIP filename: ${zipFilename}`;
+- ZIP filename: ${zipFilename}${filteringBreakdown}`;
 
         archive.append(Buffer.from(summaryContent), { name: 'GENERATION-SUMMARY.txt' });
 
