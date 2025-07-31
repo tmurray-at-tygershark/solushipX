@@ -15,7 +15,8 @@ import {
     Autocomplete,
     CircularProgress,
     Alert,
-    Divider
+    Divider,
+    Chip
 } from '@mui/material';
 import {
     Save as SaveIcon,
@@ -27,12 +28,21 @@ import { db, auth, functions } from '../../../firebase';
 import { httpsCallable } from 'firebase/functions';
 import { useSnackbar } from 'notistack';
 import ModalHeader from '../../common/ModalHeader';
+import useRoles from '../../../hooks/useRoles';
 
 const UserForm = ({ isModal = false, onClose = null }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { enqueueSnackbar } = useSnackbar();
     const isEditMode = Boolean(id);
+
+    // Role management
+    const {
+        loading: rolesLoading,
+        getRoleDisplayName,
+        getRoleColor,
+        getActiveRoles
+    } = useRoles();
 
     // State management
     const [pageLoading, setPageLoading] = useState(isEditMode);
@@ -586,13 +596,46 @@ const UserForm = ({ isModal = false, onClose = null }) => {
                                             value={formData.role}
                                             onChange={handleInputChange}
                                             label="Role"
+                                            disabled={rolesLoading}
                                             sx={{ fontSize: '12px' }}
                                         >
-                                            <MenuItem value="company_staff" sx={{ fontSize: '12px' }}>Company Staff</MenuItem>
-                                            <MenuItem value="accounting" sx={{ fontSize: '12px' }}>Accounting</MenuItem>
-                                            <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Administrator</MenuItem>
-                                            <MenuItem value="admin" sx={{ fontSize: '12px' }}>Administrator</MenuItem>
-                                            <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Administrator</MenuItem>
+                                            {getActiveRoles().map((role) => (
+                                                <MenuItem
+                                                    key={role.roleId}
+                                                    value={role.roleId}
+                                                    sx={{
+                                                        fontSize: '12px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 1
+                                                    }}
+                                                >
+                                                    <Box
+                                                        sx={{
+                                                            width: 12,
+                                                            height: 12,
+                                                            borderRadius: '50%',
+                                                            backgroundColor: getRoleColor(role.roleId),
+                                                            display: 'inline-block',
+                                                            marginRight: 1
+                                                        }}
+                                                    />
+                                                    {role.displayName}
+                                                    {!role.isSystemRole && (
+                                                        <Chip
+                                                            label="Custom"
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="primary"
+                                                            sx={{
+                                                                ml: 'auto',
+                                                                fontSize: '9px',
+                                                                height: '16px'
+                                                            }}
+                                                        />
+                                                    )}
+                                                </MenuItem>
+                                            ))}
                                         </Select>
                                         {errors.role && (
                                             <FormHelperText sx={{ fontSize: '11px' }}>

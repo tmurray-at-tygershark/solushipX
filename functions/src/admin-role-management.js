@@ -1,478 +1,417 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-const { validateAuth, validateRole } = require('./utils/auth');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 
-// Initialize Firestore
-const db = admin.firestore();
+const db = getFirestore();
 
 /**
- * Create a new custom role
+ * Create a new role with specified permissions
  */
-exports.adminCreateRole = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and super admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin']);
+exports.createRole = onCall({
+  cors: true,
+  timeoutSeconds: 60,
+}, async (request) => {
+  try {
+    const { auth, data } = request;
+    
+    // Authentication check
+    if (!auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-        const { name, description, color, permissions } = data;
+    // Get user role for authorization
+    const userDoc = await db.collection('users').doc(auth.uid).get();
+    const userRole = userDoc.data()?.role;
 
-        // Validate required fields
-        if (!name || !description) {
-            throw new functions.https.HttpsError('invalid-argument', 'Name and description are required');
-        }
+    // Only super admins can create roles
+    if (userRole !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Only super administrators can create roles');
+    }
 
-        // Generate role ID from name
-        const roleId = name.toLowerCase().replace(/\s+/g, '_');
+    // Validate input data
+    const { roleId, displayName, description, permissions, color, isActive = true } = data;
+    
+    if (!roleId || !displayName || !permissions) {
+      throw new HttpsError('invalid-argument', 'Role ID, display name, and permissions are required');
+    }
+
+    // Validate roleId format (lowercase, no spaces, underscores allowed)
+    if (!/^[a-z_]+$/.test(roleId)) {
+      throw new HttpsError('invalid-argument', 'Role ID must be lowercase letters and underscores only');
+    }
 
         // Check if role already exists
-        const existingRoles = await db.collection('roles')
-            .where('id', '==', roleId)
-            .get();
+    const existingRole = await db.collection('roles').doc(roleId).get();
+    if (existingRole.exists) {
+      throw new HttpsError('already-exists', 'A role with this ID already exists');
+    }
 
-        if (!existingRoles.empty) {
-            throw new functions.https.HttpsError('already-exists', 'A role with this name already exists');
-        }
+    // Validate permissions structure
+    if (typeof permissions !== 'object' || Array.isArray(permissions)) {
+      throw new HttpsError('invalid-argument', 'Permissions must be an object');
+    }
 
-        // Create the role
-        const roleRef = db.collection('roles').doc();
+    // Create role document
         const roleData = {
-            id: roleId,
-            name,
-            description,
+      roleId,
+      displayName,
+      description: description || '',
+      permissions,
             color: color || '#757575',
-            isSystem: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            createdBy: context.auth.uid
-        };
+      isActive,
+      isSystemRole: false, // Custom roles are not system roles
+      createdAt: new Date(),
+      createdBy: auth.uid,
+      updatedAt: new Date(),
+      updatedBy: auth.uid
+    };
 
-        await roleRef.set(roleData);
+    await db.collection('roles').doc(roleId).set(roleData);
 
-        // If permissions are provided, create role-permission mappings
-        if (permissions && Object.keys(permissions).length > 0) {
-            const batch = db.batch();
-            
-            Object.entries(permissions).forEach(([permissionId, granted]) => {
-                if (granted) {
-                    const mappingRef = db.collection('rolePermissions').doc(`${roleId}_${permissionId}`);
-                    batch.set(mappingRef, {
-                        roleId,
-                        permissionId,
-                        granted: true,
-                        createdAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-            });
-
-            await batch.commit();
-        }
+    console.log(`Role ${roleId} created by ${auth.email}`);
 
         return {
             success: true,
-            roleId: roleRef.id,
-            message: 'Role created successfully'
+      message: `Role "${displayName}" created successfully`,
+      roleId
         };
 
     } catch (error) {
         console.error('Error creating role:', error);
-        if (error instanceof functions.https.HttpsError) {
+    if (error instanceof HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to create role');
+    throw new HttpsError('internal', 'Failed to create role');
     }
 });
 
 /**
- * Update an existing role
+ * Update an existing role's permissions or metadata
  */
-exports.adminUpdateRole = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and super admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin']);
+exports.updateRole = onCall({
+  cors: true,
+  timeoutSeconds: 60,
+}, async (request) => {
+  try {
+    const { auth, data } = request;
+    
+    // Authentication check
+    if (!auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-        const { roleId, name, description, color } = data;
+    // Get user role for authorization
+    const userDoc = await db.collection('users').doc(auth.uid).get();
+    const userRole = userDoc.data()?.role;
 
-        if (!roleId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Role ID is required');
-        }
+    // Only super admins can update roles
+    if (userRole !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Only super administrators can update roles');
+    }
 
-        // Get the role document
-        const roleQuery = await db.collection('roles')
-            .where('id', '==', roleId)
-            .limit(1)
-            .get();
+    const { roleId, updates } = data;
+    
+    if (!roleId || !updates) {
+      throw new HttpsError('invalid-argument', 'Role ID and updates are required');
+    }
 
-        if (roleQuery.empty) {
-            throw new functions.https.HttpsError('not-found', 'Role not found');
-        }
+    // Get existing role
+    const roleDoc = await db.collection('roles').doc(roleId).get();
+    if (!roleDoc.exists) {
+      throw new HttpsError('not-found', 'Role not found');
+    }
 
-        const roleDoc = roleQuery.docs[0];
-        const roleData = roleDoc.data();
+    const existingRole = roleDoc.data();
 
-        // Check if it's a system role
-        if (roleData.isSystem && roleId === 'superadmin') {
-            throw new functions.https.HttpsError('permission-denied', 'Super Admin role cannot be modified');
-        }
+    // Prevent updating core system roles unless explicitly allowed
+    const protectedSystemRoles = ['superadmin', 'admin'];
+    if (protectedSystemRoles.includes(roleId) && existingRole.isSystemRole) {
+      throw new HttpsError('permission-denied', 'Cannot modify protected system roles');
+    }
 
-        // Update the role
-        const updateData = {
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedBy: context.auth.uid
-        };
+    // Validate updates
+    const allowedUpdates = ['displayName', 'description', 'permissions', 'color', 'isActive'];
+    const updateData = {};
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedUpdates.includes(key)) {
+        updateData[key] = value;
+      }
+    }
 
-        if (name !== undefined) updateData.name = name;
-        if (description !== undefined) updateData.description = description;
-        if (color !== undefined) updateData.color = color;
+    if (Object.keys(updateData).length === 0) {
+      throw new HttpsError('invalid-argument', 'No valid updates provided');
+    }
 
-        await roleDoc.ref.update(updateData);
+    // Validate permissions if being updated
+    if (updateData.permissions && (typeof updateData.permissions !== 'object' || Array.isArray(updateData.permissions))) {
+      throw new HttpsError('invalid-argument', 'Permissions must be an object');
+    }
+
+    // Add metadata
+    updateData.updatedAt = new Date();
+    updateData.updatedBy = auth.uid;
+
+    await db.collection('roles').doc(roleId).update(updateData);
+
+    console.log(`Role ${roleId} updated by ${auth.email}`);
 
         return {
             success: true,
-            message: 'Role updated successfully'
+      message: `Role "${existingRole.displayName}" updated successfully`,
+      roleId
         };
 
     } catch (error) {
         console.error('Error updating role:', error);
-        if (error instanceof functions.https.HttpsError) {
+    if (error instanceof HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to update role');
+    throw new HttpsError('internal', 'Failed to update role');
     }
 });
 
 /**
- * Delete a custom role
+ * Delete a role (with safety checks)
  */
-exports.adminDeleteRole = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and super admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin']);
+exports.deleteRole = onCall({
+  cors: true,
+  timeoutSeconds: 60,
+}, async (request) => {
+  try {
+    const { auth, data } = request;
+    
+    // Authentication check
+    if (!auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-        const { roleId } = data;
+    // Get user role for authorization
+    const userDoc = await db.collection('users').doc(auth.uid).get();
+    const userRole = userDoc.data()?.role;
+
+    // Only super admins can delete roles
+    if (userRole !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Only super administrators can delete roles');
+    }
+
+    const { roleId, force = false } = data;
 
         if (!roleId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Role ID is required');
-        }
+      throw new HttpsError('invalid-argument', 'Role ID is required');
+    }
 
-        // Get the role document
-        const roleQuery = await db.collection('roles')
-            .where('id', '==', roleId)
-            .limit(1)
-            .get();
+    // Get existing role
+    const roleDoc = await db.collection('roles').doc(roleId).get();
+    if (!roleDoc.exists) {
+      throw new HttpsError('not-found', 'Role not found');
+    }
 
-        if (roleQuery.empty) {
-            throw new functions.https.HttpsError('not-found', 'Role not found');
-        }
+    const existingRole = roleDoc.data();
 
-        const roleDoc = roleQuery.docs[0];
-        const roleData = roleDoc.data();
+    // Prevent deleting core system roles
+    const protectedSystemRoles = ['superadmin', 'admin', 'user'];
+    if (protectedSystemRoles.includes(roleId) || existingRole.isSystemRole) {
+      throw new HttpsError('permission-denied', 'Cannot delete system roles');
+    }
 
-        // Check if it's a system role
-        if (roleData.isSystem) {
-            throw new functions.https.HttpsError('permission-denied', 'System roles cannot be deleted');
-        }
-
-        // Check if any users have this role
+    // Check if any users have this role (unless force is true)
+    if (!force) {
         const usersWithRole = await db.collection('users')
             .where('role', '==', roleId)
             .limit(1)
             .get();
 
         if (!usersWithRole.empty) {
-            throw new functions.https.HttpsError(
-                'failed-precondition', 
-                'Cannot delete role. There are users assigned to this role.'
-            );
-        }
+        throw new HttpsError('failed-precondition', 
+          'Cannot delete role: users are still assigned to this role. Use force=true to proceed anyway.');
+      }
+    }
 
-        // Delete role-permission mappings
-        const permissionMappings = await db.collection('rolePermissions')
-            .where('roleId', '==', roleId)
+    // Delete the role
+    await db.collection('roles').doc(roleId).delete();
+
+    // If force is true, update users with this role to 'user' role
+    if (force) {
+      const usersWithRole = await db.collection('users')
+        .where('role', '==', roleId)
             .get();
 
         const batch = db.batch();
-        
-        // Delete all permission mappings
-        permissionMappings.forEach(doc => {
-            batch.delete(doc.ref);
+      usersWithRole.docs.forEach(doc => {
+        batch.update(doc.ref, { 
+          role: 'user',
+          updatedAt: new Date(),
+          roleChangedAt: new Date(),
+          roleChangedBy: auth.uid,
+          roleChangeReason: `Role "${roleId}" was deleted`
         });
+      });
 
-        // Delete the role
-        batch.delete(roleDoc.ref);
-
+      if (!usersWithRole.empty) {
         await batch.commit();
+        console.log(`Updated ${usersWithRole.size} users from deleted role ${roleId} to "user" role`);
+      }
+    }
+
+    console.log(`Role ${roleId} deleted by ${auth.email}`);
 
         return {
             success: true,
-            message: 'Role deleted successfully'
+      message: `Role "${existingRole.displayName}" deleted successfully`,
+      roleId,
+      usersUpdated: force ? (await db.collection('users').where('role', '==', 'user').get()).size : 0
         };
 
     } catch (error) {
         console.error('Error deleting role:', error);
-        if (error instanceof functions.https.HttpsError) {
+    if (error instanceof HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to delete role');
+    throw new HttpsError('internal', 'Failed to delete role');
     }
 });
 
 /**
- * Update role permissions
+ * Get all roles from database
  */
-exports.adminUpdateRolePermissions = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and super admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin']);
+exports.getRoles = onCall({
+  cors: true,
+  timeoutSeconds: 60,
+}, async (request) => {
+  try {
+    const { auth } = request;
+    
+    // Authentication check
+    if (!auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-        const { roleId, permissions } = data;
+    // Get user role for authorization
+    const userDoc = await db.collection('users').doc(auth.uid).get();
+    const userRole = userDoc.data()?.role;
 
-        if (!roleId || !permissions) {
-            throw new functions.https.HttpsError('invalid-argument', 'Role ID and permissions are required');
-        }
+    // Only admins and super admins can view roles
+    if (!['admin', 'superadmin'].includes(userRole)) {
+      throw new HttpsError('permission-denied', 'Insufficient permissions to view roles');
+    }
 
-        // Check if role exists
-        const roleQuery = await db.collection('roles')
-            .where('id', '==', roleId)
-            .limit(1)
-            .get();
+    // Get all roles
+    const rolesSnapshot = await db.collection('roles')
+      .orderBy('displayName')
+      .get();
 
-        if (roleQuery.empty) {
-            throw new functions.https.HttpsError('not-found', 'Role not found');
-        }
+    const roles = {};
+    rolesSnapshot.docs.forEach(doc => {
+      const roleData = doc.data();
+      roles[doc.id] = {
+        ...roleData,
+        id: doc.id,
+        // Convert Firestore timestamps to ISO strings
+        createdAt: roleData.createdAt?.toDate?.()?.toISOString() || roleData.createdAt,
+        updatedAt: roleData.updatedAt?.toDate?.()?.toISOString() || roleData.updatedAt
+      };
+    });
 
-        const roleData = roleQuery.docs[0].data();
-
-        // Check if it's the super admin role
-        if (roleId === 'superadmin') {
-            throw new functions.https.HttpsError('permission-denied', 'Super Admin permissions cannot be modified');
-        }
-
-        // For system roles (admin, user), we'll store overrides in the database
-        // For custom roles, we'll store all permissions
-
-        const batch = db.batch();
-
-        // Process each permission
-        for (const [permissionId, granted] of Object.entries(permissions)) {
-            const mappingId = `${roleId}_${permissionId}`;
-            const mappingRef = db.collection('rolePermissions').doc(mappingId);
-
-            if (granted) {
-                // Grant permission
-                batch.set(mappingRef, {
-                    roleId,
-                    permissionId,
-                    granted: true,
-                    isOverride: roleData.isSystem, // Mark as override for system roles
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    updatedBy: context.auth.uid
-                });
-            } else {
-                // Revoke permission
-                if (roleData.isSystem) {
-                    // For system roles, store as override with granted: false
-                    batch.set(mappingRef, {
-                        roleId,
-                        permissionId,
-                        granted: false,
-                        isOverride: true,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                        updatedBy: context.auth.uid
-                    });
-                } else {
-                    // For custom roles, delete the mapping
-                    batch.delete(mappingRef);
-                }
-            }
-        }
-
-        await batch.commit();
+    console.log(`Roles retrieved by ${auth.email}`);
 
         return {
             success: true,
-            message: 'Permissions updated successfully'
+      roles
         };
 
     } catch (error) {
-        console.error('Error updating role permissions:', error);
-        if (error instanceof functions.https.HttpsError) {
+    console.error('Error getting roles:', error);
+    if (error instanceof HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to update permissions');
+    throw new HttpsError('internal', 'Failed to get roles');
     }
 });
 
 /**
- * Create a new permission
+ * Assign a role to a user
  */
-exports.adminCreatePermission = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and super admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin']);
-
-        const { key, name, category, description } = data;
-
-        if (!key || !name || !category) {
-            throw new functions.https.HttpsError('invalid-argument', 'Key, name, and category are required');
-        }
-
-        // Generate permission ID from key
-        const permissionId = key.toLowerCase();
-
-        // Check if permission already exists
-        const existingPermission = await db.collection('permissions')
-            .where('id', '==', permissionId)
-            .get();
-
-        if (!existingPermission.empty) {
-            throw new functions.https.HttpsError('already-exists', 'A permission with this key already exists');
-        }
-
-        // Create the permission
-        const permissionRef = db.collection('permissions').doc();
-        await permissionRef.set({
-            id: permissionId,
-            key: key.toUpperCase(),
-            name,
-            category,
-            description: description || '',
-            isSystem: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            createdBy: context.auth.uid
-        });
-
-        return {
-            success: true,
-            permissionId: permissionRef.id,
-            message: 'Permission created successfully'
-        };
-
-    } catch (error) {
-        console.error('Error creating permission:', error);
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
-        throw new functions.https.HttpsError('internal', 'Failed to create permission');
+exports.assignUserRole = onCall({
+  cors: true,
+  timeoutSeconds: 60,
+}, async (request) => {
+  try {
+    const { auth, data } = request;
+    
+    // Authentication check
+    if (!auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
-});
 
-/**
- * Bulk assign users to a role
- */
-exports.adminBulkAssignRole = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication and admin role
-        validateAuth(context);
-        validateRole(context, ['superadmin', 'admin']);
+    // Get user role for authorization
+    const userDoc = await db.collection('users').doc(auth.uid).get();
+    const userRole = userDoc.data()?.role;
 
-        const { userIds, roleId } = data;
-
-        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-            throw new functions.https.HttpsError('invalid-argument', 'User IDs array is required');
-        }
-
-        if (!roleId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Role ID is required');
-        }
-
-        // Verify role exists
-        const roleQuery = await db.collection('roles')
-            .where('id', '==', roleId)
-            .limit(1)
-            .get();
-
-        if (roleQuery.empty) {
-            throw new functions.https.HttpsError('not-found', 'Role not found');
-        }
-
-        // Don't allow assigning super admin role through bulk operation
-        if (roleId === 'superadmin') {
-            throw new functions.https.HttpsError(
-                'permission-denied', 
-                'Super Admin role cannot be assigned through bulk operation'
-            );
-        }
-
-        // Update users in batches
-        const batch = db.batch();
-        let updateCount = 0;
-
-        for (const userId of userIds) {
-            const userRef = db.collection('users').doc(userId);
-            batch.update(userRef, {
-                role: roleId,
-                roleUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                roleUpdatedBy: context.auth.uid
-            });
-            updateCount++;
-
-            // Firestore batch limit is 500
-            if (updateCount >= 500) {
-                await batch.commit();
-                updateCount = 0;
-            }
-        }
-
-        // Commit remaining updates
-        if (updateCount > 0) {
-            await batch.commit();
-        }
-
-        return {
-            success: true,
-            message: `Successfully assigned ${userIds.length} users to role`,
-            count: userIds.length
-        };
-
-    } catch (error) {
-        console.error('Error bulk assigning roles:', error);
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
-        throw new functions.https.HttpsError('internal', 'Failed to assign roles');
+    // Only super admins and admins can assign roles
+    if (!['admin', 'superadmin'].includes(userRole)) {
+      throw new HttpsError('permission-denied', 'Insufficient permissions to assign roles');
     }
-});
 
-/**
- * Get all role permissions (including overrides for system roles)
- */
-exports.adminGetRolePermissions = functions.https.onCall(async (data, context) => {
-    try {
-        // Validate authentication
-        validateAuth(context);
+    const { userId, newRole, reason } = data;
+    
+    if (!userId || !newRole) {
+      throw new HttpsError('invalid-argument', 'User ID and new role are required');
+    }
 
-        const { roleId } = data;
+    // Verify the role exists
+    const roleDoc = await db.collection('roles').doc(newRole).get();
+    if (!roleDoc.exists) {
+      // Check if it's a hardcoded system role
+      const systemRoles = ['superadmin', 'admin', 'user', 'accounting', 'company_staff'];
+      if (!systemRoles.includes(newRole)) {
+        throw new HttpsError('not-found', 'Role not found');
+      }
+    }
 
-        if (!roleId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Role ID is required');
-        }
+    // Prevent non-super admins from assigning super admin role
+    if (newRole === 'superadmin' && userRole !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Only super administrators can assign super admin role');
+    }
 
-        // Get role permissions from database
-        const permissionMappings = await db.collection('rolePermissions')
-            .where('roleId', '==', roleId)
-            .get();
+    // Get target user
+    const targetUserDoc = await db.collection('users').doc(userId).get();
+    if (!targetUserDoc.exists) {
+      throw new HttpsError('not-found', 'User not found');
+    }
 
-        const permissions = {};
-        permissionMappings.forEach(doc => {
-            const data = doc.data();
-            permissions[data.permissionId] = data.granted;
-        });
+    const targetUserData = targetUserDoc.data();
+    const oldRole = targetUserData.role;
+
+    // Prevent non-super admins from modifying super admin users
+    if (oldRole === 'superadmin' && userRole !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Only super administrators can modify super admin users');
+    }
+
+    // Update user role
+    await db.collection('users').doc(userId).update({
+      role: newRole,
+      updatedAt: new Date(),
+      roleChangedAt: new Date(),
+      roleChangedBy: auth.uid,
+      roleChangeReason: reason || 'Role assignment via admin panel'
+    });
+
+    console.log(`User ${userId} role changed from ${oldRole} to ${newRole} by ${auth.email}`);
 
         return {
             success: true,
-            permissions
+      message: `User role updated successfully`,
+      userId,
+      oldRole,
+      newRole
         };
 
     } catch (error) {
-        console.error('Error getting role permissions:', error);
-        if (error instanceof functions.https.HttpsError) {
+    console.error('Error assigning user role:', error);
+    if (error instanceof HttpsError) {
             throw error;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to get role permissions');
+    throw new HttpsError('internal', 'Failed to assign user role');
     }
 }); 

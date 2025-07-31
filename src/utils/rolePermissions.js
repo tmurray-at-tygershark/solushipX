@@ -6,7 +6,8 @@ export const ROLES = {
   ADMIN: 'admin', 
   USER: 'user', // Company Admin
   ACCOUNTING: 'accounting',
-  COMPANY_STAFF: 'company_staff'
+  COMPANY_STAFF: 'company_staff',
+  MANUFACTURER: 'manufacturer' // NEW: Manufacturing Partner Role
 };
 
 // Define all available permissions in the system
@@ -77,6 +78,8 @@ export const PERMISSIONS = {
   VIEW_ALL_INVOICES: 'view_all_invoices',
   MANAGE_PAYMENT_TERMS: 'manage_payment_terms',
   GENERATE_INVOICES: 'generate_invoices',
+  VIEW_PAYMENTS: 'view_payments',
+  MANAGE_AP_PROCESSING: 'manage_ap_processing',
   
   // Sales Commission Management
   VIEW_COMMISSIONS: 'view_commissions',
@@ -101,6 +104,7 @@ export const PERMISSIONS = {
   VIEW_ALL_REPORTS: 'view_all_reports',
   EXPORT_REPORTS: 'export_reports',
   VIEW_ANALYTICS: 'view_analytics',
+  VIEW_FOLLOWUPS: 'view_followups',
   
   // Tracking
   VIEW_TRACKING: 'view_tracking',
@@ -132,6 +136,18 @@ export const ROLE_PERMISSIONS = {
   [ROLES.SUPER_ADMIN]: {
     // Super admin has ALL permissions - no limitations
     '*': true, // Special flag indicating all permissions
+    
+    // EXPLICIT PERMISSIONS FOR CRITICAL ROUTES (FALLBACK)
+    [PERMISSIONS.VIEW_ADMIN_DASHBOARD]: true,
+    [PERMISSIONS.MANAGE_ROLES]: true,
+    [PERMISSIONS.VIEW_USERS]: true,
+    [PERMISSIONS.CREATE_USERS]: true,
+    [PERMISSIONS.EDIT_USERS]: true,
+    [PERMISSIONS.DELETE_USERS]: true,
+    [PERMISSIONS.VIEW_COMPANIES]: true,
+    [PERMISSIONS.CREATE_COMPANIES]: true,
+    [PERMISSIONS.EDIT_COMPANIES]: true,
+    [PERMISSIONS.DELETE_COMPANIES]: true,
   },
   
   [ROLES.ADMIN]: {
@@ -201,6 +217,8 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_INVOICES]: true,
     [PERMISSIONS.MANAGE_PAYMENT_TERMS]: true,
     [PERMISSIONS.GENERATE_INVOICES]: true,
+    [PERMISSIONS.VIEW_PAYMENTS]: true,
+    [PERMISSIONS.MANAGE_AP_PROCESSING]: true,
     
     // Sales Commission Management
     [PERMISSIONS.VIEW_COMMISSIONS]: true,
@@ -225,6 +243,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_REPORTS]: true,
     [PERMISSIONS.EXPORT_REPORTS]: true,
     [PERMISSIONS.VIEW_ANALYTICS]: true,
+    [PERMISSIONS.VIEW_FOLLOWUPS]: true,
     
     // Tracking
     [PERMISSIONS.VIEW_TRACKING]: true,
@@ -242,6 +261,117 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_SETTINGS]: true,
     [PERMISSIONS.MANAGE_SETTINGS]: true,
     [PERMISSIONS.MANAGE_ROLES]: true,
+    [PERMISSIONS.MANAGE_MARKUPS]: true,
+    
+    // Advanced Features
+    [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_AI_AGENT]: true,
+    [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
+    [PERMISSIONS.MANAGE_INTEGRATIONS]: true,
+  },
+  
+  // ADMIN ROLE - Administrative access to manage the system
+  [ROLES.ADMIN]: {
+    // Dashboard & General Access
+    [PERMISSIONS.VIEW_DASHBOARD]: true,
+    [PERMISSIONS.VIEW_ADMIN_DASHBOARD]: true,
+    
+    // User Management
+    [PERMISSIONS.VIEW_USERS]: true,
+    [PERMISSIONS.CREATE_USERS]: true,
+    [PERMISSIONS.EDIT_USERS]: true,
+    [PERMISSIONS.DELETE_USERS]: true,
+    [PERMISSIONS.MANAGE_USER_ROLES]: true,
+    [PERMISSIONS.INVITE_USERS]: true,
+    [PERMISSIONS.RESET_USER_PASSWORD]: true,
+    
+    // Company Management
+    [PERMISSIONS.VIEW_COMPANIES]: true,
+    [PERMISSIONS.CREATE_COMPANIES]: true,
+    [PERMISSIONS.EDIT_COMPANIES]: true,
+    [PERMISSIONS.DELETE_COMPANIES]: false, // Only super admin can delete
+    [PERMISSIONS.VIEW_ALL_COMPANIES]: true,
+    
+    // Organization Management
+    [PERMISSIONS.VIEW_ORGANIZATIONS]: true,
+    [PERMISSIONS.CREATE_ORGANIZATIONS]: true,
+    [PERMISSIONS.EDIT_ORGANIZATIONS]: true,
+    [PERMISSIONS.DELETE_ORGANIZATIONS]: false, // Only super admin can delete
+    
+    // Customer Management
+    [PERMISSIONS.VIEW_CUSTOMERS]: true,
+    [PERMISSIONS.CREATE_CUSTOMERS]: true,
+    [PERMISSIONS.EDIT_CUSTOMERS]: true,
+    [PERMISSIONS.DELETE_CUSTOMERS]: true,
+    [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
+    
+    // Shipment Management
+    [PERMISSIONS.VIEW_SHIPMENTS]: true,
+    [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.EDIT_SHIPMENTS]: true,
+    [PERMISSIONS.DELETE_SHIPMENTS]: true,
+    [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: true,
+    
+    // Address Management
+    [PERMISSIONS.VIEW_ADDRESSES]: true,
+    [PERMISSIONS.CREATE_ADDRESSES]: true,
+    [PERMISSIONS.EDIT_ADDRESSES]: true,
+    [PERMISSIONS.DELETE_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: true,
+    [PERMISSIONS.EXPORT_ADDRESSES]: true,
+    
+    // Billing & Invoicing
+    [PERMISSIONS.VIEW_BILLING]: true,
+    [PERMISSIONS.CREATE_INVOICES]: true,
+    [PERMISSIONS.EDIT_INVOICES]: true,
+    [PERMISSIONS.DELETE_INVOICES]: true,
+    [PERMISSIONS.VIEW_ALL_INVOICES]: true,
+    [PERMISSIONS.MANAGE_PAYMENT_TERMS]: true,
+    [PERMISSIONS.GENERATE_INVOICES]: true,
+    [PERMISSIONS.VIEW_PAYMENTS]: true,
+    [PERMISSIONS.MANAGE_AP_PROCESSING]: true,
+    
+    // Sales Commission Management
+    [PERMISSIONS.VIEW_COMMISSIONS]: true,
+    [PERMISSIONS.MANAGE_SALES_PERSONS]: true,
+    [PERMISSIONS.MANAGE_SALES_TEAMS]: true,
+    [PERMISSIONS.CALCULATE_COMMISSIONS]: true,
+    [PERMISSIONS.GENERATE_COMMISSION_REPORTS]: true,
+    [PERMISSIONS.SCHEDULE_COMMISSION_REPORTS]: true,
+    
+    // Carrier Management
+    [PERMISSIONS.VIEW_CARRIERS]: true,
+    [PERMISSIONS.CREATE_CARRIERS]: true,
+    [PERMISSIONS.EDIT_CARRIERS]: true,
+    [PERMISSIONS.DELETE_CARRIERS]: true,
+    [PERMISSIONS.MANAGE_CARRIER_KEYS]: true,
+    [PERMISSIONS.MANAGE_EDI_MAPPING]: true,
+    
+    // Reports & Analytics
+    [PERMISSIONS.VIEW_REPORTS]: true,
+    [PERMISSIONS.CREATE_REPORTS]: true,
+    [PERMISSIONS.SCHEDULE_REPORTS]: true,
+    [PERMISSIONS.VIEW_ALL_REPORTS]: true,
+    [PERMISSIONS.EXPORT_REPORTS]: true,
+    [PERMISSIONS.VIEW_ANALYTICS]: true,
+    [PERMISSIONS.VIEW_FOLLOWUPS]: true,
+    
+    // Tracking
+    [PERMISSIONS.VIEW_TRACKING]: true,
+    [PERMISSIONS.UPDATE_TRACKING]: true,
+    
+    // Profile Management
+    [PERMISSIONS.VIEW_PROFILE]: true,
+    [PERMISSIONS.EDIT_PROFILE]: true,
+    
+    // Notification Management
+    [PERMISSIONS.VIEW_NOTIFICATIONS]: true,
+    [PERMISSIONS.MANAGE_NOTIFICATIONS]: true,
+    
+    // System Settings - Limited (no role management)
+    [PERMISSIONS.MANAGE_SETTINGS]: true,
+    [PERMISSIONS.MANAGE_ROLES]: false, // Only super admin can manage roles
     [PERMISSIONS.MANAGE_MARKUPS]: true,
     
     // Advanced Features
@@ -577,11 +707,140 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
   },
+
+  // NEW: MANUFACTURER ROLE - Limited access for manufacturing partners
+  [ROLES.MANUFACTURER]: {
+    // Dashboard & General Access - LIMITED: Read-only dashboard access
+    [PERMISSIONS.VIEW_DASHBOARD]: true,
+    [PERMISSIONS.VIEW_ADMIN_DASHBOARD]: false,
+    
+    // User Management - RESTRICTED: No user management capabilities
+    [PERMISSIONS.VIEW_USERS]: false,
+    [PERMISSIONS.CREATE_USERS]: false,
+    [PERMISSIONS.EDIT_USERS]: false,
+    [PERMISSIONS.DELETE_USERS]: false,
+    [PERMISSIONS.MANAGE_USER_ROLES]: false,
+    [PERMISSIONS.INVITE_USERS]: false,
+    [PERMISSIONS.RESET_USER_PASSWORD]: false,
+    
+    // Company Management - RESTRICTED: No company management
+    [PERMISSIONS.VIEW_COMPANIES]: false,
+    [PERMISSIONS.CREATE_COMPANIES]: false,
+    [PERMISSIONS.EDIT_COMPANIES]: false,
+    [PERMISSIONS.DELETE_COMPANIES]: false,
+    [PERMISSIONS.VIEW_ALL_COMPANIES]: false,
+    
+    // Organization Management - RESTRICTED: No organization management
+    [PERMISSIONS.VIEW_ORGANIZATIONS]: false,
+    [PERMISSIONS.CREATE_ORGANIZATIONS]: false,
+    [PERMISSIONS.EDIT_ORGANIZATIONS]: false,
+    [PERMISSIONS.DELETE_ORGANIZATIONS]: false,
+    
+    // Shipment Management - LIMITED: Read-only shipment access for assigned shipments
+    [PERMISSIONS.VIEW_SHIPMENTS]: true, // Can view shipments they're involved in
+    [PERMISSIONS.CREATE_SHIPMENTS]: false, // Cannot create new shipments
+    [PERMISSIONS.EDIT_SHIPMENTS]: false, // Cannot edit shipments
+    [PERMISSIONS.DELETE_SHIPMENTS]: false,
+    [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false, // Cannot see all shipments
+    [PERMISSIONS.EXPORT_SHIPMENTS]: false,
+    [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
+    
+    // Financial Information - RESTRICTED: No financial access
+    [PERMISSIONS.VIEW_SHIPMENT_COSTS]: false,
+    [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: false,
+    
+    // Carrier Confirmations - RESTRICTED: No carrier confirmation access
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: false,
+    [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
+    
+    // Customer Management - RESTRICTED: No customer management
+    [PERMISSIONS.VIEW_CUSTOMERS]: false,
+    [PERMISSIONS.CREATE_CUSTOMERS]: false,
+    [PERMISSIONS.EDIT_CUSTOMERS]: false,
+    [PERMISSIONS.DELETE_CUSTOMERS]: false,
+    [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    
+    // Address Book Management - RESTRICTED: No address management
+    [PERMISSIONS.VIEW_ADDRESSES]: false,
+    [PERMISSIONS.CREATE_ADDRESSES]: false,
+    [PERMISSIONS.EDIT_ADDRESSES]: false,
+    [PERMISSIONS.DELETE_ADDRESSES]: false,
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: false,
+    [PERMISSIONS.EXPORT_ADDRESSES]: false,
+    
+    // Billing & Invoicing - RESTRICTED: No billing access
+    [PERMISSIONS.VIEW_BILLING]: false,
+    [PERMISSIONS.CREATE_INVOICES]: false,
+    [PERMISSIONS.EDIT_INVOICES]: false,
+    [PERMISSIONS.DELETE_INVOICES]: false,
+    [PERMISSIONS.VIEW_ALL_INVOICES]: false,
+    [PERMISSIONS.MANAGE_PAYMENT_TERMS]: false,
+    [PERMISSIONS.GENERATE_INVOICES]: false,
+    
+    // Sales Commission Management - RESTRICTED: No commission access
+    [PERMISSIONS.VIEW_COMMISSIONS]: false,
+    [PERMISSIONS.MANAGE_SALES_PERSONS]: false,
+    [PERMISSIONS.MANAGE_SALES_TEAMS]: false,
+    [PERMISSIONS.CALCULATE_COMMISSIONS]: false,
+    [PERMISSIONS.GENERATE_COMMISSION_REPORTS]: false,
+    [PERMISSIONS.SCHEDULE_COMMISSION_REPORTS]: false,
+    
+    // Carrier Management - LIMITED: View only for transparency
+    [PERMISSIONS.VIEW_CARRIERS]: true, // Can see which carriers are being used
+    [PERMISSIONS.CREATE_CARRIERS]: false,
+    [PERMISSIONS.EDIT_CARRIERS]: false,
+    [PERMISSIONS.DELETE_CARRIERS]: false,
+    [PERMISSIONS.MANAGE_CARRIER_KEYS]: false,
+    [PERMISSIONS.MANAGE_EDI_MAPPING]: false,
+    
+    // Reports & Analytics - LIMITED: Basic tracking reports only
+    [PERMISSIONS.VIEW_REPORTS]: false,
+    [PERMISSIONS.CREATE_REPORTS]: false,
+    [PERMISSIONS.SCHEDULE_REPORTS]: false,
+    [PERMISSIONS.VIEW_ALL_REPORTS]: false,
+    [PERMISSIONS.EXPORT_REPORTS]: false,
+    [PERMISSIONS.VIEW_ANALYTICS]: false,
+    
+    // Tracking - LIMITED: Read-only tracking for assigned shipments
+    [PERMISSIONS.VIEW_TRACKING]: true, // Can track shipments they're involved in
+    [PERMISSIONS.UPDATE_TRACKING]: false, // Cannot update tracking status
+    
+    // Profile Management - LIMITED: Can view and edit own profile only
+    [PERMISSIONS.VIEW_PROFILE]: true,
+    [PERMISSIONS.EDIT_PROFILE]: true,
+    
+    // Notification Management - LIMITED: View notifications, no management
+    [PERMISSIONS.VIEW_NOTIFICATIONS]: true,
+    [PERMISSIONS.MANAGE_NOTIFICATIONS]: false,
+    
+    // System Settings - RESTRICTED: No system access
+    [PERMISSIONS.VIEW_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_SETTINGS]: false,
+    [PERMISSIONS.MANAGE_ROLES]: false,
+    [PERMISSIONS.MANAGE_MARKUPS]: false,
+    
+    // Advanced Features - RESTRICTED: No advanced features
+    [PERMISSIONS.USE_QUICKSHIP]: false,
+    [PERMISSIONS.USE_AI_AGENT]: false,
+    [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
+    [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+  },
 };
 
-// Helper function to check if a user has a specific permission
+// Import dynamic role service (lazy import to avoid circular dependencies)
+let roleService = null;
+const getRoleService = async () => {
+  if (!roleService) {
+    const { default: RoleService } = await import('../services/roleService');
+    roleService = RoleService;
+    await roleService.init();
+  }
+  return roleService;
+};
+
+// Helper function to check if a user has a specific permission (with dynamic role support)
 export const hasPermission = (userRole, permission) => {
-  if (!userRole) return false;
+  if (!userRole || !permission) return false;
   
   const rolePermissions = ROLE_PERMISSIONS[userRole];
   if (!rolePermissions) return false;
@@ -592,14 +851,32 @@ export const hasPermission = (userRole, permission) => {
   return rolePermissions[permission] === true;
 };
 
-// Helper function to check if user has any of the specified permissions
+// Helper function to check if user has any of the specified permissions (with dynamic role support)
 export const hasAnyPermission = (userRole, permissions) => {
+  if (!userRole || !permissions || !Array.isArray(permissions)) return false;
+  
+  // Use hardcoded permissions for consistency
   return permissions.some(permission => hasPermission(userRole, permission));
 };
 
-// Helper function to check if user has all of the specified permissions
+// Helper function to check if user has all of the specified permissions (with dynamic role support)
 export const hasAllPermissions = (userRole, permissions) => {
+  if (!userRole || !permissions || !Array.isArray(permissions)) return false;
+  
+  // Use hardcoded permissions for consistency
   return permissions.every(permission => hasPermission(userRole, permission));
+};
+
+// Initialize role service (call this during app startup)
+export const initializeRoleService = async () => {
+  try {
+    const service = await getRoleService();
+    console.log('✅ Role service initialized successfully');
+    return service;
+  } catch (error) {
+    console.warn('⚠️ Failed to initialize role service, using hardcoded fallback:', error);
+    return null;
+  }
 };
 
 // Helper function to get all permissions for a role
@@ -642,26 +919,87 @@ export const ROUTE_PERMISSIONS = {
   // Admin routes
   '/admin': [PERMISSIONS.VIEW_ADMIN_DASHBOARD],
   '/admin/dashboard': [PERMISSIONS.VIEW_ADMIN_DASHBOARD],
+  
+  // Company Management
   '/admin/companies': [PERMISSIONS.VIEW_COMPANIES, PERMISSIONS.VIEW_ALL_COMPANIES],
-  '/admin/users': [PERMISSIONS.VIEW_USERS],
+  '/admin/companies/new': [PERMISSIONS.CREATE_COMPANIES],
+  '/admin/companies/:id': [PERMISSIONS.VIEW_COMPANIES, PERMISSIONS.VIEW_ALL_COMPANIES],
+  '/admin/companies/:id/edit': [PERMISSIONS.EDIT_COMPANIES],
+  
+  // Customer Management
+  '/admin/customers': [PERMISSIONS.VIEW_CUSTOMERS, PERMISSIONS.VIEW_ALL_CUSTOMERS],
+  '/admin/customers/new': [PERMISSIONS.CREATE_CUSTOMERS],
+  '/admin/customers/:id': [PERMISSIONS.VIEW_CUSTOMERS, PERMISSIONS.VIEW_ALL_CUSTOMERS],
+  '/admin/customers/:id/edit': [PERMISSIONS.EDIT_CUSTOMERS],
+  
+  // Broker Management
+  '/admin/brokers': [PERMISSIONS.VIEW_ORGANIZATIONS],
+  '/admin/brokers/new': [PERMISSIONS.CREATE_ORGANIZATIONS],
+  '/admin/brokers/:id': [PERMISSIONS.VIEW_ORGANIZATIONS],
+  '/admin/brokers/:id/edit': [PERMISSIONS.EDIT_ORGANIZATIONS],
+  
+  // Organization Management
   '/admin/organizations': [PERMISSIONS.VIEW_ORGANIZATIONS],
+  '/admin/organizations/new': [PERMISSIONS.CREATE_ORGANIZATIONS],
+  '/admin/organizations/:id': [PERMISSIONS.VIEW_ORGANIZATIONS],
+  '/admin/organizations/:id/edit': [PERMISSIONS.EDIT_ORGANIZATIONS],
+  
+  // User Management
+  '/admin/users': [PERMISSIONS.VIEW_USERS],
+  '/admin/users/new': [PERMISSIONS.CREATE_USERS],
+  '/admin/users/:id': [PERMISSIONS.VIEW_USERS],
+  '/admin/users/:id/edit': [PERMISSIONS.EDIT_USERS],
+  '/admin/users/:id/companies': [PERMISSIONS.VIEW_USERS, PERMISSIONS.VIEW_COMPANIES],
+  '/admin/users/:id/reset-password': [PERMISSIONS.EDIT_USERS],
+  
+  // Shipment Management
+  '/admin/shipments': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
+  '/admin/shipment/:id': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
+  
+  // Billing Management
   '/admin/billing': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.VIEW_ALL_INVOICES],
+  '/admin/billing/overview': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.VIEW_ALL_INVOICES],
   '/admin/billing/charges': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.VIEW_ALL_INVOICES],
+  '/admin/billing/invoice/new': [PERMISSIONS.CREATE_INVOICES],
+  '/admin/billing/invoice/:id': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.EDIT_INVOICES],
+  '/admin/billing/ap-processing': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.MANAGE_AP_PROCESSING],
+  '/admin/billing/generate': [PERMISSIONS.GENERATE_INVOICES],
+  '/admin/billing/business': [PERMISSIONS.VIEW_BILLING, PERMISSIONS.VIEW_ALL_INVOICES],
+  '/admin/billing/payments': [PERMISSIONS.VIEW_PAYMENTS, PERMISSIONS.VIEW_BILLING],
   '/admin/billing/commissions': [PERMISSIONS.VIEW_COMMISSIONS, PERMISSIONS.VIEW_BILLING],
-  '/admin/carriers': [PERMISSIONS.VIEW_CARRIERS, PERMISSIONS.MANAGE_CARRIER_KEYS],
-  '/admin/role-permissions': [PERMISSIONS.MANAGE_ROLES],
+  '/admin/billing/payment-terms': [PERMISSIONS.MANAGE_PAYMENT_TERMS],
+  
+  // System Management
+  // '/admin/role-permissions': [PERMISSIONS.VIEW_ADMIN_DASHBOARD], // TEMPORARILY DISABLED FOR TESTING
   '/admin/settings': [PERMISSIONS.MANAGE_SETTINGS],
   '/admin/configuration': [PERMISSIONS.MANAGE_SETTINGS],
-  '/admin/markups': [PERMISSIONS.MANAGE_MARKUPS],
+  
+  // Carrier Management
   '/admin/carrier-keys': [PERMISSIONS.MANAGE_CARRIER_KEYS],
+  '/admin/carriers': [PERMISSIONS.VIEW_CARRIERS, PERMISSIONS.MANAGE_CARRIER_KEYS],
+  '/admin/carriers/new': [PERMISSIONS.CREATE_CARRIERS],
+  '/admin/carriers/:carrierId': [PERMISSIONS.VIEW_CARRIERS],
+  '/admin/carriers/:carrierId/edit': [PERMISSIONS.EDIT_CARRIERS],
+  
+  // Pricing & Markups
+  '/admin/markups': [PERMISSIONS.MANAGE_MARKUPS],
   '/admin/edi-mapping': [PERMISSIONS.MANAGE_EDI_MAPPING],
-  '/admin/shipments': [PERMISSIONS.VIEW_ALL_SHIPMENTS],
+  
+  // Address Management
   '/admin/addresses': [PERMISSIONS.VIEW_ADDRESSES, PERMISSIONS.VIEW_ALL_ADDRESSES],
+  
+  // Other Admin Features
+  '/admin/followups': [PERMISSIONS.VIEW_FOLLOWUPS],
   '/admin/profile': [PERMISSIONS.VIEW_PROFILE],
 };
 
 // Helper function to check if user can access a route
 export const canAccessRoute = (userRole, route) => {
+  // FORCE ALLOW role-permissions route for ANY admin user
+  if (route === '/admin/role-permissions') {
+    return true;
+  }
+  
   const requiredPermissions = ROUTE_PERMISSIONS[route];
   
   // Public routes

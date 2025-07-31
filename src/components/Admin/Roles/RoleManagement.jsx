@@ -23,7 +23,19 @@ import {
     Alert,
     Tooltip,
     Divider,
-    CircularProgress
+    CircularProgress,
+    Card,
+    CardContent,
+    CardActions,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Switch,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    FormGroup
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -32,10 +44,20 @@ import {
     Security as SecurityIcon,
     Save as SaveIcon,
     Cancel as CancelIcon,
+    ExpandMore as ExpandMoreIcon,
+    Person as PersonIcon,
+    Business as BusinessIcon,
+    LocalShipping as ShippingIcon,
+    Receipt as BillingIcon,
+    Assessment as ReportsIcon,
+    Settings as SettingsIcon,
+    Visibility as VisibilityIcon,
+    VisibilityOff as VisibilityOffIcon
 } from '@mui/icons-material';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../firebase';
-import { PERMISSIONS as ROLE_PERMISSIONS, ROLES, ROLE_PERMISSIONS as ROLE_PERMISSION_MATRIX } from '../../../utils/rolePermissions';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useAuth } from '../../../contexts/AuthContext';
+import { PERMISSIONS, PERMISSIONS as ROLE_PERMISSIONS, ROLES } from '../../../utils/rolePermissions';
+import roleService from '../../../services/roleService';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import './Roles.css';
 

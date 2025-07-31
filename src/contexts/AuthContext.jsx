@@ -12,6 +12,7 @@ import {
     getIdTokenResult
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeRoleService } from '../utils/rolePermissions';
 
 const AuthContext = createContext(null);
 
@@ -29,6 +30,7 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [initialized, setInitialized] = useState(false);
+    const [roleServiceInitialized, setRoleServiceInitialized] = useState(false);
 
     useEffect(() => {
         const auth = getAuth();
@@ -69,6 +71,22 @@ export const AuthProvider = ({ children }) => {
         });
 
         return () => unsubscribe();
+    }, []);
+
+    // Initialize role service on app startup
+    useEffect(() => {
+        const initRoleService = async () => {
+            try {
+                await initializeRoleService();
+                setRoleServiceInitialized(true);
+                console.log('🔐 Role service initialized successfully');
+            } catch (error) {
+                console.warn('⚠️ Role service initialization failed, using fallback:', error);
+                setRoleServiceInitialized(true); // Still proceed with hardcoded roles
+            }
+        };
+
+        initRoleService();
     }, []);
 
     const login = async (email, password) => {
@@ -214,6 +232,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         error,
         initialized,
+        roleServiceInitialized,
         isAuthenticated: !!user,
         login,
         signup,

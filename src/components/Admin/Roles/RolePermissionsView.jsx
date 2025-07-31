@@ -28,7 +28,9 @@ import {
     Switch,
     CircularProgress,
     Snackbar,
-    Alert
+    Alert,
+    Dialog,
+    TextField
 } from '@mui/material';
 import {
     CheckCircle as CheckIcon,
@@ -69,16 +71,44 @@ const RolePermissionsView = () => {
     const { currentUser, userRole } = useAuth();
     const functions = getFunctions();
     const [users, setUsers] = useState([]);
+    const [dynamicRoles, setDynamicRoles] = useState({});
     const [loading, setLoading] = useState(true);
     const [expandedCategories, setExpandedCategories] = useState(['all']);
-    const [editMode, setEditMode] = useState(false);
-    const [pendingChanges, setPendingChanges] = useState({});
     const [saving, setSaving] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+    // Dialog states
+    const [addRoleDialogOpen, setAddRoleDialogOpen] = useState(false);
+    const [editRoleDialogOpen, setEditRoleDialogOpen] = useState(false);
+    const [deleteRoleDialogOpen, setDeleteRoleDialogOpen] = useState(false);
+    const [selectedRole, setSelectedRole] = useState(null);
+
+    // Form states
+    const [roleForm, setRoleForm] = useState({
+        roleId: '',
+        displayName: '',
+        description: '',
+        color: '#757575',
+        permissions: {},
+        isActive: true
+    });
+
     useEffect(() => {
-        fetchUsers();
+        loadData();
     }, []);
+
+    const loadData = async () => {
+        try {
+            await Promise.all([
+                fetchUsers(),
+                fetchDynamicRoles()
+            ]);
+            setLoading(false);
+        } catch (error) {
+            console.error('Error loading data:', error);
+            setLoading(false);
+        }
+    };
 
     const fetchUsers = async () => {
         try {
@@ -88,43 +118,182 @@ const RolePermissionsView = () => {
                 ...doc.data()
             }));
             setUsers(usersData);
-            setLoading(false);
         } catch (error) {
             console.error('Error fetching users:', error);
-            setLoading(false);
         }
+    };
+
+    const fetchDynamicRoles = async () => {
+        try {
+            const getRolesFunction = httpsCallable(functions, 'getRoles');
+            const result = await getRolesFunction();
+            if (result.data.success) {
+                setDynamicRoles(result.data.roles);
+            }
+        } catch (error) {
+            console.error('Error fetching dynamic roles:', error);
+            // Continue with hardcoded roles if dynamic roles fail
+        }
+    };
+
+    const handleCreateRole = async () => {
+        try {
+            setSaving(true);
+            const createRoleFunction = httpsCallable(functions, 'createRole');
+            const result = await createRoleFunction(roleForm);
+
+            if (result.data.success) {
+                showSnackbar(`Role "${roleForm.displayName}" created successfully`, 'success');
+                setAddRoleDialogOpen(false);
+                resetRoleForm();
+                await fetchDynamicRoles();
+            }
+        } catch (error) {
+            console.error('Error creating role:', error);
+            showSnackbar(error.message || 'Failed to create role', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUpdateRole = async () => {
+        try {
+            setSaving(true);
+            const updateRoleFunction = httpsCallable(functions, 'updateRole');
+            const result = await updateRoleFunction({
+                roleId: selectedRole,
+                updates: {
+                    displayName: roleForm.displayName,
+                    description: roleForm.description,
+                    color: roleForm.color,
+                    permissions: roleForm.permissions,
+                    isActive: roleForm.isActive
+                }
+            });
+
+            if (result.data.success) {
+                showSnackbar(`Role updated successfully`, 'success');
+                setEditRoleDialogOpen(false);
+                setSelectedRole(null);
+                resetRoleForm();
+                await fetchDynamicRoles();
+            }
+        } catch (error) {
+            console.error('Error updating role:', error);
+            showSnackbar(error.message || 'Failed to update role', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteRole = async () => {
+        try {
+            setSaving(true);
+            const deleteRoleFunction = httpsCallable(functions, 'deleteRole');
+            const result = await deleteRoleFunction({
+                roleId: selectedRole,
+                force: false // Don't force delete by default
+            });
+
+            if (result.data.success) {
+                showSnackbar(`Role deleted successfully`, 'success');
+                setDeleteRoleDialogOpen(false);
+                setSelectedRole(null);
+                await fetchDynamicRoles();
+            }
+        } catch (error) {
+            console.error('Error deleting role:', error);
+            if (error.message.includes('users are still assigned')) {
+                showSnackbar('Cannot delete role: users are still assigned to this role', 'warning');
+            } else {
+                showSnackbar(error.message || 'Failed to delete role', 'error');
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const resetRoleForm = () => {
+        setRoleForm({
+            roleId: '',
+            displayName: '',
+            description: '',
+            color: '#757575',
+            permissions: {},
+            isActive: true
+        });
+    };
+
+    const openEditDialog = (roleId) => {
+        const role = dynamicRoles[roleId] || {};
+        setSelectedRole(roleId);
+        setRoleForm({
+            roleId: roleId,
+            displayName: role.displayName || '',
+            description: role.description || '',
+            color: role.color || '#757575',
+            permissions: role.permissions || {},
+            isActive: role.isActive !== false
+        });
+        setEditRoleDialogOpen(true);
+    };
+
+    const openDeleteDialog = (roleId) => {
+        setSelectedRole(roleId);
+        setDeleteRoleDialogOpen(true);
     };
 
     // Helper functions
     const getRoleDisplayName = (role) => {
+        // Check dynamic roles first
+        if (dynamicRoles[role]) {
+            return dynamicRoles[role].displayName;
+        }
+
+        // Fallback to hardcoded roles
         switch (role) {
             case 'superadmin': return 'Super Admin';
             case 'admin': return 'Admin';
             case 'user': return 'Company Admin';
             case 'accounting': return 'Accounting';
             case 'company_staff': return 'Company Staff';
+            case 'manufacturer': return 'Manufacturer';
             default: return role;
         }
     };
 
     const getRoleDescription = (role) => {
+        // Check dynamic roles first
+        if (dynamicRoles[role]) {
+            return dynamicRoles[role].description;
+        }
+
+        // Fallback to hardcoded roles
         switch (role) {
             case 'superadmin': return 'Full system access with no limitations';
             case 'admin': return 'Administrative access to manage the system';
             case 'user': return 'Company-level access for daily operations';
             case 'accounting': return 'Access to billing, invoicing, and financial reports';
             case 'company_staff': return 'Basic operational access for company staff';
+            case 'manufacturer': return 'Limited access for manufacturing partners';
             default: return '';
         }
     };
 
     const getRoleColor = (role) => {
+        // Check dynamic roles first
+        if (dynamicRoles[role]) {
+            return dynamicRoles[role].color;
+        }
+
+        // Fallback to hardcoded roles
         switch (role) {
             case 'superadmin': return '#9c27b0';
             case 'admin': return '#2196f3';
             case 'user': return '#4caf50';
             case 'accounting': return '#ff9800';
             case 'company_staff': return '#00bcd4';
+            case 'manufacturer': return '#607d8b';
             default: return '#757575';
         }
     };
@@ -176,85 +345,17 @@ const RolePermissionsView = () => {
     };
 
     const hasPermission = (role, permission) => {
-        // Check pending changes first
-        const pendingKey = `${role}_${permission}`;
-        if (pendingChanges[pendingKey] !== undefined) {
-            return pendingChanges[pendingKey];
+        // Check dynamic roles first, then fall back to hardcoded roles
+        if (dynamicRoles[role]?.permissions?.[permission] !== undefined) {
+            return dynamicRoles[role].permissions[permission];
         }
 
-        // Then check hardcoded permissions
+        // Fall back to hardcoded ROLE_PERMISSIONS
         if (ROLE_PERMISSIONS[role]?.['*']) return true;
         return ROLE_PERMISSIONS[role]?.[permission] === true;
     };
 
-    const handlePermissionToggle = (role, permission) => {
-        if (role === 'superadmin') {
-            showSnackbar('Super Admin permissions cannot be modified', 'warning');
-            return;
-        }
 
-        const key = `${role}_${permission}`;
-        const currentValue = hasPermission(role, permission);
-
-        setPendingChanges(prev => ({
-            ...prev,
-            [key]: !currentValue
-        }));
-    };
-
-    const handleSaveChanges = async () => {
-        try {
-            setSaving(true);
-
-            // Process pending changes and create a summary
-            const changedRoles = {};
-            Object.entries(pendingChanges).forEach(([key, value]) => {
-                const [role, permission] = key.split('_');
-                if (!changedRoles[role]) {
-                    changedRoles[role] = { added: [], removed: [] };
-                }
-
-                const currentValue = ROLE_PERMISSIONS[role]?.[permission] === true;
-                if (value && !currentValue) {
-                    changedRoles[role].added.push(permission);
-                } else if (!value && currentValue) {
-                    changedRoles[role].removed.push(permission);
-                }
-            });
-
-            // Create a detailed message about what needs to be updated
-            let message = 'To persist these changes, update the ROLE_PERMISSIONS object in src/utils/rolePermissions.js:\n\n';
-
-            Object.entries(changedRoles).forEach(([role, changes]) => {
-                if (changes.added.length > 0 || changes.removed.length > 0) {
-                    message += `Role: ${role}\n`;
-                    if (changes.added.length > 0) {
-                        message += `  Add permissions: ${changes.added.join(', ')}\n`;
-                    }
-                    if (changes.removed.length > 0) {
-                        message += `  Remove permissions: ${changes.removed.join(', ')}\n`;
-                    }
-                    message += '\n';
-                }
-            });
-
-            console.log(message);
-
-            setPendingChanges({});
-            setEditMode(false);
-            showSnackbar('Permission changes saved locally. Check console for instructions to persist changes.', 'info');
-        } catch (error) {
-            console.error('Error saving permissions:', error);
-            showSnackbar(error.message || 'Error saving permissions', 'error');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleCancelEdit = () => {
-        setPendingChanges({});
-        setEditMode(false);
-    };
 
     const handleCategoryToggle = (category) => {
         if (category === 'all') {
@@ -293,6 +394,15 @@ const RolePermissionsView = () => {
         permissionCategories[category].permissions.push({ key, value });
     });
 
+    // Combine hardcoded and dynamic roles
+    const allRoles = {
+        ...ROLES,
+        ...Object.keys(dynamicRoles).reduce((acc, roleId) => {
+            acc[roleId.toUpperCase()] = roleId;
+            return acc;
+        }, {})
+    };
+
     // Group users by role
     const usersByRole = users.reduce((acc, user) => {
         const role = user.role || 'user';
@@ -322,51 +432,29 @@ const RolePermissionsView = () => {
                 </Box>
 
                 {canEditPermissions && (
-                    <Box>
-                        {editMode ? (
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<CloseIcon />}
-                                    onClick={handleCancelEdit}
-                                    size="small"
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<SaveIcon />}
-                                    onClick={handleSaveChanges}
-                                    size="small"
-                                    sx={{ fontSize: '12px' }}
-                                    disabled={saving || Object.keys(pendingChanges).length === 0}
-                                >
-                                    Save Changes
-                                </Button>
-                            </Box>
-                        ) : (
-                            <Button
-                                variant="contained"
-                                startIcon={<EditIcon />}
-                                onClick={() => setEditMode(true)}
-                                size="small"
-                                sx={{ fontSize: '12px' }}
-                            >
-                                Edit
-                            </Button>
-                        )}
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            variant="contained"
+                            startIcon={<PersonIcon />}
+                            onClick={() => setAddRoleDialogOpen(true)}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Add New Role
+                        </Button>
                     </Box>
                 )}
             </Box>
 
             {/* Role Summary Cards */}
             <Grid container spacing={3} sx={{ mb: 4 }}>
-                {Object.entries(ROLES).map(([key, roleId]) => {
+                {Object.entries(allRoles).map(([key, roleId]) => {
                     const userCount = usersByRole[roleId]?.length || 0;
                     const keyPermissions = Object.entries(PERMISSIONS)
                         .filter(([_, permId]) => hasPermission(roleId, permId))
                         .slice(0, 5);
+
+                    const isDynamicRole = !!dynamicRoles[roleId];
 
                     return (
                         <Grid item xs={12} md={4} key={roleId}>
@@ -381,13 +469,42 @@ const RolePermissionsView = () => {
                                             {getRoleIcon(roleId)}
                                         </Avatar>
                                         <Box sx={{ flexGrow: 1 }}>
-                                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
-                                                {getRoleDisplayName(roleId)}
-                                            </Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>
+                                                    {getRoleDisplayName(roleId)}
+                                                </Typography>
+                                                {isDynamicRole && (
+                                                    <Chip
+                                                        label="Custom"
+                                                        size="small"
+                                                        color="primary"
+                                                        variant="outlined"
+                                                        sx={{ fontSize: '10px', height: '18px' }}
+                                                    />
+                                                )}
+                                            </Box>
                                             <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px' }}>
                                                 {userCount} user{userCount !== 1 ? 's' : ''}
                                             </Typography>
                                         </Box>
+                                        {canEditPermissions && isDynamicRole && (
+                                            <Box>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => openEditDialog(roleId)}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => openDeleteDialog(roleId)}
+                                                    sx={{ fontSize: '12px', color: 'error.main' }}
+                                                >
+                                                    <CloseIcon fontSize="small" />
+                                                </IconButton>
+                                            </Box>
+                                        )}
                                     </Box>
                                     <Typography variant="body2" sx={{ mb: 2, fontSize: '12px' }}>
                                         {getRoleDescription(roleId)}
@@ -440,7 +557,7 @@ const RolePermissionsView = () => {
                         Permission Matrix
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '12px', mt: 0.5 }}>
-                        {editMode ? 'Click on permissions to toggle them' : 'View permissions by role and category'}
+                        View permissions by role and category. Use role dialogs to edit permissions.
                     </Typography>
                 </Box>
 
@@ -505,23 +622,10 @@ const RolePermissionsView = () => {
                                                     </TableCell>
                                                     {Object.values(ROLES).map(roleId => (
                                                         <TableCell key={roleId} align="center">
-                                                            {editMode && roleId !== 'superadmin' ? (
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => handlePermissionToggle(roleId, permId)}
-                                                                >
-                                                                    {hasPermission(roleId, permId) ? (
-                                                                        <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
-                                                                    ) : (
-                                                                        <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
-                                                                    )}
-                                                                </IconButton>
+                                                            {hasPermission(roleId, permId) ? (
+                                                                <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
                                                             ) : (
-                                                                hasPermission(roleId, permId) ? (
-                                                                    <CheckIcon sx={{ color: 'success.main', fontSize: '20px' }} />
-                                                                ) : (
-                                                                    <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
-                                                                )
+                                                                <CancelIcon sx={{ color: 'text.disabled', fontSize: '20px' }} />
                                                             )}
                                                         </TableCell>
                                                     ))}
@@ -664,6 +768,336 @@ const RolePermissionsView = () => {
                     </Grid>
                 </Box>
             </Paper>
+
+            {/* Add Role Dialog */}
+            <Dialog
+                open={addRoleDialogOpen}
+                onClose={() => {
+                    setAddRoleDialogOpen(false);
+                    resetRoleForm();
+                }}
+                maxWidth="md"
+                fullWidth
+            >
+                <Box sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Add New Role
+                    </Typography>
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Role ID"
+                                value={roleForm.roleId}
+                                onChange={(e) => setRoleForm({ ...roleForm, roleId: e.target.value.toLowerCase().replace(/[^a-z_]/g, '') })}
+                                size="small"
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                helperText="Lowercase letters and underscores only"
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Display Name"
+                                value={roleForm.displayName}
+                                onChange={(e) => setRoleForm({ ...roleForm, displayName: e.target.value })}
+                                size="small"
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Description"
+                                value={roleForm.description}
+                                onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
+                                size="small"
+                                multiline
+                                rows={2}
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Color"
+                                type="color"
+                                value={roleForm.color}
+                                onChange={(e) => setRoleForm({ ...roleForm, color: e.target.value })}
+                                size="small"
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Switch
+                                    checked={roleForm.isActive}
+                                    onChange={(e) => setRoleForm({ ...roleForm, isActive: e.target.checked })}
+                                    size="small"
+                                />
+                                <Typography sx={{ fontSize: '12px' }}>Active</Typography>
+                            </Box>
+                        </Grid>
+
+                        {/* Permissions Section */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                                Permissions
+                            </Typography>
+                            <Box sx={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #e0e0e0', p: 2, borderRadius: 1 }}>
+                                {Object.entries(permissionCategories).map(([category, { icon, permissions }]) => (
+                                    <Accordion key={category} sx={{ mb: 1 }}>
+                                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                {icon}
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {category}
+                                                </Typography>
+                                            </Box>
+                                        </AccordionSummary>
+                                        <AccordionDetails>
+                                            <Grid container spacing={1}>
+                                                {permissions.map(({ key, value: permId }) => (
+                                                    <Grid item xs={12} sm={6} key={permId}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Switch
+                                                                checked={roleForm.permissions[permId] || false}
+                                                                onChange={(e) => setRoleForm({
+                                                                    ...roleForm,
+                                                                    permissions: {
+                                                                        ...roleForm.permissions,
+                                                                        [permId]: e.target.checked
+                                                                    }
+                                                                })}
+                                                                size="small"
+                                                            />
+                                                            <Typography sx={{ fontSize: '11px' }}>
+                                                                {permId.replace(/_/g, ' ').toLowerCase()}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Grid>
+                                                ))}
+                                            </Grid>
+                                        </AccordionDetails>
+                                    </Accordion>
+                                ))}
+                            </Box>
+                        </Grid>
+                    </Grid>
+
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 3 }}>
+                        <Button
+                            variant="outlined"
+                            onClick={() => {
+                                setAddRoleDialogOpen(false);
+                                resetRoleForm();
+                            }}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="contained"
+                            onClick={handleCreateRole}
+                            disabled={saving || !roleForm.roleId || !roleForm.displayName}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Create Role
+                        </Button>
+                    </Box>
+                </Box>
+            </Dialog>
+
+            {/* Edit Role Dialog */}
+            <Dialog
+                open={editRoleDialogOpen}
+                onClose={() => {
+                    setEditRoleDialogOpen(false);
+                    setSelectedRole(null);
+                    resetRoleForm();
+                }}
+                maxWidth="md"
+                fullWidth
+            >
+                <Box sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Edit Role: {roleForm.displayName}
+                    </Typography>
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Display Name"
+                                value={roleForm.displayName}
+                                onChange={(e) => setRoleForm({ ...roleForm, displayName: e.target.value })}
+                                size="small"
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField
+                                fullWidth
+                                label="Color"
+                                type="color"
+                                value={roleForm.color}
+                                onChange={(e) => setRoleForm({ ...roleForm, color: e.target.value })}
+                                size="small"
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                label="Description"
+                                value={roleForm.description}
+                                onChange={(e) => setRoleForm({ ...roleForm, description: e.target.value })}
+                                size="small"
+                                multiline
+                                rows={2}
+                                sx={{ '& .MuiInputLabel-root': { fontSize: '12px' }, '& .MuiInputBase-input': { fontSize: '12px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Switch
+                                    checked={roleForm.isActive}
+                                    onChange={(e) => setRoleForm({ ...roleForm, isActive: e.target.checked })}
+                                    size="small"
+                                />
+                                <Typography sx={{ fontSize: '12px' }}>Active</Typography>
+                            </Box>
+                        </Grid>
+
+                        {/* Permissions Section */}
+                        <Grid item xs={12}>
+                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                                Permissions
+                            </Typography>
+                            <Box sx={{ maxHeight: '300px', overflow: 'auto', border: '1px solid #e0e0e0', p: 2, borderRadius: 1 }}>
+                                {Object.entries(permissionCategories).map(([category, { icon, permissions }]) => (
+                                    <Accordion key={category} sx={{ mb: 1 }}>
+                                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                {icon}
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    {category}
+                                                </Typography>
+                                            </Box>
+                                        </AccordionSummary>
+                                        <AccordionDetails>
+                                            <Grid container spacing={1}>
+                                                {permissions.map(({ key, value: permId }) => (
+                                                    <Grid item xs={12} sm={6} key={permId}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Switch
+                                                                checked={roleForm.permissions[permId] || false}
+                                                                onChange={(e) => setRoleForm({
+                                                                    ...roleForm,
+                                                                    permissions: {
+                                                                        ...roleForm.permissions,
+                                                                        [permId]: e.target.checked
+                                                                    }
+                                                                })}
+                                                                size="small"
+                                                            />
+                                                            <Typography sx={{ fontSize: '11px' }}>
+                                                                {permId.replace(/_/g, ' ').toLowerCase()}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Grid>
+                                                ))}
+                                            </Grid>
+                                        </AccordionDetails>
+                                    </Accordion>
+                                ))}
+                            </Box>
+                        </Grid>
+                    </Grid>
+
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 3 }}>
+                        <Button
+                            variant="outlined"
+                            onClick={() => {
+                                setEditRoleDialogOpen(false);
+                                setSelectedRole(null);
+                                resetRoleForm();
+                            }}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="contained"
+                            onClick={handleUpdateRole}
+                            disabled={saving || !roleForm.displayName}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Update Role
+                        </Button>
+                    </Box>
+                </Box>
+            </Dialog>
+
+            {/* Delete Role Dialog */}
+            <Dialog
+                open={deleteRoleDialogOpen}
+                onClose={() => {
+                    setDeleteRoleDialogOpen(false);
+                    setSelectedRole(null);
+                }}
+                maxWidth="sm"
+                fullWidth
+            >
+                <Box sx={{ p: 3 }}>
+                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>
+                        Delete Role
+                    </Typography>
+
+                    <Typography sx={{ fontSize: '12px', mb: 3 }}>
+                        Are you sure you want to delete the role "{getRoleDisplayName(selectedRole)}"?
+                        This action cannot be undone.
+                    </Typography>
+
+                    {usersByRole[selectedRole]?.length > 0 && (
+                        <Alert severity="warning" sx={{ mb: 3 }}>
+                            <Typography sx={{ fontSize: '12px' }}>
+                                Warning: {usersByRole[selectedRole].length} user{usersByRole[selectedRole].length !== 1 ? 's are' : ' is'} currently assigned to this role.
+                                They will be automatically reassigned to the "user" role.
+                            </Typography>
+                        </Alert>
+                    )}
+
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                        <Button
+                            variant="outlined"
+                            onClick={() => {
+                                setDeleteRoleDialogOpen(false);
+                                setSelectedRole(null);
+                            }}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="contained"
+                            color="error"
+                            onClick={handleDeleteRole}
+                            disabled={saving}
+                            size="small"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            Delete Role
+                        </Button>
+                    </Box>
+                </Box>
+            </Dialog>
 
             {/* Snackbar */}
             <Snackbar

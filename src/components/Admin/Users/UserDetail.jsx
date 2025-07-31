@@ -25,6 +25,7 @@ import {
     AdminPanelSettings as AdminPanelSettingsIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
+import useRoles from '../../../hooks/useRoles';
 
 // Helper to format Firestore Timestamps
 const formatDate = (timestamp) => {
@@ -32,28 +33,20 @@ const formatDate = (timestamp) => {
     return timestamp.toDate().toLocaleString();
 };
 
-// Get role display name
-const getRoleDisplayName = (role) => {
-    switch (role) {
-        case 'superadmin':
-            return 'Super Administrator';
-        case 'admin':
-            return 'Administrator';
-        case 'user':
-            return 'Company Administrator';
-        case 'company_staff':
-            return 'Company Staff';
-        case 'accounting':
-            return 'Accounting';
-        default:
-            return role || 'User';
-    }
-};
-
 const UserDetail = () => {
     const { id: userId } = useParams();
     const navigate = useNavigate();
     const { enqueueSnackbar } = useSnackbar();
+
+    // Role management
+    const {
+        roles,
+        loading: rolesLoading,
+        assignRole,
+        getRoleDisplayName,
+        getRoleColor,
+        getActiveRoles
+    } = useRoles();
 
     const [user, setUser] = useState(null);
     const [originalUser, setOriginalUser] = useState(null); // For reverting edits
@@ -206,18 +199,32 @@ const UserDetail = () => {
         setIsSaving(true);
         try {
             const userDocRef = doc(db, 'users', userId);
+
+            // Check if role changed - use new role assignment system
+            const roleChanged = formData.role !== originalUser.role;
+
+            if (roleChanged) {
+                // Use the new role assignment system for role changes
+                await assignRole(userId, formData.role, 'Role updated via admin user management');
+                enqueueSnackbar(`Role updated to ${getRoleDisplayName(formData.role)}`, { variant: 'info' });
+            }
+
+            // Update other fields (excluding role since it's handled above)
             const dataToUpdate = {
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 phone: formData.phone,
                 phoneExtension: formData.phoneExtension,
-                role: formData.role,
                 status: formData.status,
-                updatedAt: new Date(), // Using client-side date, consider serverTimestamp if precision is critical
+                updatedAt: new Date(),
             };
+
             await updateDoc(userDocRef, dataToUpdate);
-            setUser(prev => ({ ...prev, ...dataToUpdate })); // Update local user state
-            setOriginalUser(prev => ({ ...prev, ...dataToUpdate })); // Update original user state
+
+            // Update local state with all changes including role
+            const allUpdates = { ...dataToUpdate, role: formData.role };
+            setUser(prev => ({ ...prev, ...allUpdates }));
+            setOriginalUser(prev => ({ ...prev, ...allUpdates }));
             setEditMode(false);
             enqueueSnackbar('User details updated successfully!', { variant: 'success' });
         } catch (err) {
@@ -446,12 +453,14 @@ const UserDetail = () => {
                                     />
                                     <Chip
                                         label={getRoleDisplayName(user.role)}
-                                        color="primary"
                                         variant="outlined"
                                         size="small"
                                         sx={{
                                             fontSize: '11px',
-                                            fontWeight: 600
+                                            fontWeight: 600,
+                                            borderColor: getRoleColor(user.role),
+                                            color: getRoleColor(user.role),
+                                            backgroundColor: `${getRoleColor(user.role)}10`
                                         }}
                                     />
                                 </Box>
@@ -538,22 +547,66 @@ const UserDetail = () => {
                                                 name="role"
                                                 value={formData.role}
                                                 onChange={handleInputChange}
+                                                disabled={rolesLoading}
                                                 sx={{
                                                     '& .MuiSelect-select': { fontSize: '12px' },
                                                     '& .MuiMenuItem-root': { fontSize: '12px' }
                                                 }}
                                             >
-                                                <MenuItem value="superadmin" sx={{ fontSize: '12px' }}>Super Administrator</MenuItem>
-                                                <MenuItem value="admin" sx={{ fontSize: '12px' }}>Administrator</MenuItem>
-                                                <MenuItem value="user" sx={{ fontSize: '12px' }}>Company Administrator</MenuItem>
-                                                <MenuItem value="company_staff" sx={{ fontSize: '12px' }}>Company Staff</MenuItem>
-                                                <MenuItem value="accounting" sx={{ fontSize: '12px' }}>Accounting</MenuItem>
+                                                {getActiveRoles().map((role) => (
+                                                    <MenuItem
+                                                        key={role.roleId}
+                                                        value={role.roleId}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1
+                                                        }}
+                                                    >
+                                                        <Box
+                                                            sx={{
+                                                                width: 12,
+                                                                height: 12,
+                                                                borderRadius: '50%',
+                                                                backgroundColor: getRoleColor(role.roleId),
+                                                                display: 'inline-block',
+                                                                marginRight: 1
+                                                            }}
+                                                        />
+                                                        {role.displayName}
+                                                        {!role.isSystemRole && (
+                                                            <Chip
+                                                                label="Custom"
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="primary"
+                                                                sx={{
+                                                                    ml: 'auto',
+                                                                    fontSize: '9px',
+                                                                    height: '16px'
+                                                                }}
+                                                            />
+                                                        )}
+                                                    </MenuItem>
+                                                ))}
                                             </Select>
                                         </FormControl>
                                     ) : (
-                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                            {getRoleDisplayName(user.role)}
-                                        </Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box
+                                                sx={{
+                                                    width: 8,
+                                                    height: 8,
+                                                    borderRadius: '50%',
+                                                    backgroundColor: getRoleColor(user.role),
+                                                    display: 'inline-block'
+                                                }}
+                                            />
+                                            <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                {getRoleDisplayName(user.role)}
+                                            </Typography>
+                                        </Box>
                                     )}
                                 </Box>
 
