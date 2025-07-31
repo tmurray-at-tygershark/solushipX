@@ -209,9 +209,18 @@ const LazyComponentWrapper = ({ children }) => (
 );
 
 const MapsLoadingScreen = () => (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
-        <CircularProgress size={24} />
-        <Typography sx={{ ml: 2 }}>Loading Map...</Typography>
+    <Box sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100%',
+        width: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        backgroundColor: '#1a1a1a'
+    }}>
+        <CircularProgress size={48} sx={{ color: '#ffffff' }} />
     </Box>
 );
 

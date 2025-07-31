@@ -153,6 +153,14 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
         loadAvailableCustomers();
     }, [loadAvailableCustomers]);
 
+    // Auto-select customer if there's only one available
+    useEffect(() => {
+        if (availableCustomers.length === 1 && !selectedCustomerId) {
+            const singleCustomer = availableCustomers[0];
+            setSelectedCustomerId(singleCustomer.customerID || singleCustomer.id);
+        }
+    }, [availableCustomers, selectedCustomerId]);
+
     // Initialize customer selection from props
     useEffect(() => {
         if (customerId && !isEditing) {
@@ -696,7 +704,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                         />
                         <CardContent sx={{ pt: 1 }}>
                             <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
+                                <Grid item xs={12}>
                                     <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>
                                             Select Customer *
@@ -729,14 +737,7 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                                         )}
                                     </FormControl>
                                 </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1 }}>
-                                        {selectedCustomerId
-                                            ? 'This address will be specifically assigned to the selected customer.'
-                                            : 'Please select a customer to assign this address to.'
-                                        }
-                                    </Typography>
-                                </Grid>
+
                             </Grid>
                         </CardContent>
                     </Card>
