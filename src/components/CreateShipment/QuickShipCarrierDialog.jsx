@@ -171,7 +171,7 @@ const QuickShipCarrierDialog = ({
     // Set selected company when editing and companies are loaded
     useEffect(() => {
         if (editingCarrier && companies.length > 0) {
-            // Find the company by companyID
+            // Find the company by companyID from the carrier data
             const carrierCompanyId = editingCarrier.companyID;
             if (carrierCompanyId) {
                 const company = companies.find(c =>
@@ -180,10 +180,22 @@ const QuickShipCarrierDialog = ({
                 );
                 if (company) {
                     setSelectedCompany(company);
+                    return;
                 }
             }
         }
-    }, [editingCarrier, companies]);
+
+        // Fallback: use companyId prop when editing (from company context)
+        if (editingCarrier && companyId && companies.length > 0) {
+            const company = companies.find(c =>
+                c.companyID === companyId ||
+                c.id === companyId
+            );
+            if (company) {
+                setSelectedCompany(company);
+            }
+        }
+    }, [editingCarrier, companies, companyId]);
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -451,13 +463,25 @@ const QuickShipCarrierDialog = ({
 
     // Load companies for dropdown
     const loadCompanies = async () => {
-        if (!userRole) return;
+        console.log('🏢 QuickShip loadCompanies called with:', {
+            userRole,
+            connectedCompanies,
+            connectedCompaniesLength: connectedCompanies?.length,
+            proposedCompanyId: companyId,
+            currentLocalStorage: localStorage.getItem('solushipx_selected_company_id')
+        });
+
+        if (!userRole) {
+            console.log('❌ No userRole, returning');
+            return;
+        }
 
         setLoadingCompanies(true);
         try {
             let companiesData = [];
 
             if (userRole === 'superadmin') {
+                console.log('👑 Loading all companies for superadmin');
                 // Super admins can see all companies
                 const companiesRef = collection(db, 'companies');
                 const companiesSnapshot = await getDocs(companiesRef);
@@ -465,15 +489,19 @@ const QuickShipCarrierDialog = ({
                     id: doc.id,
                     ...doc.data()
                 }));
-            } else if (userRole === 'admin') {
-                // Regular admins can only see their connected companies
-                if (connectedCompanies.length > 0) {
+                console.log('👑 Loaded companies for superadmin:', companiesData.length);
+            } else if (userRole === 'admin' || userRole === 'user') {
+                console.log('🔧 Loading connected companies for admin/user role');
+                // Regular admins and company admins can only see their connected companies
+                if (connectedCompanies && connectedCompanies.length > 0) {
+                    console.log('📋 Connected companies found:', connectedCompanies);
                     const companiesRef = collection(db, 'companies');
                     const companiesSnapshot = await getDocs(companiesRef);
                     const allCompanies = companiesSnapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data()
                     }));
+                    console.log('📊 All companies from DB:', allCompanies.length);
 
                     // Filter to only connected companies
                     companiesData = allCompanies.filter(company =>
@@ -482,7 +510,28 @@ const QuickShipCarrierDialog = ({
                             connected.companyId === company.companyID
                         )
                     );
+                    console.log('✅ Filtered connected companies:', companiesData);
+                } else if (companyId && companyId !== 'all') {
+                    // Fallback: If no connectedCompanies but we have a companyId, load just that company
+                    console.log('🔄 No connectedCompanies, loading current company context:', companyId);
+                    const companiesRef = collection(db, 'companies');
+                    const companiesSnapshot = await getDocs(companiesRef);
+                    const allCompanies = companiesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    // Find the company that matches the current context
+                    companiesData = allCompanies.filter(company =>
+                        company.companyID === companyId || company.id === companyId
+                    );
+
+                    console.log('✅ Loaded current company from context:', companiesData.length);
+                } else {
+                    console.log('❌ No connected companies found and no company context');
                 }
+            } else {
+                console.log('❓ Unhandled user role:', userRole);
             }
 
             // Process company data with proper name handling and logo
@@ -502,17 +551,25 @@ const QuickShipCarrierDialog = ({
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name));
 
+            console.log('🎯 Setting companies:', processedCompanies);
             setCompanies(processedCompanies);
 
             // Pre-select company based on context
             if (companyId && companyId !== 'all') {
+                console.log('🔍 Looking for company with ID:', companyId);
                 const company = processedCompanies.find(c => c.companyID === companyId || c.id === companyId);
                 if (company) {
+                    console.log('✅ Pre-selecting company:', company);
                     setSelectedCompany(company);
+                } else {
+                    console.log('❌ Company not found for ID:', companyId);
                 }
             } else if (processedCompanies.length === 1) {
                 // Auto-select if only one company available
+                console.log('🎯 Auto-selecting single company:', processedCompanies[0]);
                 setSelectedCompany(processedCompanies[0]);
+            } else {
+                console.log('📝 No company pre-selection');
             }
 
         } catch (error) {

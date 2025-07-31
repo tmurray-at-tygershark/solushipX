@@ -865,13 +865,13 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.DELETE_CARRIERS]: false,
     [PERMISSIONS.MANAGE_CARRIER_KEYS]: false,
     [PERMISSIONS.MANAGE_EDI_MAPPING]: false,
-    [PERMISSIONS.MANAGE_CARRIERS]: false,
+    [PERMISSIONS.MANAGE_CARRIERS]: true,
     
     // Address Management - LIMITED: Basic address book access
     [PERMISSIONS.MANAGE_ADDRESSES]: true,
     
     // Broker Management - RESTRICTED: No broker management  
-    [PERMISSIONS.MANAGE_BROKERS]: false,
+    [PERMISSIONS.MANAGE_BROKERS]: true,
     
     // Reports & Analytics - LIMITED: Basic tracking reports only
     [PERMISSIONS.VIEW_REPORTS]: false,
@@ -920,42 +920,57 @@ export const ROLE_PERMISSIONS = {
 };
 
 // Import dynamic role service (lazy import to avoid circular dependencies)
-let roleService = null;
-const getRoleService = async () => {
-  if (!roleService) {
-    const { default: RoleService } = await import('../services/roleService');
-    roleService = RoleService;
-    await roleService.init();
-  }
+let roleServicePromise = null;
+let roleServiceInstance = null;
+
+// Create the service immediately
+const createRoleService = async () => {
+  const { default: roleService } = await import('../services/roleService');
+  await roleService.init();
+  roleServiceInstance = roleService;
+  console.log('🔥 roleServiceInstance created and stored:', !!roleServiceInstance);
   return roleService;
 };
 
-// Helper function to check if a user has a specific permission (with dynamic role support)
+// Start loading immediately
+roleServicePromise = createRoleService();
+
+export const getRoleService = async () => {
+  return roleServicePromise;
+};
+
+// Helper function to check if a user has a specific permission
 export const hasPermission = (userRole, permission) => {
   if (!userRole || !permission) return false;
   
-  const rolePermissions = ROLE_PERMISSIONS[userRole];
-  if (!rolePermissions) return false;
+  // ONLY use role service - no hardcoded permissions
+  if (roleServiceInstance) {
+    try {
+      const result = roleServiceInstance.hasPermission(userRole, permission);
+      return result;
+    } catch (error) {
+      console.error('Error using role service:', error);
+      return false;
+    }
+  }
   
-  // Super admin has all permissions
-  if (rolePermissions['*'] === true) return true;
-  
-  return rolePermissions[permission] === true;
+  // Role service not ready - return false
+  return false;
 };
 
-// Helper function to check if user has any of the specified permissions (with dynamic role support)
+// Helper function to check if user has any of the specified permissions (DATABASE ONLY)
 export const hasAnyPermission = (userRole, permissions) => {
   if (!userRole || !permissions || !Array.isArray(permissions)) return false;
   
-  // Use hardcoded permissions for consistency
+  // Use the hasPermission function which now only uses database
   return permissions.some(permission => hasPermission(userRole, permission));
 };
 
-// Helper function to check if user has all of the specified permissions (with dynamic role support)
+// Helper function to check if user has all of the specified permissions (DATABASE ONLY)
 export const hasAllPermissions = (userRole, permissions) => {
   if (!userRole || !permissions || !Array.isArray(permissions)) return false;
   
-  // Use hardcoded permissions for consistency
+  // Use the hasPermission function which now only uses database
   return permissions.every(permission => hasPermission(userRole, permission));
 };
 

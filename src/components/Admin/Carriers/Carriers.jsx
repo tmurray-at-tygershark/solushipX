@@ -60,6 +60,7 @@ import {
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCompany } from '../../../contexts/CompanyContext';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 
@@ -278,6 +279,9 @@ const CarriersPagination = ({
 };
 
 const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) => {
+    // Contexts
+    const { companyIdForAddress } = useCompany();
+
     // Main tab state - NEW: Two-tab system
     const [mainTab, setMainTab] = useState(0); // 0 = Connected Carriers, 1 = Quickship Carriers
 
@@ -3256,7 +3260,11 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                     setEditingQuickshipCarrier(null);
                 }}
                 onSuccess={handleQuickshipCarrierSaved}
-                companyId={selectedCompany && selectedCompany !== 'all' ? selectedCompany : null}
+                companyId={
+                    editingQuickshipCarrier
+                        ? companyIdForAddress || (selectedCompany && selectedCompany !== 'all' ? selectedCompany : null)
+                        : (selectedCompany && selectedCompany !== 'all' ? selectedCompany : null)
+                }
                 editingCarrier={editingQuickshipCarrier}
                 existingCarriers={allQuickshipCarriers}
             />

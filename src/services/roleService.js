@@ -28,9 +28,7 @@ class RoleService {
       console.log('🔄 Loading roles from Firestore...');
       
       // Load roles
-      const rolesSnapshot = await getDocs(
-        query(collection(db, 'roles'), orderBy('name'))
-      );
+      const rolesSnapshot = await getDocs(collection(db, 'roles'));
       
       // Load role permissions
       const rolePermissionsSnapshot = await getDocs(collection(db, 'rolePermissions'));
@@ -38,45 +36,54 @@ class RoleService {
       // Process roles
       rolesSnapshot.docs.forEach(doc => {
         const roleData = doc.data();
-        this.roles.set(roleData.id, {
-          id: roleData.id,
-          name: roleData.name,
+        const roleId = doc.id; // Document ID is the roleId
+        
+        this.roles.set(roleId, {
+          id: roleId,
+          name: roleData.displayName || roleData.name,
           description: roleData.description,
           color: roleData.color || '#757575',
-          isSystem: roleData.isSystem || false,
+          isSystem: roleData.isSystemRole || roleData.isSystem || false,
           isActive: roleData.isActive !== false, // Default to true
           createdAt: roleData.createdAt,
           updatedAt: roleData.updatedAt
         });
-      });
-
-      // Process role permissions
-      const permissionsByRole = new Map();
-      rolePermissionsSnapshot.docs.forEach(doc => {
-        const permData = doc.data();
-        if (permData.granted) {
-          if (!permissionsByRole.has(permData.roleId)) {
-            permissionsByRole.set(permData.roleId, []);
-          }
-          permissionsByRole.get(permData.roleId).push(permData.permissionId);
+        
+        // Store permissions directly from the role document
+        if (roleData.permissions) {
+          this.rolePermissions.set(roleId, roleData.permissions);
         }
       });
 
-      // Convert to role permissions format
-      permissionsByRole.forEach((permissions, roleId) => {
-        const rolePermissions = {};
-        permissions.forEach(permission => {
-          rolePermissions[permission] = true;
+      // Process role permissions (fallback to separate collection if needed)
+      if (this.rolePermissions.size === 0 && rolePermissionsSnapshot.docs.length > 0) {
+        const permissionsByRole = new Map();
+        rolePermissionsSnapshot.docs.forEach(doc => {
+          const permData = doc.data();
+          if (permData.granted) {
+            if (!permissionsByRole.has(permData.roleId)) {
+              permissionsByRole.set(permData.roleId, []);
+            }
+            permissionsByRole.get(permData.roleId).push(permData.permissionId);
+          }
         });
-        this.rolePermissions.set(roleId, rolePermissions);
-      });
+
+        // Convert to role permissions format
+        permissionsByRole.forEach((permissions, roleId) => {
+          const rolePermissions = {};
+          permissions.forEach(permission => {
+            rolePermissions[permission] = true;
+          });
+          this.rolePermissions.set(roleId, rolePermissions);
+        });
+      }
 
       this.isInitialized = true;
       console.log(`✅ Loaded ${this.roles.size} roles from database`);
       
     } catch (error) {
-      console.warn('⚠️ Failed to load roles from database, using hardcoded fallback:', error);
-      this._loadHardcodedRoles();
+      console.error('❌ Failed to load roles from database:', error);
+      throw error; // Don't use hardcoded fallback
     }
   }
 
@@ -179,8 +186,8 @@ class RoleService {
   // Get permissions for a role
   getRolePermissions(roleId) {
     if (!this.isInitialized) {
-      console.warn('RoleService not initialized, using hardcoded permissions');
-      return HARDCODED_ROLE_PERMISSIONS[roleId] || {};
+      console.warn('RoleService not initialized - no permissions available');
+      return {};
     }
     
     return this.rolePermissions.get(roleId) || {};
@@ -231,7 +238,7 @@ class RoleService {
     if (typeof callback !== 'function') return;
 
     const unsubscribeRoles = onSnapshot(
-      query(collection(db, 'roles'), orderBy('name')),
+      collection(db, 'roles'),
       (snapshot) => {
         console.log('🔄 Roles updated, reloading...');
         this._loadRolesFromDatabase().then(() => {

@@ -327,6 +327,8 @@ const RouteViewBadge = ({ shipments, onRouteClick }) => {
         initializeMaps();
     }, []);
 
+
+
     // Get carrier logo URL
     const getCarrierLogo = useCallback((shipment) => {
         if (!shipment || !shipment.carrier) return '/images/integratedcarrriers_logo_blk.png'; // SoluShip fallback
@@ -2475,11 +2477,10 @@ const Dashboard = () => {
     const [newShipmentExpanded, setNewShipmentExpanded] = useState(false);
 
     useEffect(() => {
-        // Ensure the loading screen is visible for at least 3 seconds
-        // to allow the animation to complete while feeling fast and zippy.
+        // Quick loading screen for snappy UX - just enough for smooth transition
         const timer = setTimeout(() => {
             setIsMinLoadingTimePassed(true);
-        }, 3000);
+        }, 500); // Reduced from 3000ms to 500ms for lightning-fast feel
         return () => clearTimeout(timer);
     }, []);
 
@@ -2517,12 +2518,14 @@ const Dashboard = () => {
         return () => unsubscribeCustomers();
     }, [companyIdForAddress]);
 
-    // Fetch shipments from Firestore for the last 30 days
+    // Fetch shipments from Firestore for the last 30 days - Optimized for speed
     useEffect(() => {
         if (!companyIdForAddress || companyLoading) {
             return;
         }
 
+        // Start loading immediately for snappy UX
+        setLoading(false); // Show content immediately, load data in background
         console.log('Dashboard: Fetching shipments for company:', companyIdForAddress);
 
         // Function to process and combine shipment results
@@ -2715,7 +2718,7 @@ const Dashboard = () => {
 
             console.log('🔍 Dashboard: Setting shipments for enterprise search with drafts enabled:', allShipmentsForSearch.length);
 
-            setLoading(false);
+            // Data loaded - UI already showing for optimistic loading
         };
 
         // First query - normal shipments with valid createdAt
@@ -6086,7 +6089,7 @@ const Dashboard = () => {
             </Box>
 
             {/* Loading Screen Overlay - Now as background with lower z-index */}
-            <Fade in={showLoadingScreen} timeout={{ enter: 0, exit: 1000 }}>
+            <Fade in={showLoadingScreen} timeout={{ enter: 0, exit: 300 }}>
                 <Box sx={{
                     position: 'absolute',
                     top: 0, // Start at the top
