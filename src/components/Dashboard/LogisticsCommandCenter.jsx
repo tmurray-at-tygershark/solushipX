@@ -636,26 +636,28 @@ const LogisticsCommandCenter = ({
                         }}>
                             ID: {finalCompanyData?.companyID?.toUpperCase() || 'N/A'}
                         </Typography>
-                        {/* Company Switcher Icon - Only show for Super Admins and Multi-Company Admins */}
-                        {finalCompanyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) && onOpenCompanySwitcher && (
-                            <IconButton
-                                size="small"
-                                onClick={onOpenCompanySwitcher}
-                                sx={{
-                                    color: 'rgba(255, 255, 255, 0.6)',
-                                    padding: '2px',
-                                    marginLeft: '4px',
-                                    marginTop: '-2px',
-                                    '&:hover': {
-                                        color: 'rgba(255, 255, 255, 0.9)',
-                                        backgroundColor: 'rgba(255, 255, 255, 0.1)'
-                                    }
-                                }}
-                                title="Switch Company"
-                            >
-                                <SwapHorizIcon sx={{ fontSize: '14px' }} />
-                            </IconButton>
-                        )}
+                        {/* Company Switcher Icon - Only show for Super Admins, Multi-Company Admins, and Multi-Company Users */}
+                        {finalCompanyData && (userRole === 'superadmin' ||
+                            (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1) ||
+                            (userRole === 'user' && currentUser?.connectedCompanies?.companies?.length > 1)) && onOpenCompanySwitcher && (
+                                <IconButton
+                                    size="small"
+                                    onClick={onOpenCompanySwitcher}
+                                    sx={{
+                                        color: 'rgba(255, 255, 255, 0.6)',
+                                        padding: '2px',
+                                        marginLeft: '4px',
+                                        marginTop: '-2px',
+                                        '&:hover': {
+                                            color: 'rgba(255, 255, 255, 0.9)',
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)'
+                                        }
+                                    }}
+                                    title="Switch Company"
+                                >
+                                    <SwapHorizIcon sx={{ fontSize: '14px' }} />
+                                </IconButton>
+                            )}
                     </Box>
                 </Box>
 

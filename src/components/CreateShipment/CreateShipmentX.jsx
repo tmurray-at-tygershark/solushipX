@@ -68,6 +68,7 @@ import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limi
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { fetchMultiCarrierRates, getAllCarriers, getEligibleCarriers } from '../../utils/carrierEligibility';
 import { smartWarmupCarriers } from '../../utils/warmupCarriers';
 import { validateUniversalRate } from '../../utils/universalDataModel';
@@ -435,7 +436,7 @@ const CreateShipmentX = (props) => {
 
     // Customer selection state for super admins  
     const [availableCustomers, setAvailableCustomers] = useState([]);
-    const [selectedCustomerId, setSelectedCustomerId] = useState('all');
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     // Dynamic charge types state
@@ -484,7 +485,7 @@ const CreateShipmentX = (props) => {
 
         if (!companyId || companyId === 'all') {
             setAvailableCustomers([]);
-            setSelectedCustomerId('all');
+            setSelectedCustomerId(null);
             return;
         }
 
@@ -505,11 +506,11 @@ const CreateShipmentX = (props) => {
             customers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             setAvailableCustomers(customers);
-            setSelectedCustomerId('all'); // Reset to "All Customers"
+            setSelectedCustomerId(null); // Reset to "All Customers"
         } catch (error) {
             console.error('Error loading customers:', error);
             setAvailableCustomers([]);
-            setSelectedCustomerId('all');
+            setSelectedCustomerId(null);
         } finally {
             setLoadingCustomers(false);
         }
@@ -556,7 +557,7 @@ const CreateShipmentX = (props) => {
             } else {
                 setSelectedCompanyData(null);
                 setAvailableCustomers([]);
-                setSelectedCustomerId('all');
+                setSelectedCustomerId(null);
             }
         } catch (error) {
             console.error('❌ Error switching company context:', error);
@@ -609,8 +610,8 @@ const CreateShipmentX = (props) => {
 
             let addresses = allAddresses;
 
-            // Add customer filter for super admins if specific customer is selected
-            if (userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all') {
+            // Apply customer filter if specific customer is selected (for all user roles)
+            if (effectiveCustomerId && effectiveCustomerId !== 'all' && effectiveCustomerId !== null) {
                 // Try multiple filter approaches to handle different data structures
                 addresses = allAddresses.filter(addr => {
                     const matches = addr.addressClassID === effectiveCustomerId ||
@@ -653,7 +654,7 @@ const CreateShipmentX = (props) => {
                 effectiveCustomerId,
                 userRole,
                 addressCount: addresses.length,
-                isFiltered: userRole === 'superadmin' && effectiveCustomerId && effectiveCustomerId !== 'all',
+                isFiltered: effectiveCustomerId && effectiveCustomerId !== 'all' && effectiveCustomerId !== null,
                 addresses: addresses.slice(0, 3) // Show first 3 for debugging
             });
 
@@ -790,6 +791,19 @@ const CreateShipmentX = (props) => {
             loadCustomersForCompany(companyIdForAddress);
         }
     }, [userRole, companyIdForAddress, selectedCompanyId, loadCustomersForCompany]);
+
+    // Auto-select customer if there's only one available
+    useEffect(() => {
+        if (availableCustomers.length === 1 && !selectedCustomerId) {
+            const singleCustomer = availableCustomers[0];
+            const customerId = singleCustomer.customerID || singleCustomer.id;
+            console.log('🎯 Auto-selecting single customer:', {
+                customer: singleCustomer.name,
+                customerId
+            });
+            setSelectedCustomerId(customerId);
+        }
+    }, [availableCustomers, selectedCustomerId]);
 
     // Get company eligible carriers using enhanced system
     const getCompanyEligibleCarriers = useCallback(async (shipmentData) => {
@@ -1364,8 +1378,8 @@ const CreateShipmentX = (props) => {
                             setBrokerExpanded(true);
                         }
 
-                        // Load customer filter for super admins
-                        if (userRole === 'superadmin' && draftData.selectedCustomerId) {
+                        // Load customer selection for all user roles
+                        if (draftData.selectedCustomerId) {
                             setSelectedCustomerId(draftData.selectedCustomerId);
                         }
 
@@ -3464,7 +3478,7 @@ const CreateShipmentX = (props) => {
                     creationMethod: 'advanced',
                     status: 'draft',
                     lastUpdated: new Date().toISOString(),
-                    selectedCustomerId: selectedCustomerId || 'all'
+                    selectedCustomerId: selectedCustomerId || null
                 };
 
                 // Update the draft with latest data
@@ -3618,181 +3632,168 @@ const CreateShipmentX = (props) => {
                             />
                         )}
 
-                    {/* Customer Filter for Super Admins */}
-                    {(() => {
-                        const shouldShowCustomerFilter = userRole === 'superadmin' && (selectedCompanyId || companyIdForAddress) && availableCustomers.length > 0;
-                        console.log('🔍 CreateShipmentX Customer Filter Debug:', {
-                            userRole,
-                            selectedCompanyId,
-                            companyIdForAddress,
-                            availableCustomersLength: availableCustomers.length,
-                            availableCustomers: availableCustomers.slice(0, 3), // Show first 3 for debugging
-                            shouldShowCustomerFilter
-                        });
-                        return shouldShowCustomerFilter;
-                    })() && (
-                            <Box sx={{ mb: 3 }}>
-                                <Autocomplete
-                                    value={availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId) || { id: 'all', name: 'All Customers' }}
-                                    onChange={(event, newValue) => {
-                                        const customerId = newValue?.customerID || newValue?.id || 'all';
-                                        console.log('🎯 CreateShipmentX Customer selected:', {
-                                            newValue,
-                                            customerID: newValue?.customerID,
-                                            id: newValue?.id,
-                                            finalCustomerId: customerId,
-                                            previousSelectedCustomerId: selectedCustomerId
-                                        });
-                                        console.log('✅ CreateShipmentX BEFORE setSelectedCustomerId:', { previousValue: selectedCustomerId, newValue: customerId });
-                                        setSelectedCustomerId(customerId);
-                                        console.log('✅ CreateShipmentX AFTER setSelectedCustomerId called with:', customerId);
-                                    }}
-                                    options={[{ id: 'all', name: 'All Customers' }, ...availableCustomers]}
-                                    getOptionLabel={(option) => option.name || ''}
-                                    loading={loadingCustomers}
-                                    disabled={loadingCustomers}
-                                    renderInput={(params) => {
-                                        const selectedCustomer = availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId);
-                                        const isAllSelected = !selectedCustomer || selectedCustomerId === 'all';
+                    {/* Customer Selection for All User Roles - Show when company is selected and customers are loaded */}
+                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff' || userRole === 'manufacturer') && (selectedCompanyId || companyIdForAddress) && availableCustomers.length > 0 && (
+                        <Box sx={{ mb: 3 }}>
+                            <Autocomplete
+                                value={availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId) || null}
+                                onChange={(event, newValue) => {
+                                    const customerId = newValue?.customerID || newValue?.id || null;
+                                    console.log('🎯 CreateShipmentX Customer selected:', {
+                                        newValue,
+                                        customerID: newValue?.customerID,
+                                        id: newValue?.id,
+                                        finalCustomerId: customerId,
+                                        previousSelectedCustomerId: selectedCustomerId
+                                    });
+                                    setSelectedCustomerId(customerId);
+                                }}
+                                options={availableCustomers}
+                                getOptionLabel={(option) => option.name || ''}
+                                loading={loadingCustomers}
+                                disabled={loadingCustomers}
+                                renderInput={(params) => {
+                                    const selectedCustomer = availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId);
+                                    const isCustomerSelected = !!selectedCustomer;
 
-                                        return (
-                                            <TextField
-                                                {...params}
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <PersonIcon sx={{ fontSize: '16px' }} />
-                                                        Filter by Customer
-                                                    </Box>
-                                                }
-                                                placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-input': {
-                                                        fontSize: '12px',
-                                                        // Hide the input field completely when a customer is selected
-                                                        opacity: !isAllSelected && selectedCustomer ? 0 : 1,
-                                                        width: !isAllSelected && selectedCustomer ? 0 : 'auto',
-                                                        padding: !isAllSelected && selectedCustomer ? 0 : undefined
-                                                    },
-                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                }}
-                                                helperText={
-                                                    loadingCustomers ? 'Loading customers...' :
-                                                        !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
-                                                            'No customers found for selected company' : ''
-                                                }
-                                                FormHelperTextProps={{
-                                                    sx: { fontSize: '11px', color: '#6b7280' }
-                                                }}
-                                                InputProps={{
-                                                    ...params.InputProps,
-                                                    startAdornment: !isAllSelected && selectedCustomer ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5, width: '100%' }}>
-                                                            <Avatar
-                                                                src={selectedCustomer.logo || selectedCustomer.logoUrl}
-                                                                sx={{
-                                                                    width: 24,
-                                                                    height: 24,
-                                                                    bgcolor: '#059669',
-                                                                    fontSize: '11px',
-                                                                    fontWeight: 600
-                                                                }}
-                                                            >
-                                                                {!selectedCustomer.logo && !selectedCustomer.logoUrl && (selectedCustomer.name || 'C').charAt(0).toUpperCase()}
-                                                            </Avatar>
-                                                            <Box>
-                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.2 }}>
-                                                                    {selectedCustomer.name}
-                                                                </Typography>
-                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280', lineHeight: 1 }}>
-                                                                    ID: {selectedCustomer.customerID || selectedCustomer.id}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    ) : params.InputProps.startAdornment,
-                                                }}
-                                            />
-                                        );
-                                    }}
-                                    renderOption={(props, option) => (
-                                        <Box component="li" {...props} sx={{ p: 1.5 }}>
-                                            {option.customerID === 'all' || option.id === 'all' ? (
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                    <PersonIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
-                                                    <Box>
-                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                            All Customers
-                                                        </Typography>
-                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            Show addresses for all customers
-                                                        </Typography>
-                                                    </Box>
+                                    return (
+                                        <TextField
+                                            {...params}
+                                            label={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <PersonIcon sx={{ fontSize: '16px' }} />
+                                                    Select Customer
                                                 </Box>
-                                            ) : (
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                    <Avatar
-                                                        src={option.logo || option.logoUrl}
-                                                        sx={{
-                                                            width: 28,
-                                                            height: 28,
-                                                            bgcolor: '#059669',
-                                                            fontSize: '11px',
-                                                            fontWeight: 600
-                                                        }}
-                                                    >
-                                                        {!option.logo && !option.logoUrl && (option.name || 'C').charAt(0).toUpperCase()}
-                                                    </Avatar>
-                                                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                                                        <Typography sx={{
-                                                            fontSize: '12px',
-                                                            fontWeight: 500,
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap'
-                                                        }}>
-                                                            {option.name || 'Unknown Customer'}
-                                                        </Typography>
-                                                        <Typography sx={{
-                                                            fontSize: '11px',
-                                                            color: '#6b7280',
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap'
-                                                        }}>
-                                                            ID: {option.customerID || option.id}
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            )}
-                                        </Box>
-                                    )}
-                                    isOptionEqualToValue={(option, value) => {
-                                        const optionId = option.customerID || option.id;
-                                        const valueId = value.customerID || value.id;
-                                        return optionId === valueId;
-                                    }}
-                                    filterOptions={(options, { inputValue }) => {
-                                        const trimmedInput = inputValue?.trim(); // CRITICAL FIX: Strip leading/trailing spaces
-                                        if (!trimmedInput) return options;
-
-                                        const filtered = options.filter(option => {
-                                            if (option.customerID === 'all' || option.id === 'all') {
-                                                return 'all customers'.includes(trimmedInput.toLowerCase());
                                             }
-                                            const name = (option.name || '').toLowerCase();
-                                            const customerId = (option.customerID || option.id || '').toLowerCase();
-                                            const searchTerm = trimmedInput.toLowerCase();
+                                            placeholder={loadingCustomers ? "Loading customers..." : "Search customers..."}
+                                            size="small"
+                                            sx={{
+                                                '& .MuiInputBase-input': {
+                                                    fontSize: '12px',
+                                                    // Hide the input field completely when a customer is selected
+                                                    opacity: isCustomerSelected ? 0 : 1,
+                                                    width: isCustomerSelected ? 0 : 'auto',
+                                                    padding: isCustomerSelected ? 0 : undefined
+                                                },
+                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                            }}
+                                            helperText={
+                                                loadingCustomers ? 'Loading customers...' :
+                                                    !loadingCustomers && availableCustomers.length === 0 && (selectedCompanyId || companyIdForAddress) ?
+                                                        'No customers found for selected company' : ''
+                                            }
+                                            FormHelperTextProps={{
+                                                sx: { fontSize: '11px', color: '#6b7280' }
+                                            }}
+                                            InputProps={{
+                                                ...params.InputProps,
+                                                startAdornment: isCustomerSelected ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5, width: '100%' }}>
+                                                        <Avatar
+                                                            src={selectedCustomer.logo || selectedCustomer.logoUrl}
+                                                            sx={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                bgcolor: '#059669',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600
+                                                            }}
+                                                        >
+                                                            {!selectedCustomer.logo && !selectedCustomer.logoUrl && (selectedCustomer.name || 'C').charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                        <Box>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.2 }}>
+                                                                {selectedCustomer.name}
+                                                            </Typography>
+                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280', lineHeight: 1 }}>
+                                                                ID: {selectedCustomer.customerID || selectedCustomer.id}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ) : params.InputProps.startAdornment,
+                                            }}
+                                        />
+                                    );
+                                }}
+                                renderOption={(props, option) => (
+                                    <Box component="li" {...props} sx={{ p: 1.5 }}>
+                                        {option.customerID === 'all' || option.id === 'all' ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <PersonIcon sx={{ fontSize: '20px', color: '#6b7280' }} />
+                                                <Box>
+                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                        All Customers
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Show addresses for all customers
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                <Avatar
+                                                    src={option.logo || option.logoUrl}
+                                                    sx={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        bgcolor: '#059669',
+                                                        fontSize: '11px',
+                                                        fontWeight: 600
+                                                    }}
+                                                >
+                                                    {!option.logo && !option.logoUrl && (option.name || 'C').charAt(0).toUpperCase()}
+                                                </Avatar>
+                                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                    <Typography sx={{
+                                                        fontSize: '12px',
+                                                        fontWeight: 500,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {option.name || 'Unknown Customer'}
+                                                    </Typography>
+                                                    <Typography sx={{
+                                                        fontSize: '11px',
+                                                        color: '#6b7280',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        ID: {option.customerID || option.id}
+                                                    </Typography>
+                                                </Box>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                )}
+                                isOptionEqualToValue={(option, value) => {
+                                    const optionId = option.customerID || option.id;
+                                    const valueId = value.customerID || value.id;
+                                    return optionId === valueId;
+                                }}
+                                filterOptions={(options, { inputValue }) => {
+                                    const trimmedInput = inputValue?.trim(); // CRITICAL FIX: Strip leading/trailing spaces
+                                    if (!trimmedInput) return options;
 
-                                            return name.includes(searchTerm) || customerId.includes(searchTerm);
-                                        });
+                                    const filtered = options.filter(option => {
+                                        if (option.customerID === 'all' || option.id === 'all') {
+                                            return 'all customers'.includes(trimmedInput.toLowerCase());
+                                        }
+                                        const name = (option.name || '').toLowerCase();
+                                        const customerId = (option.customerID || option.id || '').toLowerCase();
+                                        const searchTerm = trimmedInput.toLowerCase();
 
-                                        return filtered;
-                                    }}
-                                    sx={{ width: '100%' }}
-                                    size="small"
-                                />
-                            </Box>
-                        )}
+                                        return name.includes(searchTerm) || customerId.includes(searchTerm);
+                                    });
+
+                                    return filtered;
+                                }}
+                                sx={{ width: '100%' }}
+                                size="small"
+                            />
+                        </Box>
+                    )}
 
                     {/* Show rest of form only when company is selected or user is not super admin */}
                     {(() => {
@@ -3937,24 +3938,27 @@ const CreateShipmentX = (props) => {
                                                     }}
                                                 />
                                             </Grid>
-                                            <Grid item xs={12} md={4}>
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
-                                                    <Select
-                                                        value={shipmentInfo.billType}
-                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
-                                                        label="Bill Type"
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            '& .MuiSelect-select': { fontSize: '12px' }
-                                                        }}
-                                                    >
-                                                        <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
-                                                        <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
-                                                        <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
-                                                    </Select>
-                                                </FormControl>
-                                            </Grid>
+                                            {/* Bill Type - only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.VIEW_BILL_TYPE) && (
+                                                <Grid item xs={12} md={4}>
+                                                    <FormControl fullWidth size="small">
+                                                        <InputLabel sx={{ fontSize: '12px' }}>Bill Type</InputLabel>
+                                                        <Select
+                                                            value={shipmentInfo.billType}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, billType: e.target.value }))}
+                                                            label="Bill Type"
+                                                            sx={{
+                                                                fontSize: '12px',
+                                                                '& .MuiSelect-select': { fontSize: '12px' }
+                                                            }}
+                                                        >
+                                                            <MenuItem value="prepaid" sx={{ fontSize: '12px' }}>Prepaid (Sender Pays)</MenuItem>
+                                                            <MenuItem value="collect" sx={{ fontSize: '12px' }}>Collect (Receiver Pays)</MenuItem>
+                                                            <MenuItem value="third_party" sx={{ fontSize: '12px' }}>Third Party</MenuItem>
+                                                        </Select>
+                                                    </FormControl>
+                                                </Grid>
+                                            )}
 
 
 
@@ -4115,80 +4119,85 @@ const CreateShipmentX = (props) => {
                                                     ))}
                                                 </Box>
                                             </Grid>
-                                            <Grid item xs={12} md={4}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="ETA 1"
-                                                    type="date"
-                                                    value={shipmentInfo.eta1 || ''}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            cursor: 'pointer',
-                                                            '&::placeholder': { fontSize: '12px' },
-                                                            '&::-webkit-calendar-picker-indicator': {
-                                                                position: 'absolute',
-                                                                left: 0,
-                                                                top: 0,
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                padding: 0,
-                                                                margin: 0,
-                                                                cursor: 'pointer',
-                                                                opacity: 0
-                                                            }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-root': {
-                                                            cursor: 'pointer'
-                                                        }
-                                                    }}
-                                                    InputLabelProps={{
-                                                        shrink: true,
-                                                        sx: { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={4}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="ETA 2"
-                                                    type="date"
-                                                    value={shipmentInfo.eta2 || ''}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            cursor: 'pointer',
-                                                            '&::placeholder': { fontSize: '12px' },
-                                                            '&::-webkit-calendar-picker-indicator': {
-                                                                position: 'absolute',
-                                                                left: 0,
-                                                                top: 0,
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                padding: 0,
-                                                                margin: 0,
-                                                                cursor: 'pointer',
-                                                                opacity: 0
-                                                            }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-root': {
-                                                            cursor: 'pointer'
-                                                        }
-                                                    }}
-                                                    InputLabelProps={{
-                                                        shrink: true,
-                                                        sx: { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
+                                            {/* ETA1 and ETA2 fields - only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.VIEW_ETA_FIELDS) && (
+                                                <>
+                                                    <Grid item xs={12} md={4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="ETA 1"
+                                                            type="date"
+                                                            value={shipmentInfo.eta1 || ''}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    cursor: 'pointer',
+                                                                    '&::placeholder': { fontSize: '12px' },
+                                                                    '&::-webkit-calendar-picker-indicator': {
+                                                                        position: 'absolute',
+                                                                        left: 0,
+                                                                        top: 0,
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        padding: 0,
+                                                                        margin: 0,
+                                                                        cursor: 'pointer',
+                                                                        opacity: 0
+                                                                    }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': {
+                                                                    cursor: 'pointer'
+                                                                }
+                                                            }}
+                                                            InputLabelProps={{
+                                                                shrink: true,
+                                                                sx: { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                    <Grid item xs={12} md={4}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="ETA 2"
+                                                            type="date"
+                                                            value={shipmentInfo.eta2 || ''}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    cursor: 'pointer',
+                                                                    '&::placeholder': { fontSize: '12px' },
+                                                                    '&::-webkit-calendar-picker-indicator': {
+                                                                        position: 'absolute',
+                                                                        left: 0,
+                                                                        top: 0,
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        padding: 0,
+                                                                        margin: 0,
+                                                                        cursor: 'pointer',
+                                                                        opacity: 0
+                                                                    }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': {
+                                                                    cursor: 'pointer'
+                                                                }
+                                                            }}
+                                                            InputLabelProps={{
+                                                                shrink: true,
+                                                                sx: { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                </>
+                                            )}
                                         </Grid>
                                     </CardContent>
                                 </Card>
@@ -4959,72 +4968,74 @@ const CreateShipmentX = (props) => {
                                                         />
                                                     </Grid>
 
-                                                    {/* Declared Value */}
-                                                    <Grid item xs={12} md={3}>
-                                                        <Box sx={{ display: 'flex', gap: 1 }}>
-                                                            <TextField
-                                                                size="small"
-                                                                label="Declared Value"
-                                                                type="number"
-                                                                value={pkg.declaredValue || ''}
-                                                                onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
-                                                                autoComplete="off"
-                                                                tabIndex={getPackageBaseTabIndex(index) + 6}
-                                                                onKeyDown={(e) => handleKeyDown(e, 'navigate')}
-                                                                inputProps={{ min: 0, step: 0.01 }}
-                                                                sx={{
-                                                                    flex: 1,
-                                                                    '& .MuiInputBase-root': { fontSize: '12px' },
-                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                }}
-                                                                placeholder="0.00"
-                                                            />
-                                                            <Autocomplete
-                                                                size="small"
-                                                                options={[
-                                                                    { value: 'CAD', label: 'CAD' },
-                                                                    { value: 'USD', label: 'USD' }
-                                                                ]}
-                                                                getOptionLabel={(option) => option.label}
-                                                                value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
-                                                                onChange={(event, newValue) => {
-                                                                    updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
-                                                                }}
-                                                                isOptionEqualToValue={(option, value) => option.value === value.value}
-                                                                componentsProps={{
-                                                                    popper: {
-                                                                        container: document.body
-                                                                    }
-                                                                }}
-                                                                slotProps={{
-                                                                    paper: {
-                                                                        tabIndex: -1
-                                                                    }
-                                                                }}
-                                                                renderInput={(params) => (
-                                                                    <TextField
-                                                                        {...params}
-                                                                        tabIndex={getPackageBaseTabIndex(index) + 7}
-                                                                        sx={{
-                                                                            minWidth: '70px',
-                                                                            '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
-                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                                renderOption={(props, option) => (
-                                                                    <Box component="li" {...props} sx={{ fontSize: '12px' }}>
-                                                                        {option.label}
-                                                                    </Box>
-                                                                )}
-                                                                sx={{
-                                                                    minWidth: '70px',
-                                                                    '& .MuiAutocomplete-input': { fontSize: '12px' },
-                                                                    '& .MuiAutocomplete-option': { fontSize: '12px' }
-                                                                }}
-                                                            />
-                                                        </Box>
-                                                    </Grid>
+                                                    {/* Declared Value - only show if user has permission */}
+                                                    {hasPermission(userRole, PERMISSIONS.VIEW_DECLARED_VALUE) && (
+                                                        <Grid item xs={12} md={3}>
+                                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                <TextField
+                                                                    size="small"
+                                                                    label="Declared Value"
+                                                                    type="number"
+                                                                    value={pkg.declaredValue || ''}
+                                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
+                                                                    autoComplete="off"
+                                                                    tabIndex={getPackageBaseTabIndex(index) + 6}
+                                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                    inputProps={{ min: 0, step: 0.01 }}
+                                                                    sx={{
+                                                                        flex: 1,
+                                                                        '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                    placeholder="0.00"
+                                                                />
+                                                                <Autocomplete
+                                                                    size="small"
+                                                                    options={[
+                                                                        { value: 'CAD', label: 'CAD' },
+                                                                        { value: 'USD', label: 'USD' }
+                                                                    ]}
+                                                                    getOptionLabel={(option) => option.label}
+                                                                    value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
+                                                                    onChange={(event, newValue) => {
+                                                                        updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
+                                                                    }}
+                                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                                    componentsProps={{
+                                                                        popper: {
+                                                                            container: document.body
+                                                                        }
+                                                                    }}
+                                                                    slotProps={{
+                                                                        paper: {
+                                                                            tabIndex: -1
+                                                                        }
+                                                                    }}
+                                                                    renderInput={(params) => (
+                                                                        <TextField
+                                                                            {...params}
+                                                                            tabIndex={getPackageBaseTabIndex(index) + 7}
+                                                                            sx={{
+                                                                                minWidth: '70px',
+                                                                                '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
+                                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                    renderOption={(props, option) => (
+                                                                        <Box component="li" {...props} sx={{ fontSize: '12px' }}>
+                                                                            {option.label}
+                                                                        </Box>
+                                                                    )}
+                                                                    sx={{
+                                                                        minWidth: '70px',
+                                                                        '& .MuiAutocomplete-input': { fontSize: '12px' },
+                                                                        '& .MuiAutocomplete-option': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                            </Box>
+                                                        </Grid>
+                                                    )}
 
                                                     {/* Unit System Toggle - show for each package */}
                                                     <Grid item xs={12} md={2.4}>
@@ -5049,8 +5060,8 @@ const CreateShipmentX = (props) => {
                                                         </Box>
                                                     </Grid>
 
-                                                    {/* Freight Class - Only show for freight shipments */}
-                                                    {shipmentInfo.shipmentType === 'freight' && (
+                                                    {/* Freight Class - Only show for freight shipments and if user has permission */}
+                                                    {shipmentInfo.shipmentType === 'freight' && hasPermission(userRole, PERMISSIONS.VIEW_FREIGHT_CLASS) && (
                                                         <Grid item xs={12}>
                                                             <FormControl fullWidth size="small">
                                                                 <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
@@ -5745,7 +5756,7 @@ const CreateShipmentX = (props) => {
                                                 color: '#1f2937',
                                                 mb: 0.5
                                             }}>
-                                                Total: {selectedRate ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+                                                Total: {selectedRate ? (hasPermission(userRole, PERMISSIONS.VIEW_RATE_PRICING) ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Rate Available') : '$0.00'}
                                             </Typography>
                                             <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
                                                 {selectedRate ? 'Selected Rate Total' : 'No Rate Selected'}
@@ -5755,25 +5766,28 @@ const CreateShipmentX = (props) => {
                                         {/* Right side - Conversion button and action buttons */}
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                                                <Button
-                                                    variant="outlined"
-                                                    startIcon={<FlashOnIcon />}
-                                                    onClick={handleConvertToQuickShip}
-                                                    disabled={isConverting || isBooking || isSavingDraft}
-                                                    sx={{
-                                                        fontSize: '12px',
-                                                        textTransform: 'none',
-                                                        minWidth: 140,
-                                                        borderColor: '#d1d5db',
-                                                        color: '#374151',
-                                                        '&:hover': {
-                                                            borderColor: '#9ca3af',
-                                                            backgroundColor: '#f9fafb'
-                                                        }
-                                                    }}
-                                                >
-                                                    {isConverting ? 'Converting...' : 'Convert to QuickShip'}
-                                                </Button>
+                                                {/* Convert to QuickShip button - only show if user has QuickShip permission */}
+                                                {hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP) && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        startIcon={<FlashOnIcon />}
+                                                        onClick={handleConvertToQuickShip}
+                                                        disabled={isConverting || isBooking || isSavingDraft}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            textTransform: 'none',
+                                                            minWidth: 140,
+                                                            borderColor: '#d1d5db',
+                                                            color: '#374151',
+                                                            '&:hover': {
+                                                                borderColor: '#9ca3af',
+                                                                backgroundColor: '#f9fafb'
+                                                            }
+                                                        }}
+                                                    >
+                                                        {isConverting ? 'Converting...' : 'Convert to QuickShip'}
+                                                    </Button>
+                                                )}
                                                 <Box sx={{ display: 'flex', gap: 2 }}>
                                                     <Button
                                                         variant="outlined"

@@ -1333,8 +1333,10 @@ const DashboardStatsOverlay = ({
                 <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
                     {/* Header */}
                     <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        {/* Company Switcher - Only show for Super Admins and Multi-Company Admins */}
-                        {companyData && (userRole === 'superadmin' || (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1)) ? (
+                        {/* Company Switcher - Only show for Super Admins, Multi-Company Admins, and Multi-Company Users */}
+                        {companyData && (userRole === 'superadmin' ||
+                            (userRole === 'admin' && currentUser?.connectedCompanies?.companies?.length > 1) ||
+                            (userRole === 'user' && currentUser?.connectedCompanies?.companies?.length > 1)) ? (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                 <Typography variant="h6" sx={{
                                     fontSize: '1.1rem',
@@ -2784,7 +2786,7 @@ const Dashboard = () => {
     // Load available companies for switcher
     useEffect(() => {
         const loadAvailableCompanies = async () => {
-            if (!currentUser || (!isAdmin && userRole !== 'superadmin')) return;
+            if (!currentUser || (!isAdmin && userRole !== 'superadmin' && userRole !== 'user')) return;
 
             setLoadingCompanies(true);
             try {
@@ -3771,18 +3773,21 @@ const Dashboard = () => {
         }
     }, [modalStack]);
 
-    const menuItems = [
+    // Define all possible menu items with their required permissions
+    const allMenuItems = [
         {
             text: 'New Shipment',
             icon: <AddIcon />,
             action: () => setNewShipmentExpanded(!newShipmentExpanded),
             expandable: true,
             expanded: newShipmentExpanded,
+            permission: PERMISSIONS.CREATE_SHIPMENTS,
             subItems: [
                 {
                     text: 'Quick Ship',
                     icon: <RocketLaunchIcon />,
                     description: 'Fast manual entry',
+                    permission: PERMISSIONS.USE_QUICKSHIP,
                     action: () => {
                         handleOpenQuickShipModal();
                         setNewShipmentExpanded(false);
@@ -3792,6 +3797,7 @@ const Dashboard = () => {
                     text: 'Real-Time Rates',
                     icon: <CalculateIcon />,
                     description: 'Advanced single-page rate comparison',
+                    permission: PERMISSIONS.CREATE_SHIPMENTS,
                     action: () => {
                         handleOpenCreateShipmentModal();
                         setNewShipmentExpanded(false);
@@ -3799,12 +3805,64 @@ const Dashboard = () => {
                 }
             ]
         },
-        { text: 'Shipments', icon: <LocalShippingIcon />, action: () => setIsShipmentsModalOpen(true) },
-        { text: 'Customers', icon: <PeopleIcon />, action: () => setIsCustomersModalOpen(true) },
-        { text: 'Address Book', icon: <ContactMailIcon />, action: () => setIsAddressBookModalOpen(true) },
-        { text: 'Billing', icon: <AccountBalanceWalletIcon />, action: () => setIsBillingModalOpen(true) },
-        { text: 'Reports', icon: <AssessmentIcon />, action: () => setIsReportsModalOpen(true) },
+        {
+            text: 'Shipments',
+            icon: <LocalShippingIcon />,
+            action: () => setIsShipmentsModalOpen(true),
+            permission: PERMISSIONS.VIEW_SHIPMENTS
+        },
+        {
+            text: 'Customers',
+            icon: <PeopleIcon />,
+            action: () => setIsCustomersModalOpen(true),
+            permission: PERMISSIONS.VIEW_CUSTOMERS
+        },
+        {
+            text: 'Address Book',
+            icon: <ContactMailIcon />,
+            action: () => setIsAddressBookModalOpen(true),
+            permission: PERMISSIONS.MANAGE_ADDRESSES
+        },
+        {
+            text: 'Billing',
+            icon: <AccountBalanceWalletIcon />,
+            action: () => setIsBillingModalOpen(true),
+            permission: PERMISSIONS.VIEW_BILLING
+        },
+        {
+            text: 'Reports',
+            icon: <AssessmentIcon />,
+            action: () => setIsReportsModalOpen(true),
+            permission: PERMISSIONS.VIEW_REPORTS
+        },
     ];
+
+    // Filter menu items based on user permissions
+    const menuItems = allMenuItems.filter(item => {
+        // Always show items without permission requirements
+        if (!item.permission) return true;
+
+        // Check if user has the required permission
+        return hasPermission(userRole, item.permission);
+    }).map(item => {
+        // Filter sub-items if they exist
+        if (item.subItems) {
+            const filteredSubItems = item.subItems.filter(subItem => {
+                if (!subItem.permission) return true;
+                return hasPermission(userRole, subItem.permission);
+            });
+
+            // Only show parent item if it has visible sub-items
+            if (filteredSubItems.length === 0) return null;
+
+            return {
+                ...item,
+                subItems: filteredSubItems
+            };
+        }
+
+        return item;
+    }).filter(Boolean); // Remove null items
 
     const profileMenuItems = [
         // Empty array since My Company moved to profile dropdown
@@ -4544,6 +4602,7 @@ const Dashboard = () => {
                 transformOrigin={{ horizontal: 'right', vertical: 'top' }}
                 anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
+                {/* Notifications - Always show for all users */}
                 <MenuItem
                     onClick={() => handleSettingsMenuAction('notifications')}
                     sx={{
@@ -4562,41 +4621,47 @@ const Dashboard = () => {
                     </Typography>
                 </MenuItem>
 
-                <MenuItem
-                    onClick={() => handleSettingsMenuAction('carriers')}
-                    sx={{
-                        py: 1.5,
-                        px: 2,
-                        '&:hover': {
-                            bgcolor: 'rgba(0, 0, 0, 0.04)'
-                        }
-                    }}
-                >
-                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
-                        <BusinessIcon fontSize="small" />
-                    </ListItemIcon>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        Carriers
-                    </Typography>
-                </MenuItem>
+                {/* Carriers - Only show if user has carrier management permission */}
+                {hasPermission(userRole, PERMISSIONS.MANAGE_CARRIERS) && (
+                    <MenuItem
+                        onClick={() => handleSettingsMenuAction('carriers')}
+                        sx={{
+                            py: 1.5,
+                            px: 2,
+                            '&:hover': {
+                                bgcolor: 'rgba(0, 0, 0, 0.04)'
+                            }
+                        }}
+                    >
+                        <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                            <BusinessIcon fontSize="small" />
+                        </ListItemIcon>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            Carriers
+                        </Typography>
+                    </MenuItem>
+                )}
 
-                <MenuItem
-                    onClick={() => handleSettingsMenuAction('brokers')}
-                    sx={{
-                        py: 1.5,
-                        px: 2,
-                        '&:hover': {
-                            bgcolor: 'rgba(0, 0, 0, 0.04)'
-                        }
-                    }}
-                >
-                    <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
-                        <BusinessIcon fontSize="small" />
-                    </ListItemIcon>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        Brokers
-                    </Typography>
-                </MenuItem>
+                {/* Brokers - Only show if user has broker management permission */}
+                {hasPermission(userRole, PERMISSIONS.MANAGE_BROKERS) && (
+                    <MenuItem
+                        onClick={() => handleSettingsMenuAction('brokers')}
+                        sx={{
+                            py: 1.5,
+                            px: 2,
+                            '&:hover': {
+                                bgcolor: 'rgba(0, 0, 0, 0.04)'
+                            }
+                        }}
+                    >
+                        <ListItemIcon sx={{ mr: 1, minWidth: 'auto' }}>
+                            <BusinessIcon fontSize="small" />
+                        </ListItemIcon>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            Brokers
+                        </Typography>
+                    </MenuItem>
+                )}
             </Menu>
 
             {/* Left Side Navigation Panel */}

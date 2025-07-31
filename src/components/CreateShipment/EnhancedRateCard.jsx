@@ -22,6 +22,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import { useState as useStateImport, useEffect } from 'react';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 
 const EnhancedRateCard = ({
     rate,
@@ -36,6 +37,10 @@ const EnhancedRateCard = ({
 
     // Check if user is admin or super admin
     const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+    // Check permission-based visibility
+    const canViewPricing = hasPermission(userRole, PERMISSIONS.VIEW_RATE_PRICING);
+    const canViewBreakdown = hasPermission(userRole, PERMISSIONS.VIEW_RATE_BREAKDOWN);
 
     // Get cost vs charge information for admins
     const getCostChargeInfo = () => {
@@ -435,19 +440,27 @@ const EnhancedRateCard = ({
                     {/* Price */}
                     <Grid item xs={6}>
                         <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
-                                <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#1f2937' }}>
-                                    {formatPrice(totalPrice)}
-                                </Typography>
-                                {/* Admin Cost Display */}
-                                {isAdmin && costChargeInfo && (
-                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#059669', fontWeight: 600, mt: 0.5 }}>
-                                        {formatPrice(costChargeInfo.cost)}
+                            {canViewPricing ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
+                                    <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#1f2937' }}>
+                                        {formatPrice(totalPrice)}
                                     </Typography>
-                                )}
-                            </Box>
+                                    {/* Admin Cost Display */}
+                                    {isAdmin && costChargeInfo && (
+                                        <Typography variant="caption" sx={{ fontSize: '10px', color: '#059669', fontWeight: 600, mt: 0.5 }}>
+                                            {formatPrice(costChargeInfo.cost)}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            ) : (
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
+                                    <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#6b7280' }}>
+                                        ---
+                                    </Typography>
+                                </Box>
+                            )}
                             <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '10px', color: 'success.dark' }}>
-                                TOTAL COST
+                                {canViewPricing ? 'TOTAL COST' : 'RATE AVAILABLE'}
                             </Typography>
                         </Box>
                     </Grid>
@@ -491,25 +504,29 @@ const EnhancedRateCard = ({
                     </Box>
                 )}
 
-                {/* Rate Details Collapse */}
-                <Box>
-                    <Button
-                        onClick={() => setExpanded(!expanded)}
-                        endIcon={
-                            <ExpandMoreIcon
-                                sx={{
-                                    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                    transition: 'transform 0.3s'
-                                }}
-                            />
-                        }
-                        variant="text"
-                        size="small"
-                        sx={{ mb: 1, fontSize: '11px', fontWeight: 600 }}
-                    >
-                        {expanded ? 'Hide Details' : 'Show Details'}
-                    </Button>
+                {/* Rate Details Collapse - only show if user has breakdown permission */}
+                {canViewBreakdown && (
+                    <Box>
+                        <Button
+                            onClick={() => setExpanded(!expanded)}
+                            endIcon={
+                                <ExpandMoreIcon
+                                    sx={{
+                                        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                        transition: 'transform 0.3s'
+                                    }}
+                                />
+                            }
+                            variant="text"
+                            size="small"
+                            sx={{ mb: 1, fontSize: '11px', fontWeight: 600 }}
+                        >
+                            {expanded ? 'Hide Details' : 'Show Details'}
+                        </Button>
+                    </Box>
+                )}
 
+                {canViewBreakdown && (
                     <Collapse in={expanded} timeout={300}>
                         {expanded && (
                             <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
@@ -788,7 +805,7 @@ const EnhancedRateCard = ({
                             </Box>
                         )}
                     </Collapse>
-                </Box>
+                )}
 
                 {/* Select Button */}
                 <Button

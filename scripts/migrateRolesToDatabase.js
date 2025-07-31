@@ -43,6 +43,7 @@ const ROLES_TO_MIGRATE = {
       edit_organizations: true,
       view_shipments: true,
       create_shipments: true,
+      use_quickship: true,
       edit_shipments: true,
       delete_shipments: true,
       view_customers: true,
@@ -59,6 +60,12 @@ const ROLES_TO_MIGRATE = {
       view_carriers: true,
       create_carriers: true,
       edit_carriers: true,
+      delete_carriers: true,
+      manage_carrier_keys: true,
+      manage_edi_mapping: true,
+      manage_carriers: true,
+      manage_addresses: true,
+      manage_brokers: true,
       view_reports: true,
       create_reports: true,
       view_analytics: true,
@@ -74,7 +81,19 @@ const ROLES_TO_MIGRATE = {
       view_followups: true,
       use_quickship: true,
       use_ai_features: true,
-      use_advanced_routing: true
+      use_advanced_routing: true,
+      
+      // Rate and Pricing Visibility - FULL ACCESS for admins
+      view_rate_pricing: true,
+      view_rate_breakdown: true,
+      
+      // Shipment Information Fields - FULL ACCESS for admins
+      view_bill_type: true,
+      view_eta_fields: true,
+      
+      // Package Information Fields - FULL ACCESS for admins
+      view_declared_value: true,
+      view_freight_class: true
     },
     isActive: true,
     isSystemRole: true,
@@ -92,12 +111,14 @@ const ROLES_TO_MIGRATE = {
       view_dashboard: true,
       view_shipments: true,
       create_shipments: true,
+      use_quickship: true,
       edit_shipments: true,
       view_customers: true,
       create_customers: true,
       edit_customers: true,
       view_billing: true,
       view_carriers: true,
+      manage_addresses: true,
       view_reports: true,
       create_reports: true,
       view_tracking: true,
@@ -105,7 +126,19 @@ const ROLES_TO_MIGRATE = {
       edit_profile: true,
       view_notifications: true,
       edit_notifications: true,
-      use_quickship: true
+      use_quickship: true,
+      
+      // Rate and Pricing Visibility - FULL ACCESS for company admins
+      view_rate_pricing: true,
+      view_rate_breakdown: true,
+      
+      // Shipment Information Fields - FULL ACCESS for company admins
+      view_bill_type: true,
+      view_eta_fields: true,
+      
+      // Package Information Fields - FULL ACCESS for company admins
+      view_declared_value: true,
+      view_freight_class: true
     },
     isActive: true,
     isSystemRole: true,
@@ -130,12 +163,26 @@ const ROLES_TO_MIGRATE = {
       manage_payment_terms: true,
       generate_invoices: true,
       manage_ap_processing: true,
+      view_carriers: true,
+      manage_addresses: true,
       view_reports: true,
       create_reports: true,
       view_profile: true,
       edit_profile: true,
       view_notifications: true,
-      edit_notifications: true
+      edit_notifications: true,
+      
+      // Rate and Pricing Visibility - FULL ACCESS for accounting (they need pricing info)
+      view_rate_pricing: true,
+      view_rate_breakdown: true,
+      
+      // Shipment Information Fields - FULL ACCESS for accounting
+      view_bill_type: true,
+      view_eta_fields: true,
+      
+      // Package Information Fields - FULL ACCESS for accounting
+      view_declared_value: true,
+      view_freight_class: true
     },
     isActive: true,
     isSystemRole: true,
@@ -154,11 +201,24 @@ const ROLES_TO_MIGRATE = {
       view_shipments: true,
       create_shipments: true,
       view_customers: true,
+      manage_addresses: true,
       view_tracking: true,
       view_profile: true,
       edit_profile: true,
       view_notifications: true,
-      use_quickship: true
+      use_quickship: true,
+      
+      // Rate and Pricing Visibility - FULL ACCESS for company staff (operational need)
+      view_rate_pricing: true,
+      view_rate_breakdown: true,
+      
+      // Shipment Information Fields - FULL ACCESS for company staff
+      view_bill_type: true,
+      view_eta_fields: true,
+      
+      // Package Information Fields - FULL ACCESS for company staff
+      view_declared_value: true,
+      view_freight_class: true
     },
     isActive: true,
     isSystemRole: true,
@@ -175,10 +235,28 @@ const ROLES_TO_MIGRATE = {
     permissions: {
       view_dashboard: true,
       view_shipments: true,
+      create_shipments: true,
+      use_quickship: false, // Manufacturers cannot use QuickShip
       view_tracking: true,
       view_profile: true,
       edit_profile: true,
-      view_notifications: true
+      view_notifications: true,
+      manage_addresses: true,
+      view_addresses: true,
+      create_addresses: true,
+      edit_addresses: true,
+      
+      // Rate and Pricing Visibility - RESTRICTED: No pricing visibility
+      view_rate_pricing: false,
+      view_rate_breakdown: false,
+      
+      // Shipment Information Fields - RESTRICTED: Limited field access
+      view_bill_type: false,
+      view_eta_fields: false,
+      
+      // Package Information Fields - RESTRICTED: Limited package details
+      view_declared_value: false,
+      view_freight_class: false
     },
     isActive: true,
     isSystemRole: false, // Custom role that can be modified
@@ -206,7 +284,15 @@ async function migrateRoles() {
         batch.set(roleRef, roleData);
         migrationCount++;
       } else {
-        console.log(`⏭️  Role already exists: ${roleData.displayName} (${roleId})`);
+        // Update existing role with new permissions
+        console.log(`🔄 Updating existing role: ${roleData.displayName} (${roleId})`);
+        const roleRef = db.collection('roles').doc(roleId);
+        batch.update(roleRef, {
+          permissions: roleData.permissions,
+          updatedAt: new Date(),
+          updatedBy: 'migration-script'
+        });
+        migrationCount++;
       }
     }
     

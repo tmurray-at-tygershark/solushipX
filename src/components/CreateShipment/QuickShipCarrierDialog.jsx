@@ -15,16 +15,20 @@ import {
     Select,
     MenuItem,
     Alert,
-    Divider
+    Divider,
+    Autocomplete,
+    Avatar
 } from '@mui/material';
 import {
     Close as CloseIcon,
     CloudUpload as UploadIcon,
-    Delete as DeleteIcon
+    Delete as DeleteIcon,
+    Business as BusinessIcon
 } from '@mui/icons-material';
 import { db, functions } from '../../firebase/firebase';
-import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { useAuth } from '../../contexts/AuthContext';
 import EmailContactsManager from '../common/EmailContactsManager';
 
 const QuickShipCarrierDialog = ({
@@ -47,11 +51,21 @@ const QuickShipCarrierDialog = ({
     if (open) {
         console.log('🎯 DIALOG RECEIVED OPEN=TRUE!');
     }
+
+    // Auth context
+    const { userRole, connectedCompanies } = useAuth();
+
+    // Component state
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState({});
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState('');
     const [uploading, setUploading] = useState(false);
+
+    // Company selection state
+    const [companies, setCompanies] = useState([]);
+    const [selectedCompany, setSelectedCompany] = useState(null);
+    const [loadingCompanies, setLoadingCompanies] = useState(false);
 
     // Form data state
     const [formData, setFormData] = useState({
@@ -147,6 +161,30 @@ const QuickShipCarrierDialog = ({
         }
     }, [editingCarrier, editingCarrier?.updatedAt, editingCarrier?.emailContacts]);
 
+    // Load companies when dialog opens
+    useEffect(() => {
+        if (open) {
+            loadCompanies();
+        }
+    }, [open, userRole, connectedCompanies]);
+
+    // Set selected company when editing and companies are loaded
+    useEffect(() => {
+        if (editingCarrier && companies.length > 0) {
+            // Find the company by companyID
+            const carrierCompanyId = editingCarrier.companyID;
+            if (carrierCompanyId) {
+                const company = companies.find(c =>
+                    c.companyID === carrierCompanyId ||
+                    c.id === carrierCompanyId
+                );
+                if (company) {
+                    setSelectedCompany(company);
+                }
+            }
+        }
+    }, [editingCarrier, companies]);
+
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
 
@@ -238,6 +276,11 @@ const QuickShipCarrierDialog = ({
     const validateForm = () => {
         const newErrors = {};
 
+        // Validate company selection
+        if (!selectedCompany) {
+            newErrors.company = 'Company selection is required';
+        }
+
         if (!formData.name.trim()) {
             newErrors.name = 'Carrier name is required';
         }
@@ -322,7 +365,8 @@ const QuickShipCarrierDialog = ({
                 billingEmail: formData.billingEmail,
                 logo: logoUrl,
                 enabled: formData.enabled,
-                companyID: companyId, // CRITICAL: Add companyID so carrier shows up in list
+                companyID: selectedCompany.companyID || selectedCompany.id, // Use selected company
+                companyName: selectedCompany.name, // Also store company name for reference
                 updatedAt: new Date().toISOString()
             };
 
@@ -393,6 +437,7 @@ const QuickShipCarrierDialog = ({
         setLogoFile(null);
         setLogoPreview('');
         setErrors({});
+        setSelectedCompany(null);
         if (onClose) onClose();
     };
 
@@ -402,6 +447,79 @@ const QuickShipCarrierDialog = ({
                 return terminalTotal + contact.emails.filter(email => email.trim()).length;
             }, 0);
         }, 0);
+    };
+
+    // Load companies for dropdown
+    const loadCompanies = async () => {
+        if (!userRole) return;
+
+        setLoadingCompanies(true);
+        try {
+            let companiesData = [];
+
+            if (userRole === 'superadmin') {
+                // Super admins can see all companies
+                const companiesRef = collection(db, 'companies');
+                const companiesSnapshot = await getDocs(companiesRef);
+                companiesData = companiesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+            } else if (userRole === 'admin') {
+                // Regular admins can only see their connected companies
+                if (connectedCompanies.length > 0) {
+                    const companiesRef = collection(db, 'companies');
+                    const companiesSnapshot = await getDocs(companiesRef);
+                    const allCompanies = companiesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    // Filter to only connected companies
+                    companiesData = allCompanies.filter(company =>
+                        connectedCompanies.some(connected =>
+                            connected.companyId === company.id ||
+                            connected.companyId === company.companyID
+                        )
+                    );
+                }
+            }
+
+            // Process company data with proper name handling and logo
+            const processedCompanies = companiesData
+                .filter(company => {
+                    const hasName = company.companyName || company.name || company.companyname ||
+                        company.company_name || company.companyDisplayName || company.displayName;
+                    return hasName;
+                })
+                .map(company => ({
+                    id: company.id,
+                    companyID: company.companyID || company.id,
+                    name: company.companyName || company.name || company.companyname ||
+                        company.company_name || company.companyDisplayName || company.displayName,
+                    logoUrl: company.logoUrl || company.logoURL || company.companyLogo ||
+                        company.logo || company.companyLogoURL || null
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            setCompanies(processedCompanies);
+
+            // Pre-select company based on context
+            if (companyId && companyId !== 'all') {
+                const company = processedCompanies.find(c => c.companyID === companyId || c.id === companyId);
+                if (company) {
+                    setSelectedCompany(company);
+                }
+            } else if (processedCompanies.length === 1) {
+                // Auto-select if only one company available
+                setSelectedCompany(processedCompanies[0]);
+            }
+
+        } catch (error) {
+            console.error('Error loading companies:', error);
+        } finally {
+            setLoadingCompanies(false);
+        }
     };
 
     return (
@@ -427,6 +545,95 @@ const QuickShipCarrierDialog = ({
 
             <DialogContent>
                 <Box sx={{ mt: 1 }}>
+                    {/* Company Selection */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        Company Assignment
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                        <Autocomplete
+                            options={companies}
+                            getOptionLabel={(option) => option.name}
+                            value={selectedCompany}
+                            onChange={(event, newValue) => {
+                                setSelectedCompany(newValue);
+                                // Clear company error when selection is made
+                                if (newValue && errors.company) {
+                                    setErrors(prev => ({ ...prev, company: null }));
+                                }
+                            }}
+                            loading={loadingCompanies}
+                            renderOption={(props, option) => (
+                                <Box component="li" {...props} sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 2,
+                                    p: 1.5,
+                                    '&:hover': {
+                                        backgroundColor: '#f3f4f6'
+                                    }
+                                }}>
+                                    <Avatar
+                                        src={option.logoUrl}
+                                        sx={{
+                                            width: 28,
+                                            height: 28,
+                                            border: '1px solid #d1d5db'
+                                        }}
+                                    >
+                                        <BusinessIcon sx={{ fontSize: 16 }} />
+                                    </Avatar>
+                                    <Box>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>{option.name}</Typography>
+                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                            Company ID: {option.companyID || 'No ID'}
+                                        </Typography>
+                                    </Box>
+                                </Box>
+                            )}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="Select Company *"
+                                    placeholder="Search and select a company..."
+                                    required
+                                    size="small"
+                                    error={!!errors.company}
+                                    helperText={errors.company}
+                                    sx={{
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                        '& .MuiOutlinedInput-root': {
+                                            '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                borderColor: '#6366f1'
+                                            },
+                                            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                borderColor: '#6366f1'
+                                            }
+                                        }
+                                    }}
+                                    InputProps={{
+                                        ...params.InputProps,
+                                        startAdornment: (
+                                            <BusinessIcon sx={{ fontSize: 16, color: '#6b7280', mr: 1 }} />
+                                        )
+                                    }}
+                                />
+                            )}
+                            isOptionEqualToValue={(option, value) => option.id === value?.id}
+                            noOptionsText="No companies available"
+                        />
+                        {!selectedCompany && (
+                            <Typography sx={{
+                                fontSize: '11px',
+                                color: '#ef4444',
+                                mt: 1,
+                                fontStyle: 'italic'
+                            }}>
+                                Please select a company before creating the carrier
+                            </Typography>
+                        )}
+                    </Box>
+
                     {/* Basic Information */}
                     <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
                         Basic Information

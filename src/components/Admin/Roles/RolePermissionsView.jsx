@@ -48,7 +48,9 @@ import {
     Info as InfoIcon,
     Edit as EditIcon,
     Save as SaveIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    AttachMoney as PricingIcon,
+    Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import {
     collection,
@@ -324,6 +326,8 @@ const RolePermissionsView = () => {
         if (permissionKey.includes('NOTIFICATION')) return 'Notification Management';
         if (permissionKey.includes('SETTINGS') || permissionKey.includes('ROLES') || permissionKey.includes('MARKUPS')) return 'System Settings';
         if (permissionKey.includes('QUICKSHIP') || permissionKey.includes('AI') || permissionKey.includes('ROUTING')) return 'Advanced Features';
+        if (permissionKey.includes('RATE') || permissionKey.includes('PRICING') || permissionKey.includes('BREAKDOWN')) return 'Rate & Pricing Visibility';
+        if (permissionKey.includes('BILL_TYPE') || permissionKey.includes('ETA') || permissionKey.includes('DECLARED_VALUE') || permissionKey.includes('FREIGHT_CLASS')) return 'Form Field Visibility';
         return 'Other';
     };
 
@@ -340,6 +344,8 @@ const RolePermissionsView = () => {
             case 'Reports & Analytics': return <ReportsIcon />;
             case 'System Settings': return <SettingsIcon />;
             case 'Advanced Features': return <RouteIcon />;
+            case 'Rate & Pricing Visibility': return <PricingIcon />;
+            case 'Form Field Visibility': return <VisibilityIcon />;
             default: return <BusinessIcon />;
         }
     };

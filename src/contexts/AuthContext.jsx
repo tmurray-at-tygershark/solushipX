@@ -40,23 +40,40 @@ export const AuthProvider = ({ children }) => {
                     // Force refresh the token to get latest custom claims
                     const idTokenResult = await user.getIdTokenResult(true);
 
-                    // Only log if claims or role changes
-                    if (idTokenResult.claims.superadmin === true) {
-                        setUserRole('superadmin');
-                    } else if (idTokenResult.claims.admin === true) {
-                        setUserRole('admin');
-                    } else {
-                        // Fallback to Firestore role if no admin/superadmin claim
-                        const userDocRef = doc(db, "users", user.uid);
-                        const docSnap = await getDoc(userDocRef);
-                        if (docSnap.exists()) {
-                            const userDataFromFirestore = docSnap.data();
+                    // Fetch user data from Firestore for all users
+                    const userDocRef = doc(db, "users", user.uid);
+                    const docSnap = await getDoc(userDocRef);
+
+                    if (docSnap.exists()) {
+                        const userDataFromFirestore = docSnap.data();
+
+                        // Set role based on claims first, then Firestore fallback
+                        if (idTokenResult.claims.superadmin === true) {
+                            setUserRole('superadmin');
+                        } else if (idTokenResult.claims.admin === true) {
+                            setUserRole('admin');
+                        } else {
                             setUserRole(userDataFromFirestore.role || 'user');
+                        }
+
+                        // Always add Firestore data to user object
+                        setUser({
+                            ...user,
+                            companyId: userDataFromFirestore.companyId,
+                            role: userDataFromFirestore.role,
+                            connectedCompanies: userDataFromFirestore.connectedCompanies
+                        });
+                    } else {
+                        // Handle case where no Firestore document exists
+                        if (idTokenResult.claims.superadmin === true) {
+                            setUserRole('superadmin');
+                        } else if (idTokenResult.claims.admin === true) {
+                            setUserRole('admin');
                         } else {
                             setUserRole('user');
                         }
+                        setUser(user);
                     }
-                    setUser(user);
                 } catch (error) {
                     console.error('Error in auth state change:', error);
                     setUser(null);
@@ -105,7 +122,8 @@ export const AuthProvider = ({ children }) => {
                 setUser({
                     ...result.user,
                     companyId: userData.companyId,
-                    role: userData.role
+                    role: userData.role,
+                    connectedCompanies: userData.connectedCompanies
                 });
                 setUserRole(userData.role);
 

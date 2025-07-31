@@ -925,7 +925,7 @@ async function bookEShipPlusShipment(rateRequestData, draftFirestoreDocId, selec
         apiKey: 'development-api-key', // Use development key for internal calls
         rateRequestData,
         draftFirestoreDocId,
-        selectedRateDocumentIdThe
+        selectedRateDocumentId
     };
     
     return await processBookingRequest(requestData);

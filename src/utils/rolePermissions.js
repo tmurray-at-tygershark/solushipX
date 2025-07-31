@@ -41,6 +41,7 @@ export const PERMISSIONS = {
   // Shipment Management
   VIEW_SHIPMENTS: 'view_shipments',
   CREATE_SHIPMENTS: 'create_shipments',
+  USE_QUICKSHIP: 'use_quickship', // Specific permission for QuickShip functionality
   EDIT_SHIPMENTS: 'edit_shipments',
   DELETE_SHIPMENTS: 'delete_shipments',
   VIEW_ALL_SHIPMENTS: 'view_all_shipments', // Admin can see all shipments
@@ -96,6 +97,13 @@ export const PERMISSIONS = {
   DELETE_CARRIERS: 'delete_carriers',
   MANAGE_CARRIER_KEYS: 'manage_carrier_keys',
   MANAGE_EDI_MAPPING: 'manage_edi_mapping',
+  MANAGE_CARRIERS: 'manage_carriers', // Combined carrier management permission
+  
+  // Address Management (Combined permission for address book access)
+  MANAGE_ADDRESSES: 'manage_addresses',
+  
+  // Broker Management
+  MANAGE_BROKERS: 'manage_brokers',
   
   // Reports & Analytics
   VIEW_REPORTS: 'view_reports',
@@ -129,6 +137,18 @@ export const PERMISSIONS = {
   USE_AI_AGENT: 'use_ai_agent',
   USE_ADVANCED_ROUTING: 'use_advanced_routing',
   MANAGE_INTEGRATIONS: 'manage_integrations',
+  
+  // Rate and Pricing Visibility
+  VIEW_RATE_PRICING: 'view_rate_pricing',
+  VIEW_RATE_BREAKDOWN: 'view_rate_breakdown',
+  
+  // Shipment Information Fields
+  VIEW_BILL_TYPE: 'view_bill_type',
+  VIEW_ETA_FIELDS: 'view_eta_fields',
+  
+  // Package Information Fields  
+  VIEW_DECLARED_VALUE: 'view_declared_value',
+  VIEW_FREIGHT_CLASS: 'view_freight_class',
 };
 
 // Define role-based permissions
@@ -180,6 +200,7 @@ export const ROLE_PERMISSIONS = {
     // Shipment Management
     [PERMISSIONS.VIEW_SHIPMENTS]: true,
     [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.USE_QUICKSHIP]: true,
     [PERMISSIONS.EDIT_SHIPMENTS]: true,
     [PERMISSIONS.DELETE_SHIPMENTS]: true,
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
@@ -308,6 +329,7 @@ export const ROLE_PERMISSIONS = {
     // Shipment Management
     [PERMISSIONS.VIEW_SHIPMENTS]: true,
     [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.USE_QUICKSHIP]: true,
     [PERMISSIONS.EDIT_SHIPMENTS]: true,
     [PERMISSIONS.DELETE_SHIPMENTS]: true,
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
@@ -379,6 +401,18 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_AI_AGENT]: true,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: true,
+    
+    // Rate and Pricing Visibility - FULL ACCESS for admins
+    [PERMISSIONS.VIEW_RATE_PRICING]: true,
+    [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    
+    // Shipment Information Fields - FULL ACCESS for admins
+    [PERMISSIONS.VIEW_BILL_TYPE]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    
+    // Package Information Fields - FULL ACCESS for admins
+    [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
+    [PERMISSIONS.VIEW_FREIGHT_CLASS]: true,
   },
   
   [ROLES.USER]: { // Company Admin
@@ -411,6 +445,7 @@ export const ROLE_PERMISSIONS = {
     // Shipment Management - Only their company's shipments
     [PERMISSIONS.VIEW_SHIPMENTS]: true,
     [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.USE_QUICKSHIP]: true,
     [PERMISSIONS.EDIT_SHIPMENTS]: true,
     [PERMISSIONS.DELETE_SHIPMENTS]: true,
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
@@ -488,6 +523,18 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_AI_AGENT]: true,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+    
+    // Rate and Pricing Visibility - FULL ACCESS for company admins
+    [PERMISSIONS.VIEW_RATE_PRICING]: true,
+    [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    
+    // Shipment Information Fields - FULL ACCESS for company admins
+    [PERMISSIONS.VIEW_BILL_TYPE]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    
+    // Package Information Fields - FULL ACCESS for company admins
+    [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
+    [PERMISSIONS.VIEW_FREIGHT_CLASS]: true,
   },
   
   [ROLES.ACCOUNTING]: { // Accounting role - focused on billing and invoicing
@@ -597,6 +644,18 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+    
+    // Rate and Pricing Visibility - FULL ACCESS for accounting (they need pricing info)
+    [PERMISSIONS.VIEW_RATE_PRICING]: true,
+    [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    
+    // Shipment Information Fields - FULL ACCESS for accounting
+    [PERMISSIONS.VIEW_BILL_TYPE]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    
+    // Package Information Fields - FULL ACCESS for accounting
+    [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
+    [PERMISSIONS.VIEW_FREIGHT_CLASS]: true,
   },
   
   [ROLES.COMPANY_STAFF]: { // Company Staff - basic operational access
@@ -629,6 +688,7 @@ export const ROLE_PERMISSIONS = {
     // Shipment Management - Basic operations only
     [PERMISSIONS.VIEW_SHIPMENTS]: true,
     [PERMISSIONS.CREATE_SHIPMENTS]: true,
+    [PERMISSIONS.USE_QUICKSHIP]: true,
     [PERMISSIONS.EDIT_SHIPMENTS]: false, // Cannot edit existing shipments
     [PERMISSIONS.DELETE_SHIPMENTS]: false,
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
@@ -706,6 +766,18 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+    
+    // Rate and Pricing Visibility - FULL ACCESS for company staff (operational need)
+    [PERMISSIONS.VIEW_RATE_PRICING]: true,
+    [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    
+    // Shipment Information Fields - FULL ACCESS for company staff
+    [PERMISSIONS.VIEW_BILL_TYPE]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    
+    // Package Information Fields - FULL ACCESS for company staff
+    [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
+    [PERMISSIONS.VIEW_FREIGHT_CLASS]: true,
   },
 
   // NEW: MANUFACTURER ROLE - Limited access for manufacturing partners
@@ -736,9 +808,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_ORGANIZATIONS]: false,
     [PERMISSIONS.DELETE_ORGANIZATIONS]: false,
     
-    // Shipment Management - LIMITED: Read-only shipment access for assigned shipments
+    // Shipment Management - LIMITED: Can create and view shipments but not edit existing ones
     [PERMISSIONS.VIEW_SHIPMENTS]: true, // Can view shipments they're involved in
-    [PERMISSIONS.CREATE_SHIPMENTS]: false, // Cannot create new shipments
+    [PERMISSIONS.CREATE_SHIPMENTS]: true, // Can create new shipments (but not QuickShip)
+    [PERMISSIONS.USE_QUICKSHIP]: false, // Cannot use QuickShip - only regular shipment creation
     [PERMISSIONS.EDIT_SHIPMENTS]: false, // Cannot edit shipments
     [PERMISSIONS.DELETE_SHIPMENTS]: false,
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false, // Cannot see all shipments
@@ -760,13 +833,13 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
     
-    // Address Book Management - RESTRICTED: No address management
-    [PERMISSIONS.VIEW_ADDRESSES]: false,
-    [PERMISSIONS.CREATE_ADDRESSES]: false,
-    [PERMISSIONS.EDIT_ADDRESSES]: false,
-    [PERMISSIONS.DELETE_ADDRESSES]: false,
-    [PERMISSIONS.VIEW_ALL_ADDRESSES]: false,
-    [PERMISSIONS.EXPORT_ADDRESSES]: false,
+    // Address Book Management - LIMITED: Basic address management
+    [PERMISSIONS.VIEW_ADDRESSES]: true, // Can view their own addresses
+    [PERMISSIONS.CREATE_ADDRESSES]: true, // Can create new addresses
+    [PERMISSIONS.EDIT_ADDRESSES]: true, // Can edit their own addresses
+    [PERMISSIONS.DELETE_ADDRESSES]: false, // Cannot delete addresses
+    [PERMISSIONS.VIEW_ALL_ADDRESSES]: false, // Cannot see all addresses
+    [PERMISSIONS.EXPORT_ADDRESSES]: false, // Cannot export addresses
     
     // Billing & Invoicing - RESTRICTED: No billing access
     [PERMISSIONS.VIEW_BILLING]: false,
@@ -792,6 +865,13 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.DELETE_CARRIERS]: false,
     [PERMISSIONS.MANAGE_CARRIER_KEYS]: false,
     [PERMISSIONS.MANAGE_EDI_MAPPING]: false,
+    [PERMISSIONS.MANAGE_CARRIERS]: false,
+    
+    // Address Management - LIMITED: Basic address book access
+    [PERMISSIONS.MANAGE_ADDRESSES]: true,
+    
+    // Broker Management - RESTRICTED: No broker management  
+    [PERMISSIONS.MANAGE_BROKERS]: false,
     
     // Reports & Analytics - LIMITED: Basic tracking reports only
     [PERMISSIONS.VIEW_REPORTS]: false,
@@ -824,6 +904,18 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
+    
+    // Rate and Pricing Visibility - RESTRICTED: No pricing visibility
+    [PERMISSIONS.VIEW_RATE_PRICING]: false,
+    [PERMISSIONS.VIEW_RATE_BREAKDOWN]: false,
+    
+    // Shipment Information Fields - RESTRICTED: Limited field access
+    [PERMISSIONS.VIEW_BILL_TYPE]: false,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: false,
+    
+    // Package Information Fields - RESTRICTED: Limited package details
+    [PERMISSIONS.VIEW_DECLARED_VALUE]: false,
+    [PERMISSIONS.VIEW_FREIGHT_CLASS]: false,
   },
 };
 

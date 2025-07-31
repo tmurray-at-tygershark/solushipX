@@ -703,10 +703,29 @@ async function processCanparRateRequest(data) {
         // Extract requested service levels from the request data
         let requestedServiceLevels = data.serviceLevels || data.shipmentInfo?.serviceLevels || ['economy'];
         
-        // Handle "any" service level - expand to all available service levels for courier shipments
+        // Handle "any" service level - expand to weight-appropriate service levels for courier shipments
         if (requestedServiceLevels.includes('any') || (data.shipmentInfo?.serviceLevel === 'any')) {
             if (data.shipmentInfo?.shipmentType === 'courier') {
-                requestedServiceLevels = ['economy', 'express', 'priority'];
+                // Calculate total package weight to determine appropriate services
+                const totalWeight = data.shipment?.packages?.reduce((sum, pkg) => {
+                    return sum + parseFloat(pkg.reported_weight || pkg.weight || 0);
+                }, 0) || 0;
+                
+                logger.info(`🏋️ Total package weight: ${totalWeight} lbs - selecting appropriate Canpar services`);
+                
+                if (totalWeight > 75) {
+                    // Heavy packages - only Ground service
+                    requestedServiceLevels = ['economy'];
+                    logger.info('📦 Heavy package (>75 lbs) - using Ground service only');
+                } else if (totalWeight > 3) {
+                    // Medium packages - exclude Letter/Pak services  
+                    requestedServiceLevels = ['economy', 'express'];
+                    logger.info('📦 Medium package (3-75 lbs) - excluding Letter/Pak services');
+                } else {
+                    // Light packages - all services available
+                    requestedServiceLevels = ['economy', 'express', 'priority'];
+                    logger.info('📦 Light package (≤3 lbs) - all services available');
+                }
             } else {
                 requestedServiceLevels = ['economy']; // For freight, just use economy
             }
