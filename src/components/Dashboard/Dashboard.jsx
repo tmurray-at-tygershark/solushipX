@@ -85,6 +85,9 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 // Import responsive CSS
 import './Dashboard.css';
 
+// Logo utilities for multi-logo system
+import { getDarkBackgroundLogo, getCircleLogo, getLightBackgroundLogo } from '../../utils/logoUtils';
+
 // Enhanced status chip component
 import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 
@@ -4726,9 +4729,9 @@ const Dashboard = () => {
                 }}>
                     <img
                         src={(() => {
-                            // Use company logo if available, fallback to integrated carriers logo
-                            const companyLogoUrl = companyData?.logo || companyData?.logoURL || companyData?.logoUrl || companyData?.companyLogo;
-                            return companyLogoUrl || "/images/integratedcarrriers_logo_white.png";
+                            // Use new multi-logo system for dark background (navigation)
+                            const logoUrl = getDarkBackgroundLogo(companyData);
+                            return logoUrl || "/images/integratedcarrriers_logo_white.png";
                         })()}
                         alt={companyData?.name || "SoluShipX"}
                         style={{
@@ -5943,8 +5946,9 @@ const Dashboard = () => {
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                             {/* Company Logo */}
                                             {(() => {
-                                                const logoUrl = company.logo || company.logoURL || company.logoUrl || company.companyLogo;
-                                                console.log('Logo URL for', company.name, ':', logoUrl);
+                                                // Use new multi-logo system for avatars (circle logo preferred)
+                                                const logoUrl = getCircleLogo(company);
+                                                console.log('Circle logo URL for', company.name, ':', logoUrl);
 
                                                 return (
                                                     <Avatar

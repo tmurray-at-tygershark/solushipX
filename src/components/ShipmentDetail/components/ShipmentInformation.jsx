@@ -48,6 +48,7 @@ import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
 import ManualStatusOverride from './ManualStatusOverride';
 import invoiceStatusService from '../../../services/invoiceStatusService';
 import { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } from '../../../utils/shipmentEvents';
+import { getCircleLogo } from '../../../utils/logoUtils';
 
 // CarrierDisplay component to show carrier logo and name
 const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
@@ -1608,22 +1609,12 @@ const ShipmentInformation = ({
                                         onClick={handleNavigateToCompany}
                                     >
                                         <Avatar
-                                            src={companyData.logo || companyData.logoUrl || companyData.logoURL}
+                                            src={getCircleLogo(companyData)}
                                             sx={{
                                                 width: 24,
                                                 height: 24,
-                                                bgcolor: 'primary.main'
-                                            }}
-                                            onError={(e) => {
-                                                console.log('🖼️ Company logo failed to load:', {
-                                                    src: e.target.src,
-                                                    companyData: {
-                                                        logo: companyData.logo,
-                                                        logoUrl: companyData.logoUrl,
-                                                        logoURL: companyData.logoURL
-                                                    }
-                                                });
-                                                e.target.style.display = 'none';
+                                                bgcolor: '#ffffff',
+                                                border: '1px solid #e5e7eb'
                                             }}
                                         >
                                             <BusinessIcon sx={{ fontSize: 12 }} />

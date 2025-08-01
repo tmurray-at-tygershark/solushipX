@@ -55,6 +55,7 @@ import { fixShipmentEncoding } from '../../../utils/textUtils';
 import { useAuth } from '../../../contexts/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 import invoiceStatusService from '../../../services/invoiceStatusService';
+import { getCircleLogo } from '../../../utils/logoUtils';
 
 const ShipmentTableRow = ({
     shipment: rawShipment,
@@ -624,22 +625,17 @@ const ShipmentTableRow = ({
                                     width: 20,
                                     height: 20,
                                     borderRadius: '4px',
-                                    backgroundColor: '#f3f4f6',
+                                    backgroundColor: '#ffffff',
+                                    border: '1px solid #e5e7eb',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     flexShrink: 0
                                 }}>
                                     {(() => {
-                                        // Enhanced logo detection - check multiple possible sources
+                                        // Use multi-logo system for company circle logo
                                         const company = companyData[shipment?.companyID];
-
-                                        // Check multiple possible logo field names
-                                        const logoUrl = company?.logoUrl ||
-                                            company?.logo ||
-                                            company?.companyLogo ||
-                                            company?.logoURL ||
-                                            company?.companyLogoUrl;
+                                        const logoUrl = getCircleLogo(company);
 
                                         const companyName = company?.name || company?.companyName || shipment?.companyID || 'CO';
 

@@ -39,6 +39,7 @@ import { db } from '../../../firebase/firebase';
 import { formatDateString } from '../../../utils/dateUtils';
 import { useSnackbar } from 'notistack';
 import { useCompany } from '../../../contexts/CompanyContext';
+import { getLightBackgroundLogo } from '../../../utils/logoUtils';
 
 const CompanyDetail = () => {
     const { id: companyFirestoreId } = useParams();
@@ -314,25 +315,33 @@ const CompanyDetail = () => {
                                 overflow: 'hidden'
                             }}
                         >
-                            {company.logoUrl ? (
-                                <Box
-                                    component="img"
-                                    src={company.logoUrl}
-                                    alt={`${company.name} logo`}
-                                    sx={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover'
-                                    }}
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                        e.target.nextSibling.style.display = 'flex';
-                                    }}
-                                />
-                            ) : null}
+                            {(() => {
+                                // Use new multi-logo system for company detail display (light background)
+                                const logoUrl = getLightBackgroundLogo(company);
+
+                                return logoUrl ? (
+                                    <Box
+                                        component="img"
+                                        src={logoUrl}
+                                        alt={`${company.name} logo`}
+                                        sx={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover'
+                                        }}
+                                        onError={(e) => {
+                                            e.target.style.display = 'none';
+                                            e.target.nextSibling.style.display = 'flex';
+                                        }}
+                                    />
+                                ) : null;
+                            })()}
                             <Box
                                 sx={{
-                                    display: company.logoUrl ? 'none' : 'flex',
+                                    display: (() => {
+                                        const logoUrl = getLightBackgroundLogo(company);
+                                        return logoUrl ? 'none' : 'flex';
+                                    })(),
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     width: '100%',

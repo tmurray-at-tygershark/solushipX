@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { getCircleLogo } from '../../utils/logoUtils';
 
 const CompanySelector = ({
     selectedCompanyId,
@@ -132,7 +133,7 @@ const CompanySelector = ({
                 >
                     {/* Company Logo */}
                     <Avatar
-                        src={companyData.logoUrl || companyData.logo}
+                        src={getCircleLogo(companyData)}
                         sx={{
                             width: size === 'small' ? 24 : 32,
                             height: size === 'small' ? 24 : 32,
@@ -250,7 +251,7 @@ const CompanySelector = ({
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
                                     {/* Company Logo */}
                                     <Avatar
-                                        src={company.logoUrl}
+                                        src={getCircleLogo(company)}
                                         sx={{
                                             width: size === 'small' ? 24 : 28,
                                             height: size === 'small' ? 24 : 28,

@@ -63,6 +63,7 @@ import { db, storage, auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useSnackbar } from 'notistack';
+import { getCircleLogo } from '../../utils/logoUtils';
 
 // Enhanced emoji picker data for 2025 enterprise warehouse system
 const EMOJI_CATEGORIES = {
@@ -185,6 +186,7 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
     // State management
     const [address, setAddress] = useState(null);
     const [customerInfo, setCustomerInfo] = useState(null);
+    const [ownerCompanyInfo, setOwnerCompanyInfo] = useState(null);
     const [loading, setLoading] = useState(true);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -279,6 +281,11 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                 if (addressData.addressClass === 'customer' && addressData.addressClassID) {
                     await fetchCustomerInfo(addressData.addressClassID);
                 }
+
+                // Fetch owner company information if available
+                if (addressData.ownerCompanyID) {
+                    await fetchOwnerCompanyInfo(addressData.ownerCompanyID);
+                }
             } else {
                 enqueueSnackbar('Address not found', { variant: 'error' });
                 onBack();
@@ -318,6 +325,36 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
             }
         } catch (error) {
             console.error('[AddressDetail] Error fetching customer info:', error);
+        }
+    };
+
+    const fetchOwnerCompanyInfo = async (companyID) => {
+        try {
+            console.log('[AddressDetail] Fetching owner company info for:', companyID);
+
+            // Query the companies collection for the owner company
+            const companiesQuery = query(
+                collection(db, 'companies'),
+                where('companyID', '==', companyID),
+                limit(1)
+            );
+
+            const companiesSnapshot = await getDocs(companiesQuery);
+
+            if (!companiesSnapshot.empty) {
+                const companyDoc = companiesSnapshot.docs[0];
+                const companyData = {
+                    id: companyDoc.id,
+                    ...companyDoc.data()
+                };
+
+                console.log('[AddressDetail] Found owner company info:', companyData);
+                setOwnerCompanyInfo(companyData);
+            } else {
+                console.log('[AddressDetail] No owner company found for ID:', companyID);
+            }
+        } catch (error) {
+            console.error('[AddressDetail] Error fetching owner company info:', error);
         }
     };
 
@@ -1227,17 +1264,17 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
                                         {(address.ownerCompanyLogo || address.ownerCompanyName) && (
                                             <Avatar
-                                                src={address.ownerCompanyLogo || ''}
+                                                src={getCircleLogo(ownerCompanyInfo || { logoUrl: address.ownerCompanyLogo })}
                                                 sx={{
                                                     width: 32,
                                                     height: 32,
-                                                    bgcolor: address.ownerCompanyLogo ? 'transparent' : '#059669',
+                                                    bgcolor: getCircleLogo(ownerCompanyInfo || { logoUrl: address.ownerCompanyLogo }) ? 'transparent' : '#059669',
                                                     fontSize: '12px',
                                                     fontWeight: 600,
                                                     border: '1px solid #e5e7eb'
                                                 }}
                                             >
-                                                {!address.ownerCompanyLogo && address.ownerCompanyName ?
+                                                {!getCircleLogo(ownerCompanyInfo || { logoUrl: address.ownerCompanyLogo }) && address.ownerCompanyName ?
                                                     address.ownerCompanyName.charAt(0).toUpperCase() :
                                                     'N/A'
                                                 }
@@ -1293,17 +1330,17 @@ const AddressDetail = ({ addressId, onEdit, onBack, onDelete, isModal = false, h
                                         </Typography>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
                                             <Avatar
-                                                src={customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo || ''}
+                                                src={getCircleLogo(customerInfo || { logoUrl: address.customerLogo })}
                                                 sx={{
                                                     width: 32,
                                                     height: 32,
-                                                    bgcolor: (customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo) ? 'transparent' : '#3b82f6',
+                                                    bgcolor: getCircleLogo(customerInfo || { logoUrl: address.customerLogo }) ? 'transparent' : '#3b82f6',
                                                     fontSize: '12px',
                                                     fontWeight: 600,
                                                     border: '1px solid #e5e7eb'
                                                 }}
                                             >
-                                                {!(customerInfo?.logoURL || customerInfo?.logo || customerInfo?.logoUrl || customerInfo?.companyLogo || address.customerLogo) && (
+                                                {!getCircleLogo(customerInfo || { logoUrl: address.customerLogo }) && (
                                                     (customerInfo?.name || customerInfo?.customerName || address.customerName || address.companyName || address.addressClassID) ?
                                                         (customerInfo?.name || customerInfo?.customerName || address.customerName || address.companyName || address.addressClassID).charAt(0).toUpperCase() : 'C'
                                                 )}

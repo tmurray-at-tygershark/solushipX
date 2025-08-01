@@ -67,6 +67,7 @@ import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setD
 import { db } from '../../firebase';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import { generateShipmentId } from '../../utils/shipmentIdGenerator';
+import { getLightBackgroundLogo } from '../../utils/logoUtils';
 import ModalHeader from '../common/ModalHeader';
 import AddressForm from '../AddressBook/AddressForm';
 import CompanySelector from '../common/CompanySelector';
@@ -4696,7 +4697,7 @@ const QuickShip = ({
                     return {
                         carrier: {
                             name: selectedCarrier || 'Manual Entry',
-                            logo: '/images/integratedcarrriers_logo_blk.png'
+                            logo: getLightBackgroundLogo(companyData) || '/images/integratedcarrriers_logo_blk.png'
                         },
                         sourceCarrierName: selectedCarrier || 'Manual Entry',
                         pricing: {

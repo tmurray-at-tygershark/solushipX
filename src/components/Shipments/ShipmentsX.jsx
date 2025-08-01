@@ -2392,10 +2392,10 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         // Find the shipment to get its details for the title
         const shipment = shipments.find(s => s.id === shipmentId) || { shipmentID: shipmentId };
 
-        // 🚀 SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
-        // If super admin clicks on a shipment from a different company, automatically switch context
-        if (userRole === 'superadmin' && shipment.companyID && shipment.companyID !== companyIdForAddress) {
-            console.log('🚀 Super admin viewing shipment from different company - auto-switching context');
+        // 🚀 ADMIN/SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
+        // If admin or super admin clicks on a shipment from a different company, automatically switch context
+        if ((userRole === 'admin' || userRole === 'superadmin') && shipment.companyID && shipment.companyID !== companyIdForAddress) {
+            console.log('🚀 Admin/Super admin viewing shipment from different company - auto-switching context');
             console.log('🏢 Shipment company ID:', shipment.companyID);
             console.log('🏢 Current company context:', companyIdForAddress);
 
@@ -3066,7 +3066,11 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                     if (company.companyID) {
                         companiesMap[company.companyID] = {
                             name: company.name || company.companyName || company.companyID,
+                            // Keep legacy logo field for backward compatibility
                             logo: company.logoUrl || company.logo || company.logoURL || null,
+                            logoUrl: company.logoUrl || company.logo || company.logoURL || null,
+                            // Include the new multi-logo system
+                            logos: company.logos || null,
                             status: company.status || 'active'
                         };
                     }
@@ -3987,40 +3991,40 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         )}
 
                                         {/* QuickShip and New buttons - enabled for super admins with company selector */}
-                                                                {/* Quick Ship button - only show if user has USE_QUICKSHIP permission */}
-                        {hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP) && (
-                                                <Button
-                                                    onClick={() => {
-                                                        if (onOpenCreateShipment) {
-                                                            // Open QuickShip modal with mode parameter and refresh callbacks
-                                                            onOpenCreateShipment(null, null, null, 'quickship', {
-                                                                onShipmentUpdated: handleShipmentUpdated,
-                                                                onDraftSaved: handleDraftSaved,
-                                                                onReturnToShipments: () => {
-                                                                    // Refresh the table when returning from QuickShip
-                                                                    setTimeout(() => loadShipments(null, unifiedSearch), 100);
-                                                                }
-                                                            });
-                                                        } else {
-                                                            showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
-                                                        }
-                                                    }}
-                                                    variant="contained"
-                                                    startIcon={<FlashOnIcon />}
-                                                    size="small"
-                                                    disabled={
-                                                        // Enable for super admins (they have company selector), disable for others without company
-                                                        userRole !== 'superadmin' && (
-                                                            !companyIdForAddress ||
-                                                            companyIdForAddress === 'all' ||
-                                                            (adminViewMode && adminViewMode === 'all')
-                                                        )
+                                        {/* Quick Ship button - only show if user has USE_QUICKSHIP permission */}
+                                        {hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP) && (
+                                            <Button
+                                                onClick={() => {
+                                                    if (onOpenCreateShipment) {
+                                                        // Open QuickShip modal with mode parameter and refresh callbacks
+                                                        onOpenCreateShipment(null, null, null, 'quickship', {
+                                                            onShipmentUpdated: handleShipmentUpdated,
+                                                            onDraftSaved: handleDraftSaved,
+                                                            onReturnToShipments: () => {
+                                                                // Refresh the table when returning from QuickShip
+                                                                setTimeout(() => loadShipments(null, unifiedSearch), 100);
+                                                            }
+                                                        });
+                                                    } else {
+                                                        showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
                                                     }
-                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
-                                                >
-                                                    Quick Ship
-                                                </Button>
-                                            )}
+                                                }}
+                                                variant="contained"
+                                                startIcon={<FlashOnIcon />}
+                                                size="small"
+                                                disabled={
+                                                    // Enable for super admins (they have company selector), disable for others without company
+                                                    userRole !== 'superadmin' && (
+                                                        !companyIdForAddress ||
+                                                        companyIdForAddress === 'all' ||
+                                                        (adminViewMode && adminViewMode === 'all')
+                                                    )
+                                                }
+                                                sx={{ fontSize: '11px', textTransform: 'none' }}
+                                            >
+                                                Quick Ship
+                                            </Button>
+                                        )}
                                         {/* New shipment button - always visible (manufacturers should be able to create shipments) */}
                                         <Button
                                             onClick={() => {
@@ -4761,61 +4765,53 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.log('👤 Current user role:', userRole);
             console.log('🏢 Current company context:', companyIdForAddress);
 
-            // 🚀 SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
-            // Only switch context if we're not already in the correct company context
-            // (Admin view should have already switched context when clicking on the shipment)
-            if (userRole === 'superadmin' && draftCompanyId && draftCompanyId !== companyIdForAddress) {
-                console.log('🚀 Super admin accessing draft from different company - checking if context switch needed');
+            // 🚀 ADMIN/SUPER ADMIN AUTO-COMPANY-SWITCHING LOGIC
+            // If admin or super admin clicks on a draft from a different company, automatically switch context
+            if ((userRole === 'admin' || userRole === 'superadmin') && draftCompanyId && draftCompanyId !== companyIdForAddress) {
+                console.log('🚀 Admin/Super admin accessing draft from different company - auto-switching context');
                 console.log('🔍 Draft company:', draftCompanyId, 'Current context:', companyIdForAddress);
 
-                // Only switch if we're definitely in the wrong context
-                if (companyIdForAddress && companyIdForAddress !== 'all' && companyIdForAddress !== draftCompanyId) {
-                    console.log('⚠️ Context mismatch detected, but admin view should have handled this. Proceeding without switch.');
-                    showSnackbar(`Note: Editing draft from ${draftCompanyId} (current context: ${companyIdForAddress})`, 'info');
-                } else if (!companyIdForAddress || companyIdForAddress === 'all') {
-                    console.log('🔄 No company context set, switching to draft company context');
+                // Always switch context when there's a mismatch to ensure proper data loading
+                console.log('🔄 Company context mismatch detected, switching to draft company context');
 
-                    try {
-                        // Query for the draft's company data
-                        const companiesQuery = query(
-                            collection(db, 'companies'),
-                            where('companyID', '==', draftCompanyId),
-                            limit(1)
-                        );
+                try {
+                    // Query for the draft's company data
+                    const companiesQuery = query(
+                        collection(db, 'companies'),
+                        where('companyID', '==', draftCompanyId),
+                        limit(1)
+                    );
 
-                        const companiesSnapshot = await getDocs(companiesQuery);
+                    const companiesSnapshot = await getDocs(companiesQuery);
 
-                        if (!companiesSnapshot.empty) {
-                            const companyDoc = companiesSnapshot.docs[0];
-                            const companyDocData = companyDoc.data();
+                    if (!companiesSnapshot.empty) {
+                        const companyDoc = companiesSnapshot.docs[0];
+                        const companyDocData = companyDoc.data();
 
-                            const targetCompanyData = {
-                                ...companyDocData,
-                                id: companyDoc.id
-                            };
+                        const targetCompanyData = {
+                            ...companyDocData,
+                            id: companyDoc.id
+                        };
 
-                            console.log('🔄 Switching to company context:', targetCompanyData.name, '(', draftCompanyId, ')');
+                        console.log('🔄 Switching to company context:', targetCompanyData.name, '(', draftCompanyId, ')');
 
-                            // Switch company context - this will update companyIdForAddress and companyData
-                            await setCompanyContext(targetCompanyData);
+                        // Switch company context - this will update companyIdForAddress and companyData
+                        await setCompanyContext(targetCompanyData);
 
-                            // Show success message
-                            showSnackbar(`Switched to ${targetCompanyData.name || draftCompanyId} to edit draft`, 'success');
+                        // Show success message
+                        showSnackbar(`Switched to ${targetCompanyData.name || draftCompanyId} to edit draft`, 'success');
 
-                            // Small delay to ensure context is fully updated before proceeding
-                            await new Promise(resolve => setTimeout(resolve, 200));
+                        // Small delay to ensure context is fully updated before proceeding
+                        await new Promise(resolve => setTimeout(resolve, 200));
 
-                            console.log('✅ Company context switched successfully');
-                        } else {
-                            console.warn('⚠️ Company not found for draft:', draftCompanyId);
-                            showSnackbar(`Warning: Company ${draftCompanyId} not found, proceeding with current context`, 'warning');
-                        }
-                    } catch (companyError) {
-                        console.error('❌ Error switching company context:', companyError);
-                        showSnackbar('Error switching company context, proceeding with current context', 'warning');
+                        console.log('✅ Company context switched successfully');
+                    } else {
+                        console.warn('⚠️ Company not found for draft:', draftCompanyId);
+                        showSnackbar(`Warning: Company ${draftCompanyId} not found, proceeding with current context`, 'warning');
                     }
-                } else {
-                    console.log('✅ Company context already correct, proceeding with draft editing');
+                } catch (companyError) {
+                    console.error('❌ Error switching company context:', companyError);
+                    showSnackbar('Error switching company context, proceeding with current context', 'warning');
                 }
             }
 

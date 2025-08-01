@@ -9,6 +9,8 @@ import {
     ArrowBackIosNew as ArrowBackIcon,
     Close as CloseIcon
 } from '@mui/icons-material';
+import { useCompany } from '../../contexts/CompanyContext';
+import { getLightBackgroundLogo } from '../../utils/logoUtils';
 
 const ModalHeader = ({
     title = '',
@@ -24,6 +26,7 @@ const ModalHeader = ({
     // Alternative: single navigation object
     navigation = null
 }) => {
+    const { companyData } = useCompany();
     // Determine the effective title and back button state
     const getEffectiveTitle = () => {
         if (navigation) {
@@ -115,11 +118,11 @@ const ModalHeader = ({
                         </Button>
                     )}
 
-                    {/* SolushipX Logo - clickable to close modal */}
+                    {/* Company Logo - clickable to close modal */}
                     <Box
                         component="img"
-                        src="/images/integratedcarrriers_logo_blk.png"
-                        alt="SolushipX"
+                        src={getLightBackgroundLogo(companyData) || "/images/integratedcarrriers_logo_blk.png"}
+                        alt={companyData?.name || "SolushipX"}
                         onClick={onClose}
                         sx={{
                             height: 32,

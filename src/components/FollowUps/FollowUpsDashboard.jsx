@@ -110,6 +110,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { getCircleLogo } from '../../utils/logoUtils';
 
 // ===================================================================
 // MAIN DASHBOARD COMPONENT
@@ -1676,7 +1677,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                                         {/* Company Logo/Avatar */}
                                         <Avatar
-                                            src={company.logo || company.logoUrl || company.companyLogo}
+                                            src={getCircleLogo(company)}
                                             sx={{
                                                 width: 20,
                                                 height: 20,
