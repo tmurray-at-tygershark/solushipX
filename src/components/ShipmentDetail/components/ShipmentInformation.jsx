@@ -297,7 +297,9 @@ const ShipmentInformation = ({
                 shipment?.shipFrom?.customerID ||
                 shipment?.origin?.customerID ||
                 shipment?.shipTo?.customerID ||
-                shipment?.destination?.customerID;
+                shipment?.destination?.customerID ||
+                shipment?.shipFrom?.addressClassID ||
+                shipment?.shipTo?.addressClassID;
 
             console.log('🔍 [ShipmentInformation] Customer ID lookup:', {
                 shipmentCustomerId: shipment?.customerId,
@@ -306,6 +308,8 @@ const ShipmentInformation = ({
                 originCustomerID: shipment?.origin?.customerID,
                 shipToCustomerID: shipment?.shipTo?.customerID,
                 destinationCustomerID: shipment?.destination?.customerID,
+                shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
+                shipToAddressClassID: shipment?.shipTo?.addressClassID,
                 resolvedCustomerId: customerId
             });
 
@@ -359,7 +363,7 @@ const ShipmentInformation = ({
         };
 
         loadCustomerData();
-    }, [shipment?.customerId, shipment?.customerID, shipment?.shipFrom?.customerID, shipment?.origin?.customerID, shipment?.shipTo?.customerID, shipment?.destination?.customerID]);
+    }, [shipment?.customerId, shipment?.customerID, shipment?.shipFrom?.customerID, shipment?.origin?.customerID, shipment?.shipTo?.customerID, shipment?.destination?.customerID, shipment?.shipFrom?.addressClassID, shipment?.shipTo?.addressClassID]);
 
     // Load invoice statuses
     useEffect(() => {

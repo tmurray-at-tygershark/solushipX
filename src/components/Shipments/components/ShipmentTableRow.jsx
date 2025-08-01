@@ -183,19 +183,34 @@ const ShipmentTableRow = ({
         const loadCustomerData = async () => {
             if (!expanded || loadingExpandedCustomerData || expandedCustomerData) return;
 
-            // ENHANCED: Check for customer ID in all possible locations including address records
+            // ENHANCED: Check for customer ID in all possible locations including address records and addressClassID fallback
             const customerId = shipment?.customerId ||
                 shipment?.customerID ||
                 shipment?.customer?.id ||
                 shipment?.shipFrom?.customerID ||
                 shipment?.shipTo?.customerID ||
                 shipment?.shipFrom?.customerId ||
-                shipment?.shipTo?.customerId;
+                shipment?.shipTo?.customerId ||
+                shipment?.shipFrom?.addressClassID ||
+                shipment?.shipTo?.addressClassID;
 
             if (!customerId) {
                 setExpandedCustomerData(null);
                 return;
             }
+
+            console.log('🔍 [ShipmentTableRow] Customer ID lookup:', {
+                shipmentCustomerId: shipment?.customerId,
+                shipmentCustomerID: shipment?.customerID,
+                customerIdField: shipment?.customer?.id,
+                shipFromCustomerID: shipment?.shipFrom?.customerID,
+                shipToCustomerID: shipment?.shipTo?.customerID,
+                shipFromCustomerId: shipment?.shipFrom?.customerId,
+                shipToCustomerId: shipment?.shipTo?.customerId,
+                shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
+                shipToAddressClassID: shipment?.shipTo?.addressClassID,
+                resolvedCustomerId: customerId
+            });
 
             setLoadingExpandedCustomerData(true);
             try {
@@ -254,7 +269,7 @@ const ShipmentTableRow = ({
         };
 
         loadCustomerData();
-    }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipTo?.addressClassID, shipment?.shipTo?.customerID, shipment?.shipTo, loadingExpandedCustomerData, expandedCustomerData]);
+    }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipFrom?.customerID, shipment?.shipTo?.customerID, shipment?.shipFrom?.customerId, shipment?.shipTo?.customerId, shipment?.shipFrom?.addressClassID, shipment?.shipTo?.addressClassID, shipment?.shipTo, loadingExpandedCustomerData, expandedCustomerData]);
 
     const isSelected = selected.indexOf(shipment?.id) !== -1;
 

@@ -2395,6 +2395,10 @@ const CreateShipmentX = (props) => {
                 createdBy: user.uid, // This is now guaranteed to exist
                 updatedAt: new Date(),
 
+                // Customer information - ensure unified customer tracking
+                customerID: selectedCustomerId || null,
+                customerId: selectedCustomerId || null,
+
                 // Shipment information - save whatever is entered
                 shipmentInfo: {
                     shipmentType: shipmentInfo.shipmentType || 'freight',
@@ -2674,6 +2678,10 @@ const CreateShipmentX = (props) => {
                 createdBy: user.uid,
                 createdAt: new Date(),
                 updatedAt: new Date(),
+
+                // Customer information - ensure unified customer tracking
+                customerID: selectedCustomerId || null,
+                customerId: selectedCustomerId || null,
 
                 // Shipment information
                 shipmentInfo: {
