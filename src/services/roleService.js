@@ -52,6 +52,7 @@ class RoleService {
         // Store permissions directly from the role document
         if (roleData.permissions) {
           this.rolePermissions.set(roleId, roleData.permissions);
+          console.log(`🔍 LOADED PERMISSIONS for ${roleId}:`, roleData.permissions);
         }
       });
 
@@ -199,11 +200,32 @@ class RoleService {
     
     const rolePermissions = this.getRolePermissions(userRole);
     
+    // DEBUG: Special logging for admin permissions
+    if (permission === 'view_admin_dashboard') {
+      console.log('🔍 ROLE SERVICE DEBUG:', {
+        userRole,
+        permission,
+        rolePermissions,
+        hasWildcard: rolePermissions['*'] === true,
+        hasSpecific: rolePermissions[permission] === true,
+        isInitialized: this.isInitialized
+      });
+    }
+    
     // Super admin has all permissions
-    if (rolePermissions['*'] === true) return true;
+    if (rolePermissions['*'] === true) {
+      if (permission === 'view_admin_dashboard') {
+        console.log('✅ ROLE SERVICE: Wildcard (*) permission granted');
+      }
+      return true;
+    }
     
     // Check specific permission
-    return rolePermissions[permission] === true;
+    const result = rolePermissions[permission] === true;
+    if (permission === 'view_admin_dashboard') {
+      console.log(`🔍 ROLE SERVICE: Specific permission check: ${result}`);
+    }
+    return result;
   }
 
   // Check if user has any of the specified permissions

@@ -18,9 +18,12 @@ export const AdminRoute = ({ children }) => {
             console.log('=== AdminRoute Auth State ===');
             console.log('Current User:', currentUser?.email);
             console.log('User Role:', userRole);
+            console.log('User Role Type:', typeof userRole);
             console.log('Current Path:', currentPath);
+            console.log('PERMISSIONS.VIEW_ADMIN_DASHBOARD:', PERMISSIONS.VIEW_ADMIN_DASHBOARD);
             console.log('Has Basic Admin Access:', hasBasicAdminAccess);
             console.log('Has Route Access:', hasAccess);
+            console.log('Will Redirect:', !hasBasicAdminAccess || !hasAccess);
             console.log('=====================');
         }
     }, [currentUser, userRole, loading, initialized, location.pathname]);
@@ -44,7 +47,13 @@ export const AdminRoute = ({ children }) => {
         return <Navigate to="/login" replace />;
     }
 
-    // Check if user has access to the specific route
+    // BULLETPROOF: SUPERADMIN ALWAYS HAS ACCESS - NO EXCEPTIONS, NO PERMISSION CHECKS
+    if (userRole === 'superadmin') {
+        console.log('✅ SUPERADMIN: Full access granted - bypassing all permission checks');
+        return children;
+    }
+
+    // For all other roles, do normal permission checks
     const currentPath = location.pathname;
     const hasRouteAccess = canAccessRoute(userRole, currentPath);
     const hasBasicAdminAccess = hasPermission(userRole, PERMISSIONS.VIEW_ADMIN_DASHBOARD);

@@ -3987,40 +3987,40 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         )}
 
                                         {/* QuickShip and New buttons - enabled for super admins with company selector */}
-                                        {/* Quick Ship button - only show if user has USE_QUICKSHIP permission */}
-                                        {hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP) && (
-                                            <Button
-                                                onClick={() => {
-                                                    if (onOpenCreateShipment) {
-                                                        // Open QuickShip modal with mode parameter and refresh callbacks
-                                                        onOpenCreateShipment(null, null, null, 'quickship', {
-                                                            onShipmentUpdated: handleShipmentUpdated,
-                                                            onDraftSaved: handleDraftSaved,
-                                                            onReturnToShipments: () => {
-                                                                // Refresh the table when returning from QuickShip
-                                                                setTimeout(() => loadShipments(null, unifiedSearch), 100);
-                                                            }
-                                                        });
-                                                    } else {
-                                                        showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
+                                                                {/* Quick Ship button - only show if user has USE_QUICKSHIP permission */}
+                        {hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP) && (
+                                                <Button
+                                                    onClick={() => {
+                                                        if (onOpenCreateShipment) {
+                                                            // Open QuickShip modal with mode parameter and refresh callbacks
+                                                            onOpenCreateShipment(null, null, null, 'quickship', {
+                                                                onShipmentUpdated: handleShipmentUpdated,
+                                                                onDraftSaved: handleDraftSaved,
+                                                                onReturnToShipments: () => {
+                                                                    // Refresh the table when returning from QuickShip
+                                                                    setTimeout(() => loadShipments(null, unifiedSearch), 100);
+                                                                }
+                                                            });
+                                                        } else {
+                                                            showSnackbar('Quick Ship functionality requires parent modal integration', 'warning');
+                                                        }
+                                                    }}
+                                                    variant="contained"
+                                                    startIcon={<FlashOnIcon />}
+                                                    size="small"
+                                                    disabled={
+                                                        // Enable for super admins (they have company selector), disable for others without company
+                                                        userRole !== 'superadmin' && (
+                                                            !companyIdForAddress ||
+                                                            companyIdForAddress === 'all' ||
+                                                            (adminViewMode && adminViewMode === 'all')
+                                                        )
                                                     }
-                                                }}
-                                                variant="contained"
-                                                startIcon={<FlashOnIcon />}
-                                                size="small"
-                                                disabled={
-                                                    // Enable for super admins (they have company selector), disable for others without company
-                                                    userRole !== 'superadmin' && (
-                                                        !companyIdForAddress ||
-                                                        companyIdForAddress === 'all' ||
-                                                        (adminViewMode && adminViewMode === 'all')
-                                                    )
-                                                }
-                                                sx={{ fontSize: '11px', textTransform: 'none' }}
-                                            >
-                                                Quick Ship
-                                            </Button>
-                                        )}
+                                                    sx={{ fontSize: '11px', textTransform: 'none' }}
+                                                >
+                                                    Quick Ship
+                                                </Button>
+                                            )}
                                         {/* New shipment button - always visible (manufacturers should be able to create shipments) */}
                                         <Button
                                             onClick={() => {

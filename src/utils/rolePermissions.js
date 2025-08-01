@@ -943,18 +943,42 @@ export const getRoleService = async () => {
 export const hasPermission = (userRole, permission) => {
   if (!userRole || !permission) return false;
   
-  // ONLY use role service - no hardcoded permissions
+
+  
+  // DYNAMIC ROLE SERVICE - PRIMARY CHECK
   if (roleServiceInstance) {
     try {
       const result = roleServiceInstance.hasPermission(userRole, permission);
+      
+
       return result;
     } catch (error) {
       console.error('Error using role service:', error);
-      return false;
+      // Fall through to hardcoded fallback
     }
   }
   
-  // Role service not ready - return false
+  // FALLBACK while role service loads
+  
+  if (userRole === 'superadmin') {
+    return true;
+  }
+  
+  if (userRole === 'admin') {
+    const adminPermissions = ROLE_PERMISSIONS[ROLES.ADMIN];
+    return adminPermissions && adminPermissions[permission] === true;
+  }
+  
+  if (userRole === 'user') {
+    const userPermissions = ROLE_PERMISSIONS[ROLES.USER];
+    return userPermissions && userPermissions[permission] === true;
+  }
+  
+  if (userRole === 'manufacturer') {
+    const manufacturerPermissions = ROLE_PERMISSIONS[ROLES.MANUFACTURER];
+    return manufacturerPermissions && manufacturerPermissions[permission] === true;
+  }
+  
   return false;
 };
 
@@ -1102,6 +1126,11 @@ export const ROUTE_PERMISSIONS = {
 
 // Helper function to check if user can access a route
 export const canAccessRoute = (userRole, route) => {
+  // BULLETPROOF: SUPERADMIN ALWAYS HAS ACCESS - NO EXCEPTIONS
+  if (userRole === 'superadmin') {
+    return true;
+  }
+  
   // FORCE ALLOW role-permissions route for ANY admin user
   if (route === '/admin/role-permissions') {
     return true;

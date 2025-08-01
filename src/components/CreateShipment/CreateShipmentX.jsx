@@ -685,26 +685,58 @@ const CreateShipmentX = (props) => {
         }
     }, [companyIdForAddress, selectedCompanyId, selectedCustomerId, userRole, loadAddressesForCompany]);
 
-    // Load customers
+    // Load customers (populate both customers and availableCustomers for manufacturer role)
     useEffect(() => {
         const loadCustomers = async () => {
-            if (!companyIdForAddress) return;
+            // Use either selectedCompanyId (for manual selection) or companyIdForAddress (for context)
+            const currentCompanyId = selectedCompanyId || companyIdForAddress;
+
+            console.log('🔍 CreateShipmentX loadCustomers called:', {
+                userRole,
+                selectedCompanyId,
+                companyIdForAddress,
+                currentCompanyId,
+                willLoad: !!currentCompanyId
+            });
+
+            if (!currentCompanyId) return;
 
             try {
                 const customersQuery = query(
                     collection(db, 'customers'),
-                    where('companyID', '==', companyIdForAddress)
+                    where('companyID', '==', currentCompanyId)
                 );
                 const customersSnapshot = await getDocs(customersQuery);
                 const customersData = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                console.log('🔍 CreateShipmentX customers loaded:', {
+                    companyId: currentCompanyId,
+                    customersCount: customersData.length,
+                    userRole,
+                    customerNames: customersData.map(c => c.name)
+                });
+
+                // Sort customers by name
+                customersData.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
                 setCustomers(customersData);
+
+                // For manufacturer role, also populate availableCustomers for dropdown
+                if (userRole === 'manufacturer') {
+                    setAvailableCustomers(customersData);
+                    console.log('🏭 Manufacturer: Loaded customers into availableCustomers:', customersData.length);
+                } else {
+                    // For other roles, also set availableCustomers to ensure consistency
+                    setAvailableCustomers(customersData);
+                }
             } catch (error) {
                 console.error('Error loading customers:', error);
                 setCustomers([]);
+                setAvailableCustomers([]);
             }
         };
         loadCustomers();
-    }, [companyIdForAddress]);
+    }, [companyIdForAddress, selectedCompanyId, userRole]);
 
     // Load Company Brokers
     const loadCompanyBrokers = useCallback(async () => {
@@ -783,11 +815,11 @@ const CreateShipmentX = (props) => {
         }, 3000);
     };
 
-    // Load customers for initial company (super admin)
+    // Load customers for initial company (super admin and manufacturer)
     useEffect(() => {
-        // Only run for super admins on initial load
-        if (userRole === 'superadmin' && companyIdForAddress && !selectedCompanyId) {
-            console.log('🔍 Loading customers for initial company:', companyIdForAddress);
+        // Run for super admins and manufacturers on initial load
+        if ((userRole === 'superadmin' || userRole === 'manufacturer') && companyIdForAddress && !selectedCompanyId) {
+            console.log('🔍 Loading customers for initial company:', companyIdForAddress, 'userRole:', userRole);
             loadCustomersForCompany(companyIdForAddress);
         }
     }, [userRole, companyIdForAddress, selectedCompanyId, loadCustomersForCompany]);
@@ -3606,17 +3638,19 @@ const CreateShipmentX = (props) => {
             )}
 
             {/* Main content - only show when both contexts are loaded and data is available */}
-            {!authLoading && !companyLoading && user?.uid && (companyData?.companyID || userRole === 'superadmin') && (
+            {!authLoading && !companyLoading && user?.uid && (companyData?.companyID || userRole === 'superadmin' || userRole === 'manufacturer') && (
                 <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
                     {/* Company Selector for Super Admins */}
                     {(() => {
-                        const shouldShowSelector = userRole === 'superadmin' && !companyIdForAddress;
+                        const shouldShowSelector = (userRole === 'superadmin' && !companyIdForAddress) ||
+                            (userRole === 'manufacturer' && !companyIdForAddress);
                         console.log('🔍 CreateShipmentX Company Selector Debug:', {
                             userRole,
                             companyIdForAddress,
                             selectedCompanyId,
                             needsCompanySelection,
-                            shouldShowSelector
+                            shouldShowSelector,
+                            isManufacturer: userRole === 'manufacturer'
                         });
                         return shouldShowSelector;
                     })() && (
@@ -3626,14 +3660,15 @@ const CreateShipmentX = (props) => {
                                 userRole={userRole}
                                 size="small"
                                 required={true}
-                                label="Select Company to Create Shipment"
-                                placeholder="Choose a company to create shipment on their behalf..."
+                                label={userRole === 'manufacturer' ? "Company Context" : "Select Company to Create Shipment"}
+                                placeholder={userRole === 'manufacturer' ? "Your assigned company..." : "Choose a company to create shipment on their behalf..."}
+                                locked={userRole === 'manufacturer'} // Lock for manufacturers
                                 showDescription={false}
                             />
                         )}
 
-                    {/* Customer Selection for All User Roles - Show when company is selected and customers are loaded */}
-                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff' || userRole === 'manufacturer') && (selectedCompanyId || companyIdForAddress) && availableCustomers.length > 0 && (
+                    {/* Customer Selection for All User Roles - Show when company is selected */}
+                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff' || userRole === 'manufacturer') && (selectedCompanyId || companyIdForAddress) && (
                         <Box sx={{ mb: 3 }}>
                             <Autocomplete
                                 value={availableCustomers.find(c => (c.customerID || c.id) === selectedCustomerId) || null}
@@ -3644,7 +3679,9 @@ const CreateShipmentX = (props) => {
                                         customerID: newValue?.customerID,
                                         id: newValue?.id,
                                         finalCustomerId: customerId,
-                                        previousSelectedCustomerId: selectedCustomerId
+                                        previousSelectedCustomerId: selectedCustomerId,
+                                        userRole,
+                                        availableCustomersCount: availableCustomers.length
                                     });
                                     setSelectedCustomerId(customerId);
                                 }}
@@ -3797,7 +3834,13 @@ const CreateShipmentX = (props) => {
 
                     {/* Show rest of form only when company is selected or user is not super admin */}
                     {(() => {
-                        const shouldShowForm = ((userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && companyData?.companyID));
+                        const shouldShowForm =
+                            // Super admin: needs company selected
+                            (userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) ||
+                            // Manufacturer: needs company selected 
+                            (userRole === 'manufacturer' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) ||
+                            // Regular users: needs company context
+                            (userRole !== 'superadmin' && userRole !== 'manufacturer' && companyData?.companyID);
                         console.log('🔍 CreateShipmentX Form Visibility Debug:', {
                             userRole,
                             companyIdForAddress,
@@ -3805,7 +3848,8 @@ const CreateShipmentX = (props) => {
                             companyData: companyData?.companyID,
                             shouldShowForm,
                             'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'regularUserCondition': userRole !== 'superadmin' && companyData?.companyID
+                            'manufacturerCondition': userRole === 'manufacturer' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
+                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'manufacturer' && companyData?.companyID
                         });
                         return shouldShowForm;
                     })() && (
