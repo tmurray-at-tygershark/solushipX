@@ -2331,17 +2331,22 @@ const CreateShipmentX = (props) => {
 
     // Save draft handler (no validation - save whatever state exists)
     const handleSaveAsDraft = async () => {
+        console.log('🚀 SHIP LATER: Starting handleSaveAsDraft function (CreateShipmentX)');
+
         // Check if user is authenticated before proceeding
         if (!user?.uid) {
+            console.log('❌ SHIP LATER: User authentication missing');
             showMessage('User authentication required to save draft', 'error');
             return;
         }
 
         if (!companyData?.companyID) {
+            console.log('❌ SHIP LATER: Company data missing');
             showMessage('Company information required to save draft', 'error');
             return;
         }
 
+        console.log('✅ SHIP LATER: Basic validation passed, proceeding with save');
         setIsSavingDraft(true);
 
         try {
@@ -2445,6 +2450,7 @@ const CreateShipmentX = (props) => {
                     updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
+                console.log('✅ SHIP LATER: Draft updated successfully (editing existing draft)');
                 showMessage('Draft updated successfully');
             } else if (activeDraftId) {
                 // Update the initial draft we created
@@ -2453,6 +2459,7 @@ const CreateShipmentX = (props) => {
                     updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
+                console.log('✅ SHIP LATER: Draft saved successfully (updating active draft)');
                 showMessage('Draft saved successfully');
             } else {
                 // Create new draft (fallback)
@@ -2462,6 +2469,7 @@ const CreateShipmentX = (props) => {
                 });
                 setActiveDraftId(docRef.id);
                 setFormErrors({}); // Clear form errors on successful save
+                console.log('✅ SHIP LATER: New draft created successfully, docId:', docRef.id);
                 showMessage('Draft saved successfully');
             }
 
@@ -2472,12 +2480,20 @@ const CreateShipmentX = (props) => {
                 onDraftSaved(docId, 'Draft saved successfully');
             }
 
-            // Return to shipments after successful save
-            if (onReturnToShipments) {
-                setTimeout(() => {
+            // Close modal and return to shipments after successful save
+            setTimeout(() => {
+                // First close the modal if we're in modal mode
+                if (isModal && onClose) {
+                    console.log('🔄 Closing CreateShipmentX modal after draft save');
+                    onClose();
+                }
+
+                // Then return to shipments if callback is available
+                if (onReturnToShipments) {
+                    console.log('🔄 Returning to shipments after draft save');
                     onReturnToShipments();
-                }, 1000); // Small delay to show success message
-            }
+                }
+            }, 1000); // Small delay to show success message
         } catch (error) {
             console.error('Error saving draft:', error);
             showMessage(`Failed to save draft: ${error.message}`, 'error');

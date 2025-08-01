@@ -3329,15 +3329,19 @@ const QuickShip = ({
 
     // Ship Later - Save as QuickShip draft
     const handleShipLater = async () => {
+        console.log('🚀 SHIP LATER: Starting handleShipLater function');
         setIsSavingDraft(true);
         setError(null);
 
         try {
             // Use lenient draft validation - allows saving without carrier
+            console.log('🚀 SHIP LATER: Running validation...');
             if (!validateQuickShipDraft()) {
+                console.log('❌ SHIP LATER: Validation failed, stopping save process');
                 setIsSavingDraft(false);
                 return;
             }
+            console.log('✅ SHIP LATER: Validation passed, proceeding with save');
 
             console.log('Saving QuickShip draft:', {
                 shipmentID,
@@ -3477,32 +3481,53 @@ const QuickShip = ({
                 console.log('QuickShip draft created successfully:', docId);
             }
 
+            console.log('✅ SHIP LATER: Draft saved successfully to Firebase, docId:', docId);
+
             // Show success notification
             setShowDraftSuccess(true);
 
             // Call the parent callback to refresh shipments table
             if (onDraftSaved) {
-                console.log('🔄 Calling parent callback to refresh shipments table after draft save');
+                console.log('🔄 SHIP LATER: Calling parent callback to refresh shipments table after draft save');
                 onDraftSaved(docId, 'Draft saved successfully');
+            } else {
+                console.log('⚠️ SHIP LATER: No onDraftSaved callback provided');
             }
 
             // After a short delay, navigate to shipments modal
             setTimeout(() => {
+                console.log('🚀 SHIP LATER: Starting modal close sequence...');
                 setShowDraftSuccess(false);
+
                 // Close QuickShip modal first
                 if (onClose) {
+                    console.log('✅ SHIP LATER: Closing QuickShip modal via onClose()');
                     onClose();
+                } else {
+                    console.log('⚠️ SHIP LATER: No onClose callback provided');
                 }
+
                 // Then open shipments modal
                 if (onReturnToShipments) {
+                    console.log('✅ SHIP LATER: Calling onReturnToShipments()');
                     onReturnToShipments();
+                } else {
+                    console.log('⚠️ SHIP LATER: No onReturnToShipments callback provided');
                 }
+
+                console.log('🎉 SHIP LATER: Modal close sequence completed');
             }, 1500); // Show success message for 1.5 seconds before navigating
 
         } catch (error) {
-            console.error('Error saving QuickShip draft:', error);
+            console.error('❌ SHIP LATER: Error saving QuickShip draft:', error);
+            console.error('❌ SHIP LATER: Error details:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack
+            });
             setError(`Failed to save draft: ${error.message}`);
         } finally {
+            console.log('🏁 SHIP LATER: Setting isSavingDraft to false');
             setIsSavingDraft(false);
         }
     };
@@ -3993,7 +4018,7 @@ const QuickShip = ({
         return true;
     };
 
-    // Validation for drafts - more lenient, allows saving with missing carrier
+    // Validation for drafts - very lenient, allows saving incomplete data
     const validateQuickShipDraft = () => {
         // Clear any existing errors
         setError(null);
@@ -4002,43 +4027,58 @@ const QuickShip = ({
             selectedCarrier,
             hasShipFrom: !!shipFromAddress,
             hasShipTo: !!shipToAddress,
-            packageCount: packages.length
+            packageCount: packages.length,
+            userUid: currentUser?.uid,
+            companyId: companyIdForAddress
         });
 
-        // For drafts, we don't require carrier selection
-        // Only validate addresses if they are provided
-        if (shipFromAddress) {
+        // Check basic requirements that are absolutely necessary for saving
+        if (!currentUser?.uid) {
+            console.log('❌ User authentication required for draft save');
+            setError('User authentication required to save draft');
+            return false;
+        }
+
+        if (!companyIdForAddress) {
+            console.log('❌ Company information required for draft save');
+            setError('Company information required to save draft');
+            return false;
+        }
+
+        // For drafts, we allow saving with minimal validation
+        // Only validate addresses if they have content to validate
+        if (shipFromAddress && shipFromAddress.street) {
             const fromValidation = validateAddress(shipFromAddress, 'shipFrom');
             if (!fromValidation.valid) {
-                console.log('❌ Ship From validation failed:', fromValidation.message);
-                setError(fromValidation.message);
-                return false;
+                console.log('⚠️ Ship From validation warning (still allowing save):', fromValidation.message);
+                // Don't fail validation for drafts - just log the warning
             }
         }
 
-        if (shipToAddress) {
+        if (shipToAddress && shipToAddress.street) {
             const toValidation = validateAddress(shipToAddress, 'shipTo');
             if (!toValidation.valid) {
-                console.log('❌ Ship To validation failed:', toValidation.message);
-                setError(toValidation.message);
-                return false;
+                console.log('⚠️ Ship To validation warning (still allowing save):', toValidation.message);
+                // Don't fail validation for drafts - just log the warning
             }
         }
 
-        // Validate packages if they exist
+        // For packages, only validate if they have weight/dimensions data
         if (packages.length > 0) {
-            const packageValidation = validatePackages();
-            if (!packageValidation.valid) {
-                console.log('❌ Package validation failed:', packageValidation.message);
-                setError(packageValidation.message);
-                return false;
+            const packagesWithData = packages.filter(pkg => pkg.weight || pkg.length || pkg.width || pkg.height);
+            if (packagesWithData.length > 0) {
+                const packageValidation = validatePackages();
+                if (!packageValidation.valid) {
+                    console.log('⚠️ Package validation warning (still allowing save):', packageValidation.message);
+                    // Don't fail validation for drafts - just log the warning
+                }
             }
         }
 
-        // For drafts, we don't require rates - user can save empty rate table
+        // For drafts, we don't require carriers, rates, or complete data
+        // The goal is to save whatever progress the user has made
 
-        console.log('✅ Draft validation passed - no carrier required');
-        // All validations passed
+        console.log('✅ Draft validation passed - allowing save with minimal data');
         return true;
     };
 
