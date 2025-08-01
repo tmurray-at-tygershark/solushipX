@@ -3797,7 +3797,7 @@ const Dashboard = () => {
                     }
                 },
                 {
-                    text: 'Real-Time Rates',
+                    text: 'Create Shipment',
                     icon: <CalculateIcon />,
                     description: 'Advanced single-page rate comparison',
                     permission: PERMISSIONS.CREATE_SHIPMENTS,
@@ -3857,6 +3857,24 @@ const Dashboard = () => {
 
             // Only show parent item if it has visible sub-items
             if (filteredSubItems.length === 0) return null;
+
+            // SMART DROPDOWN LOGIC: If only one sub-item is available, make the parent directly clickable
+            if (filteredSubItems.length === 1) {
+                const singleSubItem = filteredSubItems[0];
+                return {
+                    ...item,
+                    // Replace parent action with the single sub-item's action
+                    action: singleSubItem.action,
+                    // Remove expandable behavior for single items
+                    expandable: false,
+                    expanded: false,
+                    // Keep sub-items as null to prevent dropdown rendering
+                    subItems: null,
+                    // Update text to reflect the single available option
+                    text: item.text, // Keep "New Shipment" as the main text
+                    singleSubItemText: singleSubItem.text // Store the sub-item text for potential use
+                };
+            }
 
             return {
                 ...item,
@@ -4736,7 +4754,8 @@ const Dashboard = () => {
                     position: 'relative',
                     zIndex: 1,
                     px: { xs: 0.4, sm: 0.85 }, // Reduced by 15% from 0.5, 1
-                    py: 0
+                    py: 0,
+                    pt: '10px' // Add 10px padding above first menu item
                 }}>
                     {menuItems.map((item, index) => (
                         <React.Fragment key={item.text}>
