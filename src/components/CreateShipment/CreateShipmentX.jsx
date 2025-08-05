@@ -67,6 +67,7 @@ import { db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
+import { getAvailableServiceLevels } from '../../utils/serviceLevelUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { fetchMultiCarrierRates, getAllCarriers, getEligibleCarriers } from '../../utils/carrierEligibility';
@@ -380,6 +381,12 @@ const CreateShipmentX = (props) => {
     // Service Levels state
     const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
     const [loadingServiceLevels, setLoadingServiceLevels] = useState(false);
+
+    // Shipment Type Options (filtered based on available service levels)
+    const [availableShipmentTypes, setAvailableShipmentTypes] = useState([
+        { value: 'courier', label: 'Courier' },
+        { value: 'freight', label: 'Freight' }
+    ]);
 
     // Additional state for improved UX
     const [formErrors, setFormErrors] = useState({});
@@ -1600,22 +1607,34 @@ const CreateShipmentX = (props) => {
         initializeShipment();
     }, [companyData?.companyID, user?.uid, shipmentID, isEditingDraft, draftIdToLoad]);
 
+    // Update shipment type options when company data changes
+    useEffect(() => {
+        if (companyData && companyIdForAddress) {
+            updateAvailableShipmentTypes();
+        }
+    }, [companyData, companyIdForAddress]);
+
     // Load service levels on component mount and when shipment type changes
     useEffect(() => {
         console.log('🔧 CreateShipmentX: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType);
         console.log('🔧 CreateShipmentX: Current shipmentInfo object:', shipmentInfo);
+        console.log('🔧 CreateShipmentX: companyData:', companyData);
+        console.log('🔧 CreateShipmentX: companyIdForAddress:', companyIdForAddress);
+        console.log('🔧 CreateShipmentX: Will load services?', shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier');
+
         if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
             console.log('🔧 CreateShipmentX: Loading services for shipment type:', shipmentInfo.shipmentType);
             loadAdditionalServices();
             loadServiceLevels();
         } else {
             console.log('🔧 CreateShipmentX: Clearing services for shipment type:', shipmentInfo.shipmentType);
+            console.log('🔧 CreateShipmentX: Shipment type is not freight/courier, available types are: freight, courier');
             // Clear services if not freight or courier
             setAvailableServices([]);
             setAdditionalServices([]);
             setAvailableServiceLevels([]);
         }
-    }, [shipmentInfo.shipmentType]);
+    }, [shipmentInfo.shipmentType, companyData, companyIdForAddress]);
 
     // Load dynamic charge types on component mount
     useEffect(() => {
@@ -2091,33 +2110,77 @@ const CreateShipmentX = (props) => {
         }));
     };
 
-    // Load Service Levels function
+    // Update available shipment types based on service level availability
+    const updateAvailableShipmentTypes = async () => {
+        if (!companyData || !companyIdForAddress) return;
+
+        try {
+            // Check available service levels for both freight and courier
+            const freightLevels = await getAvailableServiceLevels(companyIdForAddress, 'freight', companyData);
+            const courierLevels = await getAvailableServiceLevels(companyIdForAddress, 'courier', companyData);
+
+            const availableTypes = [];
+
+            // Add freight if it has service levels
+            if (freightLevels && freightLevels.length > 0) {
+                availableTypes.push({ value: 'freight', label: 'Freight' });
+            }
+
+            // Add courier if it has service levels  
+            if (courierLevels && courierLevels.length > 0) {
+                availableTypes.push({ value: 'courier', label: 'Courier' });
+            }
+
+            setAvailableShipmentTypes(availableTypes);
+
+            // Auto-select shipment type if only one option is available
+            if (availableTypes.length === 1 && availableTypes[0].value !== shipmentInfo.shipmentType) {
+                console.log('🔧 Auto-selecting shipment type:', availableTypes[0].value);
+                setShipmentInfo(prev => ({ ...prev, shipmentType: availableTypes[0].value }));
+            }
+
+        } catch (error) {
+            console.error('Error updating available shipment types:', error);
+            // Fallback to both options
+            setAvailableShipmentTypes([
+                { value: 'courier', label: 'Courier' },
+                { value: 'freight', label: 'Freight' }
+            ]);
+        }
+    };
+
+    // Load Service Levels function - now respects company restrictions
     const loadServiceLevels = async () => {
         console.log('🔧 CreateShipmentX: loadServiceLevels called, shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 CreateShipmentX: companyIdForAddress:', companyIdForAddress);
+        console.log('🔧 CreateShipmentX: companyData:', companyData);
+        console.log('🔧 CreateShipmentX: companyData.availableServiceLevels:', companyData?.availableServiceLevels);
         console.log('🔧 CreateShipmentX: loadServiceLevels function started');
 
         try {
             setLoadingServiceLevels(true);
-            const serviceLevelsRef = collection(db, 'serviceLevels');
-            const q = query(
-                serviceLevelsRef,
-                where('type', '==', shipmentInfo.shipmentType),
-                where('enabled', '==', true),
-                orderBy('sortOrder'),
-                orderBy('label')
+
+            // Use the new utility function to get company-specific service levels
+            const levels = await getAvailableServiceLevels(
+                companyIdForAddress,
+                shipmentInfo.shipmentType,
+                companyData
             );
-            const querySnapshot = await getDocs(q);
 
-            const levels = [];
-            querySnapshot.forEach((doc) => {
-                levels.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-
-            console.log('🔧 Loaded service levels from database:', levels);
+            console.log('🔧 Loaded company-specific service levels:', levels);
+            console.log('🔧 CreateShipmentX: Final service levels count:', levels.length);
+            console.log('🔧 Company restrictions applied by utility function');
             setAvailableServiceLevels(levels);
+
+            // Auto-select service level if only one option is available (excluding 'any')
+            if (levels && levels.length === 1) {
+                const singleLevel = levels[0];
+                if (singleLevel.code !== 'any' && shipmentInfo.serviceLevel === 'any') {
+                    console.log('🔧 Auto-selecting service level:', singleLevel.code);
+                    setShipmentInfo(prev => ({ ...prev, serviceLevel: singleLevel.code }));
+                }
+            }
+
         } catch (error) {
             console.error('🔧 Error loading service levels:', error);
             // Fallback to default 'any' option if loading fails
@@ -3908,16 +3971,14 @@ const CreateShipmentX = (props) => {
                                             <Grid item xs={12} md={4}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={[
-                                                        { value: 'courier', label: 'Courier' },
-                                                        { value: 'freight', label: 'Freight' }
-                                                    ]}
+                                                    options={availableShipmentTypes}
                                                     getOptionLabel={(option) => option.label}
-                                                    value={{ value: shipmentInfo.shipmentType, label: shipmentInfo.shipmentType === 'courier' ? 'Courier' : 'Freight' }}
+                                                    value={availableShipmentTypes.find(type => type.value === shipmentInfo.shipmentType) || null}
                                                     onChange={(event, newValue) => {
                                                         setShipmentInfo(prev => ({ ...prev, shipmentType: newValue ? newValue.value : 'freight' }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                    disabled={availableShipmentTypes.length === 0}
                                                     renderInput={(params) => (
                                                         <TextField
                                                             {...params}
@@ -3927,6 +3988,7 @@ const CreateShipmentX = (props) => {
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
                                                             }}
+                                                            helperText={availableShipmentTypes.length === 0 ? 'No shipment types available for this company' : ''}
                                                         />
                                                     )}
                                                     sx={{
@@ -3937,20 +3999,33 @@ const CreateShipmentX = (props) => {
                                             <Grid item xs={12} md={4}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ]}
+                                                    options={(() => {
+                                                        // If there's only one service level, don't show 'Any' option
+                                                        if (availableServiceLevels.length === 1) {
+                                                            return availableServiceLevels;
+                                                        }
+                                                        // Otherwise, include 'Any' option
+                                                        return [
+                                                            { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                            ...availableServiceLevels
+                                                        ];
+                                                    })()}
                                                     getOptionLabel={(option) => option.label || option.code}
-                                                    value={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
+                                                    value={(() => {
+                                                        const allOptions = availableServiceLevels.length === 1
+                                                            ? availableServiceLevels
+                                                            : [
+                                                                { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                                ...availableServiceLevels
+                                                            ];
+                                                        return allOptions.find(level => level.code === shipmentInfo.serviceLevel) || allOptions[0];
+                                                    })()}
                                                     onChange={(event, newValue) => {
                                                         setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.code === value.code}
                                                     loading={loadingServiceLevels}
+                                                    disabled={availableServiceLevels.length === 0}
                                                     renderInput={(params) => (
                                                         <TextField
                                                             {...params}
@@ -3960,6 +4035,7 @@ const CreateShipmentX = (props) => {
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
                                                             }}
+                                                            helperText={availableServiceLevels.length === 0 ? 'No service levels available for this shipment type' : ''}
                                                             InputProps={{
                                                                 ...params.InputProps,
                                                                 endAdornment: (

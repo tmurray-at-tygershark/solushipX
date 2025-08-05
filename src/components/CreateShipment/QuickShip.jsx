@@ -61,6 +61,7 @@ import {
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
+import { getAvailableServiceLevels } from '../../utils/serviceLevelUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc, orderBy } from 'firebase/firestore';
@@ -445,6 +446,9 @@ const QuickShip = ({
     // Service Levels state
     const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
     const [loadingServiceLevels, setLoadingServiceLevels] = useState(false);
+
+    // Shipment Type Options (filtered based on available service levels)
+    const [availableShipmentTypes, setAvailableShipmentTypes] = useState(['courier', 'freight']);
 
     // Manual rates state - with default FRT and FUE charges
     const [manualRates, setManualRates] = useState([
@@ -1715,33 +1719,71 @@ const QuickShip = ({
     const [serviceToggleTimeout, setServiceToggleTimeout] = useState(null);
     const [isProcessingServiceToggle, setIsProcessingServiceToggle] = useState(false);
 
-    // Load Service Levels function
+    // Update available shipment types based on service level availability
+    const updateAvailableShipmentTypes = async () => {
+        if (!companyData || !companyIdForAddress) return;
+
+        try {
+            // Check available service levels for both freight and courier
+            const freightLevels = await getAvailableServiceLevels(companyIdForAddress, 'freight', companyData);
+            const courierLevels = await getAvailableServiceLevels(companyIdForAddress, 'courier', companyData);
+
+            const availableTypes = [];
+
+            // Add freight if it has service levels
+            if (freightLevels && freightLevels.length > 0) {
+                availableTypes.push('freight');
+            }
+
+            // Add courier if it has service levels  
+            if (courierLevels && courierLevels.length > 0) {
+                availableTypes.push('courier');
+            }
+
+            setAvailableShipmentTypes(availableTypes);
+
+            // Auto-select shipment type if only one option is available
+            if (availableTypes.length === 1 && availableTypes[0] !== shipmentInfo.shipmentType) {
+                console.log('🔧 QuickShip: Auto-selecting shipment type:', availableTypes[0]);
+                setShipmentInfo(prev => ({ ...prev, shipmentType: availableTypes[0] }));
+            }
+
+        } catch (error) {
+            console.error('Error updating available shipment types:', error);
+            // Fallback to both options
+            setAvailableShipmentTypes(['courier', 'freight']);
+        }
+    };
+
+    // Load Service Levels function - now respects company restrictions
     const loadServiceLevels = async () => {
         console.log('🔧 QuickShip: loadServiceLevels called, shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 QuickShip: companyIdForAddress:', companyIdForAddress);
         console.log('🔧 QuickShip: loadServiceLevels function started');
 
         try {
             setLoadingServiceLevels(true);
-            const serviceLevelsRef = collection(db, 'serviceLevels');
-            const q = query(
-                serviceLevelsRef,
-                where('type', '==', shipmentInfo.shipmentType),
-                where('enabled', '==', true),
-                orderBy('sortOrder'),
-                orderBy('label')
+
+            // Use the new utility function to get company-specific service levels
+            const levels = await getAvailableServiceLevels(
+                companyIdForAddress,
+                shipmentInfo.shipmentType,
+                companyData
             );
-            const querySnapshot = await getDocs(q);
 
-            const levels = [];
-            querySnapshot.forEach((doc) => {
-                levels.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-
-            console.log('🔧 Loaded service levels from database:', levels);
+            console.log('🔧 Loaded company-specific service levels:', levels);
+            console.log('🔧 Company restrictions applied by utility function');
             setAvailableServiceLevels(levels);
+
+            // Auto-select service level if only one option is available (excluding 'any')
+            if (levels && levels.length === 1) {
+                const singleLevel = levels[0];
+                if (singleLevel.code !== 'any' && shipmentInfo.serviceLevel === 'any') {
+                    console.log('🔧 QuickShip: Auto-selecting service level:', singleLevel.code);
+                    setShipmentInfo(prev => ({ ...prev, serviceLevel: singleLevel.code }));
+                }
+            }
+
         } catch (error) {
             console.error('🔧 Error loading service levels:', error);
             // Fallback to default 'any' option if loading fails
@@ -4375,6 +4417,13 @@ const QuickShip = ({
         }
     };
 
+    // Update shipment type options when company data changes
+    useEffect(() => {
+        if (companyData && companyIdForAddress) {
+            updateAvailableShipmentTypes();
+        }
+    }, [companyData, companyIdForAddress]);
+
     // Load service levels on component mount and when shipment type changes
     useEffect(() => {
         console.log('🔧 QuickShip: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType);
@@ -4389,7 +4438,7 @@ const QuickShip = ({
             setAvailableServices([]);
             setAvailableServiceLevels([]);
         }
-    }, [shipmentInfo.shipmentType]);
+    }, [shipmentInfo.shipmentType, companyData, companyIdForAddress]);
 
     // Load dynamic charge types on component mount
     useEffect(() => {
@@ -5259,6 +5308,47 @@ const QuickShip = ({
                                             Shipment Information
                                         </Typography>
                                         <Grid container spacing={3}>
+                                            {/* Shipment Date - Full Width Top Row */}
+                                            <Grid item xs={12}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Shipment Date"
+                                                    type="date"
+                                                    value={shipmentInfo.shipmentDate}
+                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
+                                                    required
+                                                    autoComplete="off"
+                                                    tabIndex={9}
+                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                    sx={{
+                                                        '& .MuiInputBase-input': {
+                                                            fontSize: '12px',
+                                                            cursor: 'pointer',
+                                                            '&::placeholder': { fontSize: '12px' },
+                                                            '&::-webkit-calendar-picker-indicator': {
+                                                                position: 'absolute',
+                                                                left: 0,
+                                                                top: 0,
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                padding: 0,
+                                                                margin: 0,
+                                                                cursor: 'pointer',
+                                                                opacity: 0
+                                                            }
+                                                        },
+                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                        '& .MuiInputBase-root': {
+                                                            cursor: 'pointer'
+                                                        }
+                                                    }}
+                                                    InputLabelProps={{
+                                                        shrink: true,
+                                                    }}
+                                                />
+                                            </Grid>
+                                            {/* Shipment Type and Service Level - Second Row */}
                                             <Grid item xs={12} md={6}>
                                                 <FormControl fullWidth size="small">
                                                     <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
@@ -5266,33 +5356,56 @@ const QuickShip = ({
                                                         value={shipmentInfo.shipmentType}
                                                         onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentType: e.target.value }))}
                                                         label="Shipment Type"
+                                                        disabled={availableShipmentTypes.length === 0}
                                                         sx={{
                                                             fontSize: '12px',
                                                             '& .MuiSelect-select': { fontSize: '12px' }
                                                         }}
                                                     >
-                                                        <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
-                                                        <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                        {availableShipmentTypes.includes('courier') && (
+                                                            <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                                        )}
+                                                        {availableShipmentTypes.includes('freight') && (
+                                                            <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
+                                                        )}
                                                     </Select>
+                                                    {availableShipmentTypes.length === 0 && (
+                                                        <Typography sx={{ fontSize: '11px', color: 'error.main', mt: 0.5 }}>
+                                                            No shipment types available for this company
+                                                        </Typography>
+                                                    )}
                                                 </FormControl>
                                             </Grid>
                                             <Grid item xs={12} md={6}>
                                                 <Autocomplete
                                                     size="small"
-                                                    options={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ]}
+                                                    options={(() => {
+                                                        // If there's only one service level, don't show 'Any' option
+                                                        if (availableServiceLevels.length === 1) {
+                                                            return availableServiceLevels;
+                                                        }
+                                                        // Otherwise, include 'Any' option
+                                                        return [
+                                                            { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                            ...availableServiceLevels
+                                                        ];
+                                                    })()}
                                                     getOptionLabel={(option) => option.label || option.code}
-                                                    value={[
-                                                        { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
-                                                        ...availableServiceLevels
-                                                    ].find(level => level.code === shipmentInfo.serviceLevel) || { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' }}
+                                                    value={(() => {
+                                                        const allOptions = availableServiceLevels.length === 1
+                                                            ? availableServiceLevels
+                                                            : [
+                                                                { code: 'any', label: 'Any', type: 'any', description: 'Any available service level' },
+                                                                ...availableServiceLevels
+                                                            ];
+                                                        return allOptions.find(level => level.code === shipmentInfo.serviceLevel) || allOptions[0];
+                                                    })()}
                                                     onChange={(event, newValue) => {
                                                         setShipmentInfo(prev => ({ ...prev, serviceLevel: newValue ? newValue.code : 'any' }));
                                                     }}
                                                     isOptionEqualToValue={(option, value) => option.code === value.code}
                                                     loading={loadingServiceLevels}
+                                                    disabled={availableServiceLevels.length === 0}
                                                     renderInput={(params) => (
                                                         <TextField
                                                             {...params}
@@ -5302,6 +5415,7 @@ const QuickShip = ({
                                                                 '& .MuiInputBase-root': { fontSize: '12px' },
                                                                 '& .MuiInputLabel-root': { fontSize: '12px' }
                                                             }}
+                                                            helperText={availableServiceLevels.length === 0 ? 'No service levels available for this shipment type' : ''}
                                                             InputProps={{
                                                                 ...params.InputProps,
                                                                 endAdornment: (
@@ -5329,45 +5443,6 @@ const QuickShip = ({
                                                     )}
                                                     sx={{
                                                         '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Shipment Date"
-                                                    type="date"
-                                                    value={shipmentInfo.shipmentDate}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipmentDate: e.target.value }))}
-                                                    required
-                                                    autoComplete="off"
-                                                    tabIndex={11}
-                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            cursor: 'pointer',
-                                                            '&::placeholder': { fontSize: '12px' },
-                                                            '&::-webkit-calendar-picker-indicator': {
-                                                                position: 'absolute',
-                                                                left: 0,
-                                                                top: 0,
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                padding: 0,
-                                                                margin: 0,
-                                                                cursor: 'pointer',
-                                                                opacity: 0
-                                                            }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-root': {
-                                                            cursor: 'pointer'
-                                                        }
-                                                    }}
-                                                    InputLabelProps={{
-                                                        shrink: true,
                                                     }}
                                                 />
                                             </Grid>
