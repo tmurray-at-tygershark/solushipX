@@ -95,6 +95,8 @@ const ShipmentInformation = ({
     const navigate = useNavigate();
     const { user, currentUser } = useAuth();
 
+
+
     // Map state
     const [openMap, setOpenMap] = useState(null);
     const [geocodedPosition, setGeocodedPosition] = useState(null);
@@ -2037,6 +2039,7 @@ const ShipmentInformation = ({
                                                 </Box>
                                             </Tooltip>
                                         )}
+                                        {/* Manual Status Override - Component handles its own permission checking */}
                                         <ManualStatusOverride
                                             shipment={shipment}
                                             onStatusUpdated={onStatusUpdated}

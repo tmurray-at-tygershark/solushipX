@@ -117,6 +117,7 @@ export const PERMISSIONS = {
   // Tracking
   VIEW_TRACKING: 'view_tracking',
   UPDATE_TRACKING: 'update_tracking',
+  MANUAL_STATUS_OVERRIDE: 'manual_status_override', // NEW: Ability to manually override shipment status
   
   // Profile Management
   VIEW_PROFILE: 'view_profile',
@@ -269,6 +270,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking
     [PERMISSIONS.VIEW_TRACKING]: true,
     [PERMISSIONS.UPDATE_TRACKING]: true,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: true,
     
     // Profile Management
     [PERMISSIONS.VIEW_PROFILE]: true,
@@ -382,6 +384,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking
     [PERMISSIONS.VIEW_TRACKING]: true,
     [PERMISSIONS.UPDATE_TRACKING]: true,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: true,
     
     // Profile Management
     [PERMISSIONS.VIEW_PROFILE]: true,
@@ -503,6 +506,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking
     [PERMISSIONS.VIEW_TRACKING]: true,
     [PERMISSIONS.UPDATE_TRACKING]: false,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: true, // Company admins can override status for their shipments
     
     // Profile Management
     [PERMISSIONS.VIEW_PROFILE]: true,
@@ -624,6 +628,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking - View only
     [PERMISSIONS.VIEW_TRACKING]: true,
     [PERMISSIONS.UPDATE_TRACKING]: false,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: false, // Accounting users cannot override shipment status
     
     // Profile Management
     [PERMISSIONS.VIEW_PROFILE]: true,
@@ -746,6 +751,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking
     [PERMISSIONS.VIEW_TRACKING]: true,
     [PERMISSIONS.UPDATE_TRACKING]: false,
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: false, // Company staff cannot override shipment status
     
     // Profile Management
     [PERMISSIONS.VIEW_PROFILE]: true,
@@ -884,6 +890,7 @@ export const ROLE_PERMISSIONS = {
     // Tracking - LIMITED: Read-only tracking for assigned shipments
     [PERMISSIONS.VIEW_TRACKING]: true, // Can track shipments they're involved in
     [PERMISSIONS.UPDATE_TRACKING]: false, // Cannot update tracking status
+    [PERMISSIONS.MANUAL_STATUS_OVERRIDE]: false, // Cannot override shipment status
     
     // Profile Management - LIMITED: Can view and edit own profile only
     [PERMISSIONS.VIEW_PROFILE]: true,

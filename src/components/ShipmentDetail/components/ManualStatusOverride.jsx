@@ -37,6 +37,8 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase';
 import dynamicStatusService from '../../../services/DynamicStatusService';
 import EnhancedStatusChip from '../../StatusChip/EnhancedStatusChip';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const ManualStatusOverride = ({
     shipment,
@@ -44,6 +46,13 @@ const ManualStatusOverride = ({
     onShowSnackbar,
     disabled = false
 }) => {
+    // Get user role for permission checking
+    const { user, currentUser } = useAuth();
+    const userRole = user?.role || currentUser?.role;
+
+    // Debug: Check permission logic
+    const hasManualOverridePermission = hasPermission(userRole, PERMISSIONS.MANUAL_STATUS_OVERRIDE);
+    console.log('ManualStatusOverride - userRole:', userRole, 'hasPermission:', hasManualOverridePermission);
     const [isEditing, setIsEditing] = useState(false);
     const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
     const [selectedMasterStatus, setSelectedMasterStatus] = useState(null);
@@ -374,7 +383,7 @@ const ManualStatusOverride = ({
 
     return (
         <Box>
-            {/* Current Status Display */}
+            {/* Current Status Display - Always visible */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <EnhancedStatusChip
                     status={getEnhancedStatusFromShipment()}
@@ -382,19 +391,23 @@ const ManualStatusOverride = ({
                     displayMode="auto"
                     showTooltip={true}
                 />
-                <Tooltip title="Override status manually">
-                    <IconButton
-                        size="small"
-                        onClick={handleEditClick}
-                        disabled={disabled}
-                        sx={{
-                            padding: '4px',
-                            '&:hover': { bgcolor: 'action.hover' }
-                        }}
-                    >
-                        <EditIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                </Tooltip>
+
+                {/* Manual Status Override Edit Button - Only show if user has permission */}
+                {hasManualOverridePermission && (
+                    <Tooltip title="Override status manually">
+                        <IconButton
+                            size="small"
+                            onClick={handleEditClick}
+                            disabled={disabled}
+                            sx={{
+                                padding: '4px',
+                                '&:hover': { bgcolor: 'action.hover' }
+                            }}
+                        >
+                            <EditIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
             </Box>
 
             {/* Enhanced Status Selection Dialog */}

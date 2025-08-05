@@ -321,7 +321,7 @@ const RolePermissionsView = () => {
         if (permissionKey.includes('BILLING') || permissionKey.includes('INVOICE')) return 'Billing & Invoicing';
         if (permissionKey.includes('CARRIER')) return 'Carrier Management';
         if (permissionKey.includes('REPORT') || permissionKey.includes('ANALYTICS')) return 'Reports & Analytics';
-        if (permissionKey.includes('TRACKING')) return 'Tracking';
+        if (permissionKey.includes('TRACKING') || permissionKey.includes('MANUAL_STATUS_OVERRIDE')) return 'Tracking';
         if (permissionKey.includes('PROFILE')) return 'Profile Management';
         if (permissionKey.includes('NOTIFICATION')) return 'Notification Management';
         if (permissionKey.includes('SETTINGS') || permissionKey.includes('ROLES') || permissionKey.includes('MARKUPS')) return 'System Settings';
@@ -342,6 +342,7 @@ const RolePermissionsView = () => {
             case 'Billing & Invoicing': return <BillingIcon />;
             case 'Carrier Management': return <ShippingIcon />;
             case 'Reports & Analytics': return <ReportsIcon />;
+            case 'Tracking': return <RouteIcon />;
             case 'System Settings': return <SettingsIcon />;
             case 'Advanced Features': return <RouteIcon />;
             case 'Rate & Pricing Visibility': return <PricingIcon />;
