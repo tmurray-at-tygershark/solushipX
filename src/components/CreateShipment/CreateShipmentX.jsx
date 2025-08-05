@@ -3668,14 +3668,7 @@ const CreateShipmentX = (props) => {
                     {(() => {
                         const shouldShowSelector = (userRole === 'superadmin' && !companyIdForAddress) ||
                             (userRole === 'manufacturer' && !companyIdForAddress);
-                        console.log('🔍 CreateShipmentX Company Selector Debug:', {
-                            userRole,
-                            companyIdForAddress,
-                            selectedCompanyId,
-                            needsCompanySelection,
-                            shouldShowSelector,
-                            isManufacturer: userRole === 'manufacturer'
-                        });
+
                         return shouldShowSelector;
                     })() && (
                             <CompanySelector
@@ -3865,16 +3858,7 @@ const CreateShipmentX = (props) => {
                             (userRole === 'manufacturer' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) ||
                             // Regular users: needs company context
                             (userRole !== 'superadmin' && userRole !== 'manufacturer' && companyData?.companyID);
-                        console.log('🔍 CreateShipmentX Form Visibility Debug:', {
-                            userRole,
-                            companyIdForAddress,
-                            selectedCompanyId,
-                            companyData: companyData?.companyID,
-                            shouldShowForm,
-                            'superAdminCondition': userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'manufacturerCondition': userRole === 'manufacturer' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'manufacturer' && companyData?.companyID
-                        });
+
                         return shouldShowForm;
                     })() && (
                             <form autoComplete="off" noValidate onKeyDown={(e) => handleKeyDown(e, 'book')}>

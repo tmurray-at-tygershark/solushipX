@@ -619,7 +619,7 @@ const ShipmentTableRow = ({
                             wordBreak: 'break-word',
                             lineHeight: 1.3
                         }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                                 {/* Company Logo/Avatar */}
                                 <Box sx={{
                                     width: 20,
@@ -678,7 +678,7 @@ const ShipmentTableRow = ({
 
                                 {/* Company Name */}
                                 <Typography variant="body2" sx={{
-                                    fontSize: '12px',
+                                    fontSize: '11px !important',
                                     fontWeight: 500,
                                     color: '#000000',
                                     lineHeight: 1.2
@@ -692,7 +692,7 @@ const ShipmentTableRow = ({
                         <TableCell sx={{
                             verticalAlign: 'top',
                             textAlign: 'left',
-                            fontSize: '11px',
+                            fontSize: '11px !important',
                             ...getColumnWidth('id'),
                             padding: '8px 12px',
                             wordBreak: 'break-word',
@@ -717,7 +717,7 @@ const ShipmentTableRow = ({
                                         <span
                                             onClick={() => onEditDraftShipment(shipment?.id)}
                                             className="shipment-link"
-                                            style={{ cursor: 'pointer', fontSize: '11px' }}
+                                            style={{ cursor: 'pointer', fontSize: '11px !important' }}
                                         >
                                             <span>{highlightSearchTerm(
                                                 shipment?.shipmentID || shipment?.id,
@@ -725,7 +725,7 @@ const ShipmentTableRow = ({
                                             )}</span>
                                         </span>
                                     ) : (
-                                        <span className="shipment-link" style={{ fontSize: '11px', color: '#64748b' }}>
+                                        <span className="shipment-link" style={{ fontSize: '11px !important', color: '#64748b' }}>
                                             <span>{highlightSearchTerm(
                                                 shipment?.shipmentID || shipment?.id,
                                                 searchFields.shipmentId
@@ -736,7 +736,7 @@ const ShipmentTableRow = ({
                                     <span
                                         onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment?.shipmentID || shipment?.id)}
                                         className="shipment-link"
-                                        style={{ cursor: 'pointer', fontSize: '11px' }}
+                                        style={{ cursor: 'pointer', fontSize: '11px !important' }}
                                     >
                                         <span>{highlightSearchTerm(
                                             shipment?.shipmentID || shipment?.id,
@@ -766,7 +766,7 @@ const ShipmentTableRow = ({
                             <TableCell sx={{
                                 verticalAlign: 'top',
                                 textAlign: 'left',
-                                fontSize: '11px',
+                                fontSize: '11px !important',
                                 ...getColumnWidth('id'),
                                 padding: '8px 12px',
                                 wordBreak: 'break-word',
@@ -791,7 +791,7 @@ const ShipmentTableRow = ({
                                             <span
                                                 onClick={() => onEditDraftShipment(shipment?.id)}
                                                 className="shipment-link"
-                                                style={{ cursor: 'pointer', fontSize: '11px' }}
+                                                style={{ cursor: 'pointer', fontSize: '11px !important' }}
                                             >
                                                 <span>{highlightSearchTerm(
                                                     shipment?.shipmentID || shipment?.id,
@@ -799,7 +799,7 @@ const ShipmentTableRow = ({
                                                 )}</span>
                                             </span>
                                         ) : (
-                                            <span className="shipment-link" style={{ fontSize: '11px', color: '#64748b' }}>
+                                            <span className="shipment-link" style={{ fontSize: '11px !important', color: '#64748b' }}>
                                                 <span>{highlightSearchTerm(
                                                     shipment?.shipmentID || shipment?.id,
                                                     searchFields.shipmentId
@@ -810,7 +810,7 @@ const ShipmentTableRow = ({
                                         <span
                                             onClick={() => onViewShipmentDetail && onViewShipmentDetail(shipment?.shipmentID || shipment?.id)}
                                             className="shipment-link"
-                                            style={{ cursor: 'pointer', fontSize: '11px' }}
+                                            style={{ cursor: 'pointer', fontSize: '11px !important' }}
                                         >
                                             <span>{highlightSearchTerm(
                                                 shipment?.shipmentID || shipment?.id,
@@ -872,7 +872,7 @@ const ShipmentTableRow = ({
                                     // If formatDateTime returns null (invalid timestamp) or no dateTime, show N/A
                                     if (!dateTime || !dateTime.date) {
                                         return (
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#64748b' }}>
                                                 N/A
                                             </Typography>
                                         );
@@ -880,7 +880,7 @@ const ShipmentTableRow = ({
 
                                     return (
                                         <Box>
-                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important' }}>
                                                 {dateTime.date}
                                             </Typography>
                                         </Box>
@@ -939,12 +939,12 @@ const ShipmentTableRow = ({
                                         return (
                                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                                 {eta1Formatted && (
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                         ETA1: {eta1Formatted}
                                                     </Typography>
                                                 )}
                                                 {eta2Formatted && (
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                         ETA2: {eta2Formatted}
                                                     </Typography>
                                                 )}
@@ -962,7 +962,7 @@ const ShipmentTableRow = ({
                                         const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
                                         if (formattedCarrierDate) {
                                             return (
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                     {formattedCarrierDate}
                                                 </Typography>
                                             );
@@ -971,7 +971,7 @@ const ShipmentTableRow = ({
 
                                     // No ETA available
                                     return (
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#9ca3af' }}>
                                             N/A
                                         </Typography>
                                     );
@@ -1057,7 +1057,7 @@ const ShipmentTableRow = ({
 
                                     if (references.length === 0) {
                                         return (
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#000000' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                 N/A
                                             </Typography>
                                         );
@@ -1067,7 +1067,7 @@ const ShipmentTableRow = ({
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
                                             {references.map((ref, index) => (
                                                 <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#000000', flex: 1 }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000', flex: 1 }}>
                                                         {highlightSearchTerm(ref, searchFields.referenceNumber)}
                                                     </Typography>
                                                     <Tooltip title="Copy Reference Number">
@@ -1112,7 +1112,7 @@ const ShipmentTableRow = ({
                                 wordBreak: 'break-word',
                                 lineHeight: 1.3
                             }}>
-                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                <Typography variant="body2" sx={{ fontSize: '11px !important' }}>
                                     {highlightSearchTerm(
                                         (() => {
                                             // FIXED: Use the customer ID that's already stored in the shipment
@@ -1156,7 +1156,7 @@ const ShipmentTableRow = ({
                                     );
 
                                     return (
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '12px' }}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '11px !important' }}>
                                             {/* Origin */}
                                             <Box>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -1166,7 +1166,7 @@ const ShipmentTableRow = ({
                                                     </Box>
                                                 </Box>
                                                 {route.origin.postalCode && (
-                                                    <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                                    <Box sx={{ pl: 3, fontSize: '11px !important', color: '#64748b' }}>
                                                         {highlightSearchTerm(route.origin.postalCode, searchFields.origin)}
                                                     </Box>
                                                 )}
@@ -1191,7 +1191,7 @@ const ShipmentTableRow = ({
                                                     </Box>
                                                 </Box>
                                                 {route.destination.postalCode && (
-                                                    <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                                    <Box sx={{ pl: 3, fontSize: '11px !important', color: '#64748b' }}>
                                                         {highlightSearchTerm(route.destination.postalCode, searchFields.destination)}
                                                     </Box>
                                                 )}
@@ -1213,7 +1213,7 @@ const ShipmentTableRow = ({
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                     {/* Carrier Name */}
                                     <Typography variant="body2" sx={{
-                                        fontSize: '12px',
+                                        fontSize: '11px !important',
                                         wordBreak: 'break-word',
                                         lineHeight: 1.3
                                     }}>
@@ -1232,7 +1232,7 @@ const ShipmentTableRow = ({
                                         if (serviceType && typeof serviceType === 'string') {
                                             return (
                                                 <Typography variant="body2" sx={{
-                                                    fontSize: '11px',
+                                                    fontSize: '11px !important',
                                                     color: '#6b7280',
                                                     fontStyle: 'italic',
                                                     wordBreak: 'break-word',
@@ -1248,12 +1248,12 @@ const ShipmentTableRow = ({
                                     {/* Tracking Number */}
                                     {trackingNumber && (
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                            <QrCodeIcon sx={{ fontSize: '12px', color: '#64748b' }} />
+                                            <QrCodeIcon sx={{ fontSize: '11px !important', color: '#64748b' }} />
                                             <Typography
                                                 onClick={() => onOpenTrackingDrawer(trackingNumber)}
                                                 sx={{
                                                     color: '#2563eb',
-                                                    fontSize: '12px',
+                                                    fontSize: '11px !important',
                                                     cursor: 'pointer',
                                                     wordBreak: 'break-all',
                                                     lineHeight: 1.2,
@@ -1282,7 +1282,7 @@ const ShipmentTableRow = ({
                                     {/* Service Level */}
                                     {carrierData[shipment?.id]?.service && (
                                         <Typography variant="body2" sx={{
-                                            fontSize: '12px',
+                                            fontSize: '11px !important',
                                             color: '#64748b',
                                             wordBreak: 'break-word',
                                             lineHeight: 1.2
@@ -1332,7 +1332,7 @@ const ShipmentTableRow = ({
 
                                 if (!dateTime || !dateTime.date) {
                                     return (
-                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#64748b' }}>
+                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#64748b' }}>
                                             N/A
                                         </Typography>
                                     );
@@ -1340,7 +1340,7 @@ const ShipmentTableRow = ({
 
                                 return (
                                     <Box>
-                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                        <Typography variant="body2" sx={{ fontSize: '11px !important' }}>
                                             {dateTime.date}
                                         </Typography>
                                     </Box>
@@ -1397,12 +1397,12 @@ const ShipmentTableRow = ({
                                     return (
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                             {eta1Formatted && (
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                     ETA1: {eta1Formatted}
                                                 </Typography>
                                             )}
                                             {eta2Formatted && (
-                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                     ETA2: {eta2Formatted}
                                                 </Typography>
                                             )}
@@ -1420,7 +1420,7 @@ const ShipmentTableRow = ({
                                     const formattedCarrierDate = formatEtaDate(carrierEstimatedDelivery);
                                     if (formattedCarrierDate) {
                                         return (
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#000000' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                                 {formattedCarrierDate}
                                             </Typography>
                                         );
@@ -1429,7 +1429,7 @@ const ShipmentTableRow = ({
 
                                 // No ETA available
                                 return (
-                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                                    <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#9ca3af' }}>
                                         N/A
                                     </Typography>
                                 );
@@ -1513,7 +1513,7 @@ const ShipmentTableRow = ({
 
                                 if (references.length === 0) {
                                     return (
-                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#000000' }}>
+                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000' }}>
                                             N/A
                                         </Typography>
                                     );
@@ -1523,7 +1523,7 @@ const ShipmentTableRow = ({
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
                                         {references.map((ref, index) => (
                                             <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#000000', flex: 1 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#000000', flex: 1 }}>
                                                     {highlightSearchTerm(ref, searchFields.referenceNumber)}
                                                 </Typography>
                                                 <Tooltip title="Copy Reference Number">
@@ -1573,7 +1573,7 @@ const ShipmentTableRow = ({
                                 );
 
                                 return (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '11px !important' }}>
                                         {/* Origin */}
                                         <Box>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -1583,7 +1583,7 @@ const ShipmentTableRow = ({
                                                 </Box>
                                             </Box>
                                             {route.origin.postalCode && (
-                                                <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                                <Box sx={{ pl: 3, fontSize: '11px !important', color: '#64748b' }}>
                                                     {highlightSearchTerm(route.origin.postalCode, searchFields.origin)}
                                                 </Box>
                                             )}
@@ -1608,7 +1608,7 @@ const ShipmentTableRow = ({
                                                 </Box>
                                             </Box>
                                             {route.destination.postalCode && (
-                                                <Box sx={{ pl: 3, fontSize: '11px', color: '#64748b' }}>
+                                                <Box sx={{ pl: 3, fontSize: '11px !important', color: '#64748b' }}>
                                                     {highlightSearchTerm(route.destination.postalCode, searchFields.destination)}
                                                 </Box>
                                             )}
@@ -1628,7 +1628,7 @@ const ShipmentTableRow = ({
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                 {/* Carrier Name */}
                                 <Typography variant="body2" sx={{
-                                    fontSize: '12px',
+                                    fontSize: '11px !important',
                                     wordBreak: 'break-word',
                                     lineHeight: 1.3
                                 }}>
@@ -1647,7 +1647,7 @@ const ShipmentTableRow = ({
                                     if (serviceType && typeof serviceType === 'string') {
                                         return (
                                             <Typography variant="body2" sx={{
-                                                fontSize: '11px',
+                                                fontSize: '11px !important',
                                                 color: '#6b7280',
                                                 fontStyle: 'italic',
                                                 wordBreak: 'break-word',
@@ -1663,12 +1663,12 @@ const ShipmentTableRow = ({
                                 {/* Tracking Number */}
                                 {trackingNumber && (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <QrCodeIcon sx={{ fontSize: '12px', color: '#64748b' }} />
+                                        <QrCodeIcon sx={{ fontSize: '11px !important', color: '#64748b' }} />
                                         <Typography
                                             onClick={() => onOpenTrackingDrawer(trackingNumber)}
                                             sx={{
                                                 color: '#2563eb',
-                                                fontSize: '12px',
+                                                fontSize: '11px !important',
                                                 cursor: 'pointer',
                                                 wordBreak: 'break-all',
                                                 lineHeight: 1.2,
@@ -1697,7 +1697,7 @@ const ShipmentTableRow = ({
                                 {/* Service Level */}
                                 {carrierData[shipment?.id]?.service && (
                                     <Typography variant="body2" sx={{
-                                        fontSize: '12px',
+                                        fontSize: '11px !important',
                                         color: '#64748b',
                                         wordBreak: 'break-word',
                                         lineHeight: 1.2
@@ -1731,10 +1731,10 @@ const ShipmentTableRow = ({
 
                                     return (
                                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#374151' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#374151' }}>
                                                 {formatCurrency(charges.cost, charges.currency)}
                                             </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#059669' }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#059669' }}>
                                                 {formatCurrency(charges.companyCharge, charges.currency)}
                                             </Typography>
                                         </Box>
@@ -1782,6 +1782,12 @@ const ShipmentTableRow = ({
                                     compact={true}
                                     displayMode="master"
                                     showTooltip={true}
+                                    sx={{
+                                        fontSize: '10px !important',
+                                        '& .MuiChip-label': {
+                                            fontSize: '10px !important'
+                                        }
+                                    }}
                                 />
                             </Box>
 
@@ -1794,6 +1800,12 @@ const ShipmentTableRow = ({
                                         compact={false}
                                         displayMode="sub-only"
                                         showTooltip={false}
+                                        sx={{
+                                            fontSize: '10px !important',
+                                            '& .MuiChip-label': {
+                                                fontSize: '10px !important'
+                                            }
+                                        }}
                                     />
                                 </Box>
                             )}
@@ -1855,602 +1867,602 @@ const ShipmentTableRow = ({
                 )}
             </TableRow>
 
-            {/* Expanded Row Content */}
-            <TableRow>
-                <TableCell
-                    colSpan={adminViewMode ? (canViewCosts ? 12 : 11) : 11}
-                    sx={{
-                        paddingBottom: 0,
-                        paddingTop: 0,
-                        borderBottom: expanded ? '1px solid #e2e8f0' : 'none'
-                    }}
-                >
-                    <Collapse in={expanded} timeout="auto" unmountOnExit>
-                        <Box sx={{ margin: 2 }}>
+            {/* Expanded Row Content - Only render when expanded */}
+            {expanded && (
+                <TableRow>
+                    <TableCell
+                        colSpan={adminViewMode ? (canViewCosts ? 12 : 11) : 11}
+                        sx={{
+                            paddingBottom: 0,
+                            paddingTop: 0,
+                            borderBottom: '1px solid #e2e8f0'
+                        }}
+                    >
+                        <Collapse in={expanded} timeout="auto" unmountOnExit>
+                            <Box sx={{ margin: 2 }}>
 
-                            <Grid container spacing={3}>
-                                {/* Company & Customer Information - Full Width Row */}
-                                <Grid item xs={12}>
-                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                        <Grid container spacing={3}>
-                                            {/* Company Information */}
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                    COMPANY
-                                                </Typography>
-
-
-                                                {loadingExpandedCompanyData ? (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <CircularProgress size={20} />
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            Loading company...
-                                                        </Typography>
-                                                    </Box>
-                                                ) : expandedCompanyData ? (
-                                                    <Box sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 1,
-                                                        cursor: adminViewMode ? 'pointer' : 'default',
-                                                        p: 1,
-                                                        borderRadius: 1,
-                                                        ...(adminViewMode && {
-                                                            '&:hover': {
-                                                                backgroundColor: 'rgba(59, 130, 246, 0.05)'
-                                                            }
-                                                        })
-                                                    }}
-                                                        onClick={adminViewMode ? handleNavigateToCompany : undefined}>
-                                                        <Avatar
-                                                            src={expandedCompanyData.logoUrl || expandedCompanyData.logo || expandedCompanyData.logoURL}
-                                                            sx={{
-                                                                width: 24,
-                                                                height: 24,
-                                                                bgcolor: 'primary.main'
-                                                            }}
-                                                            onError={(e) => {
-                                                                console.log('Company logo failed to load:', expandedCompanyData.logoUrl || expandedCompanyData.logo || expandedCompanyData.logoURL);
-                                                            }}
-                                                        >
-                                                            <BusinessIcon sx={{ fontSize: 12 }} />
-                                                        </Avatar>
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Typography variant="body2" sx={{
-                                                                fontSize: '12px',
-                                                                fontWeight: 500,
-                                                                whiteSpace: 'nowrap',
-                                                                overflow: 'hidden',
-                                                                textOverflow: 'ellipsis'
-                                                            }}>
-                                                                {expandedCompanyData.name || expandedCompanyData.companyName || 'Unknown Company'}
-                                                            </Typography>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                ID: {expandedCompanyData.companyID || shipment?.companyID || 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        {adminViewMode && (
-                                                            <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                        )}
-                                                    </Box>
-                                                ) : (
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                        Company not found
+                                <Grid container spacing={3}>
+                                    {/* Company & Customer Information - Full Width Row */}
+                                    <Grid item xs={12}>
+                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                            <Grid container spacing={3}>
+                                                {/* Company Information */}
+                                                <Grid item xs={12} md={6}>
+                                                    <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                        COMPANY
                                                     </Typography>
-                                                )}
-                                            </Grid>
 
-                                            {/* Customer Information */}
-                                            <Grid item xs={12} md={6}>
-                                                <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                    CUSTOMER
-                                                </Typography>
 
-                                                {loadingExpandedCustomerData ? (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <CircularProgress size={20} />
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            Loading customer...
-                                                        </Typography>
-                                                    </Box>
-                                                ) : expandedCustomerData ? (
-                                                    <Box sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 1,
-                                                        cursor: (adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? 'pointer' : 'default',
-                                                        p: 1,
-                                                        borderRadius: 1,
-                                                        ...(adminViewMode && expandedCustomerData.id !== 'ship-to-data' && {
-                                                            '&:hover': {
-                                                                backgroundColor: 'rgba(34, 197, 94, 0.05)'
-                                                            }
-                                                        })
-                                                    }}
-                                                        onClick={(adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? handleNavigateToCustomer : undefined}>
-                                                        <Avatar
-                                                            src={expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL}
-                                                            sx={{
-                                                                width: 24,
-                                                                height: 24,
-                                                                bgcolor: 'success.main'
-                                                            }}
-                                                            onError={(e) => {
-                                                                console.log('Customer logo failed to load:', expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL);
-                                                            }}
-                                                        >
-                                                            <PersonIcon sx={{ fontSize: 12 }} />
-                                                        </Avatar>
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Typography variant="body2" sx={{
-                                                                fontSize: '12px',
-                                                                fontWeight: 500,
-                                                                whiteSpace: 'nowrap',
-                                                                overflow: 'hidden',
-                                                                textOverflow: 'ellipsis'
-                                                            }}>
-                                                                {expandedCustomerData.name || expandedCustomerData.companyName || 'Unknown Customer'}
-                                                            </Typography>
-
-                                                        </Box>
-                                                        {(adminViewMode && expandedCustomerData.id !== 'ship-to-data') && (
-                                                            <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                        )}
-                                                    </Box>
-                                                ) : (
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                        Customer not available
-                                                    </Typography>
-                                                )}
-                                            </Grid>
-                                        </Grid>
-                                    </Box>
-                                </Grid>
-
-                                {/* Route Information */}
-                                <Grid item xs={12} md={6}>
-                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            ROUTE INFORMATION
-                                        </Typography>
-
-                                        {/* Ship From */}
-                                        <Box sx={{ mb: 2 }}>
-                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
-                                                FROM:
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                {shipment?.shipFrom?.companyName || shipment?.shipfrom?.companyName || 'N/A'}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                {[
-                                                    shipment?.shipFrom?.street || shipment?.shipfrom?.street,
-                                                    shipment?.shipFrom?.city || shipment?.shipfrom?.city,
-                                                    shipment?.shipFrom?.state || shipment?.shipfrom?.state,
-                                                    (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)?.toUpperCase?.() || (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)
-                                                ].filter(Boolean).join(', ')}
-                                            </Typography>
-                                        </Box>
-
-                                        {/* Ship To */}
-                                        <Box>
-                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', display: 'block' }}>
-                                                TO:
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                {shipment?.shipTo?.companyName || shipment?.shipto?.companyName || 'N/A'}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                {[
-                                                    shipment?.shipTo?.street || shipment?.shipto?.street,
-                                                    shipment?.shipTo?.city || shipment?.shipto?.city,
-                                                    shipment?.shipTo?.state || shipment?.shipto?.state,
-                                                    (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)?.toUpperCase?.() || (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)
-                                                ].filter(Boolean).join(', ')}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                </Grid>
-
-                                {/* Package Information */}
-                                <Grid item xs={12} md={6}>
-                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            PACKAGE INFORMATION
-                                        </Typography>
-
-                                        {/* Weight and Dimensions */}
-                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                            {(() => {
-                                                const packages = shipment?.packages || [];
-                                                const totalWeight = packages.reduce((sum, pkg) =>
-                                                    sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0
-                                                );
-                                                const totalPieces = packages.reduce((sum, pkg) =>
-                                                    sum + parseInt(pkg.packagingQuantity || 1), 0
-                                                );
-
-                                                return (
-                                                    <>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                Total Weight:
-                                                            </Typography>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                {totalWeight > 0 ? `${totalWeight} lbs` : 'N/A'}
+                                                    {loadingExpandedCompanyData ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <CircularProgress size={20} />
+                                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                Loading company...
                                                             </Typography>
                                                         </Box>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                Total Pieces:
-                                                            </Typography>
-                                                            <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                {totalPieces > 0 ? totalPieces : 'N/A'}
-                                                            </Typography>
-                                                        </Box>
-                                                        {packages.length > 0 && (
-                                                            <Box sx={{ mt: 1 }}>
-                                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280', display: 'block', mb: 0.5 }}>
-                                                                    ALL PACKAGES:
+                                                    ) : expandedCompanyData ? (
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1,
+                                                            cursor: adminViewMode ? 'pointer' : 'default',
+                                                            p: 1,
+                                                            borderRadius: 1,
+                                                            ...(adminViewMode && {
+                                                                '&:hover': {
+                                                                    backgroundColor: 'rgba(59, 130, 246, 0.05)'
+                                                                }
+                                                            })
+                                                        }}
+                                                            onClick={adminViewMode ? handleNavigateToCompany : undefined}>
+                                                            <Avatar
+                                                                src={getCircleLogo(expandedCompanyData)}
+                                                                sx={{
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    bgcolor: 'transparent',
+                                                                    border: '1px solid #e5e7eb'
+                                                                }}
+                                                            >
+                                                                <BusinessIcon sx={{ fontSize: 12 }} />
+                                                            </Avatar>
+                                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                <Typography variant="body2" sx={{
+                                                                    fontSize: '11px !important',
+                                                                    fontWeight: 500,
+                                                                    whiteSpace: 'nowrap',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis'
+                                                                }}>
+                                                                    {expandedCompanyData.name || expandedCompanyData.companyName || 'Unknown Company'}
                                                                 </Typography>
-                                                                {packages.map((pkg, index) => (
-                                                                    <Box key={index} sx={{ mb: 0.5 }}>
-                                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                            Package {index + 1}: {pkg.length || 0}" × {pkg.width || 0}" × {pkg.height || 0}"
-                                                                            {pkg.weight && ` (${pkg.weight} lbs)`}
-                                                                            {pkg.packagingQuantity && parseInt(pkg.packagingQuantity) > 1 && ` × ${pkg.packagingQuantity} pieces`}
-                                                                        </Typography>
-                                                                        {pkg.description && (
-                                                                            <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', ml: 1 }}>
-                                                                                {pkg.description}
-                                                                            </Typography>
-                                                                        )}
-                                                                    </Box>
-                                                                ))}
+                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                    ID: {expandedCompanyData.companyID || shipment?.companyID || 'N/A'}
+                                                                </Typography>
                                                             </Box>
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </Box>
-                                    </Box>
-                                </Grid>
+                                                            {adminViewMode && (
+                                                                <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                            )}
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Company not found
+                                                        </Typography>
+                                                    )}
+                                                </Grid>
 
-                                {/* Charges Information - Only show if user has financial viewing permission */}
-                                {adminViewMode && canViewCosts && hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) && (
+                                                {/* Customer Information */}
+                                                <Grid item xs={12} md={6}>
+                                                    <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                        CUSTOMER
+                                                    </Typography>
+
+                                                    {loadingExpandedCustomerData ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <CircularProgress size={20} />
+                                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                Loading customer...
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : expandedCustomerData ? (
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1,
+                                                            cursor: (adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? 'pointer' : 'default',
+                                                            p: 1,
+                                                            borderRadius: 1,
+                                                            ...(adminViewMode && expandedCustomerData.id !== 'ship-to-data' && {
+                                                                '&:hover': {
+                                                                    backgroundColor: 'rgba(34, 197, 94, 0.05)'
+                                                                }
+                                                            })
+                                                        }}
+                                                            onClick={(adminViewMode && expandedCustomerData.id !== 'ship-to-data') ? handleNavigateToCustomer : undefined}>
+                                                            <Avatar
+                                                                src={expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL}
+                                                                sx={{
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    bgcolor: 'success.main'
+                                                                }}
+                                                                onError={(e) => {
+                                                                    console.log('Customer logo failed to load:', expandedCustomerData.logoUrl || expandedCustomerData.logo || expandedCustomerData.logoURL);
+                                                                }}
+                                                            >
+                                                                <PersonIcon sx={{ fontSize: 12 }} />
+                                                            </Avatar>
+                                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                                <Typography variant="body2" sx={{
+                                                                    fontSize: '11px !important',
+                                                                    fontWeight: 500,
+                                                                    whiteSpace: 'nowrap',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis'
+                                                                }}>
+                                                                    {expandedCustomerData.name || expandedCustomerData.companyName || 'Unknown Customer'}
+                                                                </Typography>
+
+                                                            </Box>
+                                                            {(adminViewMode && expandedCustomerData.id !== 'ship-to-data') && (
+                                                                <OpenInNewIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                            )}
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Customer not available
+                                                        </Typography>
+                                                    )}
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    </Grid>
+
+                                    {/* Route Information */}
                                     <Grid item xs={12} md={6}>
                                         <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                DETAILED CHARGES
+                                            <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                ROUTE INFORMATION
                                             </Typography>
 
-                                            {/* Invoice Status Chip */}
+                                            {/* Ship From */}
                                             <Box sx={{ mb: 2 }}>
-                                                {(() => {
-                                                    const invoiceStatus = shipment?.invoiceStatus || 'uninvoiced';
-                                                    const dynamicStatus = invoiceStatuses.find(s => s.statusCode === invoiceStatus);
-
-                                                    if (dynamicStatus) {
-                                                        return (
-                                                            <Chip
-                                                                label={dynamicStatus.statusLabel}
-                                                                size="small"
-                                                                sx={{
-                                                                    fontSize: '11px',
-                                                                    height: '22px',
-                                                                    fontWeight: 500,
-                                                                    color: dynamicStatus.fontColor || '#ffffff',
-                                                                    backgroundColor: dynamicStatus.color || '#6b7280',
-                                                                    border: '1px solid rgba(0,0,0,0.1)'
-                                                                }}
-                                                            />
-                                                        );
-                                                    } else {
-                                                        return (
-                                                            <Chip
-                                                                label={invoiceStatus}
-                                                                size="small"
-                                                                sx={{
-                                                                    fontSize: '11px',
-                                                                    height: '22px',
-                                                                    fontWeight: 500,
-                                                                    color: '#ffffff',
-                                                                    backgroundColor: '#6b7280',
-                                                                    border: '1px solid rgba(0,0,0,0.1)'
-                                                                }}
-                                                            />
-                                                        );
-                                                    }
-                                                })()}
+                                                <Typography variant="caption" sx={{ fontSize: '11px !important', color: '#6b7280', display: 'block' }}>
+                                                    FROM:
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                    {shipment?.shipFrom?.companyName || shipment?.shipfrom?.companyName || 'N/A'}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                    {[
+                                                        shipment?.shipFrom?.street || shipment?.shipfrom?.street,
+                                                        shipment?.shipFrom?.city || shipment?.shipfrom?.city,
+                                                        shipment?.shipFrom?.state || shipment?.shipfrom?.state,
+                                                        (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)?.toUpperCase?.() || (shipment?.shipFrom?.postalCode || shipment?.shipfrom?.postalCode)
+                                                    ].filter(Boolean).join(', ')}
+                                                </Typography>
                                             </Box>
 
-                                            {(() => {
-                                                // Get detailed charges breakdown from multiple possible sources
-                                                const selectedRate = shipment?.selectedRate || shipment?.selectedRateRef || {};
-                                                const pricing = selectedRate.pricing || selectedRate || {};
-                                                const manualRates = shipment?.manualRates || [];
-                                                const actualRates = shipment?.actualRates || {};
-                                                const markupRates = shipment?.markupRates || {};
+                                            {/* Ship To */}
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontSize: '11px !important', color: '#6b7280', display: 'block' }}>
+                                                    TO:
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                    {shipment?.shipTo?.companyName || shipment?.shipto?.companyName || 'N/A'}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                    {[
+                                                        shipment?.shipTo?.street || shipment?.shipto?.street,
+                                                        shipment?.shipTo?.city || shipment?.shipto?.city,
+                                                        shipment?.shipTo?.state || shipment?.shipto?.state,
+                                                        (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)?.toUpperCase?.() || (shipment?.shipTo?.postalCode || shipment?.shipto?.postalCode)
+                                                    ].filter(Boolean).join(', ')}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    </Grid>
 
-                                                // Get currency from multiple sources
-                                                const currency = pricing.currency ||
-                                                    selectedRate.currency ||
-                                                    actualRates.currency ||
-                                                    markupRates.currency ||
-                                                    shipment?.currency || 'USD';
+                                    {/* Package Information */}
+                                    <Grid item xs={12} md={6}>
+                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                            <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                PACKAGE INFORMATION
+                                            </Typography>
 
-                                                // Check if user has permission to view costs (for admin view and financial permissions)
-                                                const showCosts = adminViewMode && canViewCosts;
+                                            {/* Weight and Dimensions */}
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                {(() => {
+                                                    const packages = shipment?.packages || [];
+                                                    const totalWeight = packages.reduce((sum, pkg) =>
+                                                        sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0
+                                                    );
+                                                    const totalPieces = packages.reduce((sum, pkg) =>
+                                                        sum + parseInt(pkg.packagingQuantity || 1), 0
+                                                    );
 
-                                                // Get all available charge components from multiple data sources
-                                                const chargeComponents = [];
+                                                    return (
+                                                        <>
+                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                    Total Weight:
+                                                                </Typography>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                                    {totalWeight > 0 ? `${totalWeight} lbs` : 'N/A'}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                    Total Pieces:
+                                                                </Typography>
+                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                                    {totalPieces > 0 ? totalPieces : 'N/A'}
+                                                                </Typography>
+                                                            </Box>
+                                                            {packages.length > 0 && (
+                                                                <Box sx={{ mt: 1 }}>
+                                                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#6b7280', display: 'block', mb: 0.5 }}>
+                                                                        ALL PACKAGES:
+                                                                    </Typography>
+                                                                    {packages.map((pkg, index) => (
+                                                                        <Box key={index} sx={{ mb: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                                                Package {index + 1}: {pkg.length || 0}" × {pkg.width || 0}" × {pkg.height || 0}"
+                                                                                {pkg.weight && ` (${pkg.weight} lbs)`}
+                                                                                {pkg.packagingQuantity && parseInt(pkg.packagingQuantity) > 1 && ` × ${pkg.packagingQuantity} pieces`}
+                                                                            </Typography>
+                                                                            {pkg.description && (
+                                                                                <Typography variant="body2" sx={{ fontSize: '10px', color: '#6b7280', ml: 1 }}>
+                                                                                    {pkg.description}
+                                                                                </Typography>
+                                                                            )}
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            )}
+                                                        </>
+                                                    );
+                                                })()}
+                                            </Box>
+                                        </Box>
+                                    </Grid>
 
-                                                // Method 1: Check for actualRates.billingDetails (Enhanced CreateShipmentX)
-                                                if (actualRates.billingDetails && actualRates.billingDetails.length > 0) {
-                                                    actualRates.billingDetails.forEach(detail => {
-                                                        if (detail.amount >= 0) { // Include $0.00 amounts
+                                    {/* Charges Information - Only show if user has financial viewing permission */}
+                                    {adminViewMode && canViewCosts && hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) && (
+                                        <Grid item xs={12} md={6}>
+                                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                    DETAILED CHARGES
+                                                </Typography>
+
+                                                {/* Invoice Status Chip */}
+                                                <Box sx={{ mb: 2 }}>
+                                                    {(() => {
+                                                        const invoiceStatus = shipment?.invoiceStatus || 'uninvoiced';
+                                                        const dynamicStatus = invoiceStatuses.find(s => s.statusCode === invoiceStatus);
+
+                                                        if (dynamicStatus) {
+                                                            return (
+                                                                <Chip
+                                                                    label={dynamicStatus.statusLabel}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '11px !important',
+                                                                        height: '22px',
+                                                                        fontWeight: 500,
+                                                                        color: dynamicStatus.fontColor || '#ffffff',
+                                                                        backgroundColor: dynamicStatus.color || '#6b7280',
+                                                                        border: '1px solid rgba(0,0,0,0.1)'
+                                                                    }}
+                                                                />
+                                                            );
+                                                        } else {
+                                                            return (
+                                                                <Chip
+                                                                    label={invoiceStatus}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '11px !important',
+                                                                        height: '22px',
+                                                                        fontWeight: 500,
+                                                                        color: '#ffffff',
+                                                                        backgroundColor: '#6b7280',
+                                                                        border: '1px solid rgba(0,0,0,0.1)'
+                                                                    }}
+                                                                />
+                                                            );
+                                                        }
+                                                    })()}
+                                                </Box>
+
+                                                {(() => {
+                                                    // Get detailed charges breakdown from multiple possible sources
+                                                    const selectedRate = shipment?.selectedRate || shipment?.selectedRateRef || {};
+                                                    const pricing = selectedRate.pricing || selectedRate || {};
+                                                    const manualRates = shipment?.manualRates || [];
+                                                    const actualRates = shipment?.actualRates || {};
+                                                    const markupRates = shipment?.markupRates || {};
+
+                                                    // Get currency from multiple sources
+                                                    const currency = pricing.currency ||
+                                                        selectedRate.currency ||
+                                                        actualRates.currency ||
+                                                        markupRates.currency ||
+                                                        shipment?.currency || 'USD';
+
+                                                    // Check if user has permission to view costs (for admin view and financial permissions)
+                                                    const showCosts = adminViewMode && canViewCosts;
+
+                                                    // Get all available charge components from multiple data sources
+                                                    const chargeComponents = [];
+
+                                                    // Method 1: Check for actualRates.billingDetails (Enhanced CreateShipmentX)
+                                                    if (actualRates.billingDetails && actualRates.billingDetails.length > 0) {
+                                                        actualRates.billingDetails.forEach(detail => {
+                                                            if (detail.amount >= 0) { // Include $0.00 amounts
+                                                                chargeComponents.push({
+                                                                    name: detail.name,
+                                                                    cost: parseFloat(detail.amount),
+                                                                    charge: parseFloat(detail.amount) // For actualRates, cost = charge
+                                                                });
+                                                            }
+                                                        });
+                                                    }
+
+                                                    // Method 2: Check for markupRates.billingDetails (Enhanced CreateShipmentX)
+                                                    if (chargeComponents.length === 0 && markupRates.billingDetails && markupRates.billingDetails.length > 0) {
+                                                        markupRates.billingDetails.forEach(detail => {
+                                                            if (detail.amount >= 0) { // Include $0.00 amounts
+                                                                // For markup rates, find corresponding actual rate
+                                                                const actualDetail = actualRates.billingDetails?.find(ad => ad.name === detail.name);
+                                                                chargeComponents.push({
+                                                                    name: detail.name,
+                                                                    cost: actualDetail ? parseFloat(actualDetail.amount) : parseFloat(detail.amount) * 0.85,
+                                                                    charge: parseFloat(detail.amount)
+                                                                });
+                                                            }
+                                                        });
+                                                    }
+
+                                                    // Method 3: Check for manual rates (QuickShip style)
+                                                    if (chargeComponents.length === 0 && manualRates && manualRates.length > 0) {
+                                                        manualRates.forEach(rate => {
+                                                            if (rate.charge >= 0 || rate.cost >= 0) { // Include $0.00 amounts
+                                                                chargeComponents.push({
+                                                                    name: rate.chargeName || rate.description || rate.name || 'Manual Rate',
+                                                                    cost: parseFloat(rate.cost) || 0,
+                                                                    charge: parseFloat(rate.charge) || 0
+                                                                });
+                                                            }
+                                                        });
+                                                    }
+
+                                                    // Method 4: Check pricing breakdown (standard structure)
+                                                    if (chargeComponents.length === 0) {
+                                                        // Base freight charges
+                                                        if (pricing.freight >= 0) { // Include $0.00 amounts
                                                             chargeComponents.push({
-                                                                name: detail.name,
-                                                                cost: parseFloat(detail.amount),
-                                                                charge: parseFloat(detail.amount) // For actualRates, cost = charge
+                                                                name: 'Freight',
+                                                                cost: pricing.freightCost || pricing.freight * 0.8,
+                                                                charge: pricing.freight
                                                             });
                                                         }
-                                                    });
-                                                }
 
-                                                // Method 2: Check for markupRates.billingDetails (Enhanced CreateShipmentX)
-                                                if (chargeComponents.length === 0 && markupRates.billingDetails && markupRates.billingDetails.length > 0) {
-                                                    markupRates.billingDetails.forEach(detail => {
-                                                        if (detail.amount >= 0) { // Include $0.00 amounts
-                                                            // For markup rates, find corresponding actual rate
-                                                            const actualDetail = actualRates.billingDetails?.find(ad => ad.name === detail.name);
+                                                        // Fuel surcharge
+                                                        if (pricing.fuel >= 0) { // Include $0.00 amounts
                                                             chargeComponents.push({
-                                                                name: detail.name,
-                                                                cost: actualDetail ? parseFloat(actualDetail.amount) : parseFloat(detail.amount) * 0.85,
-                                                                charge: parseFloat(detail.amount)
+                                                                name: 'Fuel Surcharge',
+                                                                cost: pricing.fuelCost || pricing.fuel * 0.85,
+                                                                charge: pricing.fuel
                                                             });
                                                         }
-                                                    });
-                                                }
 
-                                                // Method 3: Check for manual rates (QuickShip style)
-                                                if (chargeComponents.length === 0 && manualRates && manualRates.length > 0) {
-                                                    manualRates.forEach(rate => {
-                                                        if (rate.charge >= 0 || rate.cost >= 0) { // Include $0.00 amounts
+                                                        // Service charges
+                                                        if (pricing.service >= 0) { // Include $0.00 amounts
                                                             chargeComponents.push({
-                                                                name: rate.chargeName || rate.description || rate.name || 'Manual Rate',
-                                                                cost: parseFloat(rate.cost) || 0,
-                                                                charge: parseFloat(rate.charge) || 0
+                                                                name: 'Service Fees',
+                                                                cost: pricing.serviceCost || pricing.service * 0.9,
+                                                                charge: pricing.service
                                                             });
                                                         }
-                                                    });
-                                                }
 
-                                                // Method 4: Check pricing breakdown (standard structure)
-                                                if (chargeComponents.length === 0) {
-                                                    // Base freight charges
-                                                    if (pricing.freight >= 0) { // Include $0.00 amounts
-                                                        chargeComponents.push({
-                                                            name: 'Freight',
-                                                            cost: pricing.freightCost || pricing.freight * 0.8,
-                                                            charge: pricing.freight
-                                                        });
-                                                    }
-
-                                                    // Fuel surcharge
-                                                    if (pricing.fuel >= 0) { // Include $0.00 amounts
-                                                        chargeComponents.push({
-                                                            name: 'Fuel Surcharge',
-                                                            cost: pricing.fuelCost || pricing.fuel * 0.85,
-                                                            charge: pricing.fuel
-                                                        });
-                                                    }
-
-                                                    // Service charges
-                                                    if (pricing.service >= 0) { // Include $0.00 amounts
-                                                        chargeComponents.push({
-                                                            name: 'Service Fees',
-                                                            cost: pricing.serviceCost || pricing.service * 0.9,
-                                                            charge: pricing.service
-                                                        });
-                                                    }
-
-                                                    // Additional charges
-                                                    if (pricing.accessorial >= 0) { // Include $0.00 amounts
-                                                        chargeComponents.push({
-                                                            name: 'Accessorial',
-                                                            cost: pricing.accessorialCost || pricing.accessorial * 0.85,
-                                                            charge: pricing.accessorial
-                                                        });
-                                                    }
-
-                                                    if (pricing.insurance >= 0) { // Include $0.00 amounts
-                                                        chargeComponents.push({
-                                                            name: 'Insurance',
-                                                            cost: pricing.insuranceCost || pricing.insurance * 0.7,
-                                                            charge: pricing.insurance
-                                                        });
-                                                    }
-                                                }
-
-                                                // Method 5: Check alternative field names
-                                                if (chargeComponents.length === 0) {
-                                                    // Check for common alternative field names
-                                                    const altFields = [
-                                                        { name: 'Base Rate', cost: selectedRate.baseRate || selectedRate.baseCost, charge: selectedRate.baseCharge || selectedRate.baseRate },
-                                                        { name: 'Freight', cost: selectedRate.freightCost, charge: selectedRate.freightCharge || selectedRate.freight },
-                                                        { name: 'Fuel', cost: selectedRate.fuelCost, charge: selectedRate.fuelCharge || selectedRate.fuel },
-                                                        { name: 'Accessorial', cost: selectedRate.accessorialCost, charge: selectedRate.accessorialCharge || selectedRate.accessorial }
-                                                    ];
-
-                                                    altFields.forEach(field => {
-                                                        if (field.charge >= 0 || field.cost >= 0) { // Include $0.00 amounts
+                                                        // Additional charges
+                                                        if (pricing.accessorial >= 0) { // Include $0.00 amounts
                                                             chargeComponents.push({
-                                                                name: field.name,
-                                                                cost: parseFloat(field.cost) || 0,
-                                                                charge: parseFloat(field.charge) || 0
+                                                                name: 'Accessorial',
+                                                                cost: pricing.accessorialCost || pricing.accessorial * 0.85,
+                                                                charge: pricing.accessorial
                                                             });
                                                         }
-                                                    });
-                                                }
 
-                                                // Calculate totals
-                                                const totalCost = chargeComponents.reduce((sum, item) => sum + item.cost, 0);
-                                                const totalCharge = chargeComponents.reduce((sum, item) => sum + item.charge, 0);
-                                                const finalTotal = pricing.total ||
-                                                    totalCharge ||
-                                                    markupRates.totalCharges ||
-                                                    selectedRate.totalCharges ||
-                                                    selectedRate.price ||
-                                                    shipment?.totalCharges || 0;
+                                                        if (pricing.insurance >= 0) { // Include $0.00 amounts
+                                                            chargeComponents.push({
+                                                                name: 'Insurance',
+                                                                cost: pricing.insuranceCost || pricing.insurance * 0.7,
+                                                                charge: pricing.insurance
+                                                            });
+                                                        }
+                                                    }
 
-                                                return (
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                        {chargeComponents.length > 0 ? (
-                                                            <>
-                                                                {chargeComponents.map((component, index) => (
-                                                                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                            {component.name}:
+                                                    // Method 5: Check alternative field names
+                                                    if (chargeComponents.length === 0) {
+                                                        // Check for common alternative field names
+                                                        const altFields = [
+                                                            { name: 'Base Rate', cost: selectedRate.baseRate || selectedRate.baseCost, charge: selectedRate.baseCharge || selectedRate.baseRate },
+                                                            { name: 'Freight', cost: selectedRate.freightCost, charge: selectedRate.freightCharge || selectedRate.freight },
+                                                            { name: 'Fuel', cost: selectedRate.fuelCost, charge: selectedRate.fuelCharge || selectedRate.fuel },
+                                                            { name: 'Accessorial', cost: selectedRate.accessorialCost, charge: selectedRate.accessorialCharge || selectedRate.accessorial }
+                                                        ];
+
+                                                        altFields.forEach(field => {
+                                                            if (field.charge >= 0 || field.cost >= 0) { // Include $0.00 amounts
+                                                                chargeComponents.push({
+                                                                    name: field.name,
+                                                                    cost: parseFloat(field.cost) || 0,
+                                                                    charge: parseFloat(field.charge) || 0
+                                                                });
+                                                            }
+                                                        });
+                                                    }
+
+                                                    // Calculate totals
+                                                    const totalCost = chargeComponents.reduce((sum, item) => sum + item.cost, 0);
+                                                    const totalCharge = chargeComponents.reduce((sum, item) => sum + item.charge, 0);
+                                                    const finalTotal = pricing.total ||
+                                                        totalCharge ||
+                                                        markupRates.totalCharges ||
+                                                        selectedRate.totalCharges ||
+                                                        selectedRate.price ||
+                                                        shipment?.totalCharges || 0;
+
+                                                    return (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                            {chargeComponents.length > 0 ? (
+                                                                <>
+                                                                    {chargeComponents.map((component, index) => (
+                                                                        <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                                {component.name}:
+                                                                            </Typography>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                                {showCosts ? (
+                                                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                                                        <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)} {currency}</span>
+                                                                                        <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
+                                                                                        <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)} {currency}</span>
+                                                                                    </Typography>
+                                                                                ) : (
+                                                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500, color: '#374151' }}>
+                                                                                        ${(component.charge || 0).toFixed(2)} {currency}
+                                                                                    </Typography>
+                                                                                )}
+                                                                            </Box>
+                                                                        </Box>
+                                                                    ))}
+                                                                    <Divider sx={{ my: 0.5 }} />
+                                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                        <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151' }}>
+                                                                            Total:
                                                                         </Typography>
                                                                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                                                             {showCosts ? (
-                                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                                    <span style={{ color: '#059669' }}>${(component.cost || 0).toFixed(2)} {currency}</span>
+                                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 600 }}>
+                                                                                    <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)} {currency}</span>
                                                                                     <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
-                                                                                    <span style={{ color: '#374151' }}>${(component.charge || 0).toFixed(2)} {currency}</span>
+                                                                                    <span style={{ color: '#374151' }}>${(finalTotal || 0).toFixed(2)} {currency}</span>
                                                                                 </Typography>
                                                                             ) : (
-                                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#374151' }}>
-                                                                                    ${(component.charge || 0).toFixed(2)} {currency}
+                                                                                <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151' }}>
+                                                                                    ${(finalTotal || 0).toFixed(2)} {currency}
                                                                                 </Typography>
                                                                             )}
                                                                         </Box>
                                                                     </Box>
-                                                                ))}
-                                                                <Divider sx={{ my: 0.5 }} />
-                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                                        Total:
+                                                                </>
+                                                            ) : (
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
+                                                                        Total Charges:
                                                                     </Typography>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                                        {showCosts ? (
-                                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                                                <span style={{ color: '#059669' }}>${(totalCost || 0).toFixed(2)} {currency}</span>
-                                                                                <span style={{ color: '#6b7280', margin: '0 8px' }}>|</span>
-                                                                                <span style={{ color: '#374151' }}>${(finalTotal || 0).toFixed(2)} {currency}</span>
-                                                                            </Typography>
-                                                                        ) : (
-                                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-                                                                                ${(finalTotal || 0).toFixed(2)} {currency}
-                                                                            </Typography>
-                                                                        )}
-                                                                    </Box>
+                                                                    <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500 }}>
+                                                                        ${finalTotal.toFixed(2)} {currency}
+                                                                    </Typography>
                                                                 </Box>
-                                                            </>
-                                                        ) : (
-                                                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    Total Charges:
-                                                                </Typography>
-                                                                <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500 }}>
-                                                                    ${finalTotal.toFixed(2)} {currency}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                    </Box>
-                                                );
-                                            })()}
-                                        </Box>
-                                    </Grid>
-                                )}
+                                                            )}
+                                                        </Box>
+                                                    );
+                                                })()}
+                                            </Box>
+                                        </Grid>
+                                    )}
 
-                                {/* Follow-Up Tasks */}
-                                {followUpSummary?.hasFollowUps && (
+                                    {/* Follow-Up Tasks */}
+                                    {followUpSummary?.hasFollowUps && (
+                                        <Grid item xs={12} md={adminViewMode ? 6 : 12}>
+                                            <Box sx={{ p: 2, bgcolor: '#fef3c7', borderRadius: 1, border: '1px solid #f59e0b' }}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#92400e', mb: 1 }}>
+                                                    FOLLOW-UP TASKS
+                                                </Typography>
+
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#92400e' }}>
+                                                            Total Tasks: {followUpSummary.totalTasks}
+                                                        </Typography>
+                                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                                            {followUpSummary.overdueTasks > 0 && (
+                                                                <Chip
+                                                                    label={`${followUpSummary.overdueTasks} Overdue`}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        bgcolor: '#fee2e2',
+                                                                        color: '#dc2626',
+                                                                        fontSize: '10px',
+                                                                        height: 20
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {followUpSummary.urgentTasks > 0 && (
+                                                                <Chip
+                                                                    label={`${followUpSummary.urgentTasks} Urgent`}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        bgcolor: '#fef3c7',
+                                                                        color: '#d97706',
+                                                                        fontSize: '10px',
+                                                                        height: 20
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {followUpSummary.pendingTasks > 0 && (
+                                                                <Chip
+                                                                    label={`${followUpSummary.pendingTasks} Pending`}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        bgcolor: '#e0e7ff',
+                                                                        color: '#3730a3',
+                                                                        fontSize: '10px',
+                                                                        height: 20
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </Box>
+                                                    </Box>
+
+                                                    {followUpSummary.nextTask && (
+                                                        <Box sx={{ pt: 1, borderTop: '1px solid #f59e0b' }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500, color: '#92400e', mb: 0.5 }}>
+                                                                Next Task:
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '10px', color: '#92400e' }}>
+                                                                {followUpSummary.nextTask.title}
+                                                            </Typography>
+                                                            <Typography variant="body2" sx={{ fontSize: '10px', color: '#b45309' }}>
+                                                                Due: {new Date(followUpSummary.nextTask.dueDate).toLocaleDateString()}
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        </Grid>
+                                    )}
+
+                                    {/* Documents */}
                                     <Grid item xs={12} md={adminViewMode ? 6 : 12}>
-                                        <Box sx={{ p: 2, bgcolor: '#fef3c7', borderRadius: 1, border: '1px solid #f59e0b' }}>
-                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#92400e', mb: 1 }}>
-                                                FOLLOW-UP TASKS
+                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                            <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                DOCUMENTS
                                             </Typography>
 
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#92400e' }}>
-                                                        Total Tasks: {followUpSummary.totalTasks}
-                                                    </Typography>
-                                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                                        {followUpSummary.overdueTasks > 0 && (
-                                                            <Chip
-                                                                label={`${followUpSummary.overdueTasks} Overdue`}
-                                                                size="small"
-                                                                sx={{
-                                                                    bgcolor: '#fee2e2',
-                                                                    color: '#dc2626',
-                                                                    fontSize: '10px',
-                                                                    height: 20
-                                                                }}
-                                                            />
-                                                        )}
-                                                        {followUpSummary.urgentTasks > 0 && (
-                                                            <Chip
-                                                                label={`${followUpSummary.urgentTasks} Urgent`}
-                                                                size="small"
-                                                                sx={{
-                                                                    bgcolor: '#fef3c7',
-                                                                    color: '#d97706',
-                                                                    fontSize: '10px',
-                                                                    height: 20
-                                                                }}
-                                                            />
-                                                        )}
-                                                        {followUpSummary.pendingTasks > 0 && (
-                                                            <Chip
-                                                                label={`${followUpSummary.pendingTasks} Pending`}
-                                                                size="small"
-                                                                sx={{
-                                                                    bgcolor: '#e0e7ff',
-                                                                    color: '#3730a3',
-                                                                    fontSize: '10px',
-                                                                    height: 20
-                                                                }}
-                                                            />
-                                                        )}
-                                                    </Box>
-                                                </Box>
-
-                                                {followUpSummary.nextTask && (
-                                                    <Box sx={{ pt: 1, borderTop: '1px solid #f59e0b' }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', fontWeight: 500, color: '#92400e', mb: 0.5 }}>
-                                                            Next Task:
-                                                        </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '10px', color: '#92400e' }}>
-                                                            {followUpSummary.nextTask.title}
-                                                        </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '10px', color: '#b45309' }}>
-                                                            Due: {new Date(followUpSummary.nextTask.dueDate).toLocaleDateString()}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-                                            </Box>
+                                            <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} userRole={userRole} />
                                         </Box>
                                     </Grid>
-                                )}
-
-                                {/* Documents */}
-                                <Grid item xs={12} md={adminViewMode ? 6 : 12}>
-                                    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                        <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            DOCUMENTS
-                                        </Typography>
-
-                                        <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} userRole={userRole} />
-                                    </Box>
                                 </Grid>
-                            </Grid>
-                        </Box>
-                    </Collapse>
-                </TableCell>
-            </TableRow>
+                            </Box>
+                        </Collapse>
+                    </TableCell>
+                </TableRow>
+            )}
         </>
     );
 };
@@ -2534,7 +2546,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
     // Check if this is a draft shipment
     if (shipment?.status === 'draft') {
         return (
-            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280', fontStyle: 'italic' }}>
                 No documents created
             </Typography>
         );
@@ -2552,7 +2564,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
 
     if (!documentData) {
         return (
-            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280', fontStyle: 'italic' }}>
                 Click to load documents
             </Typography>
         );
@@ -2637,7 +2649,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
 
     if (availableDocuments.length === 0) {
         return (
-            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+            <Typography variant="body2" sx={{ fontSize: '11px !important', color: '#6b7280', fontStyle: 'italic' }}>
                 No documents available
             </Typography>
         );
@@ -2658,10 +2670,10 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
                         backgroundColor: '#f8fafc'
                     }}>
                         <Box sx={{ flex: 1 }}>
-                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                            <Typography variant="body2" sx={{ fontSize: '11px !important', fontWeight: 500, color: '#374151' }}>
                                 {docGroup.name}
                             </Typography>
-                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                            <Typography variant="caption" sx={{ fontSize: '11px !important', color: '#6b7280' }}>
                                 {docGroup.count} document{docGroup.count > 1 ? 's' : ''} available
                             </Typography>
                         </Box>
@@ -2915,7 +2927,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
                                     return downloadingDoc === selectedDoc?.id;
                                 })()}
                                 sx={{
-                                    fontSize: '11px',
+                                    fontSize: '11px !important',
                                     minWidth: 'auto',
                                     px: 1.5,
                                     py: 0.5,

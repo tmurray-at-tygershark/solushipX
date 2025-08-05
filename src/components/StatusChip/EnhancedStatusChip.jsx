@@ -16,7 +16,8 @@ const EnhancedStatusChip = ({
     compact = false,          // Compact mode for tables
     className = '',
     onClick = null,
-    disabled = false
+    disabled = false,
+    sx = {}                   // Custom styling
 }) => {
     const [statusDisplay, setStatusDisplay] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -165,7 +166,8 @@ const EnhancedStatusChip = ({
                 sx={{
                     backgroundColor: '#6b7280',
                     color: '#ffffff',
-                    fontSize: getSizeConfig().fontSize
+                    fontSize: getSizeConfig().fontSize,
+                    ...sx
                 }}
             />
         );
@@ -250,7 +252,8 @@ const EnhancedStatusChip = ({
                     },
                     '& .MuiChip-label.MuiChip-labelMedium': {
                         color: `${variant === 'filled' ? styling.color : styling.backgroundColor} !important`
-                    }
+                    },
+                    ...sx
                 }}
             />
         );
@@ -371,7 +374,8 @@ const EnhancedStatusChip = ({
                         '&.MuiChip-colorDefault': {
                             backgroundColor: variant === 'filled' ? `${styling.backgroundColor} !important` : 'transparent !important',
                             color: variant === 'filled' ? `${styling.color} !important` : `${styling.backgroundColor} !important`
-                        }
+                        },
+                        ...sx
                     }}
                 />
 
@@ -483,7 +487,8 @@ const EnhancedStatusChip = ({
                     },
                     '& .MuiChip-label.MuiChip-labelMedium': {
                         color: `${variant === 'filled' ? styling.color : styling.backgroundColor} !important`
-                    }
+                    },
+                    ...sx
                 }}
             />
         );

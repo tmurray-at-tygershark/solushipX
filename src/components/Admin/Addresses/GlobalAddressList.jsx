@@ -889,7 +889,21 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                     </Box>
                 ) : (
                     <Box sx={{ width: '100%', px: 2 }}>
-                        <Table stickyHeader>
+                        <Table
+                            stickyHeader
+                            sx={{
+                                borderCollapse: 'collapse',
+                                '& .MuiTableCell-root': {
+                                    borderBottom: '1px solid #e0e0e0',
+                                    padding: '8px 12px'
+                                },
+                                '& .MuiTableRow-root': {
+                                    '&:hover': {
+                                        backgroundColor: '#f5f5f5'
+                                    }
+                                }
+                            }}
+                        >
                             <TableHead>
                                 <TableRow>
                                     <TableCell padding="checkbox" sx={{ width: 48, maxWidth: 48, minWidth: 48 }}>
