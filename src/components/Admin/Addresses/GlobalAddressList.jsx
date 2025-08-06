@@ -1117,10 +1117,65 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                 {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
                                             </Typography>
                                         </TableCell>
-                                        <TableCell sx={{ fontSize: '12px' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                {address.email || 'N/A'}
-                                            </Typography>
+                                        <TableCell sx={{ fontSize: '12px', maxWidth: '200px' }}>
+                                            {(() => {
+                                                if (!address.email || address.email === 'N/A') {
+                                                    return (
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                            N/A
+                                                        </Typography>
+                                                    );
+                                                }
+
+                                                // Split emails by semicolon and clean them
+                                                const emails = address.email
+                                                    .split(';')
+                                                    .map(email => email.trim())
+                                                    .filter(email => email.length > 0);
+
+                                                if (emails.length === 1) {
+                                                    // Single email - display as text with word break
+                                                    return (
+                                                        <Typography variant="body2" sx={{
+                                                            fontSize: '12px',
+                                                            wordBreak: 'break-all',
+                                                            lineHeight: 1.3
+                                                        }}>
+                                                            {emails[0]}
+                                                        </Typography>
+                                                    );
+                                                }
+
+                                                // Multiple emails - display as chips
+                                                return (
+                                                    <Box sx={{
+                                                        display: 'flex',
+                                                        flexWrap: 'wrap',
+                                                        gap: 0.5,
+                                                        maxWidth: '200px'
+                                                    }}>
+                                                        {emails.map((email, index) => (
+                                                            <Chip
+                                                                key={index}
+                                                                label={email}
+                                                                size="small"
+                                                                sx={{
+                                                                    fontSize: '10px',
+                                                                    height: '18px',
+                                                                    backgroundColor: '#f0f9ff',
+                                                                    color: '#0369a1',
+                                                                    border: '1px solid #bae6fd',
+                                                                    '& .MuiChip-label': {
+                                                                        fontSize: '10px',
+                                                                        fontWeight: 500,
+                                                                        px: 1
+                                                                    }
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </Box>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>

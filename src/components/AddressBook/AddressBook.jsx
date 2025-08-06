@@ -1452,10 +1452,53 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                                     {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
                                                                 </Typography>
                                                             </TableCell>
-                                                            <TableCell sx={{ fontSize: '12px' }}>
-                                                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                                    {address.email || 'N/A'}
-                                                                </Typography>
+                                                            <TableCell sx={{ fontSize: '12px', maxWidth: '200px' }}>
+                                                                {(() => {
+                                                                    if (!address.email || address.email === 'N/A') {
+                                                                        return (
+                                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                                                N/A
+                                                                            </Typography>
+                                                                        );
+                                                                    }
+
+                                                                    // Check if there are multiple emails (semicolon separated)
+                                                                    if (address.email.includes(';')) {
+                                                                        const emails = address.email.split(';').map(email => email.trim()).filter(email => email);
+                                                                        return (
+                                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '200px' }}>
+                                                                                {emails.map((email, index) => (
+                                                                                    <Chip
+                                                                                        key={index}
+                                                                                        label={email}
+                                                                                        size="small"
+                                                                                        sx={{
+                                                                                            fontSize: '10px',
+                                                                                            height: '20px',
+                                                                                            bgcolor: '#f0f9ff',
+                                                                                            color: '#0369a1',
+                                                                                            '& .MuiChip-label': { px: 1 }
+                                                                                        }}
+                                                                                    />
+                                                                                ))}
+                                                                            </Box>
+                                                                        );
+                                                                    }
+
+                                                                    // Single email - handle long emails with word breaking
+                                                                    return (
+                                                                        <Typography
+                                                                            variant="body2"
+                                                                            sx={{
+                                                                                fontSize: '12px',
+                                                                                wordBreak: 'break-all',
+                                                                                maxWidth: '200px'
+                                                                            }}
+                                                                        >
+                                                                            {address.email}
+                                                                        </Typography>
+                                                                    );
+                                                                })()}
                                                             </TableCell>
                                                             <TableCell sx={{ fontSize: '12px' }}>
                                                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>
@@ -2176,10 +2219,53 @@ const AddressBook = ({ isModal = false, onClose = null, showCloseButton = false,
                                                 {`${address.firstName || ''} ${address.lastName || ''}`.trim() || 'N/A'}
                                             </Typography>
                                         </TableCell>
-                                        <TableCell sx={{ fontSize: '12px' }}>
-                                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                                {address.email || 'N/A'}
-                                            </Typography>
+                                        <TableCell sx={{ fontSize: '12px', maxWidth: '200px' }}>
+                                            {(() => {
+                                                if (!address.email || address.email === 'N/A') {
+                                                    return (
+                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#9ca3af' }}>
+                                                            N/A
+                                                        </Typography>
+                                                    );
+                                                }
+
+                                                // Check if there are multiple emails (semicolon separated)
+                                                if (address.email.includes(';')) {
+                                                    const emails = address.email.split(';').map(email => email.trim()).filter(email => email);
+                                                    return (
+                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '200px' }}>
+                                                            {emails.map((email, index) => (
+                                                                <Chip
+                                                                    key={index}
+                                                                    label={email}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: '20px',
+                                                                        bgcolor: '#f0f9ff',
+                                                                        color: '#0369a1',
+                                                                        '& .MuiChip-label': { px: 1 }
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </Box>
+                                                    );
+                                                }
+
+                                                // Single email - handle long emails with word breaking
+                                                return (
+                                                    <Typography
+                                                        variant="body2"
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            wordBreak: 'break-all',
+                                                            maxWidth: '200px'
+                                                        }}
+                                                    >
+                                                        {address.email}
+                                                    </Typography>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '12px' }}>
                                             <Typography variant="body2" sx={{ fontSize: '12px' }}>
