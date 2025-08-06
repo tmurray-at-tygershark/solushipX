@@ -1039,12 +1039,24 @@ const SystemConfiguration = () => {
                                                         />
                                                     </TableCell>
                                                     <TableCell sx={{ fontSize: '12px' }}>
-                                                        <Chip
-                                                            label={service.serviceType ? service.serviceType.charAt(0).toUpperCase() + service.serviceType.slice(1) : 'General'}
-                                                            size="small"
-                                                            color={service.serviceType === 'pickup' ? 'warning' : service.serviceType === 'delivery' ? 'info' : 'default'}
-                                                            sx={{ fontSize: '10px' }}
-                                                        />
+                                                        <Typography
+                                                            sx={{
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                color: service.serviceType === 'pickup' ? '#7c3aed' :
+                                                                    service.serviceType === 'delivery' ? '#0ea5e9' : '#374151',
+                                                                px: 1,
+                                                                py: 0.5,
+                                                                borderRadius: '4px',
+                                                                bgcolor: service.serviceType === 'pickup' ? '#f3f4f6' :
+                                                                    service.serviceType === 'delivery' ? '#f0f9ff' : '#f9fafb',
+                                                                display: 'inline-block',
+                                                                minWidth: '60px',
+                                                                textAlign: 'center'
+                                                            }}
+                                                        >
+                                                            {service.serviceType ? service.serviceType.charAt(0).toUpperCase() + service.serviceType.slice(1) : 'General'}
+                                                        </Typography>
                                                     </TableCell>
                                                     <TableCell sx={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
                                                         {service.code}

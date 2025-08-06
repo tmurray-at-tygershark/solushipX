@@ -122,6 +122,7 @@ const CompanyForm = () => {
     });
     const [additionalServicesLoading, setAdditionalServicesLoading] = useState(false);
     const [activeAdditionalServiceTab, setActiveAdditionalServiceTab] = useState('freight');
+    const [additionalServiceCategoryFilter, setAdditionalServiceCategoryFilter] = useState('all');
 
     const [sameAsMainContact, setSameAsMainContact] = useState(false);
 
@@ -288,8 +289,37 @@ const CompanyForm = () => {
         });
     };
 
-    const getFilteredAdditionalServices = (type) => {
-        return globalAdditionalServices[type] || [];
+    const getFilteredAdditionalServices = (type, categoryFilter = null) => {
+        const services = globalAdditionalServices[type] || [];
+        const filterCategory = categoryFilter || additionalServiceCategoryFilter;
+
+        if (filterCategory === 'all') {
+            return services;
+        }
+
+        return services.filter(service => {
+            const serviceType = service.serviceType || 'general';
+            return serviceType === filterCategory;
+        });
+    };
+
+    const getCategoryCounts = (type) => {
+        const services = globalAdditionalServices[type] || [];
+        const counts = {
+            all: services.length,
+            general: 0,
+            pickup: 0,
+            delivery: 0
+        };
+
+        services.forEach(service => {
+            const serviceType = service.serviceType || 'general';
+            if (counts.hasOwnProperty(serviceType)) {
+                counts[serviceType]++;
+            }
+        });
+
+        return counts;
     };
 
     const isAdditionalServiceSelected = (additionalService, serviceType) => {
@@ -1941,7 +1971,10 @@ const CompanyForm = () => {
                                                     <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
                                                         <Tabs
                                                             value={activeAdditionalServiceTab}
-                                                            onChange={(e, newValue) => setActiveAdditionalServiceTab(newValue)}
+                                                            onChange={(e, newValue) => {
+                                                                setActiveAdditionalServiceTab(newValue);
+                                                                setAdditionalServiceCategoryFilter('all'); // Reset filter when switching tabs
+                                                            }}
                                                             sx={{
                                                                 '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
                                                                 '& .MuiTab-root': {
@@ -1953,14 +1986,60 @@ const CompanyForm = () => {
                                                             }}
                                                         >
                                                             <Tab
-                                                                label={`Freight (${getFilteredAdditionalServices('freight').length})`}
+                                                                label={`Freight (${getFilteredAdditionalServices('freight', 'all').length})`}
                                                                 value="freight"
                                                             />
                                                             <Tab
-                                                                label={`Courier (${getFilteredAdditionalServices('courier').length})`}
+                                                                label={`Courier (${getFilteredAdditionalServices('courier', 'all').length})`}
                                                                 value="courier"
                                                             />
                                                         </Tabs>
+                                                    </Box>
+
+                                                    {/* Category Filter Buttons */}
+                                                    <Box sx={{ mb: 2 }}>
+                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                                            Filter by Category:
+                                                        </Typography>
+                                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                                            {(() => {
+                                                                const counts = getCategoryCounts(activeAdditionalServiceTab);
+                                                                return [
+                                                                    { key: 'all', label: 'All', count: counts.all },
+                                                                    { key: 'general', label: 'General', count: counts.general },
+                                                                    { key: 'pickup', label: 'Pickup', count: counts.pickup },
+                                                                    { key: 'delivery', label: 'Delivery', count: counts.delivery }
+                                                                ].map(category => (
+                                                                    <Button
+                                                                        key={category.key}
+                                                                        size="small"
+                                                                        variant={additionalServiceCategoryFilter === category.key ? 'contained' : 'outlined'}
+                                                                        onClick={() => setAdditionalServiceCategoryFilter(category.key)}
+                                                                        disabled={category.count === 0}
+                                                                        sx={{
+                                                                            fontSize: '10px',
+                                                                            minWidth: 'auto',
+                                                                            px: 1.5,
+                                                                            py: 0.5,
+                                                                            ...(additionalServiceCategoryFilter === category.key ? {
+                                                                                bgcolor: '#7c3aed',
+                                                                                color: 'white',
+                                                                                '&:hover': { bgcolor: '#6d28d9' }
+                                                                            } : {
+                                                                                borderColor: '#e5e7eb',
+                                                                                color: '#374151',
+                                                                                '&:hover': {
+                                                                                    bgcolor: '#f9fafb',
+                                                                                    borderColor: '#d1d5db'
+                                                                                }
+                                                                            })
+                                                                        }}
+                                                                    >
+                                                                        {category.label} ({category.count})
+                                                                    </Button>
+                                                                ));
+                                                            })()}
+                                                        </Box>
                                                     </Box>
 
                                                     {/* Additional Service Checkboxes */}
