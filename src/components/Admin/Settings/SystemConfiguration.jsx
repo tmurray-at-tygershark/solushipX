@@ -92,6 +92,7 @@ const SystemConfiguration = () => {
     const [editingService, setEditingService] = useState(null);
     const [serviceForm, setServiceForm] = useState({
         type: 'freight',
+        serviceType: 'general',
         code: '',
         label: '',
         description: '',
@@ -247,6 +248,7 @@ const SystemConfiguration = () => {
         setEditingService(service);
         setServiceForm({
             type: service.type || 'freight',
+            serviceType: service.serviceType || 'general',
             code: service.code || '',
             label: service.label || '',
             description: service.description || '',
@@ -280,6 +282,7 @@ const SystemConfiguration = () => {
 
             const serviceData = {
                 type: serviceForm.type,
+                serviceType: serviceForm.serviceType,
                 code: serviceForm.code.trim().toUpperCase(),
                 label: serviceForm.label.trim(),
                 description: serviceForm.description.trim(),
@@ -1002,6 +1005,7 @@ const SystemConfiguration = () => {
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Shipment Type</TableCell>
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Type</TableCell>
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Code</TableCell>
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Label</TableCell>
@@ -1013,13 +1017,13 @@ const SystemConfiguration = () => {
                                     <TableBody>
                                         {servicesLoading ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3 }}>
+                                                <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}>
                                                     <CircularProgress size={24} />
                                                 </TableCell>
                                             </TableRow>
                                         ) : additionalServices.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
+                                                <TableCell colSpan={7} sx={{ textAlign: 'center', py: 3, fontSize: '12px', color: '#6b7280' }}>
                                                     No additional services configured. Click "Add Service" to get started.
                                                 </TableCell>
                                             </TableRow>
@@ -1031,6 +1035,14 @@ const SystemConfiguration = () => {
                                                             label={service.type === 'freight' ? 'Freight' : 'Courier'}
                                                             size="small"
                                                             color={service.type === 'freight' ? 'primary' : 'secondary'}
+                                                            sx={{ fontSize: '10px' }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell sx={{ fontSize: '12px' }}>
+                                                        <Chip
+                                                            label={service.serviceType ? service.serviceType.charAt(0).toUpperCase() + service.serviceType.slice(1) : 'General'}
+                                                            size="small"
+                                                            color={service.serviceType === 'pickup' ? 'warning' : service.serviceType === 'delivery' ? 'info' : 'default'}
                                                             sx={{ fontSize: '10px' }}
                                                         />
                                                     </TableCell>
@@ -1575,11 +1587,11 @@ const SystemConfiguration = () => {
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12} md={6}>
                             <FormControl fullWidth size="small">
-                                <InputLabel sx={{ fontSize: '12px' }}>Service Type</InputLabel>
+                                <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
                                 <Select
                                     value={serviceForm.type}
                                     onChange={(e) => handleServiceFormChange('type', e.target.value)}
-                                    label="Service Type"
+                                    label="Shipment Type"
                                     sx={{
                                         fontSize: '12px',
                                         '& .MuiSelect-select': { fontSize: '12px' },
@@ -1588,6 +1600,25 @@ const SystemConfiguration = () => {
                                 >
                                     <MenuItem value="freight" sx={{ fontSize: '12px' }}>Freight</MenuItem>
                                     <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel sx={{ fontSize: '12px' }}>Service Category</InputLabel>
+                                <Select
+                                    value={serviceForm.serviceType}
+                                    onChange={(e) => handleServiceFormChange('serviceType', e.target.value)}
+                                    label="Service Category"
+                                    sx={{
+                                        fontSize: '12px',
+                                        '& .MuiSelect-select': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
+                                >
+                                    <MenuItem value="general" sx={{ fontSize: '12px' }}>General</MenuItem>
+                                    <MenuItem value="pickup" sx={{ fontSize: '12px' }}>Pickup</MenuItem>
+                                    <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Delivery</MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -1606,6 +1637,23 @@ const SystemConfiguration = () => {
                                     '& .MuiInputBase-input::placeholder': { fontSize: '12px', opacity: 0.6 }
                                 }}
                                 helperText="Unique identifier for this service"
+                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                label="Sort Order"
+                                type="number"
+                                value={serviceForm.sortOrder}
+                                onChange={(e) => handleServiceFormChange('sortOrder', e.target.value)}
+                                size="small"
+                                sx={{
+                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                    '& .MuiInputBase-input::placeholder': { fontSize: '12px', opacity: 0.6 }
+                                }}
+                                helperText="Order in which this service appears"
                                 FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                             />
                         </Grid>
@@ -1646,24 +1694,7 @@ const SystemConfiguration = () => {
                                 FormHelperTextProps={{ sx: { fontSize: '11px' } }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Sort Order"
-                                type="number"
-                                value={serviceForm.sortOrder}
-                                onChange={(e) => handleServiceFormChange('sortOrder', e.target.value)}
-                                size="small"
-                                sx={{
-                                    '& .MuiInputBase-input': { fontSize: '12px' },
-                                    '& .MuiInputLabel-root': { fontSize: '12px' },
-                                    '& .MuiInputBase-input::placeholder': { fontSize: '12px', opacity: 0.6 }
-                                }}
-                                helperText="Order in which this service appears"
-                                FormHelperTextProps={{ sx: { fontSize: '11px' } }}
-                            />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid item xs={12}>
                             <FormControlLabel
                                 control={
                                     <Switch
