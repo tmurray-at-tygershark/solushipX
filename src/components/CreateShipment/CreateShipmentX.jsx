@@ -377,6 +377,7 @@ const CreateShipmentX = (props) => {
     const [availableServices, setAvailableServices] = useState([]);
     const [loadingServices, setLoadingServices] = useState(false);
     const [servicesExpanded, setServicesExpanded] = useState(false);
+    const [servicesCategoryFilter, setServicesCategoryFilter] = useState('all');
 
     // Service Levels state
     const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
@@ -2272,6 +2273,36 @@ const CreateShipmentX = (props) => {
 
     const isServiceSelected = (serviceId) => {
         return additionalServices.some(s => s.id === serviceId);
+    };
+
+    // Category filtering functions for Additional Services
+    const getFilteredServicesByCategory = () => {
+        if (servicesCategoryFilter === 'all') {
+            return availableServices;
+        }
+
+        return availableServices.filter(service => {
+            const serviceType = service.serviceType || 'general';
+            return serviceType === servicesCategoryFilter;
+        });
+    };
+
+    const getServiceCategoryCounts = () => {
+        const counts = {
+            all: availableServices.length,
+            general: 0,
+            pickup: 0,
+            delivery: 0
+        };
+
+        availableServices.forEach(service => {
+            const serviceType = service.serviceType || 'general';
+            if (counts[serviceType] !== undefined) {
+                counts[serviceType]++;
+            }
+        });
+
+        return counts;
     };
 
     // Show snackbar message
@@ -5305,6 +5336,50 @@ const CreateShipmentX = (props) => {
                                                     console.log('🔧 Rendering services UI - loadingServices:', loadingServices, 'availableServices:', availableServices);
                                                     return null;
                                                 })()}
+
+                                                {/* Category Filter Buttons */}
+                                                {!loadingServices && availableServices.length > 0 && (
+                                                    <Box sx={{ mb: 2 }}>
+                                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                                            {(() => {
+                                                                const counts = getServiceCategoryCounts();
+                                                                const filterOptions = [
+                                                                    { key: 'all', label: 'All', count: counts.all },
+                                                                    { key: 'general', label: 'General', count: counts.general },
+                                                                    { key: 'pickup', label: 'Pickup', count: counts.pickup },
+                                                                    { key: 'delivery', label: 'Delivery', count: counts.delivery }
+                                                                ];
+
+                                                                return filterOptions
+                                                                    .filter(option => option.count > 0)
+                                                                    .map((option) => (
+                                                                        <Button
+                                                                            key={option.key}
+                                                                            size="small"
+                                                                            variant={servicesCategoryFilter === option.key ? 'contained' : 'outlined'}
+                                                                            onClick={() => setServicesCategoryFilter(option.key)}
+                                                                            sx={{
+                                                                                fontSize: '11px',
+                                                                                textTransform: 'none',
+                                                                                height: '26px',
+                                                                                minWidth: '60px',
+                                                                                backgroundColor: servicesCategoryFilter === option.key ? '#7c3aed' : 'transparent',
+                                                                                borderColor: servicesCategoryFilter === option.key ? '#7c3aed' : '#d1d5db',
+                                                                                color: servicesCategoryFilter === option.key ? 'white' : '#6b7280',
+                                                                                '&:hover': {
+                                                                                    backgroundColor: servicesCategoryFilter === option.key ? '#6d28d9' : '#f9fafb',
+                                                                                    borderColor: '#7c3aed'
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {option.label} ({option.count})
+                                                                        </Button>
+                                                                    ));
+                                                            })()}
+                                                        </Box>
+                                                    </Box>
+                                                )}
+
                                                 {loadingServices ? (
                                                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                                                         <CircularProgress sx={{ mr: 2 }} />
@@ -5329,7 +5404,7 @@ const CreateShipmentX = (props) => {
                                                     </Box>
                                                 ) : (
                                                     <Grid container spacing={2}>
-                                                        {availableServices.map((service) => (
+                                                        {getFilteredServicesByCategory().map((service) => (
                                                             <Grid item xs={12} sm={6} md={4} key={service.id}>
                                                                 <Box
                                                                     sx={{
