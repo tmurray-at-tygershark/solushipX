@@ -102,6 +102,11 @@ const initialFormData = {
         courier: [],
         freight: []
     },
+    availableAdditionalServices: {
+        enabled: false,
+        courier: [],
+        freight: []
+    },
     eligibilityRules: {
         domesticCountry: 'CA',
         weightRanges: [],
@@ -173,19 +178,27 @@ const AddCarrier = ({ isModal = false, onClose = null, onCarrierCreated = null }
             // If carrier type changed, set appropriate service defaults
             if (stepData.type && stepData.type !== prev.type) {
                 const newSupportedServices = { ...newData.supportedServices };
+                const newAvailableAdditionalServices = { ...newData.availableAdditionalServices };
 
                 if (stepData.type === 'courier') {
                     newSupportedServices.courier = newSupportedServices.courier.length > 0 ? newSupportedServices.courier : [];
                     newSupportedServices.freight = [];
+                    newAvailableAdditionalServices.courier = newAvailableAdditionalServices.courier.length > 0 ? newAvailableAdditionalServices.courier : [];
+                    newAvailableAdditionalServices.freight = [];
                 } else if (stepData.type === 'freight') {
                     newSupportedServices.courier = [];
                     newSupportedServices.freight = newSupportedServices.freight.length > 0 ? newSupportedServices.freight : [];
+                    newAvailableAdditionalServices.courier = [];
+                    newAvailableAdditionalServices.freight = newAvailableAdditionalServices.freight.length > 0 ? newAvailableAdditionalServices.freight : [];
                 } else if (stepData.type === 'hybrid') {
                     newSupportedServices.courier = newSupportedServices.courier.length > 0 ? newSupportedServices.courier : [];
                     newSupportedServices.freight = newSupportedServices.freight.length > 0 ? newSupportedServices.freight : [];
+                    newAvailableAdditionalServices.courier = newAvailableAdditionalServices.courier.length > 0 ? newAvailableAdditionalServices.courier : [];
+                    newAvailableAdditionalServices.freight = newAvailableAdditionalServices.freight.length > 0 ? newAvailableAdditionalServices.freight : [];
                 }
 
                 newData.supportedServices = newSupportedServices;
+                newData.availableAdditionalServices = newAvailableAdditionalServices;
             }
 
             return newData;

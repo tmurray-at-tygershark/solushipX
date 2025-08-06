@@ -45,12 +45,14 @@ import {
     Public as PublicIcon,
     LocationOn as LocationOnIcon,
     Speed as SpeedIcon,
-    GroupWork as GroupWorkIcon
+    GroupWork as GroupWorkIcon,
+    Build as BuildIcon
 } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import AdminBreadcrumb from '../AdminBreadcrumb';
+import { getAllAdditionalServices } from '../../../utils/serviceLevelUtils';
 
 const CarrierDetail = () => {
     const { carrierId } = useParams();
@@ -60,6 +62,13 @@ const CarrierDetail = () => {
     const [carrier, setCarrier] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // Additional services state
+    const [globalAdditionalServices, setGlobalAdditionalServices] = useState({
+        courier: [],
+        freight: []
+    });
+    const [loadingAdditionalServices, setLoadingAdditionalServices] = useState(false);
 
     useEffect(() => {
         const loadCarrier = async () => {
@@ -89,6 +98,36 @@ const CarrierDetail = () => {
 
         loadCarrier();
     }, [carrierId]);
+
+    // Load global additional services for comparison
+    useEffect(() => {
+        const loadGlobalAdditionalServices = async () => {
+            try {
+                setLoadingAdditionalServices(true);
+                console.log('🔄 [CarrierDetail] Loading global additional services...');
+
+                // Load courier additional services
+                const courierServices = await getAllAdditionalServices('courier');
+                const freightServices = await getAllAdditionalServices('freight');
+
+                setGlobalAdditionalServices({
+                    courier: courierServices,
+                    freight: freightServices
+                });
+
+                console.log('✅ [CarrierDetail] Global additional services loaded:', {
+                    courier: courierServices.length,
+                    freight: freightServices.length
+                });
+            } catch (error) {
+                console.error('❌ [CarrierDetail] Error loading global additional services:', error);
+            } finally {
+                setLoadingAdditionalServices(false);
+            }
+        };
+
+        loadGlobalAdditionalServices();
+    }, []);
 
     const handleEditCarrier = () => {
         navigate(`/admin/carriers/${carrierId}/edit`);
@@ -404,6 +443,190 @@ const CarrierDetail = () => {
                                                     );
                                                 })}
                                             </Grid>
+                                        </Box>
+
+                                        {/* Additional Services */}
+                                        <Box sx={{ mb: 4 }}>
+                                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2, display: 'flex', alignItems: 'center' }}>
+                                                <BuildIcon sx={{ mr: 1, color: '#9c27b0', fontSize: '18px' }} />
+                                                Additional Services Configuration
+                                            </Typography>
+
+                                            {carrier.availableAdditionalServices?.enabled ? (
+                                                <Grid container spacing={2}>
+                                                    {['courier', 'freight'].map((serviceType) => {
+                                                        const supportedServices = carrier.supportedServices?.[serviceType] || [];
+                                                        const hasBaseServices = supportedServices.length > 0;
+                                                        const availableServices = carrier.availableAdditionalServices?.[serviceType] || [];
+                                                        const globalServices = globalAdditionalServices[serviceType] || [];
+                                                        const hasRestrictions = availableServices.length > 0;
+                                                        const showsAllServices = !hasRestrictions && globalServices.length > 0 && hasBaseServices;
+
+                                                        // Don't show additional services if carrier doesn't support the base service type
+                                                        if (!hasBaseServices) {
+                                                            return (
+                                                                <Grid item xs={12} sm={6} key={serviceType}>
+                                                                    <Paper sx={{
+                                                                        p: 2,
+                                                                        border: '1px solid #e5e7eb',
+                                                                        bgcolor: '#f9fafb'
+                                                                    }}>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                            <BuildIcon sx={{
+                                                                                mr: 1,
+                                                                                color: '#6b7280',
+                                                                                fontSize: '20px'
+                                                                            }} />
+                                                                            <Typography sx={{
+                                                                                fontSize: '14px',
+                                                                                fontWeight: 600,
+                                                                                color: '#6b7280',
+                                                                                textTransform: 'capitalize'
+                                                                            }}>
+                                                                                {serviceType} Additional Services
+                                                                            </Typography>
+                                                                            <Chip
+                                                                                label="N/A"
+                                                                                size="small"
+                                                                                color="default"
+                                                                                sx={{ ml: 'auto' }}
+                                                                            />
+                                                                        </Box>
+                                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                            Additional services not applicable - no {serviceType} services configured
+                                                                        </Typography>
+                                                                    </Paper>
+                                                                </Grid>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <Grid item xs={12} sm={6} key={serviceType}>
+                                                                <Paper sx={{
+                                                                    p: 2,
+                                                                    border: `2px solid ${hasRestrictions ? '#9c27b0' : showsAllServices ? '#16a34a' : '#e5e7eb'}`,
+                                                                    bgcolor: hasRestrictions ? '#faf5ff' : showsAllServices ? '#f0f9ff' : '#f9fafb'
+                                                                }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                                        <BuildIcon sx={{
+                                                                            mr: 1,
+                                                                            color: hasRestrictions ? '#9c27b0' : showsAllServices ? '#16a34a' : '#6b7280',
+                                                                            fontSize: '20px'
+                                                                        }} />
+                                                                        <Typography sx={{
+                                                                            fontSize: '14px',
+                                                                            fontWeight: 600,
+                                                                            color: hasRestrictions ? '#9c27b0' : showsAllServices ? '#16a34a' : '#6b7280',
+                                                                            textTransform: 'capitalize'
+                                                                        }}>
+                                                                            {serviceType} Additional Services
+                                                                        </Typography>
+                                                                        <Chip
+                                                                            label={hasRestrictions ? `${availableServices.length} restricted` : showsAllServices ? 'All available' : 'No services'}
+                                                                            size="small"
+                                                                            color={hasRestrictions ? 'secondary' : showsAllServices ? 'success' : 'default'}
+                                                                            sx={{ ml: 'auto' }}
+                                                                        />
+                                                                    </Box>
+
+                                                                    {hasRestrictions ? (
+                                                                        <Box>
+                                                                            <Typography sx={{ fontSize: '11px', color: '#9c27b0', mb: 1, fontWeight: 500 }}>
+                                                                                Restricted to ({availableServices.length}/{globalServices.length} services):
+                                                                            </Typography>
+                                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                                                {availableServices.map((serviceCode, index) => {
+                                                                                    const globalService = globalServices.find(s => s.code === serviceCode);
+                                                                                    return (
+                                                                                        <Chip
+                                                                                            key={index}
+                                                                                            label={globalService?.name || serviceCode}
+                                                                                            size="small"
+                                                                                            sx={{ fontSize: '10px' }}
+                                                                                            color="secondary"
+                                                                                            variant="outlined"
+                                                                                        />
+                                                                                    );
+                                                                                })}
+                                                                            </Box>
+                                                                        </Box>
+                                                                    ) : showsAllServices ? (
+                                                                        <Box>
+                                                                            <Typography sx={{ fontSize: '11px', color: '#16a34a', mb: 1, fontWeight: 500 }}>
+                                                                                All global services available ({globalServices.length} services):
+                                                                            </Typography>
+                                                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                                                {globalServices.slice(0, 6).map((service, index) => (
+                                                                                    <Chip
+                                                                                        key={index}
+                                                                                        label={service.name}
+                                                                                        size="small"
+                                                                                        sx={{ fontSize: '10px' }}
+                                                                                        color="success"
+                                                                                        variant="outlined"
+                                                                                    />
+                                                                                ))}
+                                                                                {globalServices.length > 6 && (
+                                                                                    <Chip
+                                                                                        label={`+${globalServices.length - 6} more`}
+                                                                                        size="small"
+                                                                                        sx={{ fontSize: '10px' }}
+                                                                                        color="success"
+                                                                                        variant="filled"
+                                                                                    />
+                                                                                )}
+                                                                            </Box>
+                                                                        </Box>
+                                                                    ) : (
+                                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                            No additional services configured for {serviceType}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Paper>
+                                                            </Grid>
+                                                        );
+                                                    })}
+                                                </Grid>
+                                            ) : (
+                                                <Paper sx={{ p: 3, bgcolor: '#f0f9ff', border: '1px solid #bfdbfe' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                                                        <BuildIcon sx={{ mr: 1, color: '#1976d2', fontSize: '20px' }} />
+                                                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#1976d2' }}>
+                                                            No Additional Service Restrictions
+                                                        </Typography>
+                                                    </Box>
+                                                    {(() => {
+                                                        const hasCourierServices = (carrier.supportedServices?.courier || []).length > 0;
+                                                        const hasFreightServices = (carrier.supportedServices?.freight || []).length > 0;
+                                                        const courierServicesCount = hasCourierServices ? globalAdditionalServices.courier.length : 0;
+                                                        const freightServicesCount = hasFreightServices ? globalAdditionalServices.freight.length : 0;
+                                                        const totalServices = courierServicesCount + freightServicesCount;
+
+                                                        if (!hasCourierServices && !hasFreightServices) {
+                                                            return (
+                                                                <Typography sx={{ fontSize: '12px', color: '#1565c0' }}>
+                                                                    No additional services available - carrier has no base services configured.
+                                                                </Typography>
+                                                            );
+                                                        }
+
+                                                        const serviceTypes = [];
+                                                        if (hasCourierServices) serviceTypes.push('courier');
+                                                        if (hasFreightServices) serviceTypes.push('freight');
+
+                                                        return (
+                                                            <>
+                                                                <Typography sx={{ fontSize: '12px', color: '#1565c0' }}>
+                                                                    This carrier has access to all globally available additional services for {serviceTypes.join(' and ')} shipments.
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '11px', color: '#1976d2', mt: 1, fontStyle: 'italic' }}>
+                                                                    Total: {hasCourierServices ? `${globalAdditionalServices.courier.length} courier` : ''}{hasCourierServices && hasFreightServices ? ' + ' : ''}{hasFreightServices ? `${globalAdditionalServices.freight.length} freight` : ''} = {totalServices} services available
+                                                                </Typography>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </Paper>
+                                            )}
                                         </Box>
 
                                         {/* Geographic Routing */}

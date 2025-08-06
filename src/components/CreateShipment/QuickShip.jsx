@@ -61,7 +61,7 @@ import {
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
-import { getAvailableServiceLevels } from '../../utils/serviceLevelUtils';
+import { getAvailableServiceLevels, getAvailableAdditionalServices, getCompanyAdditionalServices } from '../../utils/serviceLevelUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc, orderBy } from 'firebase/firestore';
@@ -1804,20 +1804,45 @@ const QuickShip = ({
         try {
             console.log('🔧 Loading additional services from database for type:', shipmentInfo.shipmentType);
             setLoadingServices(true);
-            const servicesRef = collection(db, 'shipmentServices');
-            const q = query(servicesRef, where('type', '==', shipmentInfo.shipmentType));
-            const querySnapshot = await getDocs(q);
 
-            const services = [];
-            querySnapshot.forEach((doc) => {
-                services.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
+            // Get selected carrier data for filtering
+            const selectedCarrierObject = quickShipCarriers.find(c => c.name === selectedCarrier);
+            console.log('🔧 Selected carrier for additional services filtering:', selectedCarrierObject);
 
-            console.log('🔧 Loaded services from database:', services);
+            // Use company-based filtering utility (includes carrier filtering if provided)
+            const services = await getCompanyAdditionalServices(
+                companyIdForAddress,
+                shipmentInfo.shipmentType,
+                companyData,
+                selectedCarrierObject
+            );
+
+            console.log('🔧 Loaded company-filtered additional services:', services);
             setAvailableServices(services);
+
+            // Auto-check services with defaultEnabled flag
+            const defaultEnabledServices = services.filter(service => service.defaultEnabled);
+            if (defaultEnabledServices.length > 0) {
+                console.log('🔧 Auto-checking default enabled services:', defaultEnabledServices.map(s => s.code));
+
+                // Add default enabled services to additionalServices if not already present
+                setAdditionalServices(prev => {
+                    const newServices = [];
+                    defaultEnabledServices.forEach(service => {
+                        const exists = prev.find(s => s.id === service.id);
+                        if (!exists) {
+                            newServices.push(service);
+                        }
+                    });
+
+                    if (newServices.length > 0) {
+                        console.log('🔧 Adding default services:', newServices.map(s => s.code));
+                        return [...prev, ...newServices];
+                    }
+
+                    return prev;
+                });
+            }
         } catch (error) {
             console.error('🔧 Error loading additional services:', error);
         } finally {
@@ -4424,12 +4449,12 @@ const QuickShip = ({
         }
     }, [companyData, companyIdForAddress]);
 
-    // Load service levels on component mount and when shipment type changes
+    // Load service levels on component mount and when shipment type or carrier changes
     useEffect(() => {
-        console.log('🔧 QuickShip: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType);
+        console.log('🔧 QuickShip: useEffect triggered for service loading. shipmentType:', shipmentInfo.shipmentType, 'selectedCarrier:', selectedCarrier);
         console.log('🔧 QuickShip: Current shipmentInfo object:', shipmentInfo);
         if (shipmentInfo.shipmentType === 'freight' || shipmentInfo.shipmentType === 'courier') {
-            console.log('🔧 QuickShip: Loading services for shipment type:', shipmentInfo.shipmentType);
+            console.log('🔧 QuickShip: Loading services for shipment type:', shipmentInfo.shipmentType, 'and carrier:', selectedCarrier);
             loadAdditionalServices();
             loadServiceLevels();
         } else {
@@ -4438,7 +4463,7 @@ const QuickShip = ({
             setAvailableServices([]);
             setAvailableServiceLevels([]);
         }
-    }, [shipmentInfo.shipmentType, companyData, companyIdForAddress]);
+    }, [shipmentInfo.shipmentType, companyData, companyIdForAddress, selectedCarrier]);
 
     // Load dynamic charge types on component mount
     useEffect(() => {

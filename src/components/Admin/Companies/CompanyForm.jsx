@@ -54,6 +54,7 @@ import { getApp } from 'firebase/app';
 import { db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import AdminBreadcrumb from '../AdminBreadcrumb';
+import { getAllAdditionalServices } from '../../../utils/serviceLevelUtils';
 
 const CompanyForm = () => {
     const { id: companyFirestoreId } = useParams();
@@ -83,6 +84,11 @@ const CompanyForm = () => {
             freight: [], // Array of enabled freight service level codes
             courier: [] // Array of enabled courier service level codes
         },
+        availableAdditionalServices: {
+            enabled: false, // If false, all additional services are available (default)
+            freight: [], // Array of enabled freight additional service objects with defaultEnabled flags
+            courier: [] // Array of enabled courier additional service objects with defaultEnabled flags
+        },
         mainContact: {
             firstName: '', lastName: '', email: '', phone: '',
             address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA',
@@ -109,6 +115,14 @@ const CompanyForm = () => {
     const [serviceLevelsLoading, setServiceLevelsLoading] = useState(false);
     const [activeServiceLevelTab, setActiveServiceLevelTab] = useState('freight');
 
+    // State for Additional Services Management
+    const [globalAdditionalServices, setGlobalAdditionalServices] = useState({
+        freight: [],
+        courier: []
+    });
+    const [additionalServicesLoading, setAdditionalServicesLoading] = useState(false);
+    const [activeAdditionalServiceTab, setActiveAdditionalServiceTab] = useState('freight');
+
     const [sameAsMainContact, setSameAsMainContact] = useState(false);
 
     // Load global service levels from configuration
@@ -131,6 +145,34 @@ const CompanyForm = () => {
             enqueueSnackbar('Failed to load service levels', { variant: 'error' });
         } finally {
             setServiceLevelsLoading(false);
+        }
+    }, [enqueueSnackbar]);
+
+    // Load global additional services from configuration
+    const loadGlobalAdditionalServices = useCallback(async () => {
+        try {
+            setAdditionalServicesLoading(true);
+            console.log('[loadGlobalAdditionalServices] Loading additional services...');
+
+            // Load freight additional services
+            const freightServices = await getAllAdditionalServices('freight');
+            // Load courier additional services  
+            const courierServices = await getAllAdditionalServices('courier');
+
+            setGlobalAdditionalServices({
+                freight: freightServices,
+                courier: courierServices
+            });
+
+            console.log('[loadGlobalAdditionalServices] Loaded additional services:', {
+                freight: freightServices.length,
+                courier: courierServices.length
+            });
+        } catch (error) {
+            console.error('[loadGlobalAdditionalServices] Error loading additional services:', error);
+            enqueueSnackbar('Failed to load additional services', { variant: 'error' });
+        } finally {
+            setAdditionalServicesLoading(false);
         }
     }, [enqueueSnackbar]);
 
@@ -177,6 +219,94 @@ const CompanyForm = () => {
         return formData.availableServiceLevels[serviceType]?.includes(serviceLevel.code) || false;
     };
 
+    // Additional Services Management Handlers
+    const handleAdditionalServicesToggle = (enabled) => {
+        setFormData(prev => ({
+            ...prev,
+            availableAdditionalServices: {
+                ...prev.availableAdditionalServices,
+                enabled
+            }
+        }));
+    };
+
+    const handleAdditionalServiceToggle = (additionalService, serviceType) => {
+        setFormData(prev => {
+            const currentServices = prev.availableAdditionalServices[serviceType] || [];
+            const isCurrentlySelected = currentServices.some(service =>
+                typeof service === 'string' ? service === additionalService.code : service.code === additionalService.code
+            );
+
+            let updatedServices;
+            if (isCurrentlySelected) {
+                // Remove from selection
+                updatedServices = currentServices.filter(service =>
+                    typeof service === 'string' ? service !== additionalService.code : service.code !== additionalService.code
+                );
+            } else {
+                // Add to selection with defaultEnabled flag
+                updatedServices = [...currentServices, {
+                    code: additionalService.code,
+                    defaultEnabled: false
+                }];
+            }
+
+            return {
+                ...prev,
+                availableAdditionalServices: {
+                    ...prev.availableAdditionalServices,
+                    [serviceType]: updatedServices
+                }
+            };
+        });
+    };
+
+    const handleDefaultEnabledToggle = (additionalService, serviceType) => {
+        setFormData(prev => {
+            const currentServices = prev.availableAdditionalServices[serviceType] || [];
+            const updatedServices = currentServices.map(service => {
+                if (typeof service === 'string') {
+                    // Convert string to object if needed
+                    return service === additionalService.code
+                        ? { code: additionalService.code, defaultEnabled: true }
+                        : service;
+                } else {
+                    // Toggle defaultEnabled for matching service
+                    return service.code === additionalService.code
+                        ? { ...service, defaultEnabled: !service.defaultEnabled }
+                        : service;
+                }
+            });
+
+            return {
+                ...prev,
+                availableAdditionalServices: {
+                    ...prev.availableAdditionalServices,
+                    [serviceType]: updatedServices
+                }
+            };
+        });
+    };
+
+    const getFilteredAdditionalServices = (type) => {
+        return globalAdditionalServices[type] || [];
+    };
+
+    const isAdditionalServiceSelected = (additionalService, serviceType) => {
+        const currentServices = formData.availableAdditionalServices[serviceType] || [];
+        return currentServices.some(service =>
+            typeof service === 'string' ? service === additionalService.code : service.code === additionalService.code
+        );
+    };
+
+    const isDefaultEnabledForService = (additionalService, serviceType) => {
+        const currentServices = formData.availableAdditionalServices[serviceType] || [];
+        const serviceConfig = currentServices.find(service =>
+            typeof service === 'string' ? service === additionalService.code : service.code === additionalService.code
+        );
+        return typeof serviceConfig === 'object' ? (serviceConfig.defaultEnabled || false) : false;
+    };
+
     // Multi-logo upload state
     const [selectedLogos, setSelectedLogos] = useState({
         dark: null,
@@ -215,8 +345,9 @@ const CompanyForm = () => {
             setAllUsers(usersData);
             console.log("[fetchData] Fetched allUsers:", usersData.length);
 
-            // Load global service levels for admin management
+            // Load global service levels and additional services for admin management
             await loadGlobalServiceLevels();
+            await loadGlobalAdditionalServices();
 
             if (isEditMode && companyFirestoreId) {
                 const companyDocRef = doc(db, 'companies', companyFirestoreId);
@@ -288,6 +419,11 @@ const CompanyForm = () => {
                     adminUserIdsForForm: currentCompanyAdminIds, // Set directly
                     availableServiceLevels: companyDataFromDb.availableServiceLevels || {
                         enabled: false, // Default: all service levels available
+                        freight: [],
+                        courier: []
+                    },
+                    availableAdditionalServices: companyDataFromDb.availableAdditionalServices || {
+                        enabled: false, // Default: all additional services available
                         freight: [],
                         courier: []
                     },
@@ -764,6 +900,7 @@ const CompanyForm = () => {
                 status: formData.status,
                 ownerID: formData.ownerID,
                 availableServiceLevels: formData.availableServiceLevels, // Include service level restrictions
+                availableAdditionalServices: formData.availableAdditionalServices, // Include additional services restrictions
                 updatedAt: now,
             };
             if (!isEditMode) {
@@ -1269,160 +1406,6 @@ const CompanyForm = () => {
                                 />
                             </Grid>
 
-                            {/* Available Service Levels Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Available Service Levels
-                                </Typography>
-                                <Box sx={{
-                                    border: '2px dashed #e5e7eb',
-                                    borderRadius: '8px',
-                                    backgroundColor: '#f9fafb',
-                                    overflow: 'hidden'
-                                }}>
-                                    {/* Header */}
-                                    <Box sx={{ p: 3, pb: 0 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            Service Level Restrictions
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                                            By default, this company has access to all service levels. Enable restrictions to limit available service levels.
-                                        </Typography>
-
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    size="small"
-                                                    checked={formData.availableServiceLevels.enabled}
-                                                    onChange={(e) => handleServiceLevelsToggle(e.target.checked)}
-                                                    sx={{
-                                                        '& .MuiSwitch-switchBase.Mui-checked': {
-                                                            color: '#7c3aed',
-                                                        },
-                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                            backgroundColor: '#7c3aed',
-                                                        },
-                                                    }}
-                                                />
-                                            }
-                                            label={
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    Restrict available service levels for this company
-                                                </Typography>
-                                            }
-                                        />
-                                    </Box>
-
-                                    {/* Service Level Selection - Only show when restrictions are enabled */}
-                                    {formData.availableServiceLevels.enabled && (
-                                        <Box sx={{ px: 3, pb: 3 }}>
-                                            {serviceLevelsLoading ? (
-                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                                                    <CircularProgress size={24} sx={{ color: '#7c3aed' }} />
-                                                </Box>
-                                            ) : (
-                                                <>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
-                                                        Select which service levels this company can use when creating shipments:
-                                                    </Typography>
-
-                                                    {/* Service Level Tabs */}
-                                                    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                                                        <Tabs
-                                                            value={activeServiceLevelTab}
-                                                            onChange={(e, newValue) => setActiveServiceLevelTab(newValue)}
-                                                            sx={{
-                                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
-                                                                '& .MuiTab-root': {
-                                                                    fontSize: '12px',
-                                                                    textTransform: 'none',
-                                                                    minWidth: 100,
-                                                                    '&.Mui-selected': { color: '#7c3aed' }
-                                                                }
-                                                            }}
-                                                        >
-                                                            <Tab
-                                                                label={`Freight (${getFilteredServiceLevels('freight').length})`}
-                                                                value="freight"
-                                                            />
-                                                            <Tab
-                                                                label={`Courier (${getFilteredServiceLevels('courier').length})`}
-                                                                value="courier"
-                                                            />
-                                                        </Tabs>
-                                                    </Box>
-
-                                                    {/* Service Level Checkboxes */}
-                                                    <Box sx={{ mt: 2 }}>
-                                                        {getFilteredServiceLevels(activeServiceLevelTab).length > 0 ? (
-                                                            <Grid container spacing={1}>
-                                                                {getFilteredServiceLevels(activeServiceLevelTab).map((serviceLevel) => (
-                                                                    <Grid item xs={12} sm={6} md={4} key={serviceLevel.id}>
-                                                                        <FormControlLabel
-                                                                            control={
-                                                                                <Checkbox
-                                                                                    size="small"
-                                                                                    checked={isServiceLevelSelected(serviceLevel, activeServiceLevelTab)}
-                                                                                    onChange={() => handleServiceLevelToggle(serviceLevel, activeServiceLevelTab)}
-                                                                                    sx={{
-                                                                                        '&.Mui-checked': {
-                                                                                            color: '#7c3aed',
-                                                                                        },
-                                                                                    }}
-                                                                                />
-                                                                            }
-                                                                            label={
-                                                                                <Box>
-                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                        {serviceLevel.label}
-                                                                                    </Typography>
-                                                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                        {serviceLevel.code}
-                                                                                    </Typography>
-                                                                                    {serviceLevel.description && (
-                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                            {serviceLevel.description}
-                                                                                        </Typography>
-                                                                                    )}
-                                                                                </Box>
-                                                                            }
-                                                                        />
-                                                                    </Grid>
-                                                                ))}
-                                                            </Grid>
-                                                        ) : (
-                                                            <Alert severity="info" sx={{ fontSize: '12px' }}>
-                                                                No {activeServiceLevelTab} service levels configured.
-                                                                Configure service levels in Admin → Configuration → Service Levels.
-                                                            </Alert>
-                                                        )}
-                                                    </Box>
-
-                                                    {/* Selection Summary */}
-                                                    {(formData.availableServiceLevels.freight.length > 0 || formData.availableServiceLevels.courier.length > 0) && (
-                                                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f3f4f6', borderRadius: 1 }}>
-                                                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                Selected Service Levels:
-                                                            </Typography>
-                                                            {formData.availableServiceLevels.freight.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Freight: {formData.availableServiceLevels.freight.join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                            {formData.availableServiceLevels.courier.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Courier: {formData.availableServiceLevels.courier.join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    )}
-                                                </>
-                                            )}
-                                        </Box>
-                                    )}
-                                </Box>
-                            </Grid>
-
                             {/* Main Contact Fields */}
                             <Grid item xs={12}>
                                 <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
@@ -1742,6 +1725,349 @@ const CompanyForm = () => {
                                     </Grid>
                                 </>
                             )}
+
+                            {/* Available Service Levels Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
+                                    Available Service Levels
+                                </Typography>
+                                <Box sx={{
+                                    border: '2px dashed #e5e7eb',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#f9fafb',
+                                    overflow: 'hidden'
+                                }}>
+                                    {/* Header */}
+                                    <Box sx={{ p: 3, pb: 0 }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Service Level Restrictions
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                            By default, this company has access to all service levels. Enable restrictions to limit available service levels.
+                                        </Typography>
+
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    size="small"
+                                                    checked={formData.availableServiceLevels.enabled}
+                                                    onChange={(e) => handleServiceLevelsToggle(e.target.checked)}
+                                                    sx={{
+                                                        '& .MuiSwitch-switchBase.Mui-checked': {
+                                                            color: '#7c3aed',
+                                                        },
+                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                            backgroundColor: '#7c3aed',
+                                                        },
+                                                    }}
+                                                />
+                                            }
+                                            label={
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    Restrict available service levels for this company
+                                                </Typography>
+                                            }
+                                        />
+                                    </Box>
+
+                                    {/* Service Level Selection - Only show when restrictions are enabled */}
+                                    {formData.availableServiceLevels.enabled && (
+                                        <Box sx={{ px: 3, pb: 3 }}>
+                                            {serviceLevelsLoading ? (
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                                                    <CircularProgress size={24} sx={{ color: '#7c3aed' }} />
+                                                </Box>
+                                            ) : (
+                                                <>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                                        Select which service levels this company can use when creating shipments:
+                                                    </Typography>
+
+                                                    {/* Service Level Tabs */}
+                                                    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                                                        <Tabs
+                                                            value={activeServiceLevelTab}
+                                                            onChange={(e, newValue) => setActiveServiceLevelTab(newValue)}
+                                                            sx={{
+                                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
+                                                                '& .MuiTab-root': {
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    minWidth: 100,
+                                                                    '&.Mui-selected': { color: '#7c3aed' }
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Tab
+                                                                label={`Freight (${getFilteredServiceLevels('freight').length})`}
+                                                                value="freight"
+                                                            />
+                                                            <Tab
+                                                                label={`Courier (${getFilteredServiceLevels('courier').length})`}
+                                                                value="courier"
+                                                            />
+                                                        </Tabs>
+                                                    </Box>
+
+                                                    {/* Service Level Checkboxes */}
+                                                    <Box sx={{ mt: 2 }}>
+                                                        {getFilteredServiceLevels(activeServiceLevelTab).length > 0 ? (
+                                                            <Grid container spacing={1}>
+                                                                {getFilteredServiceLevels(activeServiceLevelTab).map((serviceLevel) => (
+                                                                    <Grid item xs={12} sm={6} md={4} key={serviceLevel.id}>
+                                                                        <FormControlLabel
+                                                                            control={
+                                                                                <Checkbox
+                                                                                    size="small"
+                                                                                    checked={isServiceLevelSelected(serviceLevel, activeServiceLevelTab)}
+                                                                                    onChange={() => handleServiceLevelToggle(serviceLevel, activeServiceLevelTab)}
+                                                                                    sx={{
+                                                                                        '&.Mui-checked': {
+                                                                                            color: '#7c3aed',
+                                                                                        },
+                                                                                    }}
+                                                                                />
+                                                                            }
+                                                                            label={
+                                                                                <Box>
+                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                        {serviceLevel.label}
+                                                                                    </Typography>
+                                                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                        {serviceLevel.code}
+                                                                                    </Typography>
+                                                                                    {serviceLevel.description && (
+                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                            {serviceLevel.description}
+                                                                                        </Typography>
+                                                                                    )}
+                                                                                </Box>
+                                                                            }
+                                                                        />
+                                                                    </Grid>
+                                                                ))}
+                                                            </Grid>
+                                                        ) : (
+                                                            <Alert severity="info" sx={{ fontSize: '12px' }}>
+                                                                No {activeServiceLevelTab} service levels configured.
+                                                                Configure service levels in Admin → Configuration → Service Levels.
+                                                            </Alert>
+                                                        )}
+                                                    </Box>
+
+                                                    {/* Selection Summary */}
+                                                    {(formData.availableServiceLevels.freight.length > 0 || formData.availableServiceLevels.courier.length > 0) && (
+                                                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f3f4f6', borderRadius: 1 }}>
+                                                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                Selected Service Levels:
+                                                            </Typography>
+                                                            {formData.availableServiceLevels.freight.length > 0 && (
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    Freight: {formData.availableServiceLevels.freight.join(', ')}
+                                                                </Typography>
+                                                            )}
+                                                            {formData.availableServiceLevels.courier.length > 0 && (
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    Courier: {formData.availableServiceLevels.courier.join(', ')}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            )}
+                                        </Box>
+                                    )}
+                                </Box>
+                            </Grid>
+
+                            {/* Additional Services Section */}
+                            <Grid item xs={12}>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
+                                    Additional Services
+                                </Typography>
+                                <Box sx={{
+                                    border: '2px dashed #e5e7eb',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#f9fafb',
+                                    overflow: 'hidden'
+                                }}>
+                                    {/* Header */}
+                                    <Box sx={{ p: 3, pb: 0 }}>
+                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                            Additional Service Restrictions
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                            By default, this company has access to all additional services. Enable restrictions to limit available additional services.
+                                        </Typography>
+
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    size="small"
+                                                    checked={formData.availableAdditionalServices.enabled}
+                                                    onChange={(e) => handleAdditionalServicesToggle(e.target.checked)}
+                                                    sx={{
+                                                        '& .MuiSwitch-switchBase.Mui-checked': {
+                                                            color: '#7c3aed',
+                                                        },
+                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                            backgroundColor: '#7c3aed',
+                                                        },
+                                                    }}
+                                                />
+                                            }
+                                            label={
+                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                    Restrict available additional services for this company
+                                                </Typography>
+                                            }
+                                        />
+                                    </Box>
+
+                                    {/* Additional Service Selection - Only show when restrictions are enabled */}
+                                    {formData.availableAdditionalServices.enabled && (
+                                        <Box sx={{ px: 3, pb: 3 }}>
+                                            {additionalServicesLoading ? (
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                                                    <CircularProgress size={24} sx={{ color: '#7c3aed' }} />
+                                                </Box>
+                                            ) : (
+                                                <>
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
+                                                        Select which additional services this company can use when creating shipments:
+                                                    </Typography>
+
+                                                    {/* Additional Service Tabs */}
+                                                    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                                                        <Tabs
+                                                            value={activeAdditionalServiceTab}
+                                                            onChange={(e, newValue) => setActiveAdditionalServiceTab(newValue)}
+                                                            sx={{
+                                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
+                                                                '& .MuiTab-root': {
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    minWidth: 100,
+                                                                    '&.Mui-selected': { color: '#7c3aed' }
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Tab
+                                                                label={`Freight (${getFilteredAdditionalServices('freight').length})`}
+                                                                value="freight"
+                                                            />
+                                                            <Tab
+                                                                label={`Courier (${getFilteredAdditionalServices('courier').length})`}
+                                                                value="courier"
+                                                            />
+                                                        </Tabs>
+                                                    </Box>
+
+                                                    {/* Additional Service Checkboxes */}
+                                                    <Box sx={{ mt: 2 }}>
+                                                        {getFilteredAdditionalServices(activeAdditionalServiceTab).length > 0 ? (
+                                                            <Grid container spacing={1}>
+                                                                {getFilteredAdditionalServices(activeAdditionalServiceTab).map((additionalService) => (
+                                                                    <Grid item xs={12} sm={6} md={4} key={additionalService.id}>
+                                                                        <Box sx={{
+                                                                            border: '1px solid #e5e7eb',
+                                                                            borderRadius: '8px',
+                                                                            p: 2,
+                                                                            bgcolor: isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab) ? '#f3f4f6' : 'white'
+                                                                        }}>
+                                                                            <FormControlLabel
+                                                                                control={
+                                                                                    <Checkbox
+                                                                                        size="small"
+                                                                                        checked={isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab)}
+                                                                                        onChange={() => handleAdditionalServiceToggle(additionalService, activeAdditionalServiceTab)}
+                                                                                        sx={{
+                                                                                            '&.Mui-checked': {
+                                                                                                color: '#7c3aed',
+                                                                                            },
+                                                                                        }}
+                                                                                    />
+                                                                                }
+                                                                                label={
+                                                                                    <Box>
+                                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                            {additionalService.label}
+                                                                                        </Typography>
+                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                            {additionalService.code}
+                                                                                        </Typography>
+                                                                                        {additionalService.description && (
+                                                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                                                {additionalService.description}
+                                                                                            </Typography>
+                                                                                        )}
+                                                                                    </Box>
+                                                                                }
+                                                                            />
+
+                                                                            {/* Default Enabled Toggle - Only show if service is selected */}
+                                                                            {isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab) && (
+                                                                                <FormControlLabel
+                                                                                    control={
+                                                                                        <Checkbox
+                                                                                            size="small"
+                                                                                            checked={isDefaultEnabledForService(additionalService, activeAdditionalServiceTab)}
+                                                                                            onChange={() => handleDefaultEnabledToggle(additionalService, activeAdditionalServiceTab)}
+                                                                                            sx={{
+                                                                                                '&.Mui-checked': {
+                                                                                                    color: '#059669',
+                                                                                                },
+                                                                                                ml: 2
+                                                                                            }}
+                                                                                        />
+                                                                                    }
+                                                                                    label={
+                                                                                        <Typography sx={{ fontSize: '10px', color: '#059669', fontWeight: 500 }}>
+                                                                                            Auto-check in forms
+                                                                                        </Typography>
+                                                                                    }
+                                                                                />
+                                                                            )}
+                                                                        </Box>
+                                                                    </Grid>
+                                                                ))}
+                                                            </Grid>
+                                                        ) : (
+                                                            <Alert severity="info" sx={{ fontSize: '12px' }}>
+                                                                No {activeAdditionalServiceTab} additional services configured.
+                                                                Configure additional services in Admin → Configuration → Additional Services.
+                                                            </Alert>
+                                                        )}
+                                                    </Box>
+
+                                                    {/* Selection Summary */}
+                                                    {(formData.availableAdditionalServices.freight.length > 0 || formData.availableAdditionalServices.courier.length > 0) && (
+                                                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f3f4f6', borderRadius: 1 }}>
+                                                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                Selected Additional Services:
+                                                            </Typography>
+                                                            {formData.availableAdditionalServices.freight.length > 0 && (
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    Freight: {formData.availableAdditionalServices.freight.map(s => typeof s === 'string' ? s : s.code).join(', ')}
+                                                                </Typography>
+                                                            )}
+                                                            {formData.availableAdditionalServices.courier.length > 0 && (
+                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                    Courier: {formData.availableAdditionalServices.courier.map(s => typeof s === 'string' ? s : s.code).join(', ')}
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            )}
+                                        </Box>
+                                    )}
+                                </Box>
+                            </Grid>
+
+
+
+
                         </Grid>
                     </Paper>
                 </Box>

@@ -33,6 +33,7 @@ import {
 } from '@mui/icons-material';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../../../firebase/firebase';
+import { getAllAdditionalServices } from '../../../../utils/serviceLevelUtils';
 
 // Package types available for restrictions (from CreateShipmentX.jsx)
 const PACKAGING_TYPES = [
@@ -887,6 +888,12 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
     const [loadingServices, setLoadingServices] = useState(true);
     const [servicesError, setServicesError] = useState(null);
 
+    // State for additional services
+    const [courierAdditionalServices, setCourierAdditionalServices] = useState([]);
+    const [freightAdditionalServices, setFreightAdditionalServices] = useState([]);
+    const [loadingAdditionalServices, setLoadingAdditionalServices] = useState(true);
+    const [additionalServicesError, setAdditionalServicesError] = useState(null);
+
     // Load service levels from database
     useEffect(() => {
         const loadServiceLevels = async () => {
@@ -956,6 +963,42 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
         loadServiceLevels();
     }, []);
 
+    // Load additional services from database
+    useEffect(() => {
+        const loadAdditionalServices = async () => {
+            try {
+                setLoadingAdditionalServices(true);
+                console.log('🔄 [ServicesEligibilityStep] Starting additional services load...');
+
+                // Load courier additional services
+                const courierAdditionalData = await getAllAdditionalServices('courier');
+
+                // Load freight additional services
+                const freightAdditionalData = await getAllAdditionalServices('freight');
+
+                console.log('✅ Additional services loaded:', {
+                    courier: courierAdditionalData.length,
+                    freight: freightAdditionalData.length,
+                    courierAdditionalData,
+                    freightAdditionalData
+                });
+
+                setCourierAdditionalServices(courierAdditionalData);
+                setFreightAdditionalServices(freightAdditionalData);
+                setAdditionalServicesError(null);
+            } catch (error) {
+                console.error('❌ Error loading additional services:', error);
+                setAdditionalServicesError('Failed to load additional services from database. Contact support.');
+                setCourierAdditionalServices([]);
+                setFreightAdditionalServices([]);
+            } finally {
+                setLoadingAdditionalServices(false);
+            }
+        };
+
+        loadAdditionalServices();
+    }, []);
+
     // Handle service selection
     const handleServiceToggle = useCallback((serviceType, serviceValue) => {
         const currentServices = data.supportedServices[serviceType] || [];
@@ -1006,6 +1049,70 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
         });
     }, [data.supportedServices, onUpdate]);
 
+    // Handle additional service selection
+    const handleAdditionalServiceToggle = useCallback((serviceType, serviceValue) => {
+        if (!data.availableAdditionalServices) {
+            // Initialize availableAdditionalServices if it doesn't exist
+            onUpdate({
+                availableAdditionalServices: {
+                    enabled: false,
+                    freight: [],
+                    courier: []
+                }
+            });
+            return;
+        }
+
+        const currentServices = data.availableAdditionalServices[serviceType] || [];
+        let newServices;
+
+        if (currentServices.includes(serviceValue)) {
+            newServices = currentServices.filter(s => s !== serviceValue);
+        } else {
+            newServices = [...currentServices, serviceValue];
+        }
+
+        onUpdate({
+            availableAdditionalServices: {
+                ...data.availableAdditionalServices,
+                [serviceType]: newServices
+            }
+        });
+    }, [data.availableAdditionalServices, onUpdate]);
+
+    // Handle additional services restriction toggle
+    const handleAdditionalServicesRestrictionToggle = useCallback((enabled) => {
+        onUpdate({
+            availableAdditionalServices: {
+                enabled,
+                freight: enabled ? (data.availableAdditionalServices?.freight || []) : [],
+                courier: enabled ? (data.availableAdditionalServices?.courier || []) : []
+            }
+        });
+    }, [data.availableAdditionalServices, onUpdate]);
+
+    // Handle select/deselect all for additional services
+    const handleSelectAllAdditionalServices = useCallback((serviceType) => {
+        const allServices = serviceType === 'courier' ? courierAdditionalServices : freightAdditionalServices;
+        const allServiceValues = allServices.map(s => s.code);
+
+        onUpdate({
+            availableAdditionalServices: {
+                ...data.availableAdditionalServices,
+                [serviceType]: allServiceValues
+            }
+        });
+    }, [data.availableAdditionalServices, onUpdate, courierAdditionalServices, freightAdditionalServices]);
+
+    const handleDeselectAllAdditionalServices = useCallback((serviceType) => {
+        onUpdate({
+            availableAdditionalServices: {
+                ...data.availableAdditionalServices,
+                [serviceType]: []
+            }
+        });
+    }, [data.availableAdditionalServices, onUpdate]);
+
     // Handle eligibility rule changes
     const handleEligibilityChange = useCallback((section, field, value) => {
         if (section === 'root') {
@@ -1055,6 +1162,12 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
     const courierCount = showCourierServices ? (data.supportedServices?.courier?.length || 0) : 0;
     const freightCount = showFreightServices ? (data.supportedServices?.freight?.length || 0) : 0;
     const totalServices = courierCount + freightCount;
+
+    // Calculate additional service statistics
+    const courierAdditionalCount = showCourierServices ? (data.availableAdditionalServices?.courier?.length || 0) : 0;
+    const freightAdditionalCount = showFreightServices ? (data.availableAdditionalServices?.freight?.length || 0) : 0;
+    const totalAdditionalServices = courierAdditionalCount + freightAdditionalCount;
+    const additionalServicesEnabled = data.availableAdditionalServices?.enabled || false;
 
     // Handle package type restrictions update
     const handlePackageTypeRestrictionsUpdate = (newPackageTypeRestrictions) => {
@@ -1334,6 +1447,291 @@ const ServicesEligibilityStep = ({ data, onUpdate, errors, setErrors, isEdit = f
                                 ))}
                             </Box>
                         </Box>
+                    )}
+                </AccordionDetails>
+            </Accordion>
+
+            {/* Additional Services Section */}
+            <Accordion
+                defaultExpanded={false}
+                sx={{
+                    mb: 3,
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px !important',
+                    '&:before': {
+                        display: 'none',
+                    },
+                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+                }}
+            >
+                <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    sx={{
+                        bgcolor: '#fef3ff',
+                        borderRadius: '8px 8px 0 0',
+                        '&.Mui-expanded': {
+                            borderRadius: '8px 8px 0 0',
+                        },
+                        minHeight: 56,
+                        '& .MuiAccordionSummary-content': {
+                            alignItems: 'center',
+                            gap: 2
+                        }
+                    }}
+                >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <Typography sx={{ fontSize: '18px' }}>
+                            🛠️
+                        </Typography>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#7c3aed' }}>
+                                Additional Services
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px', color: '#7c3aed' }}>
+                                Restrict which additional services this carrier can handle
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CheckCircleIcon sx={{ fontSize: '16px', color: additionalServicesEnabled ? (totalAdditionalServices > 0 ? '#10b981' : '#f59e0b') : '#d1d5db' }} />
+                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                {additionalServicesEnabled ?
+                                    `${totalAdditionalServices} Service${totalAdditionalServices !== 1 ? 's' : ''} Restricted` :
+                                    'No Restrictions'
+                                }
+                            </Typography>
+                        </Box>
+                    </Box>
+                </AccordionSummary>
+                <AccordionDetails sx={{ p: 3, bgcolor: 'white' }}>
+                    {/* Additional Services Error */}
+                    {additionalServicesError && (
+                        <Alert severity="error" sx={{ fontSize: '12px', mb: 3 }}>
+                            {additionalServicesError}
+                        </Alert>
+                    )}
+
+                    {/* Restriction Toggle */}
+                    <Box sx={{ mb: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={additionalServicesEnabled}
+                                    onChange={(e) => handleAdditionalServicesRestrictionToggle(e.target.checked)}
+                                />
+                            }
+                            label={
+                                <Box>
+                                    <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+                                        Restrict Additional Services
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                        Enable to limit which additional services are available for this carrier
+                                    </Typography>
+                                </Box>
+                            }
+                        />
+                    </Box>
+
+                    {!additionalServicesEnabled ? (
+                        <Alert severity="info" sx={{ fontSize: '12px' }}>
+                            <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
+                                No Additional Service Restrictions
+                            </Typography>
+                            <Typography sx={{ fontSize: '11px' }}>
+                                All available additional services will be shown for this carrier. Enable restrictions above to limit which additional services are available.
+                            </Typography>
+                        </Alert>
+                    ) : (
+                        <>
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                                Select which additional services this carrier can handle. Only the selected additional services will be available when creating shipments with this carrier.
+                            </Typography>
+
+                            {/* Loading State */}
+                            {loadingAdditionalServices ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                                    <CircularProgress size={24} sx={{ mr: 2 }} />
+                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                        Loading additional services...
+                                    </Typography>
+                                </Box>
+                            ) : (
+                                <Grid container spacing={3}>
+                                    {/* Courier Additional Services */}
+                                    {showCourierServices && (
+                                        <Grid item xs={12} md={showFreightServices ? 6 : 12}>
+                                            <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
+                                                <Box sx={{ p: 2, bgcolor: '#eff6ff', borderBottom: '1px solid #e5e7eb' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <CourierIcon sx={{ fontSize: '18px', color: '#2563eb' }} />
+                                                            <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                                                Courier Additional Services
+                                                            </Typography>
+                                                            <Chip
+                                                                label={courierAdditionalCount}
+                                                                size="small"
+                                                                sx={{ fontSize: '10px', height: '18px' }}
+                                                                color={courierAdditionalCount > 0 ? 'primary' : 'default'}
+                                                            />
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleSelectAllAdditionalServices('courier')}
+                                                                sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                            >
+                                                                All
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleDeselectAllAdditionalServices('courier')}
+                                                                sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                            >
+                                                                None
+                                                            </Button>
+                                                        </Box>
+                                                    </Box>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Additional options for courier shipments
+                                                    </Typography>
+                                                </Box>
+
+                                                <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
+                                                    <FormGroup>
+                                                        {courierAdditionalServices.map((service) => (
+                                                            <FormControlLabel
+                                                                key={service.code}
+                                                                control={
+                                                                    <Checkbox
+                                                                        size="small"
+                                                                        checked={(data.availableAdditionalServices?.courier || []).includes(service.code)}
+                                                                        onChange={() => handleAdditionalServiceToggle('courier', service.code)}
+                                                                    />
+                                                                }
+                                                                label={
+                                                                    <Box>
+                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                            {service.label || service.name}
+                                                                        </Typography>
+                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                            {service.code} - {service.description || 'Additional courier service'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                }
+                                                                sx={{ mb: 1, alignItems: 'flex-start' }}
+                                                            />
+                                                        ))}
+                                                    </FormGroup>
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                    )}
+
+                                    {/* Freight Additional Services */}
+                                    {showFreightServices && (
+                                        <Grid item xs={12} md={showCourierServices ? 6 : 12}>
+                                            <Paper sx={{ border: '1px solid #e5e7eb', borderRadius: 1, overflow: 'hidden' }}>
+                                                <Box sx={{ p: 2, bgcolor: '#fef3ff', borderBottom: '1px solid #e5e7eb' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <FreightIcon sx={{ fontSize: '18px', color: '#7c3aed' }} />
+                                                            <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>
+                                                                Freight Additional Services
+                                                            </Typography>
+                                                            <Chip
+                                                                label={freightAdditionalCount}
+                                                                size="small"
+                                                                sx={{ fontSize: '10px', height: '18px' }}
+                                                                color={freightAdditionalCount > 0 ? 'secondary' : 'default'}
+                                                            />
+                                                        </Box>
+                                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleSelectAllAdditionalServices('freight')}
+                                                                sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                            >
+                                                                All
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                onClick={() => handleDeselectAllAdditionalServices('freight')}
+                                                                sx={{ fontSize: '10px', minWidth: 'auto', px: 1 }}
+                                                            >
+                                                                None
+                                                            </Button>
+                                                        </Box>
+                                                    </Box>
+                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        Additional options for freight shipments
+                                                    </Typography>
+                                                </Box>
+
+                                                <Box sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
+                                                    <FormGroup>
+                                                        {freightAdditionalServices.map((service) => (
+                                                            <FormControlLabel
+                                                                key={service.code}
+                                                                control={
+                                                                    <Checkbox
+                                                                        size="small"
+                                                                        checked={(data.availableAdditionalServices?.freight || []).includes(service.code)}
+                                                                        onChange={() => handleAdditionalServiceToggle('freight', service.code)}
+                                                                    />
+                                                                }
+                                                                label={
+                                                                    <Box>
+                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                            {service.label || service.name}
+                                                                        </Typography>
+                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                                            {service.code} - {service.description || 'Additional freight service'}
+                                                                        </Typography>
+                                                                    </Box>
+                                                                }
+                                                                sx={{ mb: 1, alignItems: 'flex-start' }}
+                                                            />
+                                                        ))}
+                                                    </FormGroup>
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                    )}
+                                </Grid>
+                            )}
+
+                            {/* Selected Additional Services Summary */}
+                            {totalAdditionalServices > 0 && (
+                                <Box sx={{ mt: 3, p: 2, bgcolor: '#fef3ff', borderRadius: 1, border: '1px solid #e9d5ff' }}>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 500, mb: 2, color: '#7c3aed' }}>
+                                        Selected Additional Services ({totalAdditionalServices} total)
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                        {showCourierServices && (data.availableAdditionalServices?.courier || []).map((serviceCode) => (
+                                            <Chip
+                                                key={`courier-additional-${serviceCode}`}
+                                                label={courierAdditionalServices.find(s => s.code === serviceCode)?.label || serviceCode}
+                                                size="small"
+                                                color="primary"
+                                                variant="outlined"
+                                                sx={{ fontSize: '10px' }}
+                                            />
+                                        ))}
+                                        {showFreightServices && (data.availableAdditionalServices?.freight || []).map((serviceCode) => (
+                                            <Chip
+                                                key={`freight-additional-${serviceCode}`}
+                                                label={freightAdditionalServices.find(s => s.code === serviceCode)?.label || serviceCode}
+                                                size="small"
+                                                color="secondary"
+                                                variant="outlined"
+                                                sx={{ fontSize: '10px' }}
+                                            />
+                                        ))}
+                                    </Box>
+                                </Box>
+                            )}
+                        </>
                     )}
                 </AccordionDetails>
             </Accordion>
