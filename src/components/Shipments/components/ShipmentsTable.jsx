@@ -46,9 +46,9 @@ const ShipmentsTable = ({
 
     // Column configuration - different for admin vs regular view, and adjust for permissions
     const columnConfig = isAdminView ? {
-        // Admin view: Company first, no Created column, plus expand column
+        // Admin view: Customer first, no Created column, plus expand column
         checkbox: { width: 48 },
-        company: { width: 140 }, // First position for admin
+        customer: { width: 140 }, // First position for admin
         id: { width: 110 },
         date: { width: 100 },
         eta: { width: 100 },
@@ -156,7 +156,7 @@ const ShipmentsTable = ({
                                     maxWidth: 140,
                                     backgroundColor: '#f8fafc !important'
                                 }}>
-                                    COMPANY
+                                    CUSTOMER
                                 </TableCell>
                                 <TableCell sx={{
                                     width: 110,

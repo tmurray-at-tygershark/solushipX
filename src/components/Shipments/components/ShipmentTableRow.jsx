@@ -92,6 +92,10 @@ const ShipmentTableRow = ({
     const [loadingExpandedCompanyData, setLoadingExpandedCompanyData] = useState(false);
     const [loadingExpandedCustomerData, setLoadingExpandedCustomerData] = useState(false);
 
+    // Main table customer data state (for admin view customer column)
+    const [mainCustomerData, setMainCustomerData] = useState(null);
+    const [loadingMainCustomerData, setLoadingMainCustomerData] = useState(false);
+
     // Invoice status state
     const [invoiceStatuses, setInvoiceStatuses] = useState([]);
 
@@ -271,6 +275,67 @@ const ShipmentTableRow = ({
 
         loadCustomerData();
     }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipFrom?.customerID, shipment?.shipTo?.customerID, shipment?.shipFrom?.customerId, shipment?.shipTo?.customerId, shipment?.shipFrom?.addressClassID, shipment?.shipTo?.addressClassID, shipment?.shipTo, loadingExpandedCustomerData, expandedCustomerData]);
+
+    // Load customer data for main table (admin view customer column)
+    useEffect(() => {
+        const loadMainCustomerData = async () => {
+            if (!adminViewMode || loadingMainCustomerData || mainCustomerData) return;
+
+            // ONLY use direct customer ID fields - NEVER use document IDs or address data
+            const customerId = shipment?.customerId || shipment?.customerID;
+
+            if (!customerId) {
+                setMainCustomerData(null);
+                return;
+            }
+
+            setLoadingMainCustomerData(true);
+            try {
+                let customerData = null;
+
+                // First: Try to find by customerID field (business ID like "EMENPR")
+                const customerQuery = query(
+                    collection(db, 'customers'),
+                    where('customerID', '==', customerId),
+                    limit(1)
+                );
+                const customerSnapshot = await getDocs(customerQuery);
+
+                if (!customerSnapshot.empty) {
+                    const customerDocFromQuery = customerSnapshot.docs[0];
+                    customerData = { id: customerDocFromQuery.id, ...customerDocFromQuery.data() };
+                } else {
+                    // Second: Try to find by document ID (for cases like "EHFJtVsUe5XRaBuejQBC")
+                    try {
+                        const customerDocRef = doc(db, 'customers', customerId);
+                        const customerDoc = await getDoc(customerDocRef);
+
+                        if (customerDoc.exists()) {
+                            customerData = { id: customerDoc.id, ...customerDoc.data() };
+                            console.log(`📋 Found customer by document ID: ${customerId} -> ${customerData.name}`);
+                        }
+                    } catch (docError) {
+                        // Not a valid document ID, that's fine
+                        console.log(`📋 Customer ID ${customerId} is not a valid document ID`);
+                    }
+                }
+
+                if (customerData) {
+                    setMainCustomerData(customerData);
+                } else {
+                    console.warn(`⚠️ No customer found with ID: ${customerId} for shipment ${shipment?.shipmentID}`);
+                    setMainCustomerData(null);
+                }
+            } catch (error) {
+                console.error('Error loading main customer data:', error);
+                setMainCustomerData(null);
+            } finally {
+                setLoadingMainCustomerData(false);
+            }
+        };
+
+        loadMainCustomerData();
+    }, [adminViewMode, shipment?.customerId, shipment?.customerID, shipment?.shipmentID, loadingMainCustomerData, mainCustomerData]);
 
     const isSelected = selected.indexOf(shipment?.id) !== -1;
 
@@ -610,17 +675,17 @@ const ShipmentTableRow = ({
                 {/* Admin View: Company first, then ID */}
                 {isAdminView ? (
                     <>
-                        {/* Company Column - Admin View Only */}
+                        {/* Customer Column - Admin View Only */}
                         <TableCell sx={{
                             verticalAlign: 'top',
                             textAlign: 'left',
-                            ...getColumnWidth('company'),
+                            ...getColumnWidth('customer'),
                             padding: '8px 12px',
                             wordBreak: 'break-word',
                             lineHeight: 1.3
                         }}>
                             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                                {/* Company Logo/Avatar */}
+                                {/* Customer Logo/Avatar */}
                                 <Box sx={{
                                     width: 20,
                                     height: 20,
@@ -633,17 +698,30 @@ const ShipmentTableRow = ({
                                     flexShrink: 0
                                 }}>
                                     {(() => {
-                                        // Use multi-logo system for company circle logo
-                                        const company = companyData[shipment?.companyID];
-                                        const logoUrl = getCircleLogo(company);
+                                        if (loadingMainCustomerData) {
+                                            return (
+                                                <Typography sx={{
+                                                    fontSize: '8px',
+                                                    fontWeight: 600,
+                                                    color: '#6b7280',
+                                                    lineHeight: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    ...
+                                                </Typography>
+                                            );
+                                        }
 
-                                        const companyName = company?.name || company?.companyName || shipment?.companyID || 'CO';
+                                        const customerLogoUrl = mainCustomerData?.logoUrl || mainCustomerData?.logo || mainCustomerData?.logoURL;
+                                        const customerName = mainCustomerData?.name || mainCustomerData?.companyName || 'CU';
 
-                                        if (logoUrl) {
+                                        if (customerLogoUrl) {
                                             return (
                                                 <img
-                                                    src={logoUrl}
-                                                    alt="Company"
+                                                    src={customerLogoUrl}
+                                                    alt="Customer"
                                                     style={{
                                                         width: '100%',
                                                         height: '100%',
@@ -654,7 +732,7 @@ const ShipmentTableRow = ({
                                                         // Replace with fallback avatar on error
                                                         const parent = e.target.parentNode;
                                                         e.target.remove();
-                                                        parent.innerHTML = `<div style="font-size: 8px; font-weight: 600; color: #6b7280; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">${companyName[0].toUpperCase()}</div>`;
+                                                        parent.innerHTML = `<div style="font-size: 8px; font-weight: 600; color: #6b7280; line-height: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">${customerName[0].toUpperCase()}</div>`;
                                                     }}
                                                 />
                                             );
@@ -669,21 +747,24 @@ const ShipmentTableRow = ({
                                                     alignItems: 'center',
                                                     justifyContent: 'center'
                                                 }}>
-                                                    {companyName[0].toUpperCase()}
+                                                    {customerName[0].toUpperCase()}
                                                 </Typography>
                                             );
                                         }
                                     })()}
                                 </Box>
 
-                                {/* Company Name */}
+                                {/* Customer Name */}
                                 <Typography variant="body2" sx={{
                                     fontSize: '11px !important',
                                     fontWeight: 500,
                                     color: '#000000',
                                     lineHeight: 1.2
                                 }}>
-                                    {companyData[shipment?.companyID]?.name || shipment?.companyID || 'Unknown Company'}
+                                    {loadingMainCustomerData
+                                        ? 'Loading...'
+                                        : (mainCustomerData?.name || mainCustomerData?.companyName || 'Unknown Customer')
+                                    }
                                 </Typography>
                             </Box>
                         </TableCell>
@@ -1115,7 +1196,7 @@ const ShipmentTableRow = ({
                                 <Typography variant="body2" sx={{ fontSize: '11px !important' }}>
                                     {highlightSearchTerm(
                                         (() => {
-                                            // FIXED: Use the customer ID that's already stored in the shipment
+                                            // Extract customer ID from shipment
                                             const customerId = shipment?.customerId || shipment?.customerID;
 
                                             // If we have a customer ID and it's in our loaded customers, show that
@@ -1123,15 +1204,14 @@ const ShipmentTableRow = ({
                                                 return customers[customerId];
                                             }
 
-                                            // If we have a customer ID but not loaded, show ID
+                                            // If we have a customer ID but it's not in our mapping, show the ID
+                                            // This can happen during loading or for invalid references
                                             if (customerId) {
                                                 return `Customer: ${customerId}`;
                                             }
 
-                                            // Last resort: show delivery company (but this shouldn't be the customer)
-                                            return shipment?.shipTo?.companyName ||
-                                                shipment?.shipTo?.company ||
-                                                'N/A';
+                                            // If no customer ID at all, this is a data issue
+                                            return 'No Customer ID';
                                         })(),
                                         searchFields.customerName
                                     )}

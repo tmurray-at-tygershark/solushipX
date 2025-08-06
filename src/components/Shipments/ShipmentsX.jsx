@@ -3013,8 +3013,17 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             const customersMap = {};
             querySnapshot.forEach(doc => {
                 const customer = doc.data();
-                if (customer.customerID && customer.name) {
-                    customersMap[customer.customerID] = customer.name;
+                const customerName = customer.name || customer.companyName;
+
+                if (customerName) {
+                    // Primary mapping: by customerID field (business ID like "EMENPR")
+                    if (customer.customerID) {
+                        customersMap[customer.customerID] = customerName;
+                    }
+
+                    // Secondary mapping: by document ID (for shipments that reference document IDs)
+                    // This handles cases where shipments store document IDs like "EHFJtVsUe5XRaBuejQBC"
+                    customersMap[doc.id] = customerName;
                 }
             });
             setCustomers(customersMap);
