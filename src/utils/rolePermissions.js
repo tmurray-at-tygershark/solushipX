@@ -48,12 +48,19 @@ export const PERMISSIONS = {
   EXPORT_SHIPMENTS: 'export_shipments',
   MANAGE_DRAFT_SHIPMENTS: 'manage_draft_shipments',
   
+  // Shipment Document & Action Permissions
+  VIEW_DOCUMENTS: 'view_documents', // NEW: View documents section (BOL, carrier confirmation, uploads)
+  VIEW_BOL: 'view_bol', // NEW: View and print BOL documents
+  VIEW_CARRIER_CONFIRMATION: 'view_carrier_confirmation', // NEW: View and print carrier confirmations
+  VIEW_FOLLOW_UPS: 'view_follow_ups', // NEW: View and manage follow-up tasks
+  ARCHIVE_SHIPMENT: 'archive_shipment', // NEW: Archive shipments
+  CANCEL_SHIPMENT: 'cancel_shipment', // NEW: Cancel shipments
+  
   // Financial Information
   VIEW_SHIPMENT_COSTS: 'view_shipment_costs', // NEW: View cost and profit information
   VIEW_SHIPMENT_FINANCIALS: 'view_shipment_financials', // NEW: View detailed financial breakdown
   
-  // Carrier Confirmations
-  VIEW_CARRIER_CONFIRMATIONS: 'view_carrier_confirmations', // NEW: View carrier confirmations
+  // Legacy Carrier Confirmations (keeping for backward compatibility)
   GENERATE_CARRIER_CONFIRMATIONS: 'generate_carrier_confirmations', // NEW: Generate/regenerate carrier confirmations
   
   // Customer Management
@@ -134,7 +141,6 @@ export const PERMISSIONS = {
   MANAGE_MARKUPS: 'manage_markups',
   
   // Advanced Features
-  USE_QUICKSHIP: 'use_quickship',
   USE_AI_AGENT: 'use_ai_agent',
   USE_ADVANCED_ROUTING: 'use_advanced_routing',
   MANAGE_INTEGRATIONS: 'manage_integrations',
@@ -208,12 +214,19 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
     
+    // Shipment Document & Action Permissions - Full access for Admin
+    [PERMISSIONS.VIEW_DOCUMENTS]: true,
+    [PERMISSIONS.VIEW_BOL]: true,
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: true,
+    [PERMISSIONS.VIEW_FOLLOW_UPS]: true,
+    [PERMISSIONS.ARCHIVE_SHIPMENT]: true,
+    [PERMISSIONS.CANCEL_SHIPMENT]: true,
+    
     // Financial Information - Full access for Admin
     [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
     [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
     
     // Carrier Confirmations - Full access for Admin
-    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
     [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: true,
     
     // Customer Management
@@ -455,12 +468,20 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
     
+    // Shipment Document & Action Permissions - Full access for Company Admin
+    [PERMISSIONS.VIEW_DOCUMENTS]: true,
+    [PERMISSIONS.VIEW_BOL]: true,
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: true,
+    [PERMISSIONS.VIEW_FOLLOW_UPS]: true,
+    [PERMISSIONS.ARCHIVE_SHIPMENT]: true,
+    [PERMISSIONS.CANCEL_SHIPMENT]: true,
+    
     // Financial Information - Company admins can see costs/profits for their company
     [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
     [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
     
     // Carrier Confirmations - Can view but not generate/regenerate
-    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: true,
     [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: true, // Allow regular users to regenerate carrier confirmations
     
     // Customer Management - Only their company's customers
@@ -577,12 +598,19 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
     
+    // Shipment Document & Action Permissions - View only for accounting
+    [PERMISSIONS.VIEW_DOCUMENTS]: true, // Can view documents for billing purposes
+    [PERMISSIONS.VIEW_BOL]: true, // Can view BOL for billing purposes
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: true, // Can view confirmations for billing context
+    [PERMISSIONS.VIEW_FOLLOW_UPS]: false, // No follow-up management
+    [PERMISSIONS.ARCHIVE_SHIPMENT]: false, // Cannot archive shipments
+    [PERMISSIONS.CANCEL_SHIPMENT]: false, // Cannot cancel shipments
+    
     // Financial Information - Accounting needs to see costs for billing
     [PERMISSIONS.VIEW_SHIPMENT_COSTS]: true,
     [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: true,
     
     // Carrier Confirmations - Can view but not generate (read-only for billing context)
-    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: true,
     [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
     
     // Customer Management - View only for billing context
@@ -700,12 +728,19 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
     
+    // Shipment Document & Action Permissions - Limited access for company staff
+    [PERMISSIONS.VIEW_DOCUMENTS]: false, // Cannot view documents section
+    [PERMISSIONS.VIEW_BOL]: true, // Can view BOL documents
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: false, // Cannot view carrier confirmations
+    [PERMISSIONS.VIEW_FOLLOW_UPS]: true, // Can view follow-up tasks
+    [PERMISSIONS.ARCHIVE_SHIPMENT]: false, // Cannot archive shipments
+    [PERMISSIONS.CANCEL_SHIPMENT]: false, // Cannot cancel shipments
+    
     // Financial Information - RESTRICTED: Company staff cannot see costs/profits
     [PERMISSIONS.VIEW_SHIPMENT_COSTS]: false,
     [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: false,
     
     // Carrier Confirmations - RESTRICTED: Company staff cannot view or manage carrier confirmations
-    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: false,
     [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
     
     // Customer Management - View and create only
@@ -824,12 +859,19 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EXPORT_SHIPMENTS]: false,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
     
+    // Shipment Document & Action Permissions - RESTRICTED: No access to document actions
+    [PERMISSIONS.VIEW_DOCUMENTS]: false, // Cannot view documents section
+    [PERMISSIONS.VIEW_BOL]: false, // Cannot view/print BOL documents
+    [PERMISSIONS.VIEW_CARRIER_CONFIRMATION]: false, // Cannot view/print carrier confirmations
+    [PERMISSIONS.VIEW_FOLLOW_UPS]: false, // Cannot view/manage follow-up tasks
+    [PERMISSIONS.ARCHIVE_SHIPMENT]: false, // Cannot archive shipments
+    [PERMISSIONS.CANCEL_SHIPMENT]: false, // Cannot cancel shipments
+    
     // Financial Information - RESTRICTED: No financial access
     [PERMISSIONS.VIEW_SHIPMENT_COSTS]: false,
     [PERMISSIONS.VIEW_SHIPMENT_FINANCIALS]: false,
     
     // Carrier Confirmations - RESTRICTED: No carrier confirmation access
-    [PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS]: false,
     [PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS]: false,
     
     // Customer Management - RESTRICTED: No customer management
@@ -877,7 +919,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.MANAGE_ADDRESSES]: true,
     
     // Broker Management - RESTRICTED: No broker management  
-    [PERMISSIONS.MANAGE_BROKERS]: true,
+    [PERMISSIONS.MANAGE_BROKERS]: false,
     
     // Reports & Analytics - LIMITED: Basic tracking reports only
     [PERMISSIONS.VIEW_REPORTS]: false,
@@ -1353,4 +1395,19 @@ export const FEATURE_FLAGS = {
 export const isFeatureEnabled = (userRole, featureFlag) => {
   const permission = FEATURE_FLAGS[featureFlag];
   return permission ? hasPermission(userRole, permission) : false;
+};
+
+// Shipment detail permission helpers
+export const getShipmentDetailPermissions = (userRole) => {
+  return {
+    canEditShipment: hasPermission(userRole, PERMISSIONS.EDIT_SHIPMENTS),
+    canViewDocuments: hasPermission(userRole, PERMISSIONS.VIEW_DOCUMENTS),
+    canViewBOL: hasPermission(userRole, PERMISSIONS.VIEW_BOL),
+    canViewCarrierConfirmation: hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATION),
+    canViewFollowUps: hasPermission(userRole, PERMISSIONS.VIEW_FOLLOW_UPS),
+    canArchiveShipment: hasPermission(userRole, PERMISSIONS.ARCHIVE_SHIPMENT),
+    canCancelShipment: hasPermission(userRole, PERMISSIONS.CANCEL_SHIPMENT),
+    canViewCosts: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS),
+    canViewFinancials: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS),
+  };
 }; 

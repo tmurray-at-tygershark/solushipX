@@ -56,6 +56,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 import invoiceStatusService from '../../../services/invoiceStatusService';
 import { getCircleLogo } from '../../../utils/logoUtils';
+import { getDisplayCarrierName } from '../../../utils/carrierDisplayService';
 
 const ShipmentTableRow = ({
     shipment: rawShipment,
@@ -79,8 +80,11 @@ const ShipmentTableRow = ({
     const [documentsExpanded, setDocumentsExpanded] = useState(false);
 
     // Get user role for permission checking
-    const { userRole } = useAuth();
+    const { userRole, currentUser } = useAuth();
     const navigate = useNavigate();
+
+    // Check if this is an admin user (admins should see real carrier names)
+    const isAdminUser = adminViewMode || userRole === 'admin' || userRole === 'superadmin';
 
     // Follow-up state
     const [followUpSummary, setFollowUpSummary] = useState(null);
@@ -513,9 +517,28 @@ const ShipmentTableRow = ({
 
             if (selectedRateCarrier) {
                 // Handle both string carrier names and carrier objects
-                const carrierName = typeof selectedRateCarrier === 'object' && selectedRateCarrier?.name
+                let carrierName = typeof selectedRateCarrier === 'object' && selectedRateCarrier?.name
                     ? selectedRateCarrier.name
                     : selectedRateCarrier;
+
+                // Apply carrier name override for customer-facing views
+                if (!isAdminUser && carrierName && carrierName !== 'N/A') {
+                    const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+                    const currentCompanyData = companyData?.[shipmentCompanyId];
+
+                    if (currentCompanyData) {
+                        const displayName = getDisplayCarrierName(
+                            { name: carrierName, carrierID: carrierName },
+                            shipmentCompanyId,
+                            currentCompanyData,
+                            isAdminUser
+                        );
+
+                        if (displayName !== carrierName) {
+                            carrierName = displayName;
+                        }
+                    }
+                }
 
                 return {
                     name: carrierName,
@@ -554,10 +577,31 @@ const ShipmentTableRow = ({
                 carrierData[shipment?.id]?.displayCarrierId === 'ESHIPPLUS' ||
                 carrierData[shipment?.id]?.sourceCarrierName === 'eShipPlus';
 
+            // Apply carrier name override for customer-facing views
+            let finalCarrierName = carrierName;
+
+            if (!isAdminUser && carrierName && carrierName !== 'N/A') {
+                const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+                const currentCompanyData = companyData?.[shipmentCompanyId];
+
+                if (currentCompanyData) {
+                    const displayName = getDisplayCarrierName(
+                        { name: carrierName, carrierID: carrierName },
+                        shipmentCompanyId,
+                        currentCompanyData,
+                        isAdminUser
+                    );
+
+                    if (displayName !== carrierName) {
+                        finalCarrierName = displayName;
+                    }
+                }
+            }
+
             return {
-                name: isExplicitEShipPlus && carrierName !== 'N/A' ?
-                    `${carrierName} via Eship Plus` :
-                    carrierName,
+                name: isExplicitEShipPlus && finalCarrierName !== 'N/A' ?
+                    `${finalCarrierName} via Eship Plus` :
+                    finalCarrierName,
                 isEShipPlus: isExplicitEShipPlus
             };
         }
@@ -583,10 +627,32 @@ const ShipmentTableRow = ({
                 carrierName.toLowerCase().includes('southeastern freight')
             ));
 
+        // Apply carrier name override for customer-facing views
+        let finalCarrierName = carrierName;
+
+        // Only apply overrides for non-admin views
+        if (!isAdminUser && carrierName && carrierName !== 'N/A') {
+            const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+            const currentCompanyData = companyData?.[shipmentCompanyId];
+
+            if (currentCompanyData) {
+                const displayName = getDisplayCarrierName(
+                    { name: carrierName, carrierID: carrierName },
+                    shipmentCompanyId,
+                    currentCompanyData,
+                    isAdminUser
+                );
+
+                if (displayName !== carrierName) {
+                    finalCarrierName = displayName;
+                }
+            }
+        }
+
         return {
-            name: isEShipPlus && carrierName !== 'N/A' ?
-                `${carrierName} via Eship Plus` :
-                carrierName,
+            name: isEShipPlus && finalCarrierName !== 'N/A' ?
+                `${finalCarrierName} via Eship Plus` :
+                finalCarrierName,
             isEShipPlus
         };
     };
@@ -2686,7 +2752,7 @@ const DocumentsSection = ({ shipment, showSnackbar, expanded, userRole }) => {
 
     // Enhanced Carrier Confirmation detection - check multiple sources
     // Only show carrier confirmations if user has permission
-    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS);
+    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATION);
 
     if (canViewCarrierConfirmations) {
         let carrierConfirmationDocs = [];

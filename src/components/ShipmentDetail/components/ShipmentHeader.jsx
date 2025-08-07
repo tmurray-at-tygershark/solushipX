@@ -66,7 +66,8 @@ const ShipmentHeader = ({
     onCreateFollowUp, // Add follow-up handler
     onViewFollowUps, // Add view follow-ups handler
     followUpCount = 0, // Add follow-up counter
-    actionStates = {}
+    actionStates = {},
+    permissions = {} // Add permissions prop
 }) => {
     // Menu states
     const [documentsMenuAnchor, setDocumentsMenuAnchor] = useState(null);
@@ -208,7 +209,7 @@ const ShipmentHeader = ({
                     {/* Right Side - Primary Actions */}
                     <Stack direction="row" spacing={1} alignItems="center">
                         {/* Edit Button - Most Important */}
-                        {!isDraft && (
+                        {!isDraft && permissions.canEditShipment && (
                             <Button
                                 variant="contained"
                                 startIcon={<EditIcon />}
@@ -221,42 +222,44 @@ const ShipmentHeader = ({
                         )}
 
                         {/* Follow-Up Button - After Edit Button */}
-                        <Badge
-                            badgeContent={followUpCount}
-                            color="error"
-                            sx={{
-                                '& .MuiBadge-badge': {
-                                    fontSize: '10px',
-                                    height: '18px',
-                                    minWidth: '18px',
-                                    right: -3,
-                                    top: 3
-                                }
-                            }}
-                        >
-                            <Button
-                                variant="outlined"
-                                startIcon={<FollowUpIcon />}
-                                onClick={onViewFollowUps}
-                                disabled={actionStates.createFollowUp?.loading}
+                        {permissions.canViewFollowUps && (
+                            <Badge
+                                badgeContent={followUpCount}
+                                color="error"
                                 sx={{
-                                    minWidth: 120,
-                                    fontSize: '12px',
-                                    borderColor: '#f59e0b',
-                                    color: '#f59e0b',
-                                    paddingRight: '16px', // Add 8px padding (8px + default 8px = 16px)
-                                    '&:hover': {
-                                        borderColor: '#d97706',
-                                        bgcolor: '#fef3c7'
+                                    '& .MuiBadge-badge': {
+                                        fontSize: '10px',
+                                        height: '18px',
+                                        minWidth: '18px',
+                                        right: -3,
+                                        top: 3
                                     }
                                 }}
                             >
-                                Follow-Ups
-                            </Button>
-                        </Badge>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={<FollowUpIcon />}
+                                    onClick={onViewFollowUps}
+                                    disabled={actionStates.createFollowUp?.loading}
+                                    sx={{
+                                        minWidth: 120,
+                                        fontSize: '12px',
+                                        borderColor: '#f59e0b',
+                                        color: '#f59e0b',
+                                        paddingRight: '16px', // Add 8px padding (8px + default 8px = 16px)
+                                        '&:hover': {
+                                            borderColor: '#d97706',
+                                            bgcolor: '#fef3c7'
+                                        }
+                                    }}
+                                >
+                                    Follow-Ups
+                                </Button>
+                            </Badge>
+                        )}
 
                         {/* Print BOL Button - Direct Access */}
-                        {!isDraft && isFreightShipment && (
+                        {!isDraft && isFreightShipment && permissions.canViewBOL && (
                             <Button
                                 variant="outlined"
                                 startIcon={actionStates.printBOL?.loading ? <RefreshIcon sx={{ animation: 'spin 1s linear infinite' }} /> : <PdfIcon />}
@@ -269,7 +272,7 @@ const ShipmentHeader = ({
                         )}
 
                         {/* Print Carrier Confirmation Button - Direct Access */}
-                        {!isDraft && (
+                        {!isDraft && permissions.canViewCarrierConfirmation && (
                             <Button
                                 variant="outlined"
                                 startIcon={actionStates.printConfirmation?.loading ? <RefreshIcon sx={{ animation: 'spin 1s linear infinite' }} /> : <DocumentIcon />}
@@ -282,7 +285,7 @@ const ShipmentHeader = ({
                         )}
 
                         {/* Documents Menu */}
-                        {!isDraft && (
+                        {!isDraft && (permissions.canViewBOL || permissions.canViewCarrierConfirmation) && (
                             <IconButton
                                 onClick={handleDocumentsMenuOpen}
                                 sx={{
@@ -318,45 +321,51 @@ const ShipmentHeader = ({
                         sx: { minWidth: 220 }
                     }}
                 >
-                    <MenuItem onClick={() => handleDocumentAction('printBOL')}>
-                        <ListItemIcon><PdfIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Print BOL" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
-                    </MenuItem>
+                    {permissions.canViewBOL && (
+                        <MenuItem onClick={() => handleDocumentAction('printBOL')}>
+                            <ListItemIcon><PdfIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText primary="Print BOL" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
+                        </MenuItem>
+                    )}
 
-                    <MenuItem onClick={() => handleDocumentAction('printConfirmation')}>
-                        <ListItemIcon><DocumentIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary="Print Confirmation" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
-                    </MenuItem>
+                    {permissions.canViewCarrierConfirmation && (
+                        <MenuItem onClick={() => handleDocumentAction('printConfirmation')}>
+                            <ListItemIcon><DocumentIcon fontSize="small" /></ListItemIcon>
+                            <ListItemText primary="Print Confirmation" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
+                        </MenuItem>
+                    )}
 
                     <MenuItem onClick={() => handleDocumentAction('printLabel')}>
                         <ListItemIcon><PrintIcon fontSize="small" /></ListItemIcon>
                         <ListItemText primary="Print Label" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
-                    <Divider />
+                    {(permissions.canViewBOL || permissions.canViewCarrierConfirmation) && <Divider />}
 
-                    <MenuItem
-                        onClick={() => handleDocumentAction('regenerateBOL')}
-                        disabled={actionStates.regenerateBOL?.loading}
-                    >
-                        <ListItemIcon>
-                            {actionStates.regenerateBOL?.loading ? (
-                                <CircularProgress size={16} color="warning" />
-                            ) : (
-                                <RefreshIcon fontSize="small" color="warning" />
-                            )}
-                        </ListItemIcon>
-                        <ListItemText
-                            primary={actionStates.regenerateBOL?.loading ? "Regenerating BOL..." : "Regenerate BOL"}
-                            secondary={actionStates.regenerateBOL?.loading ? "Please wait..." : "Creates new version"}
-                            sx={{
-                                '& .MuiListItemText-primary': { fontSize: '12px' },
-                                '& .MuiListItemText-secondary': { fontSize: '11px' }
-                            }}
-                        />
-                    </MenuItem>
+                    {permissions.canViewBOL && (
+                        <MenuItem
+                            onClick={() => handleDocumentAction('regenerateBOL')}
+                            disabled={actionStates.regenerateBOL?.loading}
+                        >
+                            <ListItemIcon>
+                                {actionStates.regenerateBOL?.loading ? (
+                                    <CircularProgress size={16} color="warning" />
+                                ) : (
+                                    <RefreshIcon fontSize="small" color="warning" />
+                                )}
+                            </ListItemIcon>
+                            <ListItemText
+                                primary={actionStates.regenerateBOL?.loading ? "Regenerating BOL..." : "Regenerate BOL"}
+                                secondary={actionStates.regenerateBOL?.loading ? "Please wait..." : "Creates new version"}
+                                sx={{
+                                    '& .MuiListItemText-primary': { fontSize: '12px' },
+                                    '& .MuiListItemText-secondary': { fontSize: '11px' }
+                                }}
+                            />
+                        </MenuItem>
+                    )}
 
-                    {onRegenerateCarrierConfirmation && (
+                    {onRegenerateCarrierConfirmation && permissions.canViewCarrierConfirmation && (
                         <MenuItem
                             onClick={() => handleDocumentAction('regenerateConfirmation')}
                             disabled={actionStates.regenerateConfirmation?.loading}
@@ -399,7 +408,7 @@ const ShipmentHeader = ({
                         <ListItemText primary="Duplicate Shipment" sx={{ '& .MuiListItemText-primary': { fontSize: '12px' } }} />
                     </MenuItem>
 
-                    {!isDraft && !isArchived && (
+                    {!isDraft && !isArchived && permissions.canArchiveShipment && (
                         <MenuItem
                             onClick={() => handleAction('archive')}
                             disabled={actionStates.archiveShipment?.loading}
@@ -418,9 +427,9 @@ const ShipmentHeader = ({
                         </MenuItem>
                     )}
 
-                    <Divider />
+                    {permissions.canCancelShipment && <Divider />}
 
-                    {!isCancelled && !isDelivered && (
+                    {!isCancelled && !isDelivered && permissions.canCancelShipment && (
                         <MenuItem
                             onClick={() => handleAction('cancel')}
                             sx={{ color: 'error.main' }}

@@ -16,6 +16,8 @@ import {
     Archive as ArchiveIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 
 const ShipmentActionMenu = ({
     anchorEl,
@@ -34,6 +36,17 @@ const ShipmentActionMenu = ({
     checkingDocuments
 }) => {
     const navigate = useNavigate();
+    const { currentUser } = useAuth();
+
+    // Get user role for permission checking
+    const userRole = currentUser?.role || 'user';
+
+    // Check permissions for various actions
+    const canViewShipments = hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENTS);
+    const canEditShipments = hasPermission(userRole, PERMISSIONS.EDIT_SHIPMENTS);
+    const canViewBOL = hasPermission(userRole, PERMISSIONS.VIEW_BOL);
+    const canArchiveShipment = hasPermission(userRole, PERMISSIONS.ARCHIVE_SHIPMENT);
+    const canCreateShipments = hasPermission(userRole, PERMISSIONS.CREATE_SHIPMENTS); // For repeat functionality
 
     const handleViewDetails = () => {
         onClose();
@@ -118,8 +131,8 @@ const ShipmentActionMenu = ({
                 }
             }}
         >
-            {/* View Details - Only for non-draft shipments */}
-            {selectedShipment?.status !== 'draft' && (
+            {/* View Details - Only for non-draft shipments and users with VIEW_SHIPMENTS permission */}
+            {selectedShipment?.status !== 'draft' && canViewShipments && (
                 <>
                     <MenuItem onClick={handleViewDetails}>
                         <ListItemIcon>
@@ -128,8 +141,8 @@ const ShipmentActionMenu = ({
                         View Details
                     </MenuItem>
 
-                    {/* Edit Shipment - Only for non-draft, non-cancelled, non-delivered, non-archived shipments */}
-                    {canEditShipment && onEditShipment && (
+                    {/* Edit Shipment - Only for users with EDIT_SHIPMENTS permission and valid shipment state */}
+                    {canEditShipment && canEditShipments && onEditShipment && (
                         <MenuItem onClick={handleEditShipment}>
                             <ListItemIcon>
                                 <EditIcon sx={{ fontSize: '14px' }} />
@@ -138,17 +151,20 @@ const ShipmentActionMenu = ({
                         </MenuItem>
                     )}
 
-                    <MenuItem onClick={handleRepeatShipment}>
-                        <ListItemIcon>
-                            <RepeatIcon sx={{ fontSize: '14px' }} />
-                        </ListItemIcon>
-                        Repeat
-                    </MenuItem>
+                    {/* Repeat Shipment - Only for users with CREATE_SHIPMENTS permission */}
+                    {canCreateShipments && (
+                        <MenuItem onClick={handleRepeatShipment}>
+                            <ListItemIcon>
+                                <RepeatIcon sx={{ fontSize: '14px' }} />
+                            </ListItemIcon>
+                            Repeat
+                        </MenuItem>
+                    )}
                 </>
             )}
 
-            {/* Draft shipment options */}
-            {selectedShipment?.status === 'draft' && (
+            {/* Draft shipment options - Only for users with EDIT_SHIPMENTS permission */}
+            {selectedShipment?.status === 'draft' && canEditShipments && (
                 <>
                     <MenuItem onClick={handleEditDraft}>
                         <ListItemIcon>
@@ -190,9 +206,10 @@ const ShipmentActionMenu = ({
                     </MenuItem>
                 )}
 
-            {/* Print BOL - Only for non-draft shipments that have BOLs */}
+            {/* Print BOL - Only for users with VIEW_BOL permission and non-draft shipments that have BOLs */}
             {selectedShipment?.status !== 'draft' &&
                 !checkingDocuments &&
+                canViewBOL &&
                 documentAvailability[selectedShipment?.id]?.hasBOLs && (
                     <MenuItem onClick={() => onPrintBOL(selectedShipment)}>
                         <ListItemIcon>
@@ -216,8 +233,8 @@ const ShipmentActionMenu = ({
                     </MenuItem>
                 )}
 
-            {/* Archive option - Only for non-draft, non-archived shipments */}
-            {selectedShipment?.status !== 'draft' && !isArchived && onArchiveShipment && (
+            {/* Archive option - Only for users with ARCHIVE_SHIPMENT permission and non-draft, non-archived shipments */}
+            {selectedShipment?.status !== 'draft' && !isArchived && canArchiveShipment && onArchiveShipment && (
                 <MenuItem onClick={handleArchiveShipment}>
                     <ListItemIcon>
                         <ArchiveIcon sx={{ fontSize: '14px' }} />

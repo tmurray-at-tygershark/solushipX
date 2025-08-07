@@ -94,7 +94,21 @@ import { useCarrierAgnosticStatusUpdate } from '../../hooks/useCarrierAgnosticSt
 import useModalNavigation from '../../hooks/useModalNavigation';
 
 // Import ShipmentDetailX for the sliding view
-const ShipmentDetailX = React.lazy(() => import('../ShipmentDetail/ShipmentDetailX'));
+const ShipmentDetailX = React.lazy(() =>
+    import('../ShipmentDetail/ShipmentDetailX').catch(error => {
+        console.error('Failed to load ShipmentDetailX chunk:', error);
+        // Return a fallback component
+        return {
+            default: () => (
+                <Box p={3}>
+                    <Alert severity="error">
+                        Failed to load shipment details. Please refresh the page.
+                    </Alert>
+                </Box>
+            )
+        };
+    })
+);
 
 // Custom ModalHeader with Enterprise Search
 const EnterpriseModalHeader = ({

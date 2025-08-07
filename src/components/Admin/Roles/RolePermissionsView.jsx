@@ -316,7 +316,7 @@ const RolePermissionsView = () => {
         if (permissionKey.includes('USER')) return 'User Management';
         if (permissionKey.includes('COMPANY') || permissionKey.includes('COMPANIES')) return 'Company Management';
         if (permissionKey.includes('ORGANIZATION')) return 'Organization Management';
-        if (permissionKey.includes('SHIPMENT')) return 'Shipment Management';
+        if (permissionKey.includes('SHIPMENT') || permissionKey.includes('BOL') || permissionKey.includes('CARRIER_CONFIRMATION') || permissionKey.includes('FOLLOW_UPS') || permissionKey.includes('ARCHIVE') || permissionKey.includes('CANCEL') || permissionKey.includes('DOCUMENTS')) return 'Shipment Management';
         if (permissionKey.includes('CUSTOMER')) return 'Customer Management';
         if (permissionKey.includes('BILLING') || permissionKey.includes('INVOICE')) return 'Billing & Invoicing';
         if (permissionKey.includes('CARRIER')) return 'Carrier Management';

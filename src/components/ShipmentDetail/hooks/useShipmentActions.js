@@ -684,7 +684,7 @@ export const useShipmentActions = (shipment, carrierData, shipmentDocuments = { 
     }, [shipment?.shipmentID, shipment?.id, setActionLoading, showSnackbar, statusUpdateFunctions]);
 
     // Check permissions for carrier confirmations
-    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATIONS);
+    const canViewCarrierConfirmations = hasPermission(userRole, PERMISSIONS.VIEW_CARRIER_CONFIRMATION);
     const canGenerateCarrierConfirmations = hasPermission(userRole, PERMISSIONS.GENERATE_CARRIER_CONFIRMATIONS);
 
     // TEMPORARY DEBUG: Log permission check for super admin

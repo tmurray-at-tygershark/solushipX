@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Box,
     Paper,
@@ -24,7 +24,8 @@ import {
     Switch,
     Avatar,
     IconButton,
-    Tooltip
+    Tooltip,
+    TextField
 } from '@mui/material';
 import {
     Edit as EditIcon,
@@ -58,6 +59,10 @@ const CompanyDetail = () => {
     const [carrierDialogOpen, setCarrierDialogOpen] = useState(false);
     const [allCarriers, setAllCarriers] = useState([]);
     const [carrierLoading, setCarrierLoading] = useState(false);
+
+    // Local state for carrier display names (for immediate UI updates without database hits)
+    const [localDisplayNames, setLocalDisplayNames] = useState({});
+    const [savingDisplayNames, setSavingDisplayNames] = useState(new Set());
 
     // Load all available carriers
     const loadCarriers = useCallback(async () => {
@@ -95,6 +100,7 @@ const CompanyDetail = () => {
                         carrierID: carrier.carrierID,
                         carrierName: carrier.name,
                         enabled: true,
+                        displayName: '', // Initialize empty display name
                         createdAt: new Date(),
                         updatedAt: new Date()
                     }];
@@ -139,6 +145,105 @@ const CompanyDetail = () => {
         const connectedCarrier = company?.connectedCarriers?.find(cc => cc.carrierID === carrierID);
         return connectedCarrier?.enabled === true;
     }, [company]);
+
+    // Get display name for a carrier (prioritize local state for immediate updates)
+    const getCarrierDisplayName = useCallback((carrierID) => {
+        // First check local state for immediate updates
+        if (localDisplayNames.hasOwnProperty(carrierID)) {
+            return localDisplayNames[carrierID];
+        }
+
+        // Fall back to database state
+        const connectedCarrier = company?.connectedCarriers?.find(cc => cc.carrierID === carrierID);
+        return connectedCarrier?.displayName || '';
+    }, [company, localDisplayNames]);
+
+    // Debounced save to database
+    const saveDisplayNameToDatabase = useCallback(async (carrierID, displayName) => {
+        setSavingDisplayNames(prev => new Set([...prev, carrierID]));
+
+        try {
+            const companyRef = doc(db, 'companies', companyFirestoreId);
+            const currentConnectedCarriers = company?.connectedCarriers || [];
+
+            // Update the display name for the specific carrier
+            const updatedConnectedCarriers = currentConnectedCarriers.map(cc =>
+                cc.carrierID === carrierID
+                    ? { ...cc, displayName: displayName.trim(), updatedAt: new Date() }
+                    : cc
+            );
+
+            await updateDoc(companyRef, {
+                connectedCarriers: updatedConnectedCarriers,
+                updatedAt: serverTimestamp()
+            });
+
+            // Update local state
+            setCompany(prev => ({
+                ...prev,
+                connectedCarriers: updatedConnectedCarriers
+            }));
+
+        } catch (err) {
+            console.error('Error updating carrier display name:', err);
+            enqueueSnackbar('Failed to update display name', { variant: 'error' });
+        } finally {
+            setSavingDisplayNames(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(carrierID);
+                return newSet;
+            });
+        }
+    }, [company, companyFirestoreId, enqueueSnackbar]);
+
+    // Debounce timer ref
+    const debounceTimersRef = useRef({});
+
+    // Handle immediate display name change (for UI only)
+    const handleDisplayNameChange = useCallback((carrierID, displayName) => {
+        // Update local state immediately for smooth UI
+        setLocalDisplayNames(prev => ({
+            ...prev,
+            [carrierID]: displayName
+        }));
+
+        // Clear existing timer for this carrier
+        if (debounceTimersRef.current[carrierID]) {
+            clearTimeout(debounceTimersRef.current[carrierID]);
+        }
+
+        // Set new timer to save to database after 1 second of no typing
+        debounceTimersRef.current[carrierID] = setTimeout(() => {
+            saveDisplayNameToDatabase(carrierID, displayName);
+            delete debounceTimersRef.current[carrierID];
+        }, 1000);
+    }, [saveDisplayNameToDatabase]);
+
+    // Initialize local display names when dialog opens
+    useEffect(() => {
+        if (carrierDialogOpen && company?.connectedCarriers) {
+            const initialDisplayNames = {};
+            company.connectedCarriers.forEach(cc => {
+                if (cc.displayName) {
+                    initialDisplayNames[cc.carrierID] = cc.displayName;
+                }
+            });
+            setLocalDisplayNames(initialDisplayNames);
+        }
+    }, [carrierDialogOpen, company?.connectedCarriers]);
+
+    // Clean up timers when component unmounts or dialog closes
+    useEffect(() => {
+        if (!carrierDialogOpen) {
+            // Clear all pending timers
+            Object.values(debounceTimersRef.current).forEach(timer => clearTimeout(timer));
+            debounceTimersRef.current = {};
+
+            // Clear local state
+            setLocalDisplayNames({});
+            setSavingDisplayNames(new Set());
+        }
+    }, [carrierDialogOpen]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -691,7 +796,7 @@ const CompanyDetail = () => {
                                         }}
                                     >
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flex: 1 }}>
                                                 <Avatar
                                                     src={carrier.logo}
                                                     sx={{
@@ -700,12 +805,13 @@ const CompanyDetail = () => {
                                                         backgroundColor: '#f3f4f6',
                                                         color: '#6b7280',
                                                         fontSize: '14px',
-                                                        fontWeight: 600
+                                                        fontWeight: 600,
+                                                        mt: 0.5
                                                     }}
                                                 >
                                                     {carrier.name?.charAt(0)?.toUpperCase()}
                                                 </Avatar>
-                                                <Box>
+                                                <Box sx={{ flex: 1 }}>
                                                     <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
                                                         {carrier.name}
                                                     </Typography>
@@ -724,6 +830,40 @@ const CompanyDetail = () => {
                                                                 color: carrier.connectionType === 'api' ? '#166534' : '#92400e'
                                                             }}
                                                         />
+                                                    )}
+
+                                                    {/* Display Name Override Section */}
+                                                    {isCarrierEnabled(carrier.carrierID) && (
+                                                        <Box sx={{ mt: 2 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                Customer Display Name (White Label)
+                                                            </Typography>
+                                                            <TextField
+                                                                size="small"
+                                                                placeholder={`Default: ${carrier.name}`}
+                                                                value={getCarrierDisplayName(carrier.carrierID)}
+                                                                onChange={(e) => handleDisplayNameChange(carrier.carrierID, e.target.value)}
+                                                                fullWidth
+                                                                disabled={savingDisplayNames.has(carrier.carrierID)}
+                                                                sx={{
+                                                                    '& .MuiInputBase-root': {
+                                                                        fontSize: '12px',
+                                                                        backgroundColor: savingDisplayNames.has(carrier.carrierID) ? '#f9f9f9' : '#ffffff'
+                                                                    },
+                                                                    '& .MuiInputBase-input': {
+                                                                        fontSize: '12px'
+                                                                    }
+                                                                }}
+                                                                helperText={savingDisplayNames.has(carrier.carrierID) ? "Saving..." : "Leave empty to show real carrier name to customers"}
+                                                                FormHelperTextProps={{
+                                                                    sx: {
+                                                                        fontSize: '10px',
+                                                                        color: savingDisplayNames.has(carrier.carrierID) ? '#6366f1' : '#6b7280',
+                                                                        fontWeight: savingDisplayNames.has(carrier.carrierID) ? 500 : 400
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </Box>
                                                     )}
                                                 </Box>
                                             </Box>

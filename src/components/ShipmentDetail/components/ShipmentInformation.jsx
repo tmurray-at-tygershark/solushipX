@@ -49,6 +49,7 @@ import ManualStatusOverride from './ManualStatusOverride';
 import invoiceStatusService from '../../../services/invoiceStatusService';
 import { recordShipmentEvent, EVENT_TYPES, EVENT_SOURCES } from '../../../utils/shipmentEvents';
 import { getCircleLogo } from '../../../utils/logoUtils';
+import { getDisplayCarrierName as getCarrierOverrideName } from '../../../utils/carrierDisplayService';
 
 // CarrierDisplay component to show carrier logo and name
 const CarrierDisplay = React.memo(({ carrierName, carrierData, size = 'medium', isIntegrationCarrier }) => {
@@ -89,11 +90,37 @@ const ShipmentInformation = ({
     onShowSnackbar,
     onOpenTrackingDrawer,
     onStatusUpdated, // Add callback for status updates
-    isAdmin // Add admin context
+    isAdmin, // Add admin context
+    permissions // Add permissions prop
 }) => {
     // Hooks
     const navigate = useNavigate();
-    const { user, currentUser } = useAuth();
+    const { user, currentUser, userRole } = useAuth();
+
+    // Check if this is an admin view (admins should see real carrier names)
+    const isAdminView = isAdmin || userRole === 'admin' || userRole === 'superadmin';
+
+    // Helper function to get display carrier name with override logic
+    const getCarrierDisplayName = (rawCarrierName, companyData) => {
+        // For admin views, always show real carrier name
+        if (isAdminView || !rawCarrierName || rawCarrierName === 'N/A') {
+            return rawCarrierName;
+        }
+
+        const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+
+        if (!shipmentCompanyId || !companyData) {
+            return rawCarrierName;
+        }
+
+        // Apply carrier name override
+        return getCarrierOverrideName(
+            { name: rawCarrierName, carrierID: rawCarrierName },
+            shipmentCompanyId,
+            companyData,
+            isAdminView
+        );
+    };
 
 
 
@@ -1770,64 +1797,69 @@ const ShipmentInformation = ({
                                 <Typography variant="body2" sx={{ fontSize: '12px' }}>{capitalizeShipmentType(shipment?.shipmentInfo?.shipmentType || 'N/A')}</Typography>
                             </Box>
 
-                            <Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Bill Type</Typography>
-                                <Typography variant="body2" sx={{ fontSize: '12px' }}>
-                                    {formatBillType(shipment?.shipmentInfo?.shipmentBillType || shipment?.shipmentInfo?.billType)}
-                                </Typography>
-                            </Box>
-                            <Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Invoice Status</Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {(() => {
-                                        const statusCode = shipment?.invoiceStatus || 'uninvoiced';
-                                        const dynamicStatus = invoiceStatuses.find(s => s.statusCode === statusCode);
+                            {/* Only show Bill Type and Invoice Status if user has VIEW_SHIPMENT_FINANCIALS permission */}
+                            {permissions?.canViewShipmentFinancials && (
+                                <>
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Bill Type</Typography>
+                                        <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                            {formatBillType(shipment?.shipmentInfo?.shipmentBillType || shipment?.shipmentInfo?.billType)}
+                                        </Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Invoice Status</Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            {(() => {
+                                                const statusCode = shipment?.invoiceStatus || 'uninvoiced';
+                                                const dynamicStatus = invoiceStatuses.find(s => s.statusCode === statusCode);
 
-                                        if (dynamicStatus) {
-                                            return (
-                                                <Chip
-                                                    label={dynamicStatus.statusLabel}
+                                                if (dynamicStatus) {
+                                                    return (
+                                                        <Chip
+                                                            label={dynamicStatus.statusLabel}
+                                                            size="small"
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                height: '22px',
+                                                                fontWeight: 500,
+                                                                color: dynamicStatus.fontColor || '#ffffff',
+                                                                backgroundColor: dynamicStatus.color || '#6b7280',
+                                                                border: '1px solid rgba(0,0,0,0.1)'
+                                                            }}
+                                                        />
+                                                    );
+                                                }
+
+                                                // Fallback for unknown status
+                                                return (
+                                                    <Chip
+                                                        label={statusCode}
+                                                        size="small"
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            height: '22px',
+                                                            fontWeight: 500,
+                                                            color: '#ffffff',
+                                                            backgroundColor: '#6b7280',
+                                                            border: '1px solid rgba(0,0,0,0.1)'
+                                                        }}
+                                                    />
+                                                );
+                                            })()}
+                                            {isAdmin && (
+                                                <IconButton
                                                     size="small"
-                                                    sx={{
-                                                        fontSize: '11px',
-                                                        height: '22px',
-                                                        fontWeight: 500,
-                                                        color: dynamicStatus.fontColor || '#ffffff',
-                                                        backgroundColor: dynamicStatus.color || '#6b7280',
-                                                        border: '1px solid rgba(0,0,0,0.1)'
-                                                    }}
-                                                />
-                                            );
-                                        }
-
-                                        // Fallback for unknown status
-                                        return (
-                                            <Chip
-                                                label={statusCode}
-                                                size="small"
-                                                sx={{
-                                                    fontSize: '11px',
-                                                    height: '22px',
-                                                    fontWeight: 500,
-                                                    color: '#ffffff',
-                                                    backgroundColor: '#6b7280',
-                                                    border: '1px solid rgba(0,0,0,0.1)'
-                                                }}
-                                            />
-                                        );
-                                    })()}
-                                    {isAdmin && (
-                                        <IconButton
-                                            size="small"
-                                            onClick={(e) => handleStartEditInvoiceStatus(shipment?.invoiceStatus || 'uninvoiced', e)}
-                                            sx={{ padding: '2px' }}
-                                            title="Edit invoice status"
-                                        >
-                                            <ArrowDownIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
-                                        </IconButton>
-                                    )}
-                                </Box>
-                            </Box>
+                                                    onClick={(e) => handleStartEditInvoiceStatus(shipment?.invoiceStatus || 'uninvoiced', e)}
+                                                    sx={{ padding: '2px' }}
+                                                    title="Edit invoice status"
+                                                >
+                                                    <ArrowDownIcon sx={{ fontSize: '0.875rem', color: 'text.secondary' }} />
+                                                </IconButton>
+                                            )}
+                                        </Box>
+                                    </Box>
+                                </>
+                            )}
                         </Stack>
                     </Box>
                 </Grid>
@@ -2067,10 +2099,14 @@ const ShipmentInformation = ({
                             <Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '11px' }}>Carrier</Typography>
                                 <CarrierDisplay
-                                    carrierName={shipment?.creationMethod === 'quickship' ?
-                                        (shipment?.selectedCarrier || shipment?.carrier) :
-                                        getBestRateInfo?.carrier
-                                    }
+                                    carrierName={(() => {
+                                        const rawCarrierName = shipment?.creationMethod === 'quickship' ?
+                                            (shipment?.selectedCarrier || shipment?.carrier) :
+                                            getBestRateInfo?.carrier;
+
+                                        // Apply carrier name override for customer-facing views
+                                        return getCarrierDisplayName(rawCarrierName, companyData);
+                                    })()}
                                     carrierData={carrierData}
                                     size="small"
                                     isIntegrationCarrier={shipment?.creationMethod !== 'quickship' && (getBestRateInfo?.displayCarrierId === 'ESHIPPLUS' || getBestRateInfo?.sourceCarrierName === 'eShipPlus')}

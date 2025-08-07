@@ -20,9 +20,13 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoIcon from '@mui/icons-material/Info';
 // Add missing imports for database functionality
 import { useState as useStateImport, useEffect } from 'react';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
+import { getDisplayCarrierName } from '../../utils/carrierDisplayService';
+import { getLightBackgroundLogo } from '../../utils/logoUtils';
 
 const EnhancedRateCard = ({
     rate,
@@ -34,6 +38,13 @@ const EnhancedRateCard = ({
 }) => {
     const [expanded, setExpanded] = useState(showDetails);
     const [carrierLogoUrl, setCarrierLogoUrl] = useState(null);
+    const [companyData, setCompanyData] = useState(null);
+    const [displayCarrierName, setDisplayCarrierName] = useState('');
+    const [isOverridden, setIsOverridden] = useState(false);
+
+    // Get auth and company context
+    const { currentUser } = useAuth();
+    const { companyIdForAddress } = useCompany();
 
     // Check if user is admin or super admin
     const isAdmin = userRole === 'admin' || userRole === 'superadmin';
@@ -79,6 +90,112 @@ const EnhancedRateCard = ({
     };
 
     const costChargeInfo = getCostChargeInfo();
+
+    // Load company data for carrier overrides
+    useEffect(() => {
+        const loadCompanyData = async () => {
+            console.log('📊 EnhancedRateCard - Loading company data:', { companyIdForAddress, isAdmin, userRole });
+
+            if (!companyIdForAddress || isAdmin) {
+                console.log('❌ Skipping company data load - Missing ID or admin user');
+                setCompanyData(null);
+                return;
+            }
+
+            try {
+                // First try to find company by Firestore document ID
+                const companyRef = doc(db, 'companies', companyIdForAddress);
+                const companyDoc = await getDoc(companyRef);
+
+                if (companyDoc.exists()) {
+                    const data = companyDoc.data();
+                    console.log('✅ Company data loaded by doc ID:', {
+                        companyId: companyIdForAddress,
+                        hasConnectedCarriers: !!data.connectedCarriers,
+                        carrierCount: data.connectedCarriers?.length || 0,
+                        connectedCarriers: data.connectedCarriers || []
+                    });
+                    setCompanyData(data);
+                    return;
+                }
+
+                // If not found by doc ID, try querying by companyID field
+                console.log('🔍 Company not found by doc ID, trying companyID field query...', companyIdForAddress);
+                const companiesQuery = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', companyIdForAddress),
+                    limit(1)
+                );
+
+                const companiesSnapshot = await getDocs(companiesQuery);
+
+                if (!companiesSnapshot.empty) {
+                    const foundCompanyDoc = companiesSnapshot.docs[0];
+                    const data = foundCompanyDoc.data();
+                    console.log('✅ Company found by companyID field:', {
+                        searchedCompanyId: companyIdForAddress,
+                        foundDocId: foundCompanyDoc.id,
+                        hasConnectedCarriers: !!data.connectedCarriers,
+                        carrierCount: data.connectedCarriers?.length || 0,
+                        connectedCarriers: data.connectedCarriers || []
+                    });
+                    setCompanyData(data);
+                } else {
+                    console.log('❌ Company not found by either method:', companyIdForAddress);
+
+                    // Let's also list available companies for debugging
+                    const allCompaniesQuery = query(collection(db, 'companies'), limit(5));
+                    const allCompaniesSnapshot = await getDocs(allCompaniesQuery);
+                    const availableCompanies = allCompaniesSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        companyID: doc.data().companyID,
+                        name: doc.data().name
+                    }));
+                    console.log('🏢 Available companies (first 5):', availableCompanies);
+
+                    setCompanyData(null);
+                }
+            } catch (error) {
+                console.error('Error loading company data for carrier overrides:', error);
+                setCompanyData(null);
+            }
+        };
+
+        loadCompanyData();
+    }, [companyIdForAddress, isAdmin, userRole]);
+
+    // Apply carrier name override and set display name
+    useEffect(() => {
+        const rawCarrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
+
+        console.log('🚀 EnhancedRateCard - Carrier Override Debug:', {
+            rawCarrierName,
+            isAdmin,
+            companyIdForAddress,
+            hasCompanyData: !!companyData,
+            companyDataKeys: companyData ? Object.keys(companyData) : null,
+            connectedCarriers: companyData?.connectedCarriers || [],
+            userRole
+        });
+
+        if (!isAdmin && companyData && companyIdForAddress) {
+            const overriddenName = getDisplayCarrierName(
+                { name: rawCarrierName, carrierID: rawCarrierName },
+                companyIdForAddress,
+                companyData,
+                isAdmin
+            );
+
+            console.log('🔄 Override Result:', { rawCarrierName, overriddenName, isOverridden: overriddenName !== rawCarrierName });
+
+            setDisplayCarrierName(overriddenName);
+            setIsOverridden(overriddenName !== rawCarrierName);
+        } else {
+            console.log('❌ No override - Admin or missing data:', { isAdmin, hasCompanyData: !!companyData, companyIdForAddress });
+            setDisplayCarrierName(rawCarrierName);
+            setIsOverridden(false);
+        }
+    }, [rate, companyData, companyIdForAddress, isAdmin, userRole]);
 
     // Fetch carrier logo from database - DYNAMIC VERSION LIKE REVIEW.JSX
     const fetchCarrierLogo = useCallback(async (carrierName) => {
@@ -147,6 +264,31 @@ const EnhancedRateCard = ({
     // Load carrier logo when component mounts or rate changes
     useEffect(() => {
         const loadCarrierLogo = async () => {
+            // If carrier name is overridden, use company logo instead
+            console.log('🖼️ EnhancedRateCard - Logo Override Check:', {
+                isOverridden,
+                hasCompanyData: !!companyData,
+                companyLogos: companyData?.logos,
+                lightLogo: companyData?.logos?.light,
+                darkLogo: companyData?.logos?.dark,
+                circleLogo: companyData?.logos?.circle,
+                legacyLogoUrl: companyData?.logoUrl,
+                companyName: companyData?.name
+            });
+
+            if (isOverridden && companyData) {
+                const companyLogo = getLightBackgroundLogo(companyData);
+                console.log('🏢 Using company logo override:', {
+                    companyLogo,
+                    originalCarrierName: rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName,
+                    overriddenName: displayCarrierName
+                });
+                if (companyLogo) {
+                    setCarrierLogoUrl(companyLogo);
+                    return;
+                }
+            }
+
             // Determine the appropriate carrier name to fetch logo for
             const carrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
 
@@ -183,7 +325,7 @@ const EnhancedRateCard = ({
         };
 
         loadCarrierLogo();
-    }, [rate, fetchCarrierLogo]);
+    }, [rate, fetchCarrierLogo, isOverridden, companyData]);
 
     const formatPrice = (price) => {
         const currency = rate.pricing?.currency || 'USD';
@@ -226,7 +368,8 @@ const EnhancedRateCard = ({
         return 'default';
     };
 
-    const carrierName = rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
+    // Use displayCarrierName which includes override logic, fallback to original if not set
+    const carrierName = displayCarrierName || rate.displayCarrier?.name || rate.carrier?.name || rate.carrierName || 'Unknown Carrier';
     const serviceName = rate.service?.name || (typeof rate.service === 'string' ? rate.service : 'Standard');
     const totalPrice = rate.pricing?.total || rate.totalCharges || rate.price || 0;
     const transitDays = rate.transit?.days !== undefined ? rate.transit.days : 'N/A';

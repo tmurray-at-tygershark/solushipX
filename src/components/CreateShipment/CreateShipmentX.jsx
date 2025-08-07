@@ -455,14 +455,17 @@ const CreateShipmentX = (props) => {
     // Determine if super admin needs to select a company (always show for super admins to allow switching)
     const needsCompanySelection = userRole === 'superadmin';
 
-    // Helper function to determine if broker section should be visible (US shipments only)
+    // Helper function to determine if broker section should be visible (US shipments only + user permissions)
     const shouldShowBrokerSection = useMemo(() => {
         const fromCountry = shipFromAddress?.country;
         const toCountry = shipToAddress?.country;
 
-        // Show if either origin or destination is US
-        return fromCountry === 'US' || toCountry === 'US';
-    }, [shipFromAddress?.country, shipToAddress?.country]);
+        // Show if either origin or destination is US AND user has broker management permission
+        const isUSShipment = fromCountry === 'US' || toCountry === 'US';
+        const hasBrokerPermission = hasPermission(userRole, PERMISSIONS.MANAGE_BROKERS);
+
+        return isUSShipment && hasBrokerPermission;
+    }, [shipFromAddress?.country, shipToAddress?.country, userRole]);
 
     // Helper function to determine if broker section should be expanded
     const shouldExpandBrokerSection = useMemo(() => {
@@ -6057,21 +6060,28 @@ const CreateShipmentX = (props) => {
 
                                 {/* Combined Total and Action Section */}
                                 <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-                                        {/* Left side - Total cost */}
-                                        <Box sx={{ textAlign: 'left' }}>
-                                            <Typography variant="h4" sx={{
-                                                fontSize: '24px',
-                                                fontWeight: 700,
-                                                color: '#1f2937',
-                                                mb: 0.5
-                                            }}>
-                                                Total: {selectedRate ? (hasPermission(userRole, PERMISSIONS.VIEW_RATE_PRICING) ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Rate Available') : '$0.00'}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                {selectedRate ? 'Selected Rate Total' : 'No Rate Selected'}
-                                            </Typography>
-                                        </Box>
+                                    <Box sx={{
+                                        display: 'flex',
+                                        justifyContent: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) ? 'space-between' : 'flex-end',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        {/* Left side - Total cost (only show if user has financial permissions) */}
+                                        {hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) && (
+                                            <Box sx={{ textAlign: 'left' }}>
+                                                <Typography variant="h4" sx={{
+                                                    fontSize: '24px',
+                                                    fontWeight: 700,
+                                                    color: '#1f2937',
+                                                    mb: 0.5
+                                                }}>
+                                                    Total: {selectedRate ? (hasPermission(userRole, PERMISSIONS.VIEW_RATE_PRICING) ? `$${(selectedRate.pricing?.total || selectedRate.totalCharges || selectedRate.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Rate Available') : '$0.00'}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    {selectedRate ? 'Selected Rate Total' : 'No Rate Selected'}
+                                                </Typography>
+                                            </Box>
+                                        )}
 
                                         {/* Right side - Conversion button and action buttons */}
                                         <Box sx={{ textAlign: 'right' }}>

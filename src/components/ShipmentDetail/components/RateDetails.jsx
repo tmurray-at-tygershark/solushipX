@@ -40,6 +40,9 @@ import shipmentChargeTypeService from '../../../services/shipmentChargeTypeServi
 import { getAutoPopulatedChargeName } from '../../../utils/shipmentValidation';
 import { updateRateAndRecalculateTaxes, addRateAndRecalculateTaxes, removeRateAndRecalculateTaxes, recalculateShipmentTaxes } from '../../../utils/taxCalculator';
 import { isCanadianDomesticShipment, isTaxCharge } from '../../../services/canadianTaxService';
+import { getDisplayCarrierName } from '../../../utils/carrierDisplayService';
+import { db } from '../../../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 // Rate code options - DEPRECATED: Now using dynamic charge types from database
 // Kept as fallback for when dynamic loading fails
@@ -122,13 +125,47 @@ const RateDetails = ({
     // State for tax calculation
     const [isCalculatingTaxes, setIsCalculatingTaxes] = useState(false);
 
+    // Company data state for carrier overrides
+    const [companyData, setCompanyData] = useState(null);
+
     // Enhanced admin check using the userRole from AuthContext
     const enhancedIsAdmin = userRole && (
         ['admin', 'superadmin', 'super_admin'].includes(userRole.toLowerCase())
     );
 
+    // Check if this is an admin view (admins should see real carrier names)
+    const isAdminView = enhancedIsAdmin || userRole === 'admin' || userRole === 'superadmin';
+
     // Check if this is a QuickShip shipment
     const isQuickShip = shipment?.creationMethod === 'quickship';
+
+    // Load company data for carrier overrides
+    useEffect(() => {
+        const loadCompanyData = async () => {
+            const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+
+            if (!shipmentCompanyId || isAdminView) {
+                setCompanyData(null);
+                return;
+            }
+
+            try {
+                const companyRef = doc(db, 'companies', shipmentCompanyId);
+                const companyDoc = await getDoc(companyRef);
+
+                if (companyDoc.exists()) {
+                    setCompanyData(companyDoc.data());
+                } else {
+                    setCompanyData(null);
+                }
+            } catch (error) {
+                console.error('Error loading company data for carrier overrides:', error);
+                setCompanyData(null);
+            }
+        };
+
+        loadCompanyData();
+    }, [shipment?.companyID, shipment?.companyId, isAdminView]);
 
     // Get markup information for admin users
     const markupSummary = enhancedIsAdmin && getBestRateInfo ? getMarkupSummary(getBestRateInfo) : null;
@@ -932,7 +969,27 @@ const RateDetails = ({
     const getServiceInfo = () => {
         const info = {};
 
-        info.carrier = quickShipData?.carrier || getBestRateInfo?.carrier?.name || getBestRateInfo?.carrier || 'N/A';
+        let rawCarrierName = quickShipData?.carrier || getBestRateInfo?.carrier?.name || getBestRateInfo?.carrier || 'N/A';
+
+        // Apply carrier name override for customer-facing views
+        if (!isAdminView && rawCarrierName && rawCarrierName !== 'N/A' && companyData) {
+            const shipmentCompanyId = shipment?.companyID || shipment?.companyId;
+
+            if (shipmentCompanyId) {
+                const displayName = getDisplayCarrierName(
+                    { name: rawCarrierName, carrierID: rawCarrierName },
+                    shipmentCompanyId,
+                    companyData,
+                    isAdminView
+                );
+
+                if (displayName !== rawCarrierName) {
+                    rawCarrierName = displayName;
+                }
+            }
+        }
+
+        info.carrier = rawCarrierName;
         info.service = !isQuickShip && getBestRateInfo?.service ? getBestRateInfo.service : 'N/A';
         info.transitTime = !isQuickShip && getBestRateInfo?.transitDays ?
             `${getBestRateInfo.transitDays} ${getBestRateInfo.transitDays === 1 ? 'day' : 'days'}` : 'N/A';

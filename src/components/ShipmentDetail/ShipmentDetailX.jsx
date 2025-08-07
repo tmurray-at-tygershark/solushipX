@@ -35,6 +35,7 @@ import { httpsCallable } from 'firebase/functions';
 import { collection, getDocs, query, where, orderBy, limit, getDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
+import { getShipmentDetailPermissions } from '../../utils/rolePermissions';
 
 // Components
 import ShipmentHeader from './components/ShipmentHeader';
@@ -85,6 +86,9 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     // Get user role for permission checking
     const userRole = user?.role || 'user';
+
+    // Get shipment detail permissions for this user role
+    const permissions = getShipmentDetailPermissions(userRole);
 
     // Follow-up dialog state
     const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
@@ -1374,6 +1378,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     onViewFollowUps={handleViewFollowUps}
                     followUpCount={existingFollowUps.filter(f => f.status !== 'completed').length}
                     isAdmin={isAdmin}
+                    permissions={permissions}
                 />
 
                 {/* Main Content Container */}
@@ -1391,6 +1396,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         onOpenTrackingDrawer={handleOpenTrackingDrawer}
                         onStatusUpdated={refreshShipment}
                         isAdmin={isAdmin}
+                        permissions={permissions}
                     />
 
                     {/* Documents Section - Hidden for now */}
@@ -1405,29 +1411,33 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         onViewPdf={viewPdfInModalRef.current}
                     /> */}
 
-                    {/* Documents Section */}
-                    <DocumentsSection
-                        shipment={shipment}
-                        shipmentDocuments={shipmentDocuments}
-                        documentsLoading={documentsLoading}
-                        documentsError={documentsError}
-                        onRetryFetch={fetchShipmentDocuments}
-                        onViewPdf={viewPdfInModalRef.current}
-                        onDocumentUploaded={fetchShipmentDocuments}
-                        showNotification={showSnackbar}
-                    />
+                    {/* Documents Section - Only show if user has VIEW_DOCUMENTS permission */}
+                    {permissions.canViewDocuments && (
+                        <DocumentsSection
+                            shipment={shipment}
+                            shipmentDocuments={shipmentDocuments}
+                            documentsLoading={documentsLoading}
+                            documentsError={documentsError}
+                            onRetryFetch={fetchShipmentDocuments}
+                            onViewPdf={viewPdfInModalRef.current}
+                            onDocumentUploaded={fetchShipmentDocuments}
+                            showNotification={showSnackbar}
+                        />
+                    )}
 
                     {/* Main Content Grid */}
                     <Grid container spacing={1} sx={{ mt: 1 }}>
-                        {/* Rate Details */}
-                        <RateDetails
-                            key={`rate-details-${shipment?.id}`}
-                            getBestRateInfo={getBestRateInfo}
-                            carrierData={carrierData}
-                            shipment={shipment}
-                            isAdmin={isAdmin}
-                            onChargesUpdate={handleChargesUpdate}
-                        />
+                        {/* Rate Details - Only show if user has VIEW_SHIPMENT_FINANCIALS permission */}
+                        {permissions.canViewShipmentFinancials && (
+                            <RateDetails
+                                key={`rate-details-${shipment?.id}`}
+                                getBestRateInfo={getBestRateInfo}
+                                carrierData={carrierData}
+                                shipment={shipment}
+                                isAdmin={isAdmin}
+                                onChargesUpdate={handleChargesUpdate}
+                            />
+                        )}
 
                         {/* Package Details */}
                         <PackageDetails
