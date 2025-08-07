@@ -340,6 +340,19 @@ const ERROR_MESSAGES = {
     EMAIL_FAILED: 'Shipment booked successfully but email notification failed. You can download documents from the shipment details.'
 };
 
+// Helper functions for safe number parsing to avoid NaN values
+const safeParseFloat = (value, fallback = 0) => {
+    if (value === null || value === undefined || value === '' || value === 'NaN') return fallback;
+    const parsed = parseFloat(value);
+    return isNaN(parsed) ? fallback : parsed;
+};
+
+const safeParseInt = (value, fallback = 1) => {
+    if (value === null || value === undefined || value === '' || value === 'NaN') return fallback;
+    const parsed = parseInt(value);
+    return isNaN(parsed) ? fallback : parsed;
+};
+
 const QuickShip = ({
     onClose,
     onReturnToShipments,
@@ -700,8 +713,8 @@ const QuickShip = ({
                     // Format rates to 2 decimal places
                     const formattedRates = prePopulatedData.manualRates.map(rate => ({
                         ...rate,
-                        cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
-                        charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
+                        cost: rate.cost ? safeParseFloat(rate.cost, 0).toFixed(2) : '',
+                        charge: rate.charge ? safeParseFloat(rate.charge, 0).toFixed(2) : ''
                     }));
                     setManualRates(formattedRates);
 
@@ -1538,7 +1551,11 @@ const QuickShip = ({
 
     // Rate management functions
     const addRateLineItem = () => {
-        const newId = Math.max(...manualRates.map(r => r.id), 0) + 1;
+        // 🔧 SAFE ID GENERATION - prevent NaN by filtering out invalid IDs and using safe fallback
+        const validIds = manualRates.map(r => r.id).filter(id => typeof id === 'number' && !isNaN(id));
+        const newId = validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
+        console.log('🔢 [DEBUG] Generating new rate ID:', { validIds, newId, manualRatesCount: manualRates.length });
+
         const newRate = {
             id: newId,
             carrier: selectedCarrier,
@@ -1911,8 +1928,11 @@ const QuickShip = ({
                             return prevRates;
                         }
 
-                        // Add a new rate line item for this service
-                        const newRateId = Math.max(...prevRates.map(r => r.id), 0) + 1;
+                        // Add a new rate line item for this service - SAFE ID GENERATION
+                        const validIds = prevRates.map(r => r.id).filter(id => typeof id === 'number' && !isNaN(id));
+                        const newRateId = validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
+                        console.log('🔢 [DEBUG] Generating new service rate ID:', { validIds, newRateId, prevRatesCount: prevRates.length });
+
                         const newRate = {
                             id: newRateId,
                             carrier: '',
@@ -2414,8 +2434,8 @@ const QuickShip = ({
             });
 
             // Calculate total weight, pieces, and package count for validation
-            const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
-            const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+            const totalWeight = packages.reduce((sum, pkg) => sum + (safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1)), 0);
+            const totalPieces = packages.reduce((sum, pkg) => sum + safeParseInt(pkg.packagingQuantity, 1), 0);
             const totalPackageCount = packages.length; // Number of distinct package types
 
             // Prepare shipment data with enhanced validation
@@ -2501,13 +2521,13 @@ const QuickShip = ({
                     packageNumber: index + 1,
                     // Required fields with validation
                     itemDescription: pkg.itemDescription || '',
-                    weight: parseFloat(pkg.weight || 0),
-                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
-                    length: parseFloat(pkg.length || 0),
-                    width: parseFloat(pkg.width || 0),
-                    height: parseFloat(pkg.height || 0),
+                    weight: safeParseFloat(pkg.weight, 0),
+                    packagingQuantity: safeParseInt(pkg.packagingQuantity, 1),
+                    length: safeParseFloat(pkg.length, 0),
+                    width: safeParseFloat(pkg.width, 0),
+                    height: safeParseFloat(pkg.height, 0),
                     // Calculate individual package total weight (weight * quantity)
-                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    totalWeight: safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1),
                     // Packaging type information
                     packagingType: pkg.packagingType,
                     packagingTypeCode: pkg.packagingType,
@@ -2517,10 +2537,10 @@ const QuickShip = ({
                     // Special freight information
                     freightClass: pkg.freightClass || '',
                     // Declared value information  
-                    declaredValue: parseFloat(pkg.declaredValue || 0),
+                    declaredValue: safeParseFloat(pkg.declaredValue, 0),
                     declaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
                     // Calculated dimensions for volume
-                    volume: parseFloat(pkg.length || 0) * parseFloat(pkg.width || 0) * parseFloat(pkg.height || 0),
+                    volume: safeParseFloat(pkg.length, 0) * safeParseFloat(pkg.width, 0) * safeParseFloat(pkg.height, 0),
                     // Dimensions string for display
                     dimensionsDisplay: `${pkg.length || 0} x ${pkg.width || 0} x ${pkg.height || 0} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
                 })),
@@ -2552,16 +2572,16 @@ const QuickShip = ({
                 brokerReference: brokerReference || '', // Add shipment-level broker reference
                 manualRates: manualRates.map(rate => ({
                     ...rate,
-                    cost: parseFloat(rate.cost || 0).toFixed(2),
-                    charge: parseFloat(rate.charge || 0).toFixed(2)
+                    cost: safeParseFloat(rate.cost, 0).toFixed(2),
+                    charge: safeParseFloat(rate.charge, 0).toFixed(2)
                 })),
                 // Carrier confirmation rates (exclude IC SUR and IC LOG)
                 carrierConfirmationRates: manualRates
                     .filter(rate => rate.code !== 'IC SUR' && rate.code !== 'IC LOG')
                     .map(rate => ({
                         ...rate,
-                        cost: parseFloat(rate.cost || 0),
-                        charge: parseFloat(rate.charge || 0)
+                        cost: safeParseFloat(rate.cost, 0),
+                        charge: safeParseFloat(rate.charge, 0)
                     })),
                 totalCharges: totalCost,
                 currency: manualRates[0]?.chargeCurrency || 'CAD',
@@ -2579,7 +2599,7 @@ const QuickShip = ({
                 bookingTimestamp: new Date().toISOString()
             };
 
-            // Enhanced logging for debugging downstream issues
+            // 🔍 COMPREHENSIVE DEBUGGING FOR NaN DETECTION
             console.log('🚀 QuickShip booking data prepared:', {
                 shipmentID: finalShipmentID,
                 carrier: selectedCarrier,
@@ -2592,7 +2612,7 @@ const QuickShip = ({
                     description: pkg.itemDescription,
                     weight: pkg.weight,
                     quantity: pkg.packagingQuantity,
-                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    totalWeight: safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1),
                     dimensions: `${pkg.length}x${pkg.width}x${pkg.height}`,
                     packagingType: pkg.packagingType
                 })),
@@ -2610,17 +2630,122 @@ const QuickShip = ({
                 }))
             });
 
-            // Call the QuickShip booking function with enhanced error handling
-            const functions = getFunctions();
-            const bookQuickShipFunction = httpsCallable(functions, 'bookQuickShipment');
+            // 🔍 DETAILED NaN DETECTION IN SHIPMENT DATA
+            console.log('🔍 [DEBUG] Complete shipmentData object being sent to Firebase:', JSON.stringify(shipmentData, (key, value) => {
+                if (typeof value === 'number' && isNaN(value)) {
+                    console.error(`❌ [NaN DETECTED] Field "${key}" contains NaN value!`);
+                    return `NaN_DETECTED_${key}`;
+                }
+                return value;
+            }, 2));
 
-            const result = await bookQuickShipFunction({
+            // 🔍 SPECIFIC NaN CHECKS FOR CRITICAL FIELDS
+            const nanChecks = {
+                packages: shipmentData.packages.map((pkg, idx) => ({
+                    packageIndex: idx,
+                    weight: { value: pkg.weight, isNaN: isNaN(pkg.weight) },
+                    length: { value: pkg.length, isNaN: isNaN(pkg.length) },
+                    width: { value: pkg.width, isNaN: isNaN(pkg.width) },
+                    height: { value: pkg.height, isNaN: isNaN(pkg.height) },
+                    totalWeight: { value: pkg.totalWeight, isNaN: isNaN(pkg.totalWeight) },
+                    volume: { value: pkg.volume, isNaN: isNaN(pkg.volume) },
+                    declaredValue: { value: pkg.declaredValue, isNaN: isNaN(pkg.declaredValue) },
+                    packagingQuantity: { value: pkg.packagingQuantity, isNaN: isNaN(pkg.packagingQuantity) }
+                })),
+                manualRates: shipmentData.manualRates.map((rate, idx) => ({
+                    rateIndex: idx,
+                    code: rate.code,
+                    cost: { value: rate.cost, isNaN: isNaN(parseFloat(rate.cost)) },
+                    charge: { value: rate.charge, isNaN: isNaN(parseFloat(rate.charge)) }
+                })),
+                carrierConfirmationRates: shipmentData.carrierConfirmationRates.map((rate, idx) => ({
+                    rateIndex: idx,
+                    code: rate.code,
+                    cost: { value: rate.cost, isNaN: isNaN(rate.cost) },
+                    charge: { value: rate.charge, isNaN: isNaN(rate.charge) }
+                })),
+                totals: {
+                    totalWeight: { value: totalWeight, isNaN: isNaN(totalWeight) },
+                    totalPieces: { value: totalPieces, isNaN: isNaN(totalPieces) },
+                    totalCost: { value: totalCost, isNaN: isNaN(totalCost) }
+                }
+            };
+
+            console.log('🔍 [DEBUG] NaN Detection Results:', nanChecks);
+
+            // 🔍 CHECK FOR ANY NaN VALUES IN THE ENTIRE OBJECT
+            const findNaNValues = (obj, path = '') => {
+                const nanPaths = [];
+                for (const [key, value] of Object.entries(obj)) {
+                    const currentPath = path ? `${path}.${key}` : key;
+                    if (typeof value === 'number' && isNaN(value)) {
+                        nanPaths.push(currentPath);
+                    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                        nanPaths.push(...findNaNValues(value, currentPath));
+                    } else if (Array.isArray(value)) {
+                        value.forEach((item, index) => {
+                            if (typeof item === 'number' && isNaN(item)) {
+                                nanPaths.push(`${currentPath}[${index}]`);
+                            } else if (typeof item === 'object' && item !== null) {
+                                nanPaths.push(...findNaNValues(item, `${currentPath}[${index}]`));
+                            }
+                        });
+                    }
+                }
+                return nanPaths;
+            };
+
+            const nanPaths = findNaNValues(shipmentData);
+            if (nanPaths.length > 0) {
+                console.error('❌ [CRITICAL] NaN values found at paths:', nanPaths);
+                nanPaths.forEach(path => {
+                    console.error(`❌ NaN at: ${path}`);
+                });
+            } else {
+                console.log('✅ [DEBUG] No NaN values detected in shipmentData');
+            }
+
+            // 🔍 DEBUG CARRIER DETAILS
+            console.log('🔍 [DEBUG] Carrier details being sent:', JSON.stringify(carrierDetails, (key, value) => {
+                if (typeof value === 'number' && isNaN(value)) {
+                    console.error(`❌ [NaN DETECTED in carrierDetails] Field "${key}" contains NaN value!`);
+                    return `NaN_DETECTED_${key}`;
+                }
+                return value;
+            }, 2));
+
+            // 🔍 DEBUG FINAL PAYLOAD
+            const finalPayload = {
                 shipmentData: {
                     ...shipmentData,
                     skipEmailNotifications: !sendEmailNotifications // Add email toggle flag
                 },
                 carrierDetails: carrierDetails
+            };
+
+            console.log('🔍 [DEBUG] Final payload size check:', {
+                shipmentDataKeys: Object.keys(finalPayload.shipmentData).length,
+                carrierDetailsKeys: Object.keys(finalPayload.carrierDetails || {}).length,
+                packagesCount: finalPayload.shipmentData.packages?.length,
+                manualRatesCount: finalPayload.shipmentData.manualRates?.length
             });
+
+            // 🔍 FINAL NaN CHECK ON COMPLETE PAYLOAD
+            const payloadNaNPaths = findNaNValues(finalPayload);
+            if (payloadNaNPaths.length > 0) {
+                console.error('❌ [CRITICAL] NaN values found in final payload at paths:', payloadNaNPaths);
+                payloadNaNPaths.forEach(path => {
+                    console.error(`❌ Final payload NaN at: ${path}`);
+                });
+                // Still proceed with booking but log the issue
+            }
+
+            // Call the QuickShip booking function with enhanced error handling
+            const functions = getFunctions();
+            const bookQuickShipFunction = httpsCallable(functions, 'bookQuickShipment');
+
+            console.log('🚀 [DEBUG] About to call bookQuickShipFunction with payload...');
+            const result = await bookQuickShipFunction(finalPayload);
 
             console.log('QuickShip booking result:', result);
 
@@ -2817,8 +2942,8 @@ const QuickShip = ({
                             // Format rates to 2 decimal places
                             const formattedRates = draftData.manualRates.map(rate => ({
                                 ...rate,
-                                cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
-                                charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
+                                cost: rate.cost ? safeParseFloat(rate.cost, 0).toFixed(2) : '',
+                                charge: rate.charge ? safeParseFloat(rate.charge, 0).toFixed(2) : ''
                             }));
                             setManualRates(formattedRates);
                         }
@@ -2988,11 +3113,11 @@ const QuickShip = ({
                             if (draftData.manualRates && draftData.manualRates.length > 0) {
                                 console.log('🔧 Loading manual rates from draft:', draftData.manualRates.length);
 
-                                // Format rates to 2 decimal places
+                                // Format rates to 2 decimal places with safe parsing
                                 const formattedRates = draftData.manualRates.map(rate => ({
                                     ...rate,
-                                    cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
-                                    charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : ''
+                                    cost: rate.cost ? safeParseFloat(rate.cost, 0).toFixed(2) : '',
+                                    charge: rate.charge ? safeParseFloat(rate.charge, 0).toFixed(2) : ''
                                 }));
 
                                 // Check if rates need migration to dynamic charge types
@@ -3173,8 +3298,8 @@ const QuickShip = ({
                         rateSource = 'manualRates_fallback';
                         ratesToLoad = editShipment.manualRates.map(rate => ({
                             ...rate,
-                            cost: rate.cost ? parseFloat(rate.cost).toFixed(2) : '',
-                            charge: rate.charge ? parseFloat(rate.charge).toFixed(2) : '',
+                            cost: rate.cost ? safeParseFloat(rate.cost, 0).toFixed(2) : '',
+                            charge: rate.charge ? safeParseFloat(rate.charge, 0).toFixed(2) : '',
                             actualCost: rate.actualCost || '',
                             actualCharge: rate.actualCharge || '',
                             invoiceNumber: rate.invoiceNumber || '',
@@ -3455,8 +3580,8 @@ const QuickShip = ({
             const shipToAddressFull = availableAddresses.find(addr => addr.id === shipToAddress?.id) || shipToAddress;
 
             // Calculate totals for draft saving
-            const draftTotalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
-            const draftTotalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+            const draftTotalWeight = packages.reduce((sum, pkg) => sum + (safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1)), 0);
+            const draftTotalPieces = packages.reduce((sum, pkg) => sum + safeParseInt(pkg.packagingQuantity, 1), 0);
             const draftTotalPackageCount = packages.length;
 
             const draftData = {
@@ -3497,11 +3622,11 @@ const QuickShip = ({
                     id: pkg.id || (index + 1),
                     packageNumber: index + 1,
                     itemDescription: pkg.itemDescription || '',
-                    weight: parseFloat(pkg.weight || 0),
-                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
-                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    weight: safeParseFloat(pkg.weight, 0),
+                    packagingQuantity: safeParseInt(pkg.packagingQuantity, 1),
+                    totalWeight: safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1),
                     packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
-                    volume: parseFloat(pkg.length || 0) * parseFloat(pkg.width || 0) * parseFloat(pkg.height || 0),
+                    volume: safeParseFloat(pkg.length, 0) * safeParseFloat(pkg.width, 0) * safeParseFloat(pkg.height, 0),
                     dimensionsDisplay: `${pkg.length || 0} x ${pkg.width || 0} x ${pkg.height || 0} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
                 })),
 
@@ -4343,19 +4468,19 @@ const QuickShip = ({
                     id: pkg.id || (index + 1),
                     packageNumber: index + 1,
                     itemDescription: pkg.itemDescription || '',
-                    weight: parseFloat(pkg.weight || 0),
-                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
-                    totalWeight: parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1),
+                    weight: safeParseFloat(pkg.weight, 0),
+                    packagingQuantity: safeParseInt(pkg.packagingQuantity, 1),
+                    totalWeight: safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1),
                     packagingType: pkg.packagingType || 262,
                     packagingTypeName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || 'PACKAGE',
-                    length: parseFloat(pkg.length || 48),
-                    width: parseFloat(pkg.width || 40),
-                    height: parseFloat(pkg.height || 48),
+                    length: safeParseFloat(pkg.length, 48),
+                    width: safeParseFloat(pkg.width, 40),
+                    height: safeParseFloat(pkg.height, 48),
                     freightClass: pkg.freightClass || '',
                     unitSystem: pkg.unitSystem || unitSystem,
                     declaredValue: pkg.declaredValue || '',
                     declaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
-                    volume: parseFloat(pkg.length || 48) * parseFloat(pkg.width || 40) * parseFloat(pkg.height || 48),
+                    volume: safeParseFloat(pkg.length, 48) * safeParseFloat(pkg.width, 40) * safeParseFloat(pkg.height, 48),
                     dimensionsDisplay: `${pkg.length || 48} x ${pkg.width || 40} x ${pkg.height || 48} ${pkg.unitSystem === 'metric' ? 'cm' : 'in'}`
                 })),
 
@@ -4401,8 +4526,8 @@ const QuickShip = ({
                 // MANUAL RATES with proper formatting
                 manualRates: manualRates.map(rate => ({
                     ...rate,
-                    cost: parseFloat(rate.cost || 0).toFixed(2),
-                    charge: parseFloat(rate.charge || 0).toFixed(2)
+                    cost: safeParseFloat(rate.cost, 0).toFixed(2),
+                    charge: safeParseFloat(rate.charge, 0).toFixed(2)
                 })),
 
                 // ADDITIONAL SERVICES (this was missing in the original!)
@@ -4833,11 +4958,11 @@ const QuickShip = ({
                     const serviceRates = manualRates.filter(rate => rate.code === 'SUR' || rate.code === 'ACC');
                     const accessorialRates = manualRates.filter(rate => rate.code === 'ACC');
 
-                    const freightCharges = parseFloat(freightRate.charge || 0);
-                    const fuelCharges = parseFloat(fuelRate.charge || 0);
-                    const serviceCharges = serviceRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
-                    const accessorialCharges = accessorialRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
-                    const totalCharges = manualRates.reduce((sum, rate) => sum + parseFloat(rate.charge || 0), 0);
+                    const freightCharges = safeParseFloat(freightRate.charge, 0);
+                    const fuelCharges = safeParseFloat(fuelRate.charge, 0);
+                    const serviceCharges = serviceRates.reduce((sum, rate) => sum + safeParseFloat(rate.charge, 0), 0);
+                    const accessorialCharges = accessorialRates.reduce((sum, rate) => sum + safeParseFloat(rate.charge, 0), 0);
+                    const totalCharges = manualRates.reduce((sum, rate) => sum + safeParseFloat(rate.charge, 0), 0);
 
                     return {
                         carrier: {

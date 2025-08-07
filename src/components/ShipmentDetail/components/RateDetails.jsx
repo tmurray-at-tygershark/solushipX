@@ -250,11 +250,15 @@ const RateDetails = ({
 
         // 🔧 CRITICAL FIX: Only recalculate taxes if NO taxes exist yet
         // If taxes already exist, preserve them exactly as they are
+        // ALSO: Don't recalculate taxes when editing fuel charges (preserve manual fuel values)
         const existingTaxCharges = updatedBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
+        const isEditingFuelCharge = updatedItem.code === 'FUE' || updatedItem.code === 'FUEL';
 
         if (availableChargeTypes && availableChargeTypes.length > 0 &&
             shipment?.shipFrom && shipment?.shipTo &&
-            isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
+            isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo) &&
+            !isEditingFuelCharge) { // Skip tax recalculation when editing fuel charges
+
             const province = shipment.shipTo?.state;
 
             if (province && existingTaxCharges.length === 0) {
@@ -267,6 +271,8 @@ const RateDetails = ({
                     existingTaxes: existingTaxCharges.map(tax => `${tax.code}: $${tax.quotedCharge}`)
                 });
             }
+        } else if (isEditingFuelCharge) {
+            console.log('⛽ Fuel Charge: Skipping tax recalculation when editing fuel charges to preserve manual values');
         }
 
         // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
@@ -884,10 +890,11 @@ const RateDetails = ({
                 id: charge.id,
                 code: charge.code,
                 description: charge.name,
-                quotedCost: charge.cost,
-                quotedCharge: charge.charge,
-                actualCost: charge.cost,
-                actualCharge: charge.charge,
+                // 🔧 CRITICAL FIX: NULL fields should default to 0, not copy from other fields
+                quotedCost: charge.quotedCost != null ? charge.quotedCost : 0,
+                quotedCharge: charge.quotedCharge != null ? charge.quotedCharge : 0,
+                actualCost: charge.actualCost != null ? charge.actualCost : 0,
+                actualCharge: charge.actualCharge != null ? charge.actualCharge : 0,
                 invoiceNumber: charge.invoiceNumber,
                 ediNumber: charge.ediNumber,
                 commissionable: charge.commissionable,

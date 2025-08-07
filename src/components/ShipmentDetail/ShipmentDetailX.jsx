@@ -1186,10 +1186,10 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     id: charge.id || `charge_${index}`, // Add unique ID for tracking
                     code: charge.code != null ? charge.code : 'FRT', // Preserve empty strings, only fallback for null/undefined
                     description: charge.description.trim(), // Ensure description is trimmed and not empty
-                    quotedCost: charge.quotedCost != null ? parseFloat(charge.quotedCost) || 0 : 0,
-                    quotedCharge: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) || 0 : 0,
-                    actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) || 0 : 0,
-                    actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) || 0 : 0,
+                    quotedCost: charge.quotedCost != null ? (isNaN(parseFloat(charge.quotedCost)) ? 0 : parseFloat(charge.quotedCost)) : 0,
+                    quotedCharge: charge.quotedCharge != null ? (isNaN(parseFloat(charge.quotedCharge)) ? 0 : parseFloat(charge.quotedCharge)) : 0,
+                    actualCost: charge.actualCost != null ? (isNaN(parseFloat(charge.actualCost)) ? 0 : parseFloat(charge.actualCost)) : 0,
+                    actualCharge: charge.actualCharge != null ? (isNaN(parseFloat(charge.actualCharge)) ? 0 : parseFloat(charge.actualCharge)) : 0,
                     invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
                     ediNumber: charge.ediNumber != null ? charge.ediNumber : '-',
                     commissionable: charge.commissionable != null ? charge.commissionable : false,

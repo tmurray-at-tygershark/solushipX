@@ -1978,6 +1978,19 @@ const CreateShipmentX = (props) => {
         return parts.join(', ');
     };
 
+    // 🔧 SAFE PARSING FUNCTIONS - prevent NaN values from being sent to Firebase
+    const safeParseFloat = (value, fallback = 0) => {
+        if (value === null || value === undefined || value === '' || value === 'NaN') return fallback;
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? fallback : parsed;
+    };
+
+    const safeParseInt = (value, fallback = 1) => {
+        if (value === null || value === undefined || value === '' || value === 'NaN') return fallback;
+        const parsed = parseInt(value);
+        return isNaN(parsed) ? fallback : parsed;
+    };
+
     // Unit conversion functions
     const lbsToKg = (lbs) => (lbs * 0.453592).toFixed(2);
     const kgToLbs = (kg) => (kg * 2.20462).toFixed(2);
@@ -2014,17 +2027,17 @@ const CreateShipmentX = (props) => {
                     errors[`package_${index}_itemDescription`] = 'Package description is required';
                 }
                 // Check weight
-                if (!pkg.weight || parseFloat(pkg.weight) <= 0) {
+                if (!pkg.weight || safeParseFloat(pkg.weight, 0) <= 0) {
                     errors[`package_${index}_weight`] = 'Package weight is required and must be greater than 0';
                 }
                 // Check dimensions
-                if (!pkg.length || parseFloat(pkg.length) <= 0) {
+                if (!pkg.length || safeParseFloat(pkg.length, 0) <= 0) {
                     errors[`package_${index}_length`] = 'Package length is required and must be greater than 0';
                 }
-                if (!pkg.width || parseFloat(pkg.width) <= 0) {
+                if (!pkg.width || safeParseFloat(pkg.width, 0) <= 0) {
                     errors[`package_${index}_width`] = 'Package width is required and must be greater than 0';
                 }
-                if (!pkg.height || parseFloat(pkg.height) <= 0) {
+                if (!pkg.height || safeParseFloat(pkg.height, 0) <= 0) {
                     errors[`package_${index}_height`] = 'Package height is required and must be greater than 0';
                 }
             });
@@ -2561,11 +2574,14 @@ const CreateShipmentX = (props) => {
                 draftVersion: increment(1)
             };
 
+            // Clean draft data to remove undefined values before saving
+            const cleanedDraftData = cleanObject(draftData);
+
             if (isEditingDraft && (activeDraftId || draftIdToLoad)) {
                 // Update existing draft
                 const docId = activeDraftId || draftIdToLoad;
                 await updateDoc(doc(db, 'shipments', docId), {
-                    ...draftData,
+                    ...cleanedDraftData,
                     updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
@@ -2574,7 +2590,7 @@ const CreateShipmentX = (props) => {
             } else if (activeDraftId) {
                 // Update the initial draft we created
                 await updateDoc(doc(db, 'shipments', activeDraftId), {
-                    ...draftData,
+                    ...cleanedDraftData,
                     updatedAt: new Date()
                 });
                 setFormErrors({}); // Clear form errors on successful save
@@ -2583,7 +2599,7 @@ const CreateShipmentX = (props) => {
             } else {
                 // Create new draft (fallback)
                 const docRef = await addDoc(collection(db, 'shipments'), {
-                    ...draftData,
+                    ...cleanedDraftData,
                     createdAt: new Date()
                 });
                 setActiveDraftId(docRef.id);
@@ -2677,8 +2693,8 @@ const CreateShipmentX = (props) => {
             }
 
             // Calculate total weight and pieces
-            const totalWeight = packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight || 0) * parseInt(pkg.packagingQuantity || 1)), 0);
-            const totalPieces = packages.reduce((sum, pkg) => sum + parseInt(pkg.packagingQuantity || 1), 0);
+            const totalWeight = packages.reduce((sum, pkg) => sum + (safeParseFloat(pkg.weight, 0) * safeParseInt(pkg.packagingQuantity, 1)), 0);
+            const totalPieces = packages.reduce((sum, pkg) => sum + safeParseInt(pkg.packagingQuantity, 1), 0);
 
             // Debug: Log packages before transformation
             console.log('Packages before transformation:', packages);
@@ -2732,31 +2748,31 @@ const CreateShipmentX = (props) => {
                     SpecialInstructions: shipToAddress.specialInstructions || 'None'
                 },
 
-                // Package information transformed to Items array
+                // Package information transformed to Items array - use safe parsing
                 Items: packages.map(pkg => ({
-                    Weight: parseFloat(pkg.weight) || 0,
-                    PackagingQuantity: parseInt(pkg.packagingQuantity) || 1,
-                    SaidToContain: parseInt(pkg.packagingQuantity) || 1,
-                    Height: parseFloat(pkg.height) || 0,
-                    Width: parseFloat(pkg.width) || 0,
-                    Length: parseFloat(pkg.length) || 0,
+                    Weight: safeParseFloat(pkg.weight, 0),
+                    PackagingQuantity: safeParseInt(pkg.packagingQuantity, 1),
+                    SaidToContain: safeParseInt(pkg.packagingQuantity, 1),
+                    Height: safeParseFloat(pkg.height, 0),
+                    Width: safeParseFloat(pkg.width, 0),
+                    Length: safeParseFloat(pkg.length, 0),
                     Stackable: true,
                     HazardousMaterial: false,
-                    DeclaredValue: parseFloat(pkg.declaredValue) || 0,
+                    DeclaredValue: safeParseFloat(pkg.declaredValue, 0),
                     DeclaredValueCurrency: pkg.declaredValueCurrency || 'CAD',
                     Description: pkg.itemDescription || "Package",
                     Comment: "",
                     NationalMotorFreightClassification: "",
                     HarmonizedTariffSchedule: "",
                     Packaging: {
-                        Key: parseInt(pkg.packagingType) || 262,
+                        Key: safeParseInt(pkg.packagingType, 262),
                         PackageName: PACKAGING_TYPES.find(pt => pt.value === pkg.packagingType)?.label || "SKID(S)",
                         DefaultLength: 0,
                         DefaultHeight: 0,
                         DefaultWidth: 0
                     },
                     FreightClass: {
-                        FreightClass: parseFloat(pkg.freightClass) || 50.0
+                        FreightClass: safeParseFloat(pkg.freightClass, 50.0)
                     }
                 })),
 
@@ -2831,15 +2847,15 @@ const CreateShipmentX = (props) => {
                 shipFrom: { ...shipFromAddress, type: 'origin' },
                 shipTo: { ...shipToAddress, type: 'destination' },
 
-                // Packages
+                // Packages - use safe parsing to prevent NaN values
                 packages: packages.map(pkg => ({
                     ...pkg,
-                    weight: parseFloat(pkg.weight || 0),
-                    packagingQuantity: parseInt(pkg.packagingQuantity || 1),
-                    length: parseFloat(pkg.length || 0),
-                    width: parseFloat(pkg.width || 0),
-                    height: parseFloat(pkg.height || 0),
-                    declaredValue: parseFloat(pkg.declaredValue || 0),
+                    weight: safeParseFloat(pkg.weight, 0),
+                    packagingQuantity: safeParseInt(pkg.packagingQuantity, 1),
+                    length: safeParseFloat(pkg.length, 0),
+                    width: safeParseFloat(pkg.width, 0),
+                    height: safeParseFloat(pkg.height, 0),
+                    declaredValue: safeParseFloat(pkg.declaredValue, 0),
                     declaredValueCurrency: pkg.declaredValueCurrency || 'CAD'
                 })),
 
@@ -2877,9 +2893,9 @@ const CreateShipmentX = (props) => {
                                 if (detail.amount > 0) {
                                     const actualAmount = detail.actualAmount || detail.amount;
                                     billingDetails.push({
-                                        name: detail.name,
+                                        name: detail.name || 'Charge',
                                         amount: actualAmount, // Use actualAmount for original cost
-                                        category: detail.category
+                                        category: detail.category || 'general'
                                     });
                                 }
                             });
@@ -2977,9 +2993,9 @@ const CreateShipmentX = (props) => {
                                     // For markup rates, use the final amount (which includes markup for freight)
                                     const markupAmount = detail.amount;
                                     markupBillingDetails.push({
-                                        name: detail.name,
+                                        name: detail.name || 'Charge',
                                         amount: markupAmount, // Use the marked-up amount
-                                        category: detail.category
+                                        category: detail.category || 'general'
                                     });
                                 }
                             });
@@ -3033,23 +3049,80 @@ const CreateShipmentX = (props) => {
                 totalCharges: shipmentData.totalCharges
             });
 
+            // 🔍 COMPREHENSIVE UNDEFINED VALUE FINDER
+            const findAllUndefinedValues = (obj, path = 'shipmentData') => {
+                const undefinedPaths = [];
+
+                const traverse = (current, currentPath) => {
+                    if (current === undefined) {
+                        undefinedPaths.push(currentPath);
+                        console.error(`❌ [UNDEFINED PATH] ${currentPath} = undefined`);
+                        return;
+                    }
+
+                    if (current && typeof current === 'object' && !Array.isArray(current) && !(current instanceof Date)) {
+                        // Check each property
+                        for (const [key, value] of Object.entries(current)) {
+                            if (value === undefined) {
+                                const fullPath = `${currentPath}.${key}`;
+                                undefinedPaths.push(fullPath);
+                                console.error(`❌ [UNDEFINED PATH] ${fullPath} = undefined`);
+                            } else if (value && typeof value === 'object') {
+                                traverse(value, `${currentPath}.${key}`);
+                            }
+                        }
+                    } else if (Array.isArray(current)) {
+                        current.forEach((item, index) => {
+                            traverse(item, `${currentPath}[${index}]`);
+                        });
+                    }
+                };
+
+                traverse(obj, path);
+                return undefinedPaths;
+            };
+
+            // 🔍 SCAN ENTIRE SHIPMENT DATA FOR UNDEFINED VALUES
+            console.log('🔍 [DEBUG] Scanning ENTIRE shipmentData for undefined values...');
+            const allUndefinedPaths = findAllUndefinedValues(shipmentData);
+            console.log('🔍 [DEBUG] Total undefined paths found:', allUndefinedPaths.length);
+            console.log('🔍 [DEBUG] All undefined paths:', allUndefinedPaths);
+
+            // 🔍 COMPREHENSIVE DEBUGGING FOR ADVANCED SHIPMENT
+            console.log('🔍 [DEBUG] Raw shipmentData before cleaning:', JSON.stringify(shipmentData, (key, value) => {
+                if (typeof value === 'number' && isNaN(value)) {
+                    console.error(`❌ [NaN DETECTED in Advanced] Field "${key}" contains NaN value!`);
+                    return `NaN_DETECTED_${key}`;
+                }
+                if (value === undefined) {
+                    console.warn(`⚠️ [UNDEFINED DETECTED in Advanced] Field "${key}" is undefined!`);
+                    return `UNDEFINED_DETECTED_${key}`;
+                }
+                return value;
+            }, 2));
+
+            // Clean the shipment data to remove undefined values before saving to Firestore
+            const cleanedShipmentData = cleanUndefinedValues(shipmentData);
+
+            console.log('🔍 [DEBUG] Cleaned shipmentData:', JSON.stringify(cleanedShipmentData, null, 2));
+
             // First save the shipment to Firestore
             let draftFirestoreDocId;
             if (editMode && editShipment) {
                 // Update existing shipment
                 draftFirestoreDocId = editShipment.id;
                 await updateDoc(doc(db, 'shipments', draftFirestoreDocId), {
-                    ...shipmentData,
+                    ...cleanedShipmentData,
                     updatedAt: new Date(),
                     status: 'booked' // Keep the booked status
                 });
             } else if (isEditingDraft && (activeDraftId || draftIdToLoad)) {
                 // Update existing draft
                 draftFirestoreDocId = activeDraftId || draftIdToLoad;
-                await updateDoc(doc(db, 'shipments', draftFirestoreDocId), shipmentData);
+                await updateDoc(doc(db, 'shipments', draftFirestoreDocId), cleanedShipmentData);
             } else {
                 // Create new shipment document
-                const docRef = await addDoc(collection(db, 'shipments'), shipmentData);
+                const docRef = await addDoc(collection(db, 'shipments'), cleanedShipmentData);
                 draftFirestoreDocId = docRef.id;
             }
 
