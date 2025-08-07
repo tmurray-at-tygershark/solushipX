@@ -188,16 +188,13 @@ const ShipmentTableRow = ({
         const loadCustomerData = async () => {
             if (!expanded || loadingExpandedCustomerData || expandedCustomerData) return;
 
-            // ENHANCED: Check for customer ID in all possible locations including address records and addressClassID fallback
+            // CUSTOMER ONLY: Check for customer ID in customer-specific fields - NEVER use shipTo address data
             const customerId = shipment?.customerId ||
                 shipment?.customerID ||
                 shipment?.customer?.id ||
                 shipment?.shipFrom?.customerID ||
-                shipment?.shipTo?.customerID ||
                 shipment?.shipFrom?.customerId ||
-                shipment?.shipTo?.customerId ||
-                shipment?.shipFrom?.addressClassID ||
-                shipment?.shipTo?.addressClassID;
+                shipment?.shipFrom?.addressClassID;
 
             if (!customerId) {
                 setExpandedCustomerData(null);
@@ -209,11 +206,8 @@ const ShipmentTableRow = ({
                 shipmentCustomerID: shipment?.customerID,
                 customerIdField: shipment?.customer?.id,
                 shipFromCustomerID: shipment?.shipFrom?.customerID,
-                shipToCustomerID: shipment?.shipTo?.customerID,
                 shipFromCustomerId: shipment?.shipFrom?.customerId,
-                shipToCustomerId: shipment?.shipTo?.customerId,
                 shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
-                shipToAddressClassID: shipment?.shipTo?.addressClassID,
                 resolvedCustomerId: customerId
             });
 
@@ -274,20 +268,36 @@ const ShipmentTableRow = ({
         };
 
         loadCustomerData();
-    }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipFrom?.customerID, shipment?.shipTo?.customerID, shipment?.shipFrom?.customerId, shipment?.shipTo?.customerId, shipment?.shipFrom?.addressClassID, shipment?.shipTo?.addressClassID, shipment?.shipTo, loadingExpandedCustomerData, expandedCustomerData]);
+    }, [expanded, shipment?.customerId, shipment?.customerID, shipment?.customer, shipment?.shipFrom?.customerID, shipment?.shipFrom?.customerId, shipment?.shipFrom?.addressClassID, loadingExpandedCustomerData, expandedCustomerData]);
 
     // Load customer data for main table (admin view customer column)
     useEffect(() => {
         const loadMainCustomerData = async () => {
             if (!adminViewMode || loadingMainCustomerData || mainCustomerData) return;
 
-            // ONLY use direct customer ID fields - NEVER use document IDs or address data
-            const customerId = shipment?.customerId || shipment?.customerID;
+            // CUSTOMER ONLY: Check for customer ID in customer-specific fields - NEVER use shipTo address data
+            const customerId = shipment?.customerId ||
+                shipment?.customerID ||
+                shipment?.customer?.id ||
+                shipment?.shipFrom?.customerID ||
+                shipment?.shipFrom?.customerId ||
+                shipment?.shipFrom?.addressClassID;
 
             if (!customerId) {
+                console.log('❌ [ShipmentTableRow] No customer ID found in any location for shipment:', shipment?.shipmentID);
                 setMainCustomerData(null);
                 return;
             }
+
+            console.log('🔍 [ShipmentTableRow] Customer ID lookup for main table:', {
+                shipmentCustomerId: shipment?.customerId,
+                shipmentCustomerID: shipment?.customerID,
+                customerIdField: shipment?.customer?.id,
+                shipFromCustomerID: shipment?.shipFrom?.customerID,
+                shipFromCustomerId: shipment?.shipFrom?.customerId,
+                shipFromAddressClassID: shipment?.shipFrom?.addressClassID,
+                resolvedCustomerId: customerId
+            });
 
             setLoadingMainCustomerData(true);
             try {
@@ -321,9 +331,10 @@ const ShipmentTableRow = ({
                 }
 
                 if (customerData) {
+                    console.log(`✅ [ShipmentTableRow] Found customer for main table: ${customerId} -> ${customerData.name || customerData.companyName}`);
                     setMainCustomerData(customerData);
                 } else {
-                    console.warn(`⚠️ No customer found with ID: ${customerId} for shipment ${shipment?.shipmentID}`);
+                    console.warn(`⚠️ [ShipmentTableRow] No customer found with ID: ${customerId} for shipment ${shipment?.shipmentID}`);
                     setMainCustomerData(null);
                 }
             } catch (error) {
@@ -335,7 +346,7 @@ const ShipmentTableRow = ({
         };
 
         loadMainCustomerData();
-    }, [adminViewMode, shipment?.customerId, shipment?.customerID, shipment?.shipmentID, loadingMainCustomerData, mainCustomerData]);
+    }, [adminViewMode, shipment?.customerId, shipment?.customerID, shipment?.customer?.id, shipment?.shipFrom?.customerID, shipment?.shipFrom?.customerId, shipment?.shipFrom?.addressClassID, shipment?.shipmentID, loadingMainCustomerData, mainCustomerData]);
 
     const isSelected = selected.indexOf(shipment?.id) !== -1;
 
