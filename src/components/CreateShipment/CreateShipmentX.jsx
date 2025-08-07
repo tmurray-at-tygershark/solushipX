@@ -3116,14 +3116,23 @@ const CreateShipmentX = (props) => {
                     updatedAt: new Date(),
                     status: 'booked' // Keep the booked status
                 });
-            } else if (isEditingDraft && (activeDraftId || draftIdToLoad)) {
-                // Update existing draft
+                console.log('✅ Updated existing shipment:', draftFirestoreDocId);
+            } else if (activeDraftId || draftIdToLoad) {
+                // 🔧 FIXED: Update existing draft (remove isEditingDraft requirement)
+                // This handles both: editing existing drafts AND converting auto-created drafts to booked shipments
                 draftFirestoreDocId = activeDraftId || draftIdToLoad;
-                await updateDoc(doc(db, 'shipments', draftFirestoreDocId), cleanedShipmentData);
+                await updateDoc(doc(db, 'shipments', draftFirestoreDocId), {
+                    ...cleanedShipmentData,
+                    isDraft: false, // Convert draft to booked shipment
+                    bookedAt: new Date(),
+                    status: 'pending' // Set appropriate booked status
+                });
+                console.log('✅ Converted draft to booked shipment:', draftFirestoreDocId);
             } else {
-                // Create new shipment document
+                // Create new shipment document (only if no draft exists)
                 const docRef = await addDoc(collection(db, 'shipments'), cleanedShipmentData);
                 draftFirestoreDocId = docRef.id;
+                console.log('✅ Created new shipment document:', draftFirestoreDocId);
             }
 
             // Save the selected rate to a separate collection for the booking process
@@ -6252,9 +6261,7 @@ const CreateShipmentX = (props) => {
                     <Typography variant="body1" sx={{ mb: 2, fontSize: '14px' }}>
                         Are you sure you want to book this shipment with <strong>{selectedRate?.carrier?.name || selectedRate?.sourceCarrierName || 'selected carrier'}</strong>?
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                        Total cost: <strong>${(selectedRate?.pricing?.total || selectedRate?.totalCharges || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    </Typography>
+
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mt: 1 }}>
                         This will generate shipping documents and send notifications.
                     </Typography>

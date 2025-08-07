@@ -603,6 +603,60 @@ const RateDetails = ({
         loadChargeTypes();
     }, []); // Only load once on component mount
 
+    // Get rate breakdown data for table - UNIFIED VERSION (moved up to fix hoisting issue)
+    const getRateBreakdown = React.useCallback(() => {
+        console.log('🔧 DEBUG: Getting unified rate breakdown for shipment:', {
+            shipmentId: shipment?.id,
+            shipmentCreationMethod: shipment?.creationMethod,
+            lastModified: shipment?.lastModified
+        });
+
+        if (!shipment?.id) {
+            console.log('🔧 DEBUG: No shipment ID, returning empty breakdown');
+            return [];
+        }
+
+        try {
+            // Use the unified rate data manager
+            const rateData = rateDataManager.convertToUniversalFormat(shipment);
+
+            console.log('🔧 DEBUG: Universal rate data loaded:', {
+                shipmentId: shipment.id,
+                chargeCount: rateData.charges.length,
+                totalCost: rateData.totals.cost,
+                totalCharge: rateData.totals.charge,
+                carrier: rateData.carrier.name
+            });
+
+            // Convert to legacy format for current UI compatibility
+            const breakdown = rateData.charges.map(charge => ({
+                id: charge.id,
+                code: charge.code || 'UNK',
+                description: charge.description || 'Unknown Charge',
+                quotedCost: charge.quotedCost != null ? charge.quotedCost : 0,
+                quotedCharge: charge.quotedCharge != null ? charge.quotedCharge : 0,
+                actualCost: charge.actualCost != null ? charge.actualCost : 0,
+                actualCharge: charge.actualCharge != null ? charge.actualCharge : 0,
+                currency: charge.currency || 'CAD',
+                isTax: charge.isTax || false,
+                taxDetails: charge.taxDetails || null
+            }));
+
+            console.log('✅ Unified rate breakdown complete:', {
+                shipmentId: shipment.id,
+                itemCount: breakdown.length,
+                totalQuotedCost: rateData.totals.cost,
+                totalQuotedCharge: rateData.totals.charge
+            });
+
+            return breakdown;
+
+        } catch (error) {
+            console.error('❌ Error generating rate breakdown:', error);
+            return [];
+        }
+    }, [shipment]);
+
     // Smart data refresh - only when safe to do so
     React.useEffect(() => {
         // Only refresh data if:
@@ -629,7 +683,7 @@ const RateDetails = ({
         } else {
             console.log('⚠️ Skipping rate breakdown reload - user is editing');
         }
-    }, [shipment?.id, shipment?.lastModified, editingIndex]);
+    }, [shipment?.id, shipment?.lastModified, editingIndex, getRateBreakdown]);
 
     // 🍁 CANADIAN TAX AUTO-CALCULATION - Only add taxes when missing
     React.useEffect(() => {
@@ -860,81 +914,7 @@ const RateDetails = ({
         });
     };
 
-    // Get rate breakdown data for table - UNIFIED VERSION
-    const getRateBreakdown = () => {
-        console.log('🔧 DEBUG: Getting unified rate breakdown for shipment:', {
-            shipmentId: shipment?.id,
-            shipmentCreationMethod: shipment?.creationMethod,
-            lastModified: shipment?.lastModified
-        });
 
-        if (!shipment?.id) {
-            console.log('🔧 DEBUG: No shipment ID, returning empty breakdown');
-            return [];
-        }
-
-        try {
-            // Use the unified rate data manager
-            const rateData = rateDataManager.convertToUniversalFormat(shipment);
-
-            console.log('🔧 DEBUG: Universal rate data loaded:', {
-                shipmentId: shipment.id,
-                chargeCount: rateData.charges.length,
-                totalCost: rateData.totals.cost,
-                totalCharge: rateData.totals.charge,
-                carrier: rateData.carrier.name
-            });
-
-            // Convert to legacy format for current UI compatibility
-            const breakdown = rateData.charges.map(charge => ({
-                id: charge.id,
-                code: charge.code,
-                description: charge.name,
-                // 🔧 CRITICAL FIX: NULL fields should default to 0, not copy from other fields
-                quotedCost: charge.quotedCost != null ? charge.quotedCost : 0,
-                quotedCharge: charge.quotedCharge != null ? charge.quotedCharge : 0,
-                actualCost: charge.actualCost != null ? charge.actualCost : 0,
-                actualCharge: charge.actualCharge != null ? charge.actualCharge : 0,
-                invoiceNumber: charge.invoiceNumber,
-                ediNumber: charge.ediNumber,
-                commissionable: charge.commissionable,
-                currency: charge.currency,
-                // Preserve tax flags
-                isTax: charge.category === 'tax',
-                isMarkup: charge.category === 'markup'
-            }));
-
-            // Add markup as separate line item for admin users
-            if (enhancedIsAdmin && markupSummary?.hasMarkup) {
-                breakdown.push({
-                    id: 'platform-markup',
-                    description: 'Platform Markup',
-                    quotedCost: 0,
-                    quotedCharge: markupSummary.markupAmount || 0,
-                    actualCost: 0,
-                    actualCharge: 0,
-                    code: 'MSC',
-                    isMarkup: true,
-                    invoiceNumber: '-',
-                    ediNumber: '-',
-                    commissionable: false
-                });
-            }
-
-            console.log('✅ Unified rate breakdown complete:', {
-                shipmentId: shipment.id,
-                itemCount: breakdown.length,
-                totalQuotedCost: breakdown.reduce((sum, item) => sum + item.quotedCost, 0),
-                totalQuotedCharge: breakdown.reduce((sum, item) => sum + item.quotedCharge, 0)
-            });
-
-            return breakdown;
-
-        } catch (error) {
-            console.error('❌ Error getting unified rate breakdown:', error);
-            return [];
-        }
-    };
 
     const {
         totalCost: localTotalCost,

@@ -8187,9 +8187,7 @@ const QuickShip = ({
                     <Typography variant="body1" sx={{ mb: 2, fontSize: '14px' }}>
                         Are you sure you want to book this QuickShip with <strong>{selectedCarrier}</strong>?
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                        Total cost: <strong>{formatCurrency(totalCost, 'CAD')}</strong>
-                    </Typography>
+
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mt: 1 }}>
                         This will generate shipping documents and send notifications.
                     </Typography>

@@ -2556,15 +2556,7 @@ const Review = ({ onPrevious, onNext, activeDraftId, onReturnToShipments, isModa
                                     selectedRate?.carrier || 'N/A'}
                             </strong>?
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>
-                            Total cost: <strong>
-                                ${((fullRateDetails?.pricing?.total ??
-                                    fullRateDetails?.totalCharges ??
-                                    selectedRate?.pricing?.total ??
-                                    selectedRate?.totalCharges ??
-                                    selectedRate?.price) || 0).toFixed(2)}
-                            </strong>
-                        </Typography>
+
                     </DialogContent>
                     <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
                         <Button
