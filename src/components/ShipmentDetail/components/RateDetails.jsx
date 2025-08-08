@@ -41,6 +41,7 @@ import { getAutoPopulatedChargeName } from '../../../utils/shipmentValidation';
 import { updateRateAndRecalculateTaxes, addRateAndRecalculateTaxes, removeRateAndRecalculateTaxes, recalculateShipmentTaxes } from '../../../utils/taxCalculator';
 import { isCanadianDomesticShipment, isTaxCharge } from '../../../services/canadianTaxService';
 import { getDisplayCarrierName } from '../../../utils/carrierDisplayService';
+import { hasPermission, PERMISSIONS } from '../../../utils/rolePermissions';
 import { db } from '../../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -133,6 +134,24 @@ const RateDetails = ({
         ['admin', 'superadmin', 'super_admin'].includes(userRole.toLowerCase())
     );
 
+    // Allow inline editing when the role has EDIT_SHIPMENTS permission (company admins included)
+    const canEditCharges = React.useMemo(() => {
+        try {
+            return hasPermission(userRole, PERMISSIONS.EDIT_SHIPMENTS) === true;
+        } catch (e) {
+            return enhancedIsAdmin; // safe fallback
+        }
+    }, [userRole, enhancedIsAdmin]);
+
+    // Financial visibility flag (quoted/actual/profit columns)
+    const canViewFinancials = React.useMemo(() => {
+        try {
+            return hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS) === true;
+        } catch (e) {
+            return enhancedIsAdmin; // safe fallback
+        }
+    }, [userRole, enhancedIsAdmin]);
+
     // Check if this is an admin view (admins should see real carrier names)
     const isAdminView = enhancedIsAdmin || userRole === 'admin' || userRole === 'superadmin';
 
@@ -173,6 +192,27 @@ const RateDetails = ({
     const safeNumber = (value) => {
         return isNaN(parseFloat(value)) ? 0 : parseFloat(value);
     };
+
+    // Resolve a human-friendly description for a charge item using multiple fallbacks
+    const resolveChargeDescription = useCallback((charge) => {
+        // 1) Explicit description on the item
+        if (charge?.description && String(charge.description).trim() !== '') {
+            return String(charge.description).trim();
+        }
+        // 2) Name field from universal rate structure
+        if (charge?.name && String(charge.name).trim() !== '') {
+            return String(charge.name).trim();
+        }
+        // 3) Fallback via known static code mappings
+        const byCode = RATE_CODE_OPTIONS.find(opt => opt.value === charge?.code);
+        if (byCode) {
+            // Prefer short, user-facing label/description over raw code
+            return byCode.label || byCode.description || byCode.value;
+        }
+        // 4) Last resort: show the code if present
+        if (charge?.code) return String(charge.code);
+        return 'Unknown Charge';
+    }, []);
 
     // For QuickShip, use manual rates data
     const getQuickShipRateData = () => {
@@ -669,14 +709,18 @@ const RateDetails = ({
             const breakdown = rateData.charges.map(charge => ({
                 id: charge.id,
                 code: charge.code || 'UNK',
-                description: charge.description || 'Unknown Charge',
+                // Prefer description, then name, then code-based defaults
+                description: resolveChargeDescription(charge),
                 quotedCost: charge.quotedCost != null ? charge.quotedCost : 0,
                 quotedCharge: charge.quotedCharge != null ? charge.quotedCharge : 0,
                 actualCost: charge.actualCost != null ? charge.actualCost : 0,
                 actualCharge: charge.actualCharge != null ? charge.actualCharge : 0,
                 currency: charge.currency || 'CAD',
                 isTax: charge.isTax || false,
-                taxDetails: charge.taxDetails || null
+                taxDetails: charge.taxDetails || null,
+                // Preserve financial identifiers if present in source
+                invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
+                ediNumber: charge.ediNumber != null ? charge.ediNumber : '-'
             }));
 
             console.log('✅ Unified rate breakdown complete:', {
@@ -692,7 +736,7 @@ const RateDetails = ({
             console.error('❌ Error generating rate breakdown:', error);
             return [];
         }
-    }, [shipment]);
+    }, [shipment, resolveChargeDescription]);
 
     // Smart data refresh - only when safe to do so
     React.useEffect(() => {
@@ -1057,7 +1101,7 @@ const RateDetails = ({
                             <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
                                 Rate Breakdown
                             </Typography>
-                            {enhancedIsAdmin && (
+                            {canEditCharges && (
                                 <Button
                                     size="small"
                                     startIcon={<AddIcon />}
@@ -1082,45 +1126,45 @@ const RateDetails = ({
                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', width: '200px' }}>
                                             Description
                                         </TableCell>
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Quoted Cost
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
-                                            {enhancedIsAdmin ? 'Quoted Charge' : 'Amount'}
+                                            {canViewFinancials ? 'Quoted Charge' : 'Amount'}
                                         </TableCell>
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Actual Cost
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Actual Charge
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '90px' }}>
                                                 Profit
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {(canViewFinancials || canEditCharges) && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 Invoice#
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {(canViewFinancials || canEditCharges) && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'left', width: '120px' }}>
                                                 EDI#
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canEditCharges && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '60px' }}>
                                                 CMN
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canEditCharges && (
                                             <TableCell sx={{ fontWeight: 600, fontSize: '12px', bgcolor: '#f8fafc', textAlign: 'center', width: '60px' }}>
                                                 Actions
                                             </TableCell>
@@ -1220,7 +1264,7 @@ const RateDetails = ({
                                                     </Box>
                                                 )}
                                             </TableCell>
-                                            {enhancedIsAdmin && (
+                                            {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', color: '#374151', fontWeight: 500, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
@@ -1274,7 +1318,7 @@ const RateDetails = ({
                                                     formatCurrency(item.quotedCharge)
                                                 )}
                                             </TableCell>
-                                            {enhancedIsAdmin && (
+                                            {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
@@ -1306,7 +1350,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', fontWeight: 400, verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
@@ -1338,7 +1382,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {canViewFinancials && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         // Show calculated profit during editing using smart logic
@@ -1424,7 +1468,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {(canViewFinancials || canEditCharges) && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
@@ -1445,7 +1489,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {(canViewFinancials || canEditCharges) && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'left', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <TextField
@@ -1466,7 +1510,7 @@ const RateDetails = ({
                                                     )}
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {canEditCharges && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'top' }}>
                                                     <Checkbox
                                                         checked={editingIndex === index ? (editingValues.commissionable || false) : (item.commissionable || false)}
@@ -1497,7 +1541,7 @@ const RateDetails = ({
                                                     />
                                                 </TableCell>
                                             )}
-                                            {enhancedIsAdmin && (
+                                            {canEditCharges && (
                                                 <TableCell sx={{ fontSize: '12px', textAlign: 'center', verticalAlign: 'top' }}>
                                                     {editingIndex === index ? (
                                                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
@@ -1558,7 +1602,7 @@ const RateDetails = ({
                                         <TableCell sx={{ fontSize: '14px', fontWeight: 700 }}>
                                             TOTAL
                                         </TableCell>
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
                                                 {formatCurrency(localEffectiveTotalCost)}
                                             </TableCell>
@@ -1566,7 +1610,7 @@ const RateDetails = ({
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                             {formatCurrency(localEffectiveTotalCharge)}
                                         </TableCell>
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {(localTotalActualCost !== null && localTotalActualCost !== undefined && localTotalActualCost !== '') ? formatCurrency(localTotalActualCost) : (
                                                     <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
@@ -1575,7 +1619,7 @@ const RateDetails = ({
                                                 )}
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {(localTotalActualCharge !== null && localTotalActualCharge !== undefined && localTotalActualCharge !== '') ? formatCurrency(localTotalActualCharge) : (
                                                     <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', fontWeight: 400 }}>
@@ -1584,7 +1628,7 @@ const RateDetails = ({
                                                 )}
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {(() => {
                                                     // Use the comprehensive profit calculation from calculateLocalTotals
@@ -1606,17 +1650,17 @@ const RateDetails = ({
                                                 })()}
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {(canViewFinancials || canEditCharges) && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {/* Empty cell for Invoice# column */}
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {(canViewFinancials || canEditCharges) && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
                                                 {/* Empty cell for EDI# column */}
                                             </TableCell>
                                         )}
-                                        {enhancedIsAdmin && (
+                                        {canEditCharges && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'center', fontWeight: 700 }}>
                                                 {/* Empty cell for Commissionable column */}
                                             </TableCell>
