@@ -82,6 +82,28 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         shipmentID: shipmentData.shipmentID || shipmentData.id
     });
 
+    // Legacy cleanup: migrate and clear root-level statusHistory map to avoid index bloat
+    try {
+        const rootHistory = shipmentData.statusHistory;
+        if (rootHistory && typeof rootHistory === 'object' && !Array.isArray(rootHistory)) {
+            const keyCount = Object.keys(rootHistory).length;
+            if (keyCount > 0) {
+                logger.warn('Migrating legacy root statusHistory map to subcollection and clearing root field to prevent index overflow', { keyCount });
+                // Snapshot the legacy map into a single subcollection doc for retention
+                await shipmentRef.collection('statusHistory_migration').add({
+                    migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    migratedBy: userEmail || 'system',
+                    data: rootHistory
+                });
+                // Clear the root field to reduce index entries
+                await shipmentRef.update({ statusHistory: admin.firestore.FieldValue.delete() });
+            }
+        }
+    } catch (migrateErr) {
+        logger.error('Failed during legacy statusHistory migration (non-blocking):', { error: migrateErr?.message });
+        // Continue; do not block the charge update
+    }
+
     // Validate charges data
     const validatedCharges = charges.map((charge, index) => {
         if (!charge.description || charge.description.trim() === '') {
@@ -91,17 +113,18 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         const validatedCharge = {
             code: charge.code || 'FRT',
             description: charge.description.trim(),
-            quotedCost: parseFloat(charge.quotedCost) || 0,
-            quotedCharge: parseFloat(charge.quotedCharge) || 0,
-            actualCost: parseFloat(charge.actualCost) || 0,
-            actualCharge: parseFloat(charge.actualCharge) || 0,
+            // Respect explicit zeros; only fallback when null/undefined
+            quotedCost: charge.quotedCost != null ? parseFloat(charge.quotedCost) : 0,
+            quotedCharge: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) : 0,
+            actualCost: charge.actualCost != null ? parseFloat(charge.actualCost) : 0,
+            actualCharge: charge.actualCharge != null ? parseFloat(charge.actualCharge) : 0,
             invoiceNumber: charge.invoiceNumber || '-',
             ediNumber: charge.ediNumber || '-',
             commissionable: charge.commissionable || false,
             // Legacy fields for backward compatibility
-            cost: parseFloat(charge.quotedCost || charge.cost) || 0,
-            amount: parseFloat(charge.quotedCharge || charge.amount) || 0,
-            actualAmount: parseFloat(charge.actualCharge || charge.actualAmount) || 0,
+            cost: charge.quotedCost != null ? parseFloat(charge.quotedCost) : (charge.cost != null ? parseFloat(charge.cost) : 0),
+            amount: charge.quotedCharge != null ? parseFloat(charge.quotedCharge) : (charge.amount != null ? parseFloat(charge.amount) : 0),
+            actualAmount: charge.actualCharge != null ? parseFloat(charge.actualCharge) : (charge.actualAmount != null ? parseFloat(charge.actualAmount) : 0),
             updatedAt: new Date(),
             updatedBy: userEmail || 'system'
         };
@@ -115,26 +138,11 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         return validatedCharge;
     });
 
-    // Prepare update data - FIXED: Different data storage for QuickShip vs Regular shipments
+    // Prepare update data (avoid writing large history maps into the root doc to prevent
+    // "too many index entries" errors). History will be recorded in a subcollection instead.
     const updateData = {
-        // Update modification tracking
         lastModified: admin.firestore.FieldValue.serverTimestamp(),
-        lastModifiedBy: userEmail || 'system',
-        
-        // Add to shipment history
-        [`statusHistory.${Date.now()}`]: {
-            status: shipmentData.status || 'unknown',
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            note: `Charges updated by ${userEmail || 'system'}`,
-            updatedBy: userEmail || 'system',
-            type: 'charges_update',
-            changes: {
-                chargesCount: validatedCharges.length,
-                totalCost: validatedCharges.reduce((sum, c) => sum + c.cost, 0),
-                totalAmount: validatedCharges.reduce((sum, c) => sum + c.amount, 0),
-                totalActual: validatedCharges.reduce((sum, c) => sum + c.actualAmount, 0)
-            }
-        }
+        lastModifiedBy: userEmail || 'system'
     };
 
     // FIXED: Different storage strategy for QuickShip vs Regular shipments
@@ -188,6 +196,25 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
 
     // Perform the update
     await shipmentRef.update(updateData);
+
+    // Write a compact history record to subcollection to avoid index bloat on the main document
+    try {
+        await shipmentRef.collection('statusHistory').add({
+            status: shipmentData.status || 'unknown',
+            type: 'charges_update',
+            note: `Charges updated by ${userEmail || 'system'}`,
+            updatedBy: userEmail || 'system',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            changes: {
+                chargesCount: validatedCharges.length,
+                totalCost: validatedCharges.reduce((sum, c) => sum + c.cost, 0),
+                totalAmount: validatedCharges.reduce((sum, c) => sum + c.amount, 0),
+                totalActual: validatedCharges.reduce((sum, c) => sum + c.actualAmount, 0)
+            }
+        });
+    } catch (e) {
+        logger.warn('Non-blocking: failed to append history entry', { error: e?.message });
+    }
 
     logger.info('Charges updated successfully:', {
         docId: shipmentDoc.id,

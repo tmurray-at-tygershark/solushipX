@@ -78,14 +78,41 @@ export const recalculateShipmentTaxes = (shipmentData, chargeTypes) => {
 export const recalculateRateArrayTaxes = (rateArray, province, chargeTypes) => {
     if (!rateArray || !Array.isArray(rateArray)) return [];
 
+    // Capture existing tax metadata (invoice/edi) so we can preserve it across recalculations
+    const existingTaxMetaByCode = (rateArray || [])
+        .filter(rate => rate.isTax || isTaxCharge(rate.code))
+        .reduce((map, rate) => {
+            const code = String(rate.code || '').toUpperCase();
+            if (!code) return map;
+            map[code] = {
+                invoiceNumber: rate.invoiceNumber ?? '-',
+                ediNumber: rate.ediNumber ?? '-'
+            };
+            return map;
+        }, {});
+
     // Remove existing tax charges
     const nonTaxRates = removeTaxCharges(rateArray);
 
-    // Calculate next ID for new tax items
-    const nextId = Math.max(...nonTaxRates.map(r => r.id || 0), 0) + 1;
+    // Calculate next numeric ID for new tax items (ignore non-numeric IDs)
+    const numericIds = nonTaxRates
+        .map(r => {
+            const n = Number(r.id);
+            return Number.isFinite(n) ? n : null;
+        })
+        .filter(n => n != null);
+    const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
+    const nextId = maxId + 1;
 
-    // Generate new tax line items
-    const taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, nextId);
+    // Generate new tax line items (will return rows even when taxable base is zero)
+    let taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, nextId);
+
+    // Merge preserved invoice/edi numbers from previously existing tax rows
+    taxLineItems = taxLineItems.map(item => {
+        const code = String(item.code || '').toUpperCase();
+        const preserved = existingTaxMetaByCode[code];
+        return preserved ? { ...item, invoiceNumber: preserved.invoiceNumber, ediNumber: preserved.ediNumber } : { ...item, invoiceNumber: item.invoiceNumber ?? '-', ediNumber: item.ediNumber ?? '-' };
+    });
 
     // Return combined rates
     return [...nonTaxRates, ...taxLineItems];

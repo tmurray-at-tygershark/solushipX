@@ -111,11 +111,48 @@ export const isCanadianDomesticShipment = (shipFrom, shipTo) => {
 /**
  * Get tax configuration for a province
  */
+// Normalize province input to 2-letter code (handles full names and casing)
+const PROVINCE_NAME_TO_CODE = {
+    'ONTARIO': 'ON',
+    'BRITISH COLUMBIA': 'BC',
+    'ALBERTA': 'AB',
+    'SASKATCHEWAN': 'SK',
+    'MANITOBA': 'MB',
+    'QUEBEC': 'QC',
+    'NOVA SCOTIA': 'NS',
+    'NEW BRUNSWICK': 'NB',
+    'NEWFOUNDLAND AND LABRADOR': 'NL',
+    'NEWFOUNDLAND': 'NL',
+    'PRINCE EDWARD ISLAND': 'PE',
+    'YUKON': 'YT',
+    'NORTHWEST TERRITORIES': 'NT',
+    'NUNAVUT': 'NU'
+};
+
 export const getTaxConfigForProvince = (province) => {
     if (!province) return null;
-    
-    const normalizedProvince = province.toUpperCase();
-    return CANADIAN_TAX_CONFIG[normalizedProvince] || null;
+
+    const raw = String(province).trim();
+    const upper = raw.toUpperCase();
+
+    // If already a known 2-letter code
+    if (CANADIAN_TAX_CONFIG[upper]) {
+        return CANADIAN_TAX_CONFIG[upper];
+    }
+
+    // Try mapping a full province name to code
+    const code = PROVINCE_NAME_TO_CODE[upper];
+    if (code && CANADIAN_TAX_CONFIG[code]) {
+        return CANADIAN_TAX_CONFIG[code];
+    }
+
+    // Last resort: strip non-letters and re-check (handles cases like "ON ")
+    const lettersOnly = upper.replace(/[^A-Z]/g, '');
+    if (CANADIAN_TAX_CONFIG[lettersOnly]) {
+        return CANADIAN_TAX_CONFIG[lettersOnly];
+    }
+
+    return null;
 };
 
 /**
@@ -149,7 +186,7 @@ export const calculateTaxes = (taxableAmount, province) => {
 };
 
 /**
- * Calculate total taxable amount from rate breakdown
+ * Calculate total taxable amount from rate breakdown (legacy - based on actual with quoted fallback)
  */
 export const calculateTaxableAmount = (rateBreakdown, chargeTypes) => {
     if (!rateBreakdown || !Array.isArray(rateBreakdown)) {
@@ -181,7 +218,11 @@ export const calculateTaxableAmount = (rateBreakdown, chargeTypes) => {
         const chargeType = chargeTypes.find(ct => ct.code === rate.code || ct.value === rate.code);
         const isTaxable = chargeType?.taxable || false;
         
-        const chargeAmount = parseFloat(rate.actualCharge || rate.charge || 0);
+        const chargeAmount = parseFloat(
+            (rate.actualCharge ?? rate.actualAmount ?? null) != null
+                ? (rate.actualCharge ?? rate.actualAmount)
+                : (rate.quotedCharge ?? rate.charge ?? 0)
+        );
         
         debugInfo.rateDetails.push({
             code: rate.code,
@@ -211,6 +252,42 @@ export const calculateTaxableAmount = (rateBreakdown, chargeTypes) => {
 };
 
 /**
+ * Calculate taxable amounts for both quoted and actual columns
+ * - quotedTaxable: sum of quotedCharge (or charge) for taxable, non-tax lines
+ * - actualTaxable: sum of actualCharge when provided, otherwise quotedCharge (or charge)
+ */
+export const calculateTaxableAmounts = (rateBreakdown, chargeTypes) => {
+    if (!rateBreakdown || !Array.isArray(rateBreakdown)) {
+        return { quotedTaxable: 0, actualTaxable: 0 };
+    }
+
+    let quotedTaxable = 0;
+    let actualTaxable = 0;
+
+    rateBreakdown.forEach(rate => {
+        if (rate.isTax || isTaxCharge(rate.code)) return;
+
+        const chargeType = chargeTypes.find(ct => ct.code === rate.code || ct.value === rate.code);
+        // Default to taxable when charge type metadata is missing
+        const isTaxable = chargeType ? (chargeType.taxable ?? true) : true;
+        if (!isTaxable) return;
+
+        const safeParse = (v) => {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n : 0;
+        };
+
+        const quoted = safeParse((rate.quotedCharge ?? rate.charge ?? 0));
+        const actual = safeParse((rate.actualCharge ?? rate.actualAmount ?? null) != null ? (rate.actualCharge ?? rate.actualAmount) : quoted);
+
+        quotedTaxable += quoted;
+        actualTaxable += actual;
+    });
+
+    return { quotedTaxable, actualTaxable };
+};
+
+/**
  * Remove existing tax charges from rate breakdown
  */
 export const removeTaxCharges = (rateBreakdown) => {
@@ -237,27 +314,46 @@ export const isTaxCharge = (code) => {
  * Generate tax line items for shipment
  */
 export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextId = 1) => {
-    // Calculate taxable amount
-    const taxableAmount = calculateTaxableAmount(rateBreakdown, chargeTypes);
-    
-    if (taxableAmount <= 0) return [];
-    
-    // Get taxes for province
-    const taxes = calculateTaxes(taxableAmount, province);
-    
-    // Convert to rate breakdown format
-    return taxes.map((tax, index) => ({
-        id: nextId + index,
-        carrier: '', // Taxes have no carrier
-        code: tax.code,
-        chargeName: tax.chargeName,
-        cost: tax.cost.toFixed(2),
-        costCurrency: tax.costCurrency,
-        charge: tax.charge.toFixed(2),
-        chargeCurrency: tax.chargeCurrency,
-        isTax: true,
-        taxable: false
-    }));
+    // Calculate taxable bases for quoted and actual
+    const { quotedTaxable, actualTaxable } = calculateTaxableAmounts(rateBreakdown, chargeTypes);
+
+    // Determine tax definitions (always return rows for domestic provinces, even if amount is 0)
+    const taxDefs = getTaxConfigForProvince(province)?.taxes || [];
+
+    // Build tax line items with both quoted and actual columns populated
+    return taxDefs.map((tax, index) => {
+        const baseQuoted = Number.isFinite(quotedTaxable) ? quotedTaxable : 0;
+        const baseActual = Number.isFinite(actualTaxable) ? actualTaxable : 0;
+        const quotedTax = (baseQuoted * tax.rate) / 100;
+        const actualTax = (baseActual * tax.rate) / 100;
+
+        return {
+            id: nextId + index,
+            carrier: '',
+            code: tax.code,
+            // Provide multiple friendly name fields so all UIs can render label
+            chargeName: tax.name,
+            description: tax.name,
+            name: tax.name,
+            // Legacy fields
+            // Taxes now populate both cost and charge so quoted/actual columns can each display values
+            cost: Number.isFinite(quotedTax) ? quotedTax.toFixed(2) : '0.00',
+            costCurrency: 'CAD',
+            charge: Number.isFinite(quotedTax) ? quotedTax.toFixed(2) : '0.00',
+            chargeCurrency: 'CAD',
+            currency: 'CAD',
+            // New explicit columns
+            quotedCharge: Number.isFinite(quotedTax) ? quotedTax : 0,
+            actualCharge: Number.isFinite(actualTax) ? actualTax : 0,
+            quotedCost: Number.isFinite(quotedTax) ? quotedTax : 0,
+            actualCost: Number.isFinite(actualTax) ? actualTax : 0,
+            isTax: true,
+            taxable: false,
+            // Enable persistence/editing of identifiers on tax lines
+            invoiceNumber: '-',
+            ediNumber: '-'
+        };
+    });
 };
 
 /**

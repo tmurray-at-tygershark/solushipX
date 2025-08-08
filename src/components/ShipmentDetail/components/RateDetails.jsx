@@ -325,31 +325,17 @@ const RateDetails = ({
 
         updatedBreakdown[index] = updatedItem;
 
-        // 🔧 CRITICAL FIX: Only recalculate taxes if NO taxes exist yet
-        // If taxes already exist, preserve them exactly as they are
-        // ALSO: Don't recalculate taxes when editing fuel charges (preserve manual fuel values)
-        const existingTaxCharges = updatedBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
-        const isEditingFuelCharge = updatedItem.code === 'FUE' || updatedItem.code === 'FUEL';
-
-        if (availableChargeTypes && availableChargeTypes.length > 0 &&
+        // Always recalc Canadian taxes after any non-tax line change (freight, fuel, etc.)
+        // If a tax line itself is edited, skip recalculation to respect manual tax edits
+        const isEditingTaxCharge = updatedItem.isTax || isTaxCharge(updatedItem.code);
+        if (
             shipment?.shipFrom && shipment?.shipTo &&
             isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo) &&
-            !isEditingFuelCharge) { // Skip tax recalculation when editing fuel charges
-
+            !isEditingTaxCharge) {
             const province = shipment.shipTo?.state;
-
-            if (province && existingTaxCharges.length === 0) {
-                // Only add taxes if none exist
-                console.log('🍁 Canadian Tax: Adding missing taxes after editing charge');
-                updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes);
-            } else if (existingTaxCharges.length > 0) {
-                // Taxes already exist - preserve them exactly
-                console.log('🍁 Canadian Tax: Preserving existing taxes, not recalculating', {
-                    existingTaxes: existingTaxCharges.map(tax => `${tax.code}: $${tax.quotedCharge}`)
-                });
+            if (province) {
+                updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes || []);
             }
-        } else if (isEditingFuelCharge) {
-            console.log('⛽ Fuel Charge: Skipping tax recalculation when editing fuel charges to preserve manual values');
         }
 
         // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
@@ -437,15 +423,14 @@ const RateDetails = ({
         // 🔧 CRITICAL FIX: Only add taxes if none exist, preserve existing taxes
         const existingTaxCharges = localRateBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
 
-        if (availableChargeTypes && availableChargeTypes.length > 0 &&
-            shipment?.shipFrom && shipment?.shipTo &&
+        if (shipment?.shipFrom && shipment?.shipTo &&
             isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
             const province = shipment.shipTo?.state;
 
             if (province && existingTaxCharges.length === 0) {
                 // Only add taxes if none exist
                 console.log('🍁 Canadian Tax: Adding taxes after adding first charge');
-                updatedBreakdown = addRateAndRecalculateTaxes(localRateBreakdown, newCharge, province, availableChargeTypes);
+                updatedBreakdown = addRateAndRecalculateTaxes(localRateBreakdown, newCharge, province, availableChargeTypes || []);
             } else if (existingTaxCharges.length > 0) {
                 // Taxes already exist - just add the new charge without recalculating taxes
                 console.log('🍁 Canadian Tax: Preserving existing taxes when adding new charge');
@@ -481,15 +466,14 @@ const RateDetails = ({
         // Preserve existing taxes when deleting non-tax charges
         const isDeletedChargeTax = chargeToDelete && (chargeToDelete.isTax || isTaxCharge(chargeToDelete.code));
 
-        if (availableChargeTypes && availableChargeTypes.length > 0 &&
-            shipment?.shipFrom && shipment?.shipTo &&
+        if (shipment?.shipFrom && shipment?.shipTo &&
             isCanadianDomesticShipment(shipment.shipFrom, shipment.shipTo)) {
             const province = shipment.shipTo?.state;
 
             if (province && chargeToDelete && isDeletedChargeTax) {
                 // Only recalculate taxes if we're deleting a tax charge
                 console.log('🍁 Canadian Tax: Recalculating taxes after deleting tax charge');
-                updatedBreakdown = removeRateAndRecalculateTaxes(localRateBreakdown, chargeToDelete.id, province, availableChargeTypes);
+                updatedBreakdown = removeRateAndRecalculateTaxes(localRateBreakdown, chargeToDelete.id, province, availableChargeTypes || []);
             } else if (chargeToDelete && !isDeletedChargeTax) {
                 // Deleting a non-tax charge - preserve existing taxes
                 console.log('🍁 Canadian Tax: Preserving existing taxes when deleting non-tax charge');
@@ -720,7 +704,9 @@ const RateDetails = ({
                 taxDetails: charge.taxDetails || null,
                 // Preserve financial identifiers if present in source
                 invoiceNumber: charge.invoiceNumber != null ? charge.invoiceNumber : '-',
-                ediNumber: charge.ediNumber != null ? charge.ediNumber : '-'
+                ediNumber: charge.ediNumber != null ? charge.ediNumber : '-',
+                // Preserve commissionable flag
+                commissionable: charge.commissionable === true
             }));
 
             console.log('✅ Unified rate breakdown complete:', {
@@ -788,14 +774,8 @@ const RateDetails = ({
             return;
         }
 
-        // 🔧 CRITICAL FIX: Check if taxes already exist - DON'T recalculate existing taxes
+        // If taxes exist, rebuild them to reflect the latest edited amounts (keeps them in sync)
         const existingTaxCharges = localRateBreakdown.filter(charge => charge.isTax || isTaxCharge(charge.code));
-        if (existingTaxCharges.length > 0) {
-            console.log('🍁 Canadian Tax: Taxes already exist in breakdown, skipping auto-calculation', {
-                existingTaxes: existingTaxCharges.map(tax => `${tax.code}: ${tax.description}`)
-            });
-            return;
-        }
 
         console.log('🍁 Canadian Tax: No taxes found - checking if they need to be added', {
             shipFrom: shipment.shipFrom?.country,
@@ -812,17 +792,47 @@ const RateDetails = ({
             manualRates: localRateBreakdown // Use current local breakdown
         };
 
-        // Calculate what the rates should be with proper taxes
-        const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
+        // Calculate what the rates should be with proper taxes (always rebuild to keep in sync)
+        const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes || []);
 
-        // Check if taxes were actually added
+        // Compare existing vs new tax rows; only save if something actually changed
+        const extractTaxRows = (arr) => (arr || [])
+            .filter(ch => ch.isTax || isTaxCharge(ch.code))
+            .map(ch => ({
+                code: String(ch.code || '').toUpperCase(),
+                qc: Number(ch.quotedCharge ?? ch.amount ?? 0).toFixed(2),
+                ac: Number(ch.actualCharge ?? ch.actualAmount ?? 0).toFixed(2),
+                qcost: Number(ch.quotedCost ?? ch.cost ?? 0).toFixed(2),
+                acost: Number(ch.actualCost ?? 0).toFixed(2)
+            }));
+
+        const taxRowsEqual = (a, b) => {
+            if ((a?.length || 0) !== (b?.length || 0)) return false;
+            return (a || []).every(row => {
+                const match = (b || []).find(r => r.code === row.code);
+                if (!match) return false;
+                return row.qc === match.qc && row.ac === match.ac && row.qcost === match.qcost && row.acost === match.acost;
+            });
+        };
+
+        const beforeTax = extractTaxRows(localRateBreakdown);
+        const afterTax = extractTaxRows(updatedShipmentData.manualRates);
+
+        if (taxRowsEqual(beforeTax, afterTax)) {
+            console.log('🍁 Canadian Tax: No tax changes detected; skipping auto-save');
+            return;
+        }
+
+        // Check if taxes were actually added/changed
         const newTaxCharges = updatedShipmentData.manualRates.filter(charge => charge.isTax || isTaxCharge(charge.code));
 
-        if (newTaxCharges.length > 0) {
-            console.log('🍁 Canadian Tax: Adding missing taxes to inline editor', {
+        if (newTaxCharges.length > 0 || existingTaxCharges.length > 0) {
+            console.log('🍁 Canadian Tax: Applying (or refreshing) taxes in inline editor', {
                 originalCharges: localRateBreakdown.length,
                 updatedCharges: updatedShipmentData.manualRates.length,
-                taxesAdded: newTaxCharges.map(tax => `${tax.code}: ${tax.description}`)
+                taxesNow: updatedShipmentData.manualRates
+                    .filter(t => t.isTax || isTaxCharge(t.code))
+                    .map(tax => `${tax.code}: ${tax.description}`)
             });
 
             // Set flag to prevent overlapping calculations
@@ -852,7 +862,7 @@ const RateDetails = ({
         } else {
             console.log('🍁 Canadian Tax: No taxes to add for this shipment');
         }
-    }, [shipment?.shipFrom, shipment?.shipTo, availableChargeTypes, editingIndex, isCalculatingTaxes]);
+    }, [shipment?.shipFrom, shipment?.shipTo, availableChargeTypes, editingIndex, isCalculatingTaxes, localRateBreakdown]);
 
     if (!getBestRateInfo && !quickShipData) {
         return null;

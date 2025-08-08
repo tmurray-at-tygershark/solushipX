@@ -1664,7 +1664,7 @@ const QuickShip = ({
                 return rate;
             });
 
-            // 🔧 CRITICAL FIX: Only recalculate taxes if this is NOT a tax charge being updated
+            // Always recalc for non-tax changes; skip if the edited row itself is a tax line
             const updatedRate = updatedRates.find(rate => rate.id === id);
             const isUpdatingTaxCharge = updatedRate && (updatedRate.isTax || isTaxCharge(updatedRate.code));
 
@@ -1679,10 +1679,7 @@ const QuickShip = ({
                 chargeTypesAvailable: availableChargeTypes && availableChargeTypes.length > 0
             });
 
-            // Only recalculate taxes if:
-            // 1. We have charge types available
-            // 2. This is a Canadian domestic shipment  
-            // 3. We're NOT updating a tax charge (preserve manual tax entries)
+            // Recalculate taxes when non-tax lines change for CA domestic shipments
             if (availableChargeTypes && availableChargeTypes.length > 0 &&
                 shipFromAddress && shipToAddress &&
                 isCanadianDomesticShipment(shipFromAddress, shipToAddress) &&
@@ -4164,7 +4161,7 @@ const QuickShip = ({
     };
 
     const validateRates = () => {
-        // Allow booking with no rates or $0.00 rates
+        // Allow booking with no rates or $0.00 rates, including tax lines with 0 amounts
         // Only validate that if a rate code is provided, it's valid
         const validChargeTypeCodes = availableChargeTypes.map(ct => ct.value);
 
@@ -4180,18 +4177,17 @@ const QuickShip = ({
             }
 
             // If cost or charge is provided, ensure it's a valid number (can be 0)
-            if (rate.cost !== '' && rate.cost !== null && rate.cost !== undefined) {
-                const cost = parseFloat(rate.cost);
-                if (isNaN(cost) || cost < 0) {
-                    return { valid: false, message: `Rate ${i + 1}: Cost must be a valid number (0 or greater).` };
-                }
+            // Treat empty string, null, undefined as "not provided" and accept for tax lines too
+            const parseOrNull = (v) => (v === '' || v === null || v === undefined ? null : parseFloat(v));
+
+            const parsedCost = parseOrNull(rate.cost);
+            if (parsedCost !== null && (isNaN(parsedCost) || parsedCost < 0)) {
+                return { valid: false, message: `Rate ${i + 1}: Cost must be a valid number (0 or greater).` };
             }
 
-            if (rate.charge !== '' && rate.charge !== null && rate.charge !== undefined) {
-                const charge = parseFloat(rate.charge);
-                if (isNaN(charge) || charge < 0) {
-                    return { valid: false, message: `Rate ${i + 1}: Charge must be a valid number (0 or greater).` };
-                }
+            const parsedCharge = parseOrNull(rate.charge);
+            if (parsedCharge !== null && (isNaN(parsedCharge) || parsedCharge < 0)) {
+                return { valid: false, message: `Rate ${i + 1}: Charge must be a valid number (0 or greater).` };
             }
         }
 
