@@ -148,6 +148,8 @@ export const PERMISSIONS = {
   // Rate and Pricing Visibility
   VIEW_RATE_PRICING: 'view_rate_pricing',
   VIEW_RATE_BREAKDOWN: 'view_rate_breakdown',
+  // Rate selection UI controls
+  SHOW_RATE_FILTERS: 'show_rate_filters',
   
   // Shipment Information Fields
   VIEW_BILL_TYPE: 'view_bill_type',
@@ -421,6 +423,7 @@ export const ROLE_PERMISSIONS = {
     // Rate and Pricing Visibility - FULL ACCESS for admins
     [PERMISSIONS.VIEW_RATE_PRICING]: true,
     [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    [PERMISSIONS.SHOW_RATE_FILTERS]: true,
     
     // Shipment Information Fields - FULL ACCESS for admins
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
@@ -552,6 +555,7 @@ export const ROLE_PERMISSIONS = {
     // Rate and Pricing Visibility - FULL ACCESS for company admins
     [PERMISSIONS.VIEW_RATE_PRICING]: true,
     [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    [PERMISSIONS.SHOW_RATE_FILTERS]: true,
     
     // Shipment Information Fields - FULL ACCESS for company admins
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
@@ -681,6 +685,7 @@ export const ROLE_PERMISSIONS = {
     // Rate and Pricing Visibility - FULL ACCESS for accounting (they need pricing info)
     [PERMISSIONS.VIEW_RATE_PRICING]: true,
     [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    [PERMISSIONS.SHOW_RATE_FILTERS]: true,
     
     // Shipment Information Fields - FULL ACCESS for accounting
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
@@ -808,9 +813,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
     
-    // Rate and Pricing Visibility - FULL ACCESS for company staff (operational need)
+    // Rate and Pricing Visibility - operational view but filters hidden by default
     [PERMISSIONS.VIEW_RATE_PRICING]: true,
     [PERMISSIONS.VIEW_RATE_BREAKDOWN]: true,
+    [PERMISSIONS.SHOW_RATE_FILTERS]: false,
     
     // Shipment Information Fields - FULL ACCESS for company staff
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
@@ -957,6 +963,7 @@ export const ROLE_PERMISSIONS = {
     // Rate and Pricing Visibility - RESTRICTED: No pricing visibility
     [PERMISSIONS.VIEW_RATE_PRICING]: false,
     [PERMISSIONS.VIEW_RATE_BREAKDOWN]: false,
+    [PERMISSIONS.SHOW_RATE_FILTERS]: false,
     
     // Shipment Information Fields - RESTRICTED: Limited field access
     [PERMISSIONS.VIEW_BILL_TYPE]: false,
@@ -1408,6 +1415,11 @@ export const getShipmentDetailPermissions = (userRole) => {
     canArchiveShipment: hasPermission(userRole, PERMISSIONS.ARCHIVE_SHIPMENT),
     canCancelShipment: hasPermission(userRole, PERMISSIONS.CANCEL_SHIPMENT),
     canViewCosts: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS),
+    // Keep both keys for compatibility. Components commonly check canViewShipmentFinancials
+    canViewShipmentFinancials: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS),
     canViewFinancials: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_FINANCIALS),
+    canShowRateFilters: userRole === ROLES.SUPER_ADMIN || userRole === ROLES.ADMIN
+      ? true
+      : hasPermission(userRole, PERMISSIONS.SHOW_RATE_FILTERS),
   };
 }; 

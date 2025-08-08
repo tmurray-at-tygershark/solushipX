@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Typography, CircularProgress, Fade, Chip, Grid, LinearProgress } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
+import { getDisplayCarrierName } from '../../utils/carrierDisplayService';
+import { getLightBackgroundLogo } from '../../utils/logoUtils';
 
 const CarrierLoadingDisplay = ({
     loadingCarriers = [],
@@ -14,6 +18,9 @@ const CarrierLoadingDisplay = ({
 }) => {
     const [animationText, setAnimationText] = useState('');
     const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0);
+    const { userRole } = useAuth();
+    const { companyIdForAddress } = useCompany();
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
 
     // Animated loading messages
     const loadingMessages = [
@@ -45,8 +52,46 @@ const CarrierLoadingDisplay = ({
 
     // State to store carrier logos fetched from database
     const [carrierLogos, setCarrierLogos] = useState({});
+    // Overrides
+    const [companyData, setCompanyData] = useState(null);
+    const [displayNameOverrides, setDisplayNameOverrides] = useState({});
+    const [logoOverrides, setLogoOverrides] = useState({});
 
-    // Fetch carrier logos from database
+    // Load company data for overrides (non-admin only)
+    useEffect(() => {
+        const loadCompany = async () => {
+            if (!companyIdForAddress || isAdmin) {
+                setCompanyData(null);
+                return;
+            }
+            try {
+                // Try doc by ID
+                const ref = doc(db, 'companies', companyIdForAddress);
+                const snap = await getDoc(ref);
+                if (snap.exists()) {
+                    setCompanyData(snap.data());
+                    return;
+                }
+                // Fallback: query by companyID field
+                const q = query(
+                    collection(db, 'companies'),
+                    where('companyID', '==', companyIdForAddress),
+                    limit(1)
+                );
+                const qs = await getDocs(q);
+                if (!qs.empty) {
+                    setCompanyData(qs.docs[0].data());
+                } else {
+                    setCompanyData(null);
+                }
+            } catch (e) {
+                setCompanyData(null);
+            }
+        };
+        loadCompany();
+    }, [companyIdForAddress, isAdmin]);
+
+    // Fetch carrier logos from database (base logos)
     useEffect(() => {
         const fetchCarrierLogos = async () => {
             if (loadingCarriers.length === 0) return;
@@ -101,8 +146,51 @@ const CarrierLoadingDisplay = ({
         fetchCarrierLogos();
     }, [loadingCarriers]);
 
+    // Compute overrides for names and logos when applicable
+    useEffect(() => {
+        if (isAdmin || !companyData || loadingCarriers.length === 0) {
+            setDisplayNameOverrides({});
+            setLogoOverrides({});
+            return;
+        }
+
+        const nameToId = {
+            'canpar express': 'CANPAR',
+            'canpar': 'CANPAR',
+            'eship plus': 'ESHIPPLUS',
+            'eshipplus': 'ESHIPPLUS',
+            'polaris transportation': 'POLARISTRANSPORTATION',
+            'polaris': 'POLARISTRANSPORTATION'
+        };
+
+        const newNameOverrides = {};
+        const newLogoOverrides = {};
+        const companyLogo = getLightBackgroundLogo(companyData) || '';
+
+        loadingCarriers.forEach((carrierName) => {
+            const normalized = (carrierName || '').toLowerCase().trim();
+            const carrierID = nameToId[normalized] || (carrierName || '').toUpperCase().replace(/\s+/g, '');
+            const overridden = getDisplayCarrierName({ name: carrierName, carrierID }, companyIdForAddress, companyData, false);
+            if (overridden && overridden !== carrierName) {
+                newNameOverrides[carrierName] = overridden;
+                if (companyLogo) {
+                    newLogoOverrides[carrierName] = companyLogo;
+                }
+            }
+        });
+
+        setDisplayNameOverrides(newNameOverrides);
+        setLogoOverrides(newLogoOverrides);
+    }, [isAdmin, companyData, companyIdForAddress, loadingCarriers]);
+
     const getCarrierLogo = (carrierName) => {
+        // Prefer override logo if available
+        if (logoOverrides[carrierName]) return logoOverrides[carrierName];
         return carrierLogos[carrierName] || '/images/carrier-badges/solushipx.png';
+    };
+
+    const getCarrierDisplayName = (carrierName) => {
+        return displayNameOverrides[carrierName] || carrierName;
     };
 
     const getCarrierStatus = (carrierName) => {
@@ -209,8 +297,9 @@ const CarrierLoadingDisplay = ({
                                     {/* Carrier Logo */}
                                     <Box
                                         component="img"
+                                        key={(logoOverrides[carrierName] || carrierLogos[carrierName] || 'default') + '-' + carrierName}
                                         src={getCarrierLogo(carrierName)}
-                                        alt={carrierName}
+                                        alt={getCarrierDisplayName(carrierName)}
                                         sx={{
                                             width: 40,
                                             height: 24,
@@ -237,7 +326,7 @@ const CarrierLoadingDisplay = ({
                                             whiteSpace: 'nowrap'
                                         }}
                                     >
-                                        {carrierName}
+                                        {getCarrierDisplayName(carrierName)}
                                     </Typography>
 
                                     {/* Status Indicator */}

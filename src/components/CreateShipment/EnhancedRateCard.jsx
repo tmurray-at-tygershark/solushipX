@@ -19,7 +19,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoIcon from '@mui/icons-material/Info';
 // Add missing imports for database functionality
-import { useState as useStateImport, useEffect } from 'react';
+import { useState as useStateImport, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
@@ -41,6 +41,7 @@ const EnhancedRateCard = ({
     const [companyData, setCompanyData] = useState(null);
     const [displayCarrierName, setDisplayCarrierName] = useState('');
     const [isOverridden, setIsOverridden] = useState(false);
+    const isOverriddenRef = useRef(false);
 
     // Get auth and company context
     const { currentUser } = useAuth();
@@ -197,6 +198,11 @@ const EnhancedRateCard = ({
         }
     }, [rate, companyData, companyIdForAddress, isAdmin, userRole]);
 
+    // Keep a live ref of override state to avoid stale async updates overriding company logo
+    useEffect(() => {
+        isOverriddenRef.current = isOverridden;
+    }, [isOverridden]);
+
     // Fetch carrier logo from database - DYNAMIC VERSION LIKE REVIEW.JSX
     const fetchCarrierLogo = useCallback(async (carrierName) => {
         if (!carrierName) return '/images/carrier-badges/solushipx.png';
@@ -263,6 +269,8 @@ const EnhancedRateCard = ({
 
     // Load carrier logo when component mounts or rate changes
     useEffect(() => {
+        let cancelled = false;
+
         const loadCarrierLogo = async () => {
             // If carrier name is overridden, use company logo instead
             console.log('🖼️ EnhancedRateCard - Logo Override Check:', {
@@ -321,10 +329,17 @@ const EnhancedRateCard = ({
             // For eShip Plus sub-carriers, fetch eShip Plus logo
             const logoCarrierName = isEshipPlus ? 'eShip Plus' : carrierName;
             const logoUrl = await fetchCarrierLogo(logoCarrierName);
+            // Avoid overwriting company override or running after unmount
+            if (cancelled || isOverriddenRef.current) {
+                return;
+            }
             setCarrierLogoUrl(logoUrl);
         };
 
         loadCarrierLogo();
+        return () => {
+            cancelled = true;
+        };
     }, [rate, fetchCarrierLogo, isOverridden, companyData]);
 
     const formatPrice = (price) => {
@@ -538,6 +553,7 @@ const EnhancedRateCard = ({
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <Box
                         component="img"
+                        key={carrierLogoUrl || 'default-logo'}
                         src={carrierLogoUrl || '/images/carrier-badges/solushipx.png'}
                         alt={carrierName}
                         sx={{
@@ -566,7 +582,7 @@ const EnhancedRateCard = ({
                 {/* Main Info Grid */}
                 <Grid container spacing={2} sx={{ mb: 2 }}>
                     {/* Transit Time */}
-                    <Grid item xs={6}>
+                    <Grid item xs={canViewPricing ? 6 : 12}>
                         <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(59, 130, 246, 0.1)' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                 <AccessTimeIcon sx={{ color: 'primary.main', mr: 0.5, fontSize: '1.2rem' }} />
@@ -580,10 +596,10 @@ const EnhancedRateCard = ({
                         </Box>
                     </Grid>
 
-                    {/* Price */}
-                    <Grid item xs={6}>
-                        <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)' }}>
-                            {canViewPricing ? (
+                    {/* Price (hidden entirely when pricing is not allowed) */}
+                    {canViewPricing && (
+                        <Grid item xs={6}>
+                            <Box sx={{ textAlign: 'center', p: 2, borderRadius: 2, bgcolor: 'rgba(16, 185, 129, 0.1)' }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
                                     <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#1f2937' }}>
                                         {formatPrice(totalPrice)}
@@ -595,18 +611,12 @@ const EnhancedRateCard = ({
                                         </Typography>
                                     )}
                                 </Box>
-                            ) : (
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1, flexDirection: 'column' }}>
-                                    <Typography variant="h4" sx={{ fontWeight: 700, fontSize: '1.5rem', color: '#6b7280' }}>
-                                        ---
-                                    </Typography>
-                                </Box>
-                            )}
-                            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '10px', color: 'success.dark' }}>
-                                {canViewPricing ? 'TOTAL COST' : 'RATE AVAILABLE'}
-                            </Typography>
-                        </Box>
-                    </Grid>
+                                <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '10px', color: 'success.dark' }}>
+                                    TOTAL COST
+                                </Typography>
+                            </Box>
+                        </Grid>
+                    )}
                 </Grid>
 
                 {/* Delivery Date */}
@@ -967,7 +977,7 @@ const EnhancedRateCard = ({
                     }}
                     startIcon={isSelected ? <CheckCircleIcon /> : null}
                 >
-                    {isSelected ? 'Selected' : 'Select This Rate'}
+                    {isSelected ? 'Selected' : 'SELECT'}
                 </Button>
             </CardContent>
         </Card>

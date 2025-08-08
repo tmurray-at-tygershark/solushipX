@@ -52,6 +52,9 @@ import { Suspense } from 'react';
 import Footer from '../Footer/Footer';
 import Navigation from '../Navigation/Header';
 import { dynamicStatusService } from '../../services/DynamicStatusService';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCompany } from '../../contexts/CompanyContext';
+import { getDisplayCarrierName } from '../../utils/carrierDisplayService';
 
 // Helper functions (copied from ShipmentDetail.jsx)
 const getStatusColor = (status) => {
@@ -236,6 +239,8 @@ const CarrierDisplay = React.memo(({ carrierName, size = 'medium' }) => {
 const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier, onClose }) => {
     const navigate = useNavigate();
     const { trackingIdentifier: trackingId } = useParams();
+    const { userRole } = useAuth() || {};
+    const { companyIdForAddress, companyData } = useCompany() || {};
     const [trackingNumberInput, setTrackingNumberInput] = useState('');
     const [shipmentData, setShipmentData] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -476,12 +481,21 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
 
             setShipmentData(fixedShipmentData);
 
-            // Extract carrier information
-            const carrierName = fixedShipmentData.carrier ||
+            // Extract carrier information (real)
+            const rawCarrierName = fixedShipmentData.carrier ||
                 fixedShipmentData.selectedRate?.carrier?.name ||
                 fixedShipmentData.selectedRate?.carrier ||
                 'Unknown';
-            setCarrier(carrierName);
+
+            // Apply company override for non-admin users when company context is available
+            const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+            const displayCarrierName = getDisplayCarrierName(
+                rawCarrierName,
+                companyIdForAddress || fixedShipmentData.companyID || fixedShipmentData.companyId,
+                companyData || null,
+                isAdmin
+            );
+            setCarrier(displayCarrierName);
 
             // Set up real-time event listening like ShipmentDetailX
             console.log('📋 [Tracking] Setting up real-time event listening for shipment:', identifier);
@@ -614,11 +628,17 @@ const Tracking = ({ isDrawer = false, trackingIdentifier: propTrackingIdentifier
                     if (fixedShipmentData.carrier || fixedShipmentData.selectedCarrier) {
                         const hasCarrierSelection = transformedEvents.some(e => e.eventType === 'carrier_selection' || (e.status && e.status.toLowerCase().includes('carrier')));
                         if (!hasCarrierSelection) {
-                            const carrierName = fixedShipmentData.carrier || fixedShipmentData.selectedCarrier;
+                            const rawCarrierNameForEvent = fixedShipmentData.carrier || fixedShipmentData.selectedCarrier;
+                            const displayCarrierNameForEvent = getDisplayCarrierName(
+                                rawCarrierNameForEvent,
+                                companyIdForAddress || fixedShipmentData.companyID || fixedShipmentData.companyId,
+                                companyData || null,
+                                isAdmin
+                            );
                             syntheticEvents.push({
                                 id: 'carrier-selection-' + identifier,
                                 status: 'Carrier Selected',
-                                description: `Carrier selected: ${carrierName}`,
+                                description: `Carrier selected: ${displayCarrierNameForEvent}`,
                                 location: { city: '', state: '', postalCode: '' },
                                 timestamp: parseTimestamp(fixedShipmentData.createdAt) || stableFallbackDate,
                                 color: getStatusColor('carrier_selection'),

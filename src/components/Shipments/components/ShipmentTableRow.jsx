@@ -507,6 +507,38 @@ const ShipmentTableRow = ({
         return trackingNumber;
     };
 
+    // Map a human carrier name to our canonical carrierID used in connectedCarriers
+    const mapCarrierNameToId = (name) => {
+        if (!name || typeof name !== 'string') return '';
+        const normalized = name.toLowerCase().trim();
+        const nameToId = {
+            'canpar express': 'CANPAR',
+            'canpar': 'CANPAR',
+            'eship plus': 'ESHIPPLUS',
+            'eshipplus': 'ESHIPPLUS',
+            'polaris transportation': 'POLARISTRANSPORTATION',
+            'polaris': 'POLARISTRANSPORTATION',
+            'fedex': 'FEDEX',
+            'ups': 'UPS',
+            'purolator': 'PUROLATOR',
+            'dhl': 'DHL',
+            'canada post': 'CANADAPOST',
+            'usps': 'USPS',
+            'ward trucking': 'ESHIPPLUS',
+            'ward': 'ESHIPPLUS',
+            'saia': 'ESHIPPLUS',
+            'estes': 'ESHIPPLUS',
+            'old dominion': 'ESHIPPLUS',
+            'odfl': 'ESHIPPLUS',
+            'yrc': 'ESHIPPLUS',
+            'xpo': 'ESHIPPLUS',
+            'fedex freight': 'ESHIPPLUS',
+            'road runner': 'ESHIPPLUS',
+            'roadrunner': 'ESHIPPLUS'
+        };
+        return nameToId[normalized] || name.toUpperCase().replace(/\s+/g, '');
+    };
+
     // Get carrier name with eShipPlus detection
     const getCarrierDisplay = () => {
         // For draft shipments, especially advanced drafts, carrier data may not exist yet
@@ -528,7 +560,7 @@ const ShipmentTableRow = ({
 
                     if (currentCompanyData) {
                         const displayName = getDisplayCarrierName(
-                            { name: carrierName, carrierID: carrierName },
+                            { name: carrierName, carrierID: mapCarrierNameToId(carrierName) },
                             shipmentCompanyId,
                             currentCompanyData,
                             isAdminUser
@@ -586,7 +618,7 @@ const ShipmentTableRow = ({
 
                 if (currentCompanyData) {
                     const displayName = getDisplayCarrierName(
-                        { name: carrierName, carrierID: carrierName },
+                        { name: carrierName, carrierID: mapCarrierNameToId(carrierName) },
                         shipmentCompanyId,
                         currentCompanyData,
                         isAdminUser
@@ -637,7 +669,7 @@ const ShipmentTableRow = ({
 
             if (currentCompanyData) {
                 const displayName = getDisplayCarrierName(
-                    { name: carrierName, carrierID: carrierName },
+                    { name: carrierName, carrierID: mapCarrierNameToId(carrierName) },
                     shipmentCompanyId,
                     currentCompanyData,
                     isAdminUser
@@ -658,6 +690,7 @@ const ShipmentTableRow = ({
     };
 
     const trackingNumber = getTrackingNumber();
+    const canViewDocuments = hasPermission(userRole, PERMISSIONS.VIEW_DOCUMENTS);
     const carrierDisplay = getCarrierDisplay();
 
     // Helper function to get column width from config
@@ -2605,15 +2638,17 @@ const ShipmentTableRow = ({
                                     )}
 
                                     {/* Documents */}
-                                    <Grid item xs={12} md={adminViewMode ? 6 : 12}>
-                                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                            <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                DOCUMENTS
-                                            </Typography>
+                                    {canViewDocuments && (
+                                        <Grid item xs={12} md={adminViewMode ? 6 : 12}>
+                                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                                <Typography variant="subtitle2" sx={{ fontSize: '11px !important', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                    DOCUMENTS
+                                                </Typography>
 
-                                            <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} userRole={userRole} />
-                                        </Box>
-                                    </Grid>
+                                                <DocumentsSection shipment={shipment} showSnackbar={showSnackbar} expanded={expanded} userRole={userRole} />
+                                            </Box>
+                                        </Grid>
+                                    )}
                                 </Grid>
                             </Box>
                         </Collapse>

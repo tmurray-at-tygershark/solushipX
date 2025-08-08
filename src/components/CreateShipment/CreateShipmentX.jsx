@@ -5798,7 +5798,7 @@ const CreateShipmentX = (props) => {
                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                                                     <Box>
                                                         <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
-                                                            Shipping Rates
+                                                            Choose Shipment
                                                         </Typography>
                                                     </Box>
                                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -5949,83 +5949,90 @@ const CreateShipmentX = (props) => {
                                                 {/* Rates Display - Show whenever we have rates, even during loading */}
                                                 {rates.length > 0 && (
                                                     <Box>
-                                                        {/* Rate Filtering and Sorting Controls */}
-                                                        <Box sx={{ mb: 3 }}>
-                                                            <Grid container spacing={3} alignItems="center">
-                                                                <Grid item xs={12} sm={6} md={3}>
-                                                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                        Sort By
-                                                                    </Typography>
-                                                                    <select
-                                                                        value={sortBy}
-                                                                        onChange={(e) => setSortBy(e.target.value)}
-                                                                        style={{
-                                                                            width: '100%',
-                                                                            padding: '8px 12px',
-                                                                            fontSize: '12px',
-                                                                            border: '1px solid #d1d5db',
-                                                                            borderRadius: '6px',
-                                                                            backgroundColor: '#fff',
-                                                                            color: '#374151'
-                                                                        }}
-                                                                    >
-                                                                        <option value="price">Price (Lowest First)</option>
-                                                                        <option value="transit">Transit Time (Fastest First)</option>
-                                                                        <option value="carrier">Carrier (A-Z)</option>
-                                                                    </select>
-                                                                </Grid>
-                                                                <Grid item xs={12} sm={6} md={3}>
-                                                                    <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                        Service Type
-                                                                    </Typography>
-                                                                    <select
-                                                                        value={serviceFilter}
-                                                                        onChange={(e) => setServiceFilter(e.target.value)}
-                                                                        style={{
-                                                                            width: '100%',
-                                                                            padding: '8px 12px',
-                                                                            fontSize: '12px',
-                                                                            border: '1px solid #d1d5db',
-                                                                            borderRadius: '6px',
-                                                                            backgroundColor: '#fff',
-                                                                            color: '#374151'
-                                                                        }}
-                                                                    >
-                                                                        <option value="any">ANY</option>
-                                                                        <option value="guaranteed">Guaranteed Only</option>
-                                                                        <option value="economy">Economy</option>
-                                                                        <option value="express">Express</option>
-                                                                    </select>
-                                                                </Grid>
-                                                                <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-                                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1 }}>
-                                                                        <CarrierStatsPopover rawRateApiResponseData={rawRateApiResponseData} />
-                                                                        <Button
-                                                                            variant="text"
-                                                                            onClick={() => setShowRateDetails(!showRateDetails)}
-                                                                            sx={{
-                                                                                fontSize: '12px',
-                                                                                textTransform: 'none',
-                                                                                px: 2,
-                                                                                py: 1,
-                                                                                color: '#6366f1',
-                                                                                '&:hover': {
-                                                                                    backgroundColor: 'rgba(99, 102, 241, 0.1)'
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            {showRateDetails ? 'Hide Details' : 'Show Details'}
-                                                                        </Button>
-                                                                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', ml: 2 }}>
-                                                                            {filteredRates.length} of {rates.length} rates
-                                                                            {isLoadingRates && (
-                                                                                <span style={{ color: '#0ea5e9', fontWeight: 500 }}> (loading...)</span>
-                                                                            )}
-                                                                        </Typography>
-                                                                    </Box>
-                                                                </Grid>
-                                                            </Grid>
-                                                        </Box>
+                                                        {/* Rate Filtering and Sorting Controls (permission-gated) */}
+                                                        {(() => {
+                                                            const { getShipmentDetailPermissions } = require('../../utils/rolePermissions');
+                                                            const perms = getShipmentDetailPermissions(userRole);
+                                                            if (!perms?.canShowRateFilters) return null;
+                                                            return (
+                                                                <Box sx={{ mb: 3 }}>
+                                                                    <Grid container spacing={3} alignItems="center">
+                                                                        <Grid item xs={12} sm={6} md={3}>
+                                                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                                Sort By
+                                                                            </Typography>
+                                                                            <select
+                                                                                value={sortBy}
+                                                                                onChange={(e) => setSortBy(e.target.value)}
+                                                                                style={{
+                                                                                    width: '100%',
+                                                                                    padding: '8px 12px',
+                                                                                    fontSize: '12px',
+                                                                                    border: '1px solid #d1d5db',
+                                                                                    borderRadius: '6px',
+                                                                                    backgroundColor: '#fff',
+                                                                                    color: '#374151'
+                                                                                }}
+                                                                            >
+                                                                                <option value="price">Price (Lowest First)</option>
+                                                                                <option value="transit">Transit Time (Fastest First)</option>
+                                                                                <option value="carrier">Carrier (A-Z)</option>
+                                                                            </select>
+                                                                        </Grid>
+                                                                        <Grid item xs={12} sm={6} md={3}>
+                                                                            <Typography variant="subtitle2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                                                Service Type
+                                                                            </Typography>
+                                                                            <select
+                                                                                value={serviceFilter}
+                                                                                onChange={(e) => setServiceFilter(e.target.value)}
+                                                                                style={{
+                                                                                    width: '100%',
+                                                                                    padding: '8px 12px',
+                                                                                    fontSize: '12px',
+                                                                                    border: '1px solid #d1d5db',
+                                                                                    borderRadius: '6px',
+                                                                                    backgroundColor: '#fff',
+                                                                                    color: '#374151'
+                                                                                }}
+                                                                            >
+                                                                                <option value="any">ANY</option>
+                                                                                <option value="guaranteed">Guaranteed Only</option>
+                                                                                <option value="economy">Economy</option>
+                                                                                <option value="express">Express</option>
+                                                                            </select>
+                                                                        </Grid>
+                                                                        <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1 }}>
+                                                                                <CarrierStatsPopover rawRateApiResponseData={rawRateApiResponseData} />
+                                                                                <Button
+                                                                                    variant="text"
+                                                                                    onClick={() => setShowRateDetails(!showRateDetails)}
+                                                                                    sx={{
+                                                                                        fontSize: '12px',
+                                                                                        textTransform: 'none',
+                                                                                        px: 2,
+                                                                                        py: 1,
+                                                                                        color: '#6366f1',
+                                                                                        '&:hover': {
+                                                                                            backgroundColor: 'rgba(99, 102, 241, 0.1)'
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {showRateDetails ? 'Hide Details' : 'Show Details'}
+                                                                                </Button>
+                                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', ml: 2 }}>
+                                                                                    {filteredRates.length} of {rates.length} rates
+                                                                                    {isLoadingRates && (
+                                                                                        <span style={{ color: '#0ea5e9', fontWeight: 500 }}> (loading...)</span>
+                                                                                    )}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        </Grid>
+                                                                    </Grid>
+                                                                </Box>
+                                                            );
+                                                        })()}
 
                                                         {/* Enhanced Rate Cards */}
                                                         <Grid container spacing={3}>

@@ -3094,7 +3094,9 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                             logoUrl: company.logoUrl || company.logo || company.logoURL || null,
                             // Include the new multi-logo system
                             logos: company.logos || null,
-                            status: company.status || 'active'
+                            status: company.status || 'active',
+                            // CRITICAL: include connectedCarriers for carrier display overrides in table
+                            connectedCarriers: Array.isArray(company.connectedCarriers) ? company.connectedCarriers : []
                         };
                     }
                 });
@@ -3106,6 +3108,15 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.error('Error fetching companies data:', error);
         }
     }, [adminViewMode, adminCompanyIds, companyIdForAddress]);
+
+    // Build company data map for rows: admin → multi-company map, user → current company context
+    const companyDataForRows = useMemo(() => {
+        if (adminViewMode) return companiesData || {};
+        if (companyIdForAddress && companyData) {
+            return { [companyIdForAddress]: companyData };
+        }
+        return {};
+    }, [adminViewMode, companiesData, companyIdForAddress, companyData]);
 
     // Fetch carrier information from shipmentRates collection - optimized
     const fetchCarrierData = useCallback(async (shipmentIds) => {
@@ -4522,7 +4533,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         onEditDraftShipment={handleEditDraftShipment}
                                         onEditShipment={handleEditShipment}
                                         customers={customers}
-                                        companyData={companiesData}
+                                        companyData={companyDataForRows}
                                         carrierData={carrierData}
                                         searchFields={searchFields}
                                         highlightSearchTerm={highlightSearchTerm}
