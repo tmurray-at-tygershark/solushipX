@@ -218,6 +218,13 @@ exports.createFollowUpTask = onCall({
             await scheduleTaskReminders(taskData.id, request.data.reminders);
         }
 
+        // Schedule assignment + reminder notifications
+        try {
+            await scheduleTaskNotifications(taskData);
+        } catch (notifyErr) {
+            logger.error('Error scheduling task notifications for manual task:', notifyErr);
+        }
+
         logger.info(`Follow-up task created: ${taskData.id}`, { taskData });
         return { success: true, taskId: taskData.id };
 
@@ -737,6 +744,7 @@ async function processRuleForShipment(rule, shipment, previousShipment) {
         const taskData = {
             id: admin.firestore().collection('followUpTasks').doc().id,
             shipmentId: shipment.shipmentID,
+            companyId: shipment.companyID || shipment.companyId || null,
             ruleId: rule.id,
             title: rule.checkpoint.name,
             description: rule.checkpoint.description || `Automated task: ${rule.checkpoint.name}`,
@@ -954,6 +962,7 @@ async function scheduleTaskNotifications(task) {
             id: admin.firestore().collection('notifications').doc().id,
             taskId: task.id,
             recipientId: task.assignedTo,
+            companyId: task.companyId || null,
             type: 'assignment',
             channel: task.notificationType || 'email', // Use task notification type
             actionTypes: task.actionTypes || ['email'], // Include action types
@@ -981,6 +990,7 @@ async function scheduleTaskNotifications(task) {
                 id: admin.firestore().collection('notifications').doc().id,
                 taskId: task.id,
                 recipientId: task.assignedTo,
+                companyId: task.companyId || null,
                 type: 'reminder',
                 channel: task.notificationType || 'email',
                 actionTypes: task.actionTypes || ['email'],
@@ -1013,29 +1023,22 @@ async function scheduleTaskNotifications(task) {
 exports.processPendingNotifications = onCall({
     cors: true,
     timeoutSeconds: 60,
-}, async (request) => {
+}, async () => {
     try {
-        const now = admin.firestore.FieldValue.serverTimestamp();
-        
-        // Get pending notifications that are due
+        const nowTs = admin.firestore.Timestamp.now();
+
         const pendingSnapshot = await db.collection('notifications')
             .where('status', '==', 'pending')
-            .where('scheduledFor', '<=', now)
+            .where('scheduledFor', '<=', nowTs)
             .limit(50)
             .get();
 
-        const notifications = pendingSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
+        const notifications = pendingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         logger.info(`Processing ${notifications.length} pending notifications`);
 
-        // Process each notification
         for (const notification of notifications) {
             await processNotification(notification);
         }
-
     } catch (error) {
         logger.error('Error processing pending notifications:', error);
     }
@@ -1046,9 +1049,26 @@ exports.processPendingNotifications = onCall({
  */
 async function processNotification(notification) {
     try {
-        // TODO: Implement actual notification sending (email, SMS, etc.)
-        // For now, just mark as sent
-        
+        // Minimal email integration using existing sendgridService
+        const { sendNotificationEmail } = require('../email/sendgridService');
+
+        if (notification.channel === 'email') {
+            const type = notification.type === 'reminder' ? 'status_changed' : 'status_changed';
+            // Reuse a generic type; templates can be expanded later if needed
+            const companyId = notification.companyId || notification.recipientCompanyId || 'INTERNAL';
+            const data = notification.templateData?.task ? {
+                shipmentNumber: notification.templateData.task.shipmentId,
+                currentStatus: `Follow-up: ${notification.templateData.task.title}`,
+                description: notification.message || 'Task notification'
+            } : { shipmentNumber: 'N/A', currentStatus: 'Follow-up', description: notification.message || '' };
+
+            try {
+                await sendNotificationEmail(type, companyId, data, notification.id);
+            } catch (sendErr) {
+                logger.error('Error sending follow-up email via SendGrid', sendErr);
+            }
+        }
+
         await db.collection('notifications').doc(notification.id).update({
             status: 'sent',
             sent: true,
@@ -1073,7 +1093,7 @@ async function processNotification(notification) {
             });
         } else {
             // Schedule retry
-            const retryTime = new Date(Date.now() + notification.retryInterval * 60 * 1000);
+            const retryTime = admin.firestore.Timestamp.fromDate(new Date(Date.now() + (notification.retryInterval || 5) * 60 * 1000));
             
             await db.collection('notifications').doc(notification.id).update({
                 retryCount,
@@ -1137,3 +1157,60 @@ async function scheduleTaskReminders(taskId, reminders) {
         logger.error('Error scheduling reminders:', error);
     }
 } 
+
+/**
+ * Schedule a custom reminder notification for a task
+ */
+exports.scheduleTaskReminder = onCall({ cors: true, timeoutSeconds: 60 }, async (request) => {
+    try {
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
+
+        const { taskId, scheduledAt, recipientId } = request.data || {};
+        if (!taskId || !scheduledAt) {
+            throw new HttpsError('invalid-argument', 'taskId and scheduledAt are required');
+        }
+
+        const taskSnap = await db.collection('followUpTasks').doc(taskId).get();
+        if (!taskSnap.exists) {
+            throw new HttpsError('not-found', 'Task not found');
+        }
+        const task = taskSnap.data();
+
+        const sched = new Date(scheduledAt);
+        if (isNaN(sched.getTime())) {
+            throw new HttpsError('invalid-argument', 'scheduledAt must be a valid date');
+        }
+
+        const notification = {
+            id: admin.firestore().collection('notifications').doc().id,
+            taskId,
+            recipientId: recipientId || task.assignedTo,
+            companyId: task.companyId || null,
+            type: 'reminder',
+            channel: task.notificationType || 'email',
+            actionTypes: task.actionTypes || ['email'],
+            subject: `Reminder: ${task.title}`,
+            message: `Reminder for follow-up task on shipment ${task.shipmentId}.`,
+            templateId: 'task_reminder',
+            templateData: { task },
+            scheduledFor: admin.firestore.Timestamp.fromDate(sched),
+            sent: false,
+            status: 'pending',
+            retryCount: 0,
+            maxRetries: 3,
+            retryInterval: 5,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection('notifications').doc(notification.id).set(notification);
+
+        logger.info('Custom reminder scheduled', { id: notification.id, taskId, scheduledAt: sched.toISOString() });
+        return { success: true, notificationId: notification.id };
+    } catch (error) {
+        logger.error('Error scheduling custom reminder:', error);
+        throw new HttpsError('internal', 'Failed to schedule reminder');
+    }
+});

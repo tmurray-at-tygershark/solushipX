@@ -108,9 +108,10 @@ import ModalHeader from '../common/ModalHeader';
 import EnhancedStatusChip from '../StatusChip/EnhancedStatusChip';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase';
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getCircleLogo } from '../../utils/logoUtils';
+import LoadingSkeleton from '../ShipmentDetail/components/LoadingSkeleton';
 
 // ===================================================================
 // MAIN DASHBOARD COMPONENT
@@ -129,7 +130,11 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [rowsPerPage, setRowsPerPage] = useState(50);
+    const [expandedDescriptions, setExpandedDescriptions] = useState({});
+    const toggleDescription = (taskId) => {
+        setExpandedDescriptions(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+    };
 
     // Company & Customer Management
     const [availableCompanies, setAvailableCompanies] = useState([]);
@@ -165,7 +170,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     // Statistics
     const [stats, setStats] = useState({
         totalTasks: 0,
-        pendingTasks: 0,
+        dueToday: 0,
         overdueTasks: 0,
         completedToday: 0,
         activeRules: 0,
@@ -227,26 +232,38 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     // Load customers based on selected company
     useEffect(() => {
         const loadCustomers = async () => {
-            if (!companyIdForAddress && selectedCompanyId === 'all') return;
+            // Only populate customers when a specific company is selected
+            if (selectedCompanyId === 'all') {
+                setAvailableCustomers([]);
+                return;
+            }
 
             setLoadingCustomers(true);
             try {
-                const targetCompanyId = selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId;
+                const targetCompanyId = selectedCompanyId;
 
                 if (targetCompanyId) {
-                    const customersQuery = query(
+                    // Try primary field companyId first
+                    const byCompanyIdQuery = query(
                         collection(db, 'customers'),
                         where('companyId', '==', targetCompanyId),
                         orderBy('name')
                     );
+                    const byCompanyIdSnap = await getDocs(byCompanyIdQuery);
+                    let customers = byCompanyIdSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                    const customersSnapshot = await getDocs(customersQuery);
-                    const customers = customersSnapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    }));
+                    // Fallback to legacy field companyID
+                    if (customers.length === 0) {
+                        const byCompanyIDQuery = query(
+                            collection(db, 'customers'),
+                            where('companyID', '==', targetCompanyId),
+                            orderBy('name')
+                        );
+                        const byCompanyIDSnap = await getDocs(byCompanyIDQuery);
+                        customers = byCompanyIDSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    }
 
-                    setAvailableCustomers(customers);
+                    setAvailableCustomers(customers || []);
                 }
             } catch (error) {
                 console.error('Error loading customers:', error);
@@ -257,7 +274,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         };
 
         loadCustomers();
-    }, [companyIdForAddress, selectedCompanyId]);
+    }, [selectedCompanyId]);
 
     // Load shipment data for tasks
     const loadShipmentDataForTasks = async (tasks) => {
@@ -272,17 +289,23 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
 
             const shipmentQueries = shipmentIds.map(async (shipmentId) => {
                 try {
-                    // Try to get shipment by document ID first
-                    const shipmentDoc = await getDocs(query(
+                    // Dual lookup: try as Firestore document ID, then as business shipmentID field
+                    const byDocRef = doc(db, 'shipments', shipmentId);
+                    const byDocSnap = await getDoc(byDocRef);
+                    if (byDocSnap.exists()) {
+                        return { id: shipmentId, data: { id: byDocSnap.id, ...byDocSnap.data() } };
+                    }
+
+                    const byFieldSnapshot = await getDocs(query(
                         collection(db, 'shipments'),
                         where('shipmentID', '==', shipmentId),
                         limit(1)
                     ));
 
-                    if (!shipmentDoc.empty) {
+                    if (!byFieldSnapshot.empty) {
                         return {
                             id: shipmentId,
-                            data: { id: shipmentDoc.docs[0].id, ...shipmentDoc.docs[0].data() }
+                            data: { id: byFieldSnapshot.docs[0].id, ...byFieldSnapshot.docs[0].data() }
                         };
                     }
                     return { id: shipmentId, data: null };
@@ -465,7 +488,12 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         const rulesArray = Array.isArray(rules) ? rules : [];
 
         const totalTasks = taskArray.length;
-        const pendingTasks = taskArray.filter(task => task.status === 'pending').length;
+        const dueToday = taskArray.filter(task => {
+            const d = task.dueDate?.toDate?.() || new Date(task.dueDate);
+            if (!d || isNaN(d.getTime())) return false;
+            const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            return dd.getTime() === today.getTime() && task.status !== 'completed';
+        }).length;
         const overdueTasks = taskArray.filter(task => {
             const dueDate = task.dueDate?.toDate?.() || new Date(task.dueDate);
             return task.status !== 'completed' && dueDate < now;
@@ -474,7 +502,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             const completedDate = task.completedAt?.toDate?.() || new Date(task.completedAt);
             return task.status === 'completed' && completedDate >= today;
         }).length;
-        const activeRules = rulesArray.filter(rule => rule.active).length;
+        const activeRules = rulesArray.filter(rule => (rule.isActive === true) || (rule.active === true)).length;
 
         // Calculate average completion time (in hours)
         const completedTasks = taskArray.filter(task => task.status === 'completed' && task.completedAt && task.createdAt);
@@ -488,7 +516,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
 
         setStats({
             totalTasks,
-            pendingTasks,
+            dueToday,
             overdueTasks,
             completedToday,
             activeRules,
@@ -542,7 +570,27 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     };
 
     const handleEditTask = (task) => {
-        setSelectedTask(task);
+        // Normalize potentially invalid date fields before opening the dialog
+        const normalizeDate = (v) => {
+            try {
+                if (!v) return '';
+                const d = v?.toDate?.() || (v?.seconds ? new Date(v.seconds * 1000) : new Date(v));
+                return isNaN(d?.getTime?.()) ? '' : d.toISOString().split('T')[0];
+            } catch { return ''; }
+        };
+
+        const safeTask = {
+            ...task,
+            dueDate: normalizeDate(task?.dueDate),
+            completedAt: normalizeDate(task?.completedAt)
+        };
+
+        // Attach shipment context if available for quick actions
+        if (task?.shipmentId && shipmentData[task.shipmentId]) {
+            safeTask.shipment = shipmentData[task.shipmentId];
+        }
+
+        setSelectedTask(safeTask);
         setEditTaskDialog(true);
     };
 
@@ -570,17 +618,54 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         if (!selectedTask) return;
 
         try {
-            const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
-            await updateFollowUpTask({
+            // Build safe payload
+            const payload = {
                 taskId: selectedTask.id,
-                ...updatedTaskData
-            });
+                shipmentId: selectedTask.shipmentId || selectedTask?.shipment?.id || null,
+                title: updatedTaskData.title ?? selectedTask.title,
+                description: updatedTaskData.description ?? selectedTask.description,
+                priority: updatedTaskData.priority ?? selectedTask.priority,
+                status: updatedTaskData.status ?? selectedTask.status,
+                assignedTo: updatedTaskData.assignedTo ?? selectedTask.assignedTo,
+                category: updatedTaskData.category ?? selectedTask.category,
+            };
+
+            if (updatedTaskData.dueDate instanceof Date) {
+                payload.dueDate = updatedTaskData.dueDate;
+            } else if (typeof updatedTaskData.dueDate === 'string' && updatedTaskData.dueDate) {
+                const d = new Date(updatedTaskData.dueDate);
+                if (!isNaN(d.getTime())) payload.dueDate = d;
+            }
+
+            const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
+            await updateFollowUpTask(payload);
+
+            // Optimistically update list to reflect changes immediately
+            setTasks(prev => prev.map(t => (t.id === selectedTask.id ? { ...t, ...payload } : t)));
 
             setEditTaskDialog(false);
             setSelectedTask(null);
             refreshData();
         } catch (error) {
             console.error('Error updating task:', error);
+            alert('Failed to update task. Please try again.');
+        }
+    };
+
+    // Inline updater that does not depend on selectedTask (e.g., header status dropdown)
+    const handleInlineUpdateTask = async (task, partialUpdate) => {
+        if (!task?.id) return;
+        try {
+            const payload = {
+                taskId: task.id,
+                ...partialUpdate,
+            };
+            if (task.shipmentId) payload.shipmentId = task.shipmentId;
+            const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
+            await updateFollowUpTask(payload);
+            setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, ...partialUpdate } : t)));
+        } catch (error) {
+            console.error('Inline update failed:', error);
         }
     };
 
@@ -743,8 +828,12 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     border: '1px solid #e5e7eb',
                     boxShadow: 'none',
                     borderRadius: '8px'
-                }}>
-                    <CardContent sx={{ p: 2 }}>
+                }} onClick={() => {
+                    // Filter to due today
+                    setFilters(prev => ({ ...prev, dueDate: 'today' }));
+                    setSelectedTab('tasks');
+                }} sx-prop-ignored>
+                    <CardContent sx={{ p: 2, cursor: 'pointer' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                             <ScheduleIcon sx={{ color: '#f59e0b', mr: 1, fontSize: '20px' }} />
                             <Typography sx={{
@@ -754,7 +843,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.5px'
                             }}>
-                                Pending
+                                Due Today
                             </Typography>
                         </Box>
                         <Typography sx={{
@@ -762,7 +851,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             fontWeight: 600,
                             color: '#111827'
                         }}>
-                            {stats.pendingTasks}
+                            {stats.dueToday}
                         </Typography>
                     </CardContent>
                 </Card>
@@ -774,8 +863,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     border: '1px solid #e5e7eb',
                     boxShadow: 'none',
                     borderRadius: '8px'
-                }}>
-                    <CardContent sx={{ p: 2 }}>
+                }} onClick={() => { setFilters(prev => ({ ...prev, dueDate: 'overdue' })); setSelectedTab('tasks'); }}>
+                    <CardContent sx={{ p: 2, cursor: 'pointer' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                             <WarningIcon sx={{ color: '#ef4444', mr: 1, fontSize: '20px' }} />
                             <Typography sx={{
@@ -805,8 +894,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     border: '1px solid #e5e7eb',
                     boxShadow: 'none',
                     borderRadius: '8px'
-                }}>
-                    <CardContent sx={{ p: 2 }}>
+                }} onClick={() => { setFilters(prev => ({ ...prev, status: 'completed' })); setSelectedTab('tasks'); }}>
+                    <CardContent sx={{ p: 2, cursor: 'pointer' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                             <CompletedIcon sx={{ color: '#10b981', mr: 1, fontSize: '20px' }} />
                             <Typography sx={{
@@ -825,68 +914,6 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             color: '#111827'
                         }}>
                             {stats.completedToday}
-                        </Typography>
-                    </CardContent>
-                </Card>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={2}>
-                <Card sx={{
-                    height: '100%',
-                    border: '1px solid #e5e7eb',
-                    boxShadow: 'none',
-                    borderRadius: '8px'
-                }}>
-                    <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <SettingsIcon sx={{ color: '#8b5cf6', mr: 1, fontSize: '20px' }} />
-                            <Typography sx={{
-                                fontSize: '11px',
-                                fontWeight: 500,
-                                color: '#6b7280',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px'
-                            }}>
-                                Active Rules
-                            </Typography>
-                        </Box>
-                        <Typography sx={{
-                            fontSize: '24px',
-                            fontWeight: 600,
-                            color: '#111827'
-                        }}>
-                            {stats.activeRules}
-                        </Typography>
-                    </CardContent>
-                </Card>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={2}>
-                <Card sx={{
-                    height: '100%',
-                    border: '1px solid #e5e7eb',
-                    boxShadow: 'none',
-                    borderRadius: '8px'
-                }}>
-                    <CardContent sx={{ p: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            <TimeIcon sx={{ color: '#06b6d4', mr: 1, fontSize: '20px' }} />
-                            <Typography sx={{
-                                fontSize: '11px',
-                                fontWeight: 500,
-                                color: '#6b7280',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px'
-                            }}>
-                                Avg. Completion
-                            </Typography>
-                        </Box>
-                        <Typography sx={{
-                            fontSize: '24px',
-                            fontWeight: 600,
-                            color: '#111827'
-                        }}>
-                            {stats.averageCompletionTime}h
                         </Typography>
                     </CardContent>
                 </Card>
@@ -1026,9 +1053,23 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         return userId.charAt(0).toUpperCase();
     };
 
+    // Date parsing helper for tasks
+    const toSafeDate = (value) => {
+        try {
+            if (!value) return null;
+            if (value.toDate && typeof value.toDate === 'function') return value.toDate();
+            if (value.seconds && typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? null : d;
+        } catch {
+            return null;
+        }
+    };
+
     // Enhanced task card with professional styling and comprehensive information
     const renderTaskCard = (task) => {
         const shipment = shipmentData[task.shipmentId];
+        const dueDateObj = toSafeDate(task.dueDate);
 
         return (
             <Card
@@ -1036,6 +1077,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 sx={{
                     mb: 2,
                     border: '1px solid #e5e7eb',
+                    borderTop: `2px solid ${task.status === 'completed' ? '#16a34a' : task.status === 'in_progress' ? '#3b82f6' : task.status === 'cancelled' ? '#6b7280' : '#d97706'}`,
                     boxShadow: 'none',
                     borderRadius: '8px',
                     cursor: 'pointer',
@@ -1047,17 +1089,33 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 }}
                 onClick={() => handleTaskClick(task)}
             >
-                <CardContent sx={{ p: 2 }}>
+                <CardContent sx={{ p: 2 }} onClick={() => handleTaskClick(task)}>
                     {/* Task Header */}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                         <Typography sx={{
                             fontWeight: 600,
                             fontSize: '14px',
-                            color: '#111827'
+                            color: '#111827',
+                            fontFamily: 'monospace'
                         }}>
-                            {task.title}
+                            {shipment?.shipmentID || task.shipmentId || '—'}
                         </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }} onClick={(e) => e.stopPropagation()}>
+                            {/* Inline status dropdown */}
+                            <FormControl size="small" sx={{ minWidth: 140 }}>
+                                <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                <Select
+                                    value={task.status || 'pending'}
+                                    onChange={(e) => handleInlineUpdateTask(task, { status: e.target.value })}
+                                    label="Status"
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
+                                    <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
+                                    <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
+                                    <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
+                                </Select>
+                            </FormControl>
                             <Chip
                                 label={task.priority}
                                 size="small"
@@ -1076,31 +1134,11 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                     }
                                 }}
                             />
-                            <EnhancedStatusChip
-                                status={task.status}
-                                size="small"
-                                sx={{
-                                    height: '20px',
-                                    fontSize: '10px',
-                                    '& .MuiChip-label': {
-                                        fontSize: '10px'
-                                    }
-                                }}
-                            />
+                            {/* Status chip removed in favor of dropdown */}
                         </Box>
                     </Box>
 
-                    {/* Task Description */}
-                    <Typography sx={{
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        mb: 2,
-                        lineHeight: 1.4
-                    }}>
-                        {task.description}
-                    </Typography>
-
-                    {/* Shipment Information Section */}
+                    {/* Shipment Information Section - moved above description */}
                     {shipment && (
                         <Box sx={{
                             mb: 2,
@@ -1152,7 +1190,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                 </Box>
                             )}
 
-                            {/* Shipment Status and Tracking */}
+                            {/* Shipment Status / Tracking / Key Refs */}
                             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                                 {shipment.status && (
                                     <EnhancedStatusChip
@@ -1173,7 +1211,47 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                         #{shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber}
                                     </Typography>
                                 )}
+                                {/* Compact refs display */}
+                                {(() => {
+                                    try {
+                                        const refs = [];
+                                        const pushVal = (v) => { if (!v) return; if (Array.isArray(v)) { v.forEach(pushVal); return; } if (typeof v === 'object') { if (v.referenceNumber) pushVal(v.referenceNumber); if (v.value) pushVal(v.value); return; } refs.push(String(v)); };
+                                        pushVal(shipment.referenceNumber);
+                                        pushVal(shipment.referenceNumbers);
+                                        pushVal(shipment.shipmentInfo?.shipperReferenceNumber);
+                                        pushVal(shipment.shipmentInfo?.bookingReferenceNumber);
+                                        pushVal(shipment.selectedRate?.referenceNumber);
+                                        pushVal(shipment.customerReferenceNumber);
+                                        pushVal(shipment.poNumber);
+                                        pushVal(shipment.orderNumber);
+                                        const unique = Array.from(new Set(refs)).filter(Boolean).slice(0, 4);
+                                        return unique.length ? (
+                                            <Typography sx={{ fontSize: '9px', color: '#6b7280' }}>
+                                                Ref: {unique.join(', ')}
+                                            </Typography>
+                                        ) : null;
+                                    } catch { return null; }
+                                })()}
                             </Box>
+                        </Box>
+                    )}
+
+                    {/* Task Description (collapsible) */}
+                    <Typography sx={{
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        mb: 2,
+                        lineHeight: 1.4
+                    }}>
+                        {(expandedDescriptions[task.id] || !task?.description || task.description.length <= 180)
+                            ? (task.description || '')
+                            : `${task.description.substring(0, 180)}…`}
+                    </Typography>
+                    {(task?.description?.length || 0) > 180 && (
+                        <Box sx={{ mb: 2 }}>
+                            <Button size="small" onClick={(e) => { e.stopPropagation(); toggleDescription(task.id); }} sx={{ textTransform: 'none', fontSize: '11px', px: 0 }}>
+                                {expandedDescriptions[task.id] ? 'Show less' : 'Show more'}
+                            </Button>
                         </Box>
                     )}
 
@@ -1184,7 +1262,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                     <ShipmentIcon sx={{ fontSize: '14px', color: '#6b7280' }} />
                                     <Typography sx={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>
-                                        {task.shipmentId}
+                                        {shipment?.shipmentID || task.shipmentId}
                                     </Typography>
                                 </Box>
                             )}
@@ -1225,45 +1303,23 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                             )}
                         </Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {task.dueDate && (
+                            {task.dueDate && dueDateObj && (
                                 <Typography sx={{
                                     fontSize: '11px',
-                                    color: new Date(task.dueDate.toDate?.() || task.dueDate) < new Date() ? '#dc2626' : '#6b7280'
+                                    color: dueDateObj < new Date() ? '#dc2626' : '#6b7280'
                                 }}>
-                                    Due: {new Date(task.dueDate.toDate?.() || task.dueDate).toLocaleDateString()}
+                                    Due: {dueDateObj.toLocaleDateString()}
                                 </Typography>
                             )}
-                            <IconButton
+                            <Button
                                 size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEditTask(task);
-                                }}
-                                sx={{
-                                    color: '#6b7280',
-                                    '&:hover': {
-                                        backgroundColor: '#f3f4f6'
-                                    }
-                                }}
+                                variant="outlined"
+                                onClick={(e) => { e.stopPropagation(); handleEditTask(task); }}
+                                startIcon={<ViewIcon sx={{ fontSize: '16px' }} />}
+                                sx={{ textTransform: 'none', fontSize: '11px' }}
                             >
-                                <EditIcon sx={{ fontSize: '14px' }} />
-                            </IconButton>
-                            <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteTask(task);
-                                }}
-                                sx={{
-                                    color: '#6b7280',
-                                    '&:hover': {
-                                        backgroundColor: '#f3f4f6',
-                                        color: '#dc2626'
-                                    }
-                                }}
-                            >
-                                <DeleteIcon sx={{ fontSize: '14px' }} />
-                            </IconButton>
+                                View
+                            </Button>
                         </Box>
                     </Box>
                 </CardContent>
@@ -1481,7 +1537,22 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 </Paper>
             ) : (
                 <Box>
-                    {tasks.map(task => renderTaskCard(task))}
+                    {tasks
+                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                        .map(task => renderTaskCard(task))}
+                    <TablePagination
+                        component="div"
+                        count={tasks.length}
+                        page={page}
+                        onPageChange={(e, newPage) => setPage(newPage)}
+                        rowsPerPage={rowsPerPage}
+                        onRowsPerPageChange={(e) => {
+                            setRowsPerPage(parseInt(e.target.value, 10));
+                            setPage(0);
+                        }}
+                        rowsPerPageOptions={[25, 50, 100]}
+                        sx={{ mt: 2 }}
+                    />
                 </Box>
             )}
         </Box>
@@ -1877,7 +1948,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                     No follow-up tasks found. Tasks will appear here when created.
                                 </Alert>
                             ) : (
-                                <Box sx={{ maxHeight: '600px', overflowY: 'auto' }}>
+                                <Box>
                                     {tasks.slice(0, 10).map(task => renderTaskCard(task))}
                                     {tasks.length > 10 && (
                                         <Box sx={{ textAlign: 'center', mt: 2 }}>
@@ -1947,32 +2018,12 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
 
     // Auth loading state
     if (authLoading) {
-        return (
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '400px',
-                backgroundColor: '#f9fafb'
-            }}>
-                <CircularProgress size={32} />
-            </Box>
-        );
+        return <LoadingSkeleton />;
     }
 
     // Data loading state
     if (loading && tasks.length === 0) {
-        return (
-            <Box sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '400px',
-                backgroundColor: '#f9fafb'
-            }}>
-                <CircularProgress size={32} />
-            </Box>
-        );
+        return <LoadingSkeleton />;
     }
 
     // Error state
@@ -2019,7 +2070,6 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             {/* Scrollable Content */}
             <Box sx={{
                 flex: 1,
-                overflow: 'auto',
                 backgroundColor: '#ffffff'
             }}>
                 {renderTabContent()}
@@ -2074,16 +2124,29 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             <Dialog
                 open={createTaskDialog}
                 onClose={() => setCreateTaskDialog(false)}
-                maxWidth="md"
+                maxWidth="lg"
                 fullWidth
+                scroll="paper"
+                PaperProps={{ sx: { height: '80vh', display: 'flex', flexDirection: 'column' } }}
             >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Create New Follow-Up Task
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button onClick={() => setCreateTaskDialog(false)} sx={{ fontSize: '12px', textTransform: 'none' }}>Cancel</Button>
+                        <Button
+                            onClick={() => { const evt = new Event('submit-create-task-form'); window.dispatchEvent(evt); }}
+                            variant="contained"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >Create Task</Button>
+                    </Box>
                 </DialogTitle>
-                <DialogContent>
+                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1 }}>
                     <CreateTaskForm
                         onSave={handleCreateNewTask}
                         onCancel={() => setCreateTaskDialog(false)}
+                        staff={staff}
+                        availableCompanies={availableCompanies}
+                        defaultCompanyId={selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId}
                     />
                 </DialogContent>
             </Dialog>
@@ -2110,15 +2173,37 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             <Dialog
                 open={editTaskDialog}
                 onClose={() => setEditTaskDialog(false)}
-                maxWidth="md"
+                maxWidth="lg"
                 fullWidth
+                scroll="paper"
+                PaperProps={{ sx: { height: '80vh', display: 'flex', flexDirection: 'column' } }}
             >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Edit Follow-Up Task
+                    {/* Top-right actions */}
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button onClick={() => setEditTaskDialog(false)} sx={{ fontSize: '12px', textTransform: 'none' }}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                // trigger child form submit via custom event
+                                const evt = new Event('submit-edit-task-form');
+                                window.dispatchEvent(evt);
+                            }}
+                            variant="contained"
+                            sx={{ fontSize: '12px', textTransform: 'none' }}
+                        >
+                            Save Changes
+                        </Button>
+                    </Box>
                 </DialogTitle>
-                <DialogContent>
+                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1 }}>
                     <EditTaskForm
                         task={selectedTask}
+                        staff={staff}
+                        availableCompanies={availableCompanies}
+                        defaultCompanyId={selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId}
                         onSave={handleUpdateTask}
                         onCancel={() => setEditTaskDialog(false)}
                     />
@@ -2132,16 +2217,51 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
 // EDIT TASK FORM COMPONENT
 // ===================================================================
 
-const EditTaskForm = ({ task, onSave, onCancel }) => {
+const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId }) => {
     const [formData, setFormData] = useState({
         title: task?.title || '',
         description: task?.description || '',
         priority: task?.priority || 'medium',
         status: task?.status || 'pending',
         assignedTo: task?.assignedTo || '',
+        companyId: task?.companyId || defaultCompanyId || '',
+        customerId: task?.customerId || '',
         dueDate: task?.dueDate ? new Date(task.dueDate.toDate?.() || task.dueDate).toISOString().split('T')[0] : '',
+        dueTime: task?.dueDate ? new Date(task.dueDate.toDate?.() || task.dueDate).toTimeString().slice(0, 5) : '',
         category: task?.category || 'manual'
     });
+
+    const [companyCustomers, setCompanyCustomers] = useState([]);
+    const [validation, setValidation] = useState({ dueDateTime: '' });
+
+    useEffect(() => {
+        const loadCustomers = async () => {
+            try {
+                if (!formData.companyId) { setCompanyCustomers([]); return; }
+                const byCompanyIdQuery = query(
+                    collection(db, 'customers'),
+                    where('companyId', '==', formData.companyId),
+                    orderBy('name')
+                );
+                const snap = await getDocs(byCompanyIdQuery);
+                let custs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                if (custs.length === 0) {
+                    const legacyQuery = query(
+                        collection(db, 'customers'),
+                        where('companyID', '==', formData.companyId),
+                        orderBy('name')
+                    );
+                    const legacySnap = await getDocs(legacyQuery);
+                    custs = legacySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                }
+                setCompanyCustomers(custs);
+            } catch (e) {
+                console.warn('EditTaskForm loadCustomers error', e);
+                setCompanyCustomers([]);
+            }
+        };
+        loadCustomers();
+    }, [formData.companyId]);
 
     const handleChange = (field, value) => {
         setFormData(prev => ({
@@ -2152,15 +2272,55 @@ const EditTaskForm = ({ task, onSave, onCancel }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // Combine date + time to one Date at local timezone
+        let dueDateObj = null;
+        if (formData.dueDate) {
+            const time = formData.dueTime || '09:00';
+            const combined = new Date(`${formData.dueDate}T${time}:00`);
+            if (!isNaN(combined.getTime())) dueDateObj = combined;
+        }
+        // Validation: warn if due date in past
+        if (dueDateObj && dueDateObj.getTime() < Date.now()) {
+            setValidation({ dueDateTime: 'Selected time is in the past' });
+        } else {
+            setValidation({ dueDateTime: '' });
+        }
         onSave({
             ...formData,
-            dueDate: formData.dueDate ? new Date(formData.dueDate) : null
+            dueDate: dueDateObj
         });
     };
 
+    // Allow parent header Save button to submit this form
+    useEffect(() => {
+        const handler = (e) => {
+            e.preventDefault?.();
+            handleSubmit(new Event('submit'));
+        };
+        window.addEventListener('submit-edit-task-form', handler);
+        return () => window.removeEventListener('submit-edit-task-form', handler);
+    }, [formData]);
+
     return (
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1 }}>
             <Grid container spacing={2}>
+                {/* Status dropdown */}
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                        <Select
+                            value={formData.status}
+                            onChange={(e) => handleChange('status', e.target.value)}
+                            label="Status"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
+                            <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
+                            <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
+                            <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
                 <Grid item xs={12}>
                     <TextField
                         fullWidth
@@ -2175,20 +2335,86 @@ const EditTaskForm = ({ task, onSave, onCancel }) => {
                         }}
                     />
                 </Grid>
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Description"
-                        value={formData.description}
-                        onChange={(e) => handleChange('description', e.target.value)}
-                        multiline
-                        rows={3}
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
+                {/* Company / Customer / Assignee */}
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Company</InputLabel>
+                        <Select
+                            value={formData.companyId}
+                            onChange={(e) => handleChange('companyId', e.target.value)}
+                            label="Company"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                            {availableCompanies.map(c => (
+                                <MenuItem key={c.id} value={c.companyID} sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Avatar src={getCircleLogo(c)} sx={{ width: 18, height: 18, fontSize: '10px' }}>
+                                            {c.name?.[0] || 'C'}
+                                        </Avatar>
+                                        <Typography sx={{ fontSize: '12px' }}>{c.name}</Typography>
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>({c.companyID})</Typography>
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Customer</InputLabel>
+                        <Select
+                            value={formData.customerId}
+                            onChange={(e) => handleChange('customerId', e.target.value)}
+                            label="Customer"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                            {companyCustomers.map(cu => (
+                                <MenuItem key={cu.id} value={cu.id} sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Avatar src={cu.logo || cu.logoUrl || cu.customerLogo} sx={{ width: 18, height: 18, fontSize: '10px' }}>
+                                            {cu.name?.[0] || 'C'}
+                                        </Avatar>
+                                        <Typography sx={{ fontSize: '12px' }}>{cu.name}</Typography>
+                                        {cu.customerID && (
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>({cu.customerID})</Typography>
+                                        )}
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Assigned To</InputLabel>
+                        <Select
+                            value={formData.assignedTo}
+                            onChange={(e) => handleChange('assignedTo', e.target.value)}
+                            label="Assigned To"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>Unassigned</MenuItem>
+                            {staff
+                                .filter(u => !formData.companyId || (u.companyId === formData.companyId || u.connectedCompanies?.companies?.includes?.(formData.companyId)))
+                                .map(u => (
+                                    <MenuItem key={u.id} value={u.uid || u.id} sx={{ fontSize: '12px' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar src={u.photoURL || u.avatar} sx={{ width: 18, height: 18 }}>
+                                                {(u.firstName?.[0] || u.displayName?.[0] || u.email?.[0] || 'U')}
+                                            </Avatar>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : (u.displayName || 'Unknown')}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>{u.email}</Typography>
+                                            </Box>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                        </Select>
+                    </FormControl>
                 </Grid>
                 <Grid item xs={12} md={6}>
                     <FormControl fullWidth size="small">
@@ -2224,19 +2450,6 @@ const EditTaskForm = ({ task, onSave, onCancel }) => {
                 <Grid item xs={12} md={6}>
                     <TextField
                         fullWidth
-                        label="Assigned To"
-                        value={formData.assignedTo}
-                        onChange={(e) => handleChange('assignedTo', e.target.value)}
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
                         label="Due Date"
                         type="date"
                         value={formData.dueDate}
@@ -2248,6 +2461,138 @@ const EditTaskForm = ({ task, onSave, onCancel }) => {
                             '& .MuiInputLabel-root': { fontSize: '12px' }
                         }}
                     />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Due Time"
+                        type="time"
+                        value={formData.dueTime}
+                        onChange={(e) => handleChange('dueTime', e.target.value)}
+                        InputLabelProps={{ shrink: true }}
+                        size="small"
+                        helperText={validation.dueDateTime}
+                        error={Boolean(validation.dueDateTime)}
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+
+                {/* Reminders quick actions */}
+                <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>Remind:</Typography>
+                        <Chip size="small" label="In 2h" onClick={() => {
+                            const base = new Date();
+                            base.setHours(base.getHours() + 2);
+                            const d = base.toISOString().slice(0, 10);
+                            const t = base.toTimeString().slice(0, 5);
+                            setFormData(prev => ({ ...prev, dueDate: d, dueTime: t }));
+                        }} />
+                        <Chip size="small" label="At 4:00 PM" onClick={() => {
+                            const base = new Date();
+                            const d = base.toISOString().slice(0, 10);
+                            setFormData(prev => ({ ...prev, dueDate: d, dueTime: '16:00' }));
+                        }} />
+                        <Chip size="small" color="primary" label="Schedule reminder…" onClick={async () => {
+                            try {
+                                const scheduleAt = window.prompt('Enter reminder datetime (YYYY-MM-DD HH:mm)');
+                                if (!scheduleAt) return;
+                                const [dp, tp] = scheduleAt.split(' ');
+                                const iso = `${dp}T${(tp || '09:00')}:00`;
+                                const scheduleTaskReminder = httpsCallable(functions, 'scheduleTaskReminder');
+                                await scheduleTaskReminder({ taskId: task.id, scheduledAt: iso });
+                                alert('Reminder scheduled');
+                            } catch (e) {
+                                console.error('schedule reminder failed', e);
+                                alert('Failed to schedule reminder');
+                            }
+                        }} />
+                    </Box>
+                </Grid>
+
+                {/* Description moved to bottom and taller with templates */}
+                <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                        {['Delivery appointment confirmation', 'POD follow-up', 'Carrier status check', 'Customer notification'].map(tpl => (
+                            <Chip key={tpl} size="small" label={tpl} onClick={() => setFormData(prev => ({ ...prev, description: prev.description ? `${prev.description}\n${tpl}: ` : `${tpl}: ` }))} />
+                        ))}
+                    </Box>
+                    <TextField
+                        fullWidth
+                        label="Description"
+                        value={formData.description}
+                        onChange={(e) => handleChange('description', e.target.value)}
+                        multiline
+                        rows={6}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+
+                {/* Quick actions based on shipment context */}
+                {task?.shipment && (
+                    <Grid item xs={12}>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button size="small" variant="outlined" sx={{ textTransform: 'none', fontSize: '12px' }}
+                                onClick={() => {
+                                    const phone = task.shipment?.shipTo?.phone || task.shipment?.shipTo?.contactPhone || '';
+                                    if (phone) window.open(`tel:${phone}`);
+                                }}
+                            >Call receiver</Button>
+                            <Button size="small" variant="outlined" sx={{ textTransform: 'none', fontSize: '12px' }}
+                                onClick={() => {
+                                    const email = task.shipment?.shipTo?.email || task.shipment?.shipTo?.contactEmail || '';
+                                    const subject = encodeURIComponent(`Shipment ${task.shipment?.shipmentID || task.shipment?.id}`);
+                                    window.open(`mailto:${email}?subject=${subject}`);
+                                }}
+                            >Email receiver</Button>
+                        </Box>
+                    </Grid>
+                )}
+
+                {/* Activity preview (last 3 notes/actions) with add note */}
+                <Grid item xs={12}>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>Recent Activity</Typography>
+                    <Box sx={{ p: 1.5, border: '1px solid #e5e7eb', borderRadius: 1, background: '#fafafa', mb: 1 }}>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280', whiteSpace: 'pre-line' }}>
+                            {Array.isArray(task?.notes) && task.notes.length > 0 ? task.notes.slice(-3).map((n, i) => `• ${typeof n === 'string' ? n : (n?.text || '')}`).join('\n') : 'No recent notes'}
+                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Add a note…"
+                            value={formData.newNote || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, newNote: e.target.value }))}
+                            sx={{ '& .MuiInputBase-root': { fontSize: '12px' } }}
+                        />
+                        <Button variant="contained" size="small" sx={{ textTransform: 'none', fontSize: '12px' }}
+                            onClick={async () => {
+                                if (!task?.id || !(formData.newNote || '').trim()) return;
+                                try {
+                                    const fn = httpsCallable(functions, 'addTaskNote');
+                                    await fn({ taskId: task.id, note: formData.newNote.trim() });
+                                    setFormData(prev => ({ ...prev, newNote: '' }));
+                                } catch (e) {
+                                    console.error('add note failed', e);
+                                }
+                            }}
+                        >Add</Button>
+                    </Box>
+                </Grid>
+
+                {/* Audit snippet */}
+                <Grid item xs={12}>
+                    <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>
+                        Created by: {task?.createdBy || '—'} • Created: {task?.createdAt?.toDate?.()?.toLocaleString?.() || '—'} • Updated: {task?.updatedAt?.toDate?.()?.toLocaleString?.() || '—'}
+                    </Typography>
                 </Grid>
             </Grid>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 3 }}>
@@ -2273,18 +2618,22 @@ const EditTaskForm = ({ task, onSave, onCancel }) => {
 // CREATE TASK FORM COMPONENT
 // ===================================================================
 
-const CreateTaskForm = ({ onSave, onCancel }) => {
+const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId }) => {
     const [formData, setFormData] = useState({
         title: '',
         description: '',
         priority: 'medium',
         status: 'pending',
         assignedTo: '',
+        companyId: defaultCompanyId || '',
+        customerId: '',
         dueDate: '',
+        dueTime: '',
         category: 'manual',
         shipmentId: '',
         selectedShipment: null
     });
+    const [companyCustomers, setCompanyCustomers] = useState([]);
 
     const [shipmentSearchTerm, setShipmentSearchTerm] = useState('');
     const [shipmentOptions, setShipmentOptions] = useState([]);
@@ -2296,6 +2645,34 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
             [field]: value
         }));
     };
+
+    useEffect(() => {
+        const loadCustomers = async () => {
+            try {
+                if (!formData.companyId) { setCompanyCustomers([]); return; }
+                const byCompanyIdQuery = query(
+                    collection(db, 'customers'),
+                    where('companyId', '==', formData.companyId),
+                    orderBy('name')
+                );
+                const snap = await getDocs(byCompanyIdQuery);
+                let custs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                if (custs.length === 0) {
+                    const legacyQuery = query(
+                        collection(db, 'customers'),
+                        where('companyID', '==', formData.companyId),
+                        orderBy('name')
+                    );
+                    const legacySnap = await getDocs(legacyQuery);
+                    custs = legacySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                }
+                setCompanyCustomers(custs);
+            } catch (e) {
+                setCompanyCustomers([]);
+            }
+        };
+        loadCustomers();
+    }, [formData.companyId]);
 
     const handleShipmentSearch = async (searchTerm) => {
         if (!searchTerm || searchTerm.length < 2) {
@@ -2316,7 +2693,8 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
             const shipments = shipmentsSnapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
                 .filter(shipment =>
-                    shipment.shipmentID?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (shipment.shipmentID?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        shipment.id?.toLowerCase?.().includes(searchTerm.toLowerCase())) ||
                     shipment.referenceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     shipment.shipTo?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
                 );
@@ -2333,7 +2711,8 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
     const handleShipmentSelect = (shipment) => {
         setFormData(prev => ({
             ...prev,
-            shipmentId: shipment.shipmentID,
+            // Store Firestore document ID for reliable joins; keep selectedShipment for UI
+            shipmentId: shipment.id,
             selectedShipment: shipment
         }));
         setShipmentSearchTerm(shipment.shipmentID);
@@ -2345,14 +2724,27 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
             alert('Please select a shipment for this follow-up task');
             return;
         }
+        let dueDateObj = null;
+        if (formData.dueDate) {
+            const time = formData.dueTime || '09:00';
+            const combined = new Date(`${formData.dueDate}T${time}:00`);
+            if (!isNaN(combined.getTime())) dueDateObj = combined;
+        }
         onSave({
             ...formData,
-            dueDate: formData.dueDate ? new Date(formData.dueDate) : null
+            dueDate: dueDateObj
         });
     };
 
+    // Allow parent header Create button to submit
+    useEffect(() => {
+        const handler = (e) => { e.preventDefault?.(); handleSubmit(new Event('submit')); };
+        window.addEventListener('submit-create-task-form', handler);
+        return () => window.removeEventListener('submit-create-task-form', handler);
+    }, [formData]);
+
     return (
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1 }}>
             <Grid container spacing={2}>
                 <Grid item xs={12}>
                     <TextField
@@ -2367,6 +2759,88 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
                             '& .MuiInputLabel-root': { fontSize: '12px' }
                         }}
                     />
+                </Grid>
+
+                {/* Company / Customer / Assignee */}
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Company</InputLabel>
+                        <Select
+                            value={formData.companyId}
+                            onChange={(e) => handleChange('companyId', e.target.value)}
+                            label="Company"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                            {availableCompanies.map(c => (
+                                <MenuItem key={c.id} value={c.companyID} sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Avatar src={getCircleLogo(c)} sx={{ width: 18, height: 18, fontSize: '10px' }}>
+                                            {c.name?.[0] || 'C'}
+                                        </Avatar>
+                                        <Typography sx={{ fontSize: '12px' }}>{c.name}</Typography>
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>({c.companyID})</Typography>
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Customer</InputLabel>
+                        <Select
+                            value={formData.customerId}
+                            onChange={(e) => handleChange('customerId', e.target.value)}
+                            label="Customer"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                            {companyCustomers.map(cu => (
+                                <MenuItem key={cu.id} value={cu.id} sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Avatar src={cu.logo || cu.logoUrl || cu.customerLogo} sx={{ width: 18, height: 18, fontSize: '10px' }}>
+                                            {cu.name?.[0] || 'C'}
+                                        </Avatar>
+                                        <Typography sx={{ fontSize: '12px' }}>{cu.name}</Typography>
+                                        {cu.customerID && (
+                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>({cu.customerID})</Typography>
+                                        )}
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Assigned To</InputLabel>
+                        <Select
+                            value={formData.assignedTo}
+                            onChange={(e) => handleChange('assignedTo', e.target.value)}
+                            label="Assigned To"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }}>Unassigned</MenuItem>
+                            {staff
+                                .filter(u => !formData.companyId || (u.companyId === formData.companyId || u.connectedCompanies?.companies?.includes?.(formData.companyId)))
+                                .map(u => (
+                                    <MenuItem key={u.id} value={u.uid || u.id} sx={{ fontSize: '12px' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar src={u.photoURL || u.avatar} sx={{ width: 18, height: 18 }}>
+                                                {(u.firstName?.[0] || u.displayName?.[0] || u.email?.[0] || 'U')}
+                                            </Avatar>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '12px' }}>
+                                                    {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : (u.displayName || 'Unknown')}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>{u.email}</Typography>
+                                            </Box>
+                                        </Box>
+                                    </MenuItem>
+                                ))}
+                        </Select>
+                    </FormControl>
                 </Grid>
 
                 <Grid item xs={12}>
@@ -2561,21 +3035,6 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
                 <Grid item xs={12} md={6}>
                     <TextField
                         fullWidth
-                        label="Assigned To"
-                        value={formData.assignedTo}
-                        onChange={(e) => handleChange('assignedTo', e.target.value)}
-                        required
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
                         label="Due Date"
                         type="date"
                         value={formData.dueDate}
@@ -2583,6 +3042,23 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
                         required
                         size="small"
                         InputLabelProps={{ shrink: true }}
+                        onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()}
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                    />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                    <TextField
+                        fullWidth
+                        label="Due Time"
+                        type="time"
+                        value={formData.dueTime}
+                        onChange={(e) => handleChange('dueTime', e.target.value)}
+                        size="small"
+                        InputLabelProps={{ shrink: true }}
+                        onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()}
                         sx={{
                             '& .MuiInputBase-root': { fontSize: '12px' },
                             '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -2591,22 +3067,7 @@ const CreateTaskForm = ({ onSave, onCancel }) => {
                 </Grid>
             </Grid>
 
-            <Box sx={{ display: 'flex', gap: 1, mt: 4, justifyContent: 'flex-end' }}>
-                <Button
-                    onClick={onCancel}
-                    sx={{ fontSize: '12px', textTransform: 'none' }}
-                >
-                    Cancel
-                </Button>
-                <Button
-                    type="submit"
-                    variant="contained"
-                    disabled={!formData.title || !formData.selectedShipment}
-                    sx={{ fontSize: '12px', textTransform: 'none' }}
-                >
-                    Create Task
-                </Button>
-            </Box>
+            {/* Bottom buttons removed; top-right controls handle submit/cancel */}
         </Box>
     );
 };

@@ -369,17 +369,25 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
         setLoadingFollowUps(true);
         try {
-            const followUpsQuery = query(
+            // Load by either document ID or business shipmentID for backward compatibility
+            const byDocQuery = query(
                 collection(db, 'followUpTasks'),
                 where('shipmentId', '==', shipment.id),
                 orderBy('createdAt', 'desc')
             );
+            const byDocSnap = await getDocs(byDocQuery);
 
-            const followUpsSnapshot = await getDocs(followUpsQuery);
-            const followUps = followUpsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            let followUps = byDocSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            if (followUps.length === 0 && shipment.shipmentID) {
+                const byBusinessIdQuery = query(
+                    collection(db, 'followUpTasks'),
+                    where('shipmentId', '==', shipment.shipmentID),
+                    orderBy('createdAt', 'desc')
+                );
+                const byBusinessSnap = await getDocs(byBusinessIdQuery);
+                followUps = byBusinessSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }
 
             setExistingFollowUps(followUps);
         } catch (error) {

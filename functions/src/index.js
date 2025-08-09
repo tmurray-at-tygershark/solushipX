@@ -494,6 +494,11 @@ if (followUpFunctions && followUpFunctions.addTaskNote) {
     console.log('LOG-MAIN-INDEX: exports.addTaskNote defined.');
 }
 
+if (followUpFunctions && followUpFunctions.scheduleTaskReminder) {
+    exports.scheduleTaskReminder = followUpFunctions.scheduleTaskReminder;
+    console.log('LOG-MAIN-INDEX: exports.scheduleTaskReminder defined.');
+}
+
 if (followUpFunctions && followUpFunctions.completeTask) {
     exports.completeTask = followUpFunctions.completeTask;
     console.log('LOG-MAIN-INDEX: exports.completeTask defined.');
@@ -507,6 +512,12 @@ if (followUpFunctions && followUpFunctions.escalateTask) {
 if (followUpFunctions && followUpFunctions.getShipmentFollowUpSummary) {
     exports.getShipmentFollowUpSummary = followUpFunctions.getShipmentFollowUpSummary;
     console.log('LOG-MAIN-INDEX: exports.getShipmentFollowUpSummary defined.');
+}
+
+// Expose pending notifications processor (callable). A cron-based scheduler can call this periodically.
+if (followUpFunctions && followUpFunctions.processPendingNotifications) {
+    exports.processPendingNotifications = followUpFunctions.processPendingNotifications;
+    console.log('LOG-MAIN-INDEX: exports.processPendingNotifications defined.');
 }
 
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');
