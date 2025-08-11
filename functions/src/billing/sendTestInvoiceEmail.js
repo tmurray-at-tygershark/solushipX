@@ -282,16 +282,27 @@ async function fetchFilteredShipments(companyId, filters) {
         console.log(`Filtering by ${filters.customers.length} specific customers`);
         
         const originalCount = shipments.length;
-        shipments = shipments.filter(shipment => {
-            // Check multiple customer ID fields
-            const customerMatches = [
-                shipment.shipTo?.customerID,
-                shipment.customerID,
-                shipment.shipFrom?.customerID
-            ].some(customerId => filters.customers.includes(customerId));
+        const normalize = (v) => (v ? String(v).trim().toUpperCase() : null);
+        const targets = filters.customers.map(normalize).filter(Boolean);
 
-            return customerMatches;
-        });
+        const getCandidates = (s) => {
+            const arr = [
+                s?.shipTo?.customerID,
+                s?.customerID,
+                s?.shipFrom?.customerID,
+                // Legacy variants
+                s?.shipTo?.customerId,
+                s?.shipFrom?.customerId,
+                s?.shipTo?._rawData?.customerID,
+                s?.shipFrom?._rawData?.customerID,
+                s?.customerId,
+                s?.customer?.id
+            ];
+            const norm = arr.map(normalize).filter(Boolean);
+            return Array.from(new Set(norm));
+        };
+
+        shipments = shipments.filter(s => getCandidates(s).some(cid => targets.includes(cid)));
 
         console.log(`Customer filter reduced shipments from ${originalCount} to ${shipments.length}`);
     }

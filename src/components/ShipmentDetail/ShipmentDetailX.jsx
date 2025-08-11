@@ -12,6 +12,7 @@ import {
     Button,
     IconButton,
     Drawer,
+    Slide,
     Alert,
     Snackbar,
     TextField,
@@ -56,6 +57,8 @@ import SnackbarNotification from './components/SnackbarNotification';
 import EditShipmentModal from './components/EditShipmentModal';
 import DocumentRegenerationDialog from './components/DocumentRegenerationDialog';
 import FollowUpTable from './components/FollowUpTable';
+import FollowUpsDashboard from '../FollowUps/FollowUpsDashboard';
+import { forwardRef } from 'react';
 
 // Hooks
 import { useShipmentData } from './hooks/useShipmentData';
@@ -93,6 +96,12 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     // Follow-up dialog state
     const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
     const [followUpListOpen, setFollowUpListOpen] = useState(false);
+    // Follow-ups navigation state - using same pattern as ShipmentsX
+    const [followUpsNavigationStack, setFollowUpsNavigationStack] = useState([
+        { key: 'shipment-detail', component: 'shipment-detail', props: {} }
+    ]);
+    const [followUpsSliding, setFollowUpsSliding] = useState(false);
+    const [followUpsMountedViews, setFollowUpsMountedViews] = useState(['shipment-detail']);
     const [existingFollowUps, setExistingFollowUps] = useState([]);
     const [loadingFollowUps, setLoadingFollowUps] = useState(false);
     const [editingFollowUp, setEditingFollowUp] = useState(null);
@@ -964,11 +973,73 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
 
 
-    // Follow-up handlers
+    // Follow-up handlers - using same pattern as ShipmentsX
+    const pushFollowUpsView = useCallback((view) => {
+        console.log('➡️ pushFollowUpsView called with:', view.key);
+
+        // Mount the view immediately
+        setFollowUpsMountedViews((prev) => Array.from(new Set([...prev, view.key])));
+
+        // Push to stack immediately to trigger CSS transition from 0% -> -50%
+        setFollowUpsNavigationStack((prev) => [...prev, view]);
+    }, []);
+
+    const popFollowUpsView = useCallback(() => {
+        console.log('⬅️ popFollowUpsView called');
+
+        setFollowUpsSliding(true);
+
+        setTimeout(() => {
+            // Reset to just shipment detail view
+            const tableOnlyStack = [{ key: 'shipment-detail', component: 'shipment-detail', props: {} }];
+            setFollowUpsNavigationStack(tableOnlyStack);
+            setFollowUpsMountedViews(['shipment-detail']);
+
+            console.log('💀 FORCED followups navigation stack to detail only');
+
+            setFollowUpsSliding(false);
+
+            setTimeout(() => {
+                console.log('✅ popFollowUpsView complete');
+            }, 100);
+        }, 300);
+    }, []);
+
     const handleViewFollowUps = useCallback(() => {
-        setFollowUpListOpen(true);
-        loadExistingFollowUps();
-    }, [loadExistingFollowUps]);
+        console.log('📝 Follow Ups button clicked');
+        pushFollowUpsView({
+            key: 'follow-ups',
+            component: 'follow-ups',
+            props: {
+                shipmentId: shipment?.id || shipment?.shipmentID,
+                companyId: shipment?.companyID || companyIdForAddress,
+                shipmentData: shipment
+            }
+        });
+    }, [pushFollowUpsView, shipment, companyIdForAddress]);
+
+    // Render function for follow-ups views
+    const renderFollowUpsView = useCallback((view) => {
+        switch (view.component) {
+            case 'shipment-detail':
+                // This will be empty since the actual shipment detail renders behind
+                return null;
+            case 'follow-ups':
+                return (
+                    <FollowUpsDashboard
+                        isModal
+                        onClose={popFollowUpsView}
+                        scopeShipmentId={view.props.shipmentId}
+                        scopeCompanyId={view.props.companyId}
+                        scopeShipmentData={view.props.shipmentData}
+                        autoOpenCreate={false}
+                        embedded
+                    />
+                );
+            default:
+                return <div>Unknown view: {view.component}</div>;
+        }
+    }, [popFollowUpsView]);
 
     const handleEditFollowUp = useCallback((followUp) => {
         setEditingFollowUp(followUp);
@@ -2155,71 +2226,40 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 </DialogActions>
             </Dialog>
 
-            {/* Follow-Up List Dialog */}
-            <Dialog
-                open={followUpListOpen}
-                onClose={() => setFollowUpListOpen(false)}
-                maxWidth="lg"
-                fullWidth
-                PaperProps={{
-                    sx: {
-                        borderRadius: 2,
-                        minHeight: '600px'
-                    }
+            {/* Follow-Ups Sliding Container - always mounted to animate between 0% and -50% */}
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    width: '200%',
+                    height: '100%',
+                    transform: followUpsNavigationStack.length > 1 ? 'translateX(-50%)' : 'translateX(0%)',
+                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    willChange: 'transform',
+                    pointerEvents: followUpsNavigationStack.length > 1 ? 'auto' : 'none',
+                    zIndex: followUpsNavigationStack.length > 1 ? 10 : 0,
                 }}
             >
-                <DialogTitle sx={{
-                    fontSize: '18px',
-                    fontWeight: 600,
-                    borderBottom: '1px solid #e5e7eb',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                }}>
-                    Follow-Up Tasks - {shipment?.shipmentID}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Button
-                            variant="contained"
-                            startIcon={<AddIcon />}
-                            onClick={handleCreateFollowUp}
-                            sx={{
-                                fontSize: '12px',
-                                bgcolor: '#f59e0b',
-                                '&:hover': {
-                                    bgcolor: '#d97706'
-                                }
-                            }}
-                        >
-                            Create New
-                        </Button>
-                        <IconButton
-                            onClick={() => setFollowUpListOpen(false)}
-                            sx={{
-                                color: '#6b7280',
-                                '&:hover': {
-                                    bgcolor: '#f3f4f6'
-                                }
-                            }}
-                        >
-                            <CloseIcon />
-                        </IconButton>
-                    </Box>
-                </DialogTitle>
-                <DialogContent sx={{ p: 0 }}>
-                    {loadingFollowUps ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
-                            <CircularProgress />
-                        </Box>
-                    ) : (
-                        <FollowUpTable
-                            followUps={existingFollowUps}
-                            onEditFollowUp={handleEditFollowUp}
-                            onRefresh={loadExistingFollowUps}
-                            availableUsers={availableUsers}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
+                {followUpsMountedViews.map((key, idx) => {
+                    const view = followUpsNavigationStack.find((v) => v.key === key);
+                    if (!view) {
+                        console.warn('⚠️ Follow-ups view not found in navigation stack:', key);
+                        return null;
+                    }
+                    return (
+                        <div key={key} style={{ width: '50%', flexShrink: 0, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                            {/* Main Content Area (scrollable) */}
+                            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                                {renderFollowUpsView(view)}
+                            </Box>
+                        </div>
+                    );
+                })}
+            </Box>
 
 
         </ErrorBoundary>

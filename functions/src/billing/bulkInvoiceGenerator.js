@@ -126,6 +126,49 @@ function calculateTotalWeight(shipment) {
     return 0;
 }
 
+// Normalize a string customer ID for safe comparison
+function normalizeCustomerId(value) {
+    if (!value || typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return trimmed.toUpperCase();
+}
+
+// Collect ALL possible customer ID candidates from a shipment (legacy + current)
+function getAllCustomerIdCandidates(shipment) {
+    const candidates = [];
+    try {
+        // Primary modern fields
+        candidates.push(
+            shipment?.shipTo?.customerID,
+            shipment?.customerID,
+            shipment?.shipFrom?.customerID
+        );
+
+        // Legacy variations (camelCase Id and nested _rawData)
+        candidates.push(
+            shipment?.shipTo?.customerId,
+            shipment?.shipFrom?.customerId,
+            shipment?.shipTo?._rawData?.customerID,
+            shipment?.shipFrom?._rawData?.customerID
+        );
+
+        // Other occasional locations
+        candidates.push(
+            shipment?.customerId,
+            shipment?.customer?.id
+        );
+    } catch (e) {
+        console.warn('getAllCustomerIdCandidates error:', e);
+    }
+
+    // Normalize and de-duplicate
+    const normalized = candidates
+        .map(normalizeCustomerId)
+        .filter(Boolean);
+    return Array.from(new Set(normalized));
+}
+
 // AUTO INVOICE GENERATOR - Customer-Grouped ZIP Files with Comprehensive Filtering
 exports.generateBulkInvoices = onRequest(
     {
@@ -301,22 +344,20 @@ exports.generateBulkInvoices = onRequest(
             
             const originalCount = shipments.length;
             const beforeCustomerFilter = [...shipments];
-            shipments = shipments.filter(shipment => {
-                // Check multiple customer ID fields
-                const customerMatches = [
-                    shipment.shipTo?.customerID,
-                    shipment.customerID,
-                    shipment.shipFrom?.customerID
-                ].some(customerId => filters.customers.includes(customerId));
+            const normalizedTargets = filters.customers.map(c => (c || '').toString().trim().toUpperCase());
 
-                if (!customerMatches) {
+            shipments = shipments.filter(shipment => {
+                const candidates = getAllCustomerIdCandidates(shipment);
+                const matches = candidates.some(cid => normalizedTargets.includes(cid));
+
+                if (!matches) {
                     filteringDetails.customerFiltered.push({
                         shipmentId: shipment.shipmentID,
-                        reason: `Customer mismatch - shipment belongs to: ${shipment.shipTo?.customerID || shipment.customerID || 'unknown'}, required: ${filters.customers.join(', ')}`
+                        reason: `Customer mismatch - found: ${candidates.join('/') || 'unknown'}, required: ${normalizedTargets.join(', ')}`
                     });
                 }
 
-                return customerMatches;
+                return matches;
             });
 
             console.log(`Customer filter reduced shipments from ${originalCount} to ${shipments.length}`);

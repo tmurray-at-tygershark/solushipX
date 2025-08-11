@@ -247,6 +247,15 @@ const {
     getShipmentFollowUpSummary
 } = require('./src/followUps/followUpEngine');
 
+// Import follow-up task management functions
+const {
+    getFollowUpTasks: getFollowUpTaskTemplates,
+    createFollowUpTask: createFollowUpTaskTemplate,
+    updateFollowUpTask: updateFollowUpTaskTemplate,
+    deleteFollowUpTask: deleteFollowUpTaskTemplate,
+    getEnabledFollowUpTasks
+} = require('./src/followup-tasks-management');
+
 
 
 // Export Callable functions
@@ -493,6 +502,13 @@ exports.addTaskNote = addTaskNote;
 exports.completeTask = completeTask;
 exports.escalateTask = escalateTask;
 exports.getShipmentFollowUpSummary = getShipmentFollowUpSummary;
+
+// Export follow-up task template management functions
+exports.getFollowUpTaskTemplates = getFollowUpTaskTemplates;
+exports.createFollowUpTaskTemplate = createFollowUpTaskTemplate;
+exports.updateFollowUpTaskTemplate = updateFollowUpTaskTemplate;
+exports.deleteFollowUpTaskTemplate = deleteFollowUpTaskTemplate;
+exports.getEnabledFollowUpTasks = getEnabledFollowUpTasks;
 
 // AI Analysis function for rates
 exports.analyzeRatesWithAI = onRequest(

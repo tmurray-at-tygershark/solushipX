@@ -68,7 +68,8 @@ import {
     TrendingUp as TrendingUpIcon,
     Map as MapIcon,
     ExpandMore as ExpandMoreIcon,
-    ExpandLess as ExpandLessIcon
+    ExpandLess as ExpandLessIcon,
+    Assignment as AssignmentIcon
 } from '@mui/icons-material';
 import { Timestamp } from 'firebase/firestore';
 import { collection, query, orderBy, limit, onSnapshot, where, doc, getDoc, getDocs } from 'firebase/firestore';
@@ -117,6 +118,8 @@ const TrackingDrawerContent = lazy(() => import('../Tracking/Tracking'));
 
 // Lazy load the Shipments component for the modal
 const ShipmentsComponent = lazy(() => import('../Shipments/ShipmentsX'));
+// Lazy load Follow-Ups for front-end users
+const FollowUpsDashboard = lazy(() => import('../FollowUps/FollowUpsDashboard'));
 
 // Lazy load the CreateShipment component for the modal (step-by-step process)
 const CreateShipmentComponent = lazy(() => import('../CreateShipment'));
@@ -2438,6 +2441,8 @@ const Dashboard = () => {
     const [isAddressBookModalOpen, setIsAddressBookModalOpen] = useState(false);
     const [isQuickShipModalOpen, setIsQuickShipModalOpen] = useState(false);
     const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+    const [isFollowUpsOpen, setIsFollowUpsOpen] = useState(false);
+    const [shipmentsExpanded, setShipmentsExpanded] = useState(false);
     const [isBrokersModalOpen, setIsBrokersModalOpen] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [createShipmentPrePopulatedData, setCreateShipmentPrePopulatedData] = useState(null);
@@ -3814,8 +3819,24 @@ const Dashboard = () => {
         {
             text: 'Shipments',
             icon: <LocalShippingIcon />,
-            action: () => setIsShipmentsModalOpen(true),
-            permission: PERMISSIONS.VIEW_SHIPMENTS
+            action: () => setShipmentsExpanded(!shipmentsExpanded),
+            expandable: true,
+            expanded: shipmentsExpanded,
+            permission: PERMISSIONS.VIEW_SHIPMENTS,
+            subItems: [
+                {
+                    text: 'View Shipments',
+                    icon: <LocalShippingIcon />,
+                    permission: PERMISSIONS.VIEW_SHIPMENTS,
+                    action: () => { setIsShipmentsModalOpen(true); setShipmentsExpanded(false); }
+                },
+                {
+                    text: 'Follow-ups',
+                    icon: <AssignmentIcon />,
+                    permission: PERMISSIONS.VIEW_FOLLOW_UPS,
+                    action: () => { setIsFollowUpsOpen(true); setShipmentsExpanded(false); }
+                }
+            ]
         },
         {
             text: 'Customers',
@@ -5037,6 +5058,48 @@ const Dashboard = () => {
                             deepLinkParams={shipmentsDeepLinkParams}
                             onOpenCreateShipment={handleOpenCreateShipmentModal}
                             onClearDeepLinkParams={handleClearDeepLinkParams}
+                        />
+                    </LazyComponentWrapper>
+                </Box>
+            </Dialog>
+
+            {/* Follow-Ups Fullscreen Modal */}
+            <Dialog
+                open={isFollowUpsOpen}
+                onClose={() => setIsFollowUpsOpen(false)}
+                TransitionComponent={Transition}
+                fullScreen
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'flex-end',
+                    },
+                }}
+                PaperProps={{
+                    sx: {
+                        height: '100vh',
+                        width: '100vw',
+                        margin: 0,
+                        bgcolor: 'white',
+                        borderRadius: 0,
+                        boxShadow: 'none',
+                        overflow: 'hidden',
+                    }
+                }}
+                BackdropProps={{
+                    sx: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)'
+                    }
+                }}
+            >
+                <Box sx={{ height: '100%', width: '100%', overflowY: 'auto' }}>
+                    <LazyComponentWrapper fallback={
+                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                            <CircularProgress />
+                        </Box>
+                    }>
+                        <FollowUpsDashboard
+                            isModal={true}
+                            onClose={() => setIsFollowUpsOpen(false)}
                         />
                     </LazyComponentWrapper>
                 </Box>

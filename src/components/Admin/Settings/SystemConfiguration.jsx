@@ -55,7 +55,8 @@ import {
     Refresh as RefreshIcon,
     Notifications as NotificationsIcon,
     Speed as SpeedIcon,
-    Build as ServiceIcon
+    Build as ServiceIcon,
+    Assignment as TaskIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -77,6 +78,7 @@ import { useSnackbar } from 'notistack';
 import InvoiceStatusDialog from '../Configuration/dialogs/InvoiceStatusDialog';
 import NotificationSettings from '../Configuration/NotificationSettings';
 import ChargeTypesConfiguration from '../Configuration/ChargeTypesConfiguration';
+import FollowUpTasksConfiguration from '../Configuration/FollowUpTasksConfiguration';
 
 const SystemConfiguration = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -1563,6 +1565,23 @@ const SystemConfiguration = () => {
                                     </TableBody>
                                 </Table>
                             )}
+                        </AccordionDetails>
+                    </Accordion>
+                </Grid>
+
+                {/* Follow-up Tasks Section */}
+                <Grid item xs={12}>
+                    <Accordion>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TaskIcon sx={{ color: '#6b7280' }} />
+                                <Typography sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                    Follow-up Tasks
+                                </Typography>
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            <FollowUpTasksConfiguration />
                         </AccordionDetails>
                     </Accordion>
                 </Grid>

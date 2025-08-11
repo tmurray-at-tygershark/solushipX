@@ -98,6 +98,7 @@ import {
     PlayArrow as PlayIcon,
     Pause as PauseIcon,
     Stop as StopIcon,
+    List as ListIcon,
     ViewList as ViewListIcon,
     Avatar as AvatarIcon
 } from '@mui/icons-material';
@@ -117,12 +118,16 @@ import LoadingSkeleton from '../ShipmentDetail/components/LoadingSkeleton';
 // MAIN DASHBOARD COMPONENT
 // ===================================================================
 
-const FollowUpsDashboard = ({ isModal = false, onClose }) => {
+// embedded: when true, this panel is rendered inside another modal (e.g., ShipmentDetailX)
+// In embedded mode we suppress the internal ModalHeader to avoid double headers
+const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, scopeCompanyId = null, scopeShipmentData = null, autoOpenCreate = false, embedded = false }) => {
     const { currentUser: user, userRole, loading: authLoading } = useAuth();
     const { companyIdForAddress, companyData } = useCompany();
+    // Admin view is strictly based on being inside an /admin route, regardless of user role
+    const isAdminView = (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
 
     // State Management
-    const [selectedTab, setSelectedTab] = useState('overview');
+    const [selectedTab, setSelectedTab] = useState('tasks');
     const [tasks, setTasks] = useState([]);
     const [rules, setRules] = useState([]);
     const [staff, setStaff] = useState([]);
@@ -147,6 +152,10 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     // Shipment data for task context
     const [shipmentData, setShipmentData] = useState({});
 
+    // Predefined Task Templates
+    const [taskTemplates, setTaskTemplates] = useState({});
+    const [taskTemplatesLoading, setTaskTemplatesLoading] = useState(false);
+
     // Filters & Search
     const [filters, setFilters] = useState({
         status: 'all',
@@ -166,6 +175,254 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const [editTaskDialog, setEditTaskDialog] = useState(false);
     const [deleteTaskDialog, setDeleteTaskDialog] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null);
+    // Status menu state for inline edits (table and header)
+    const [statusMenu, setStatusMenu] = useState({ anchorEl: null, task: null });
+
+
+
+    // Map of customers by Firestore document id for quick lookup
+    const customersMap = useMemo(() => {
+        const map = {};
+        for (const c of availableCustomers) {
+            map[c.id] = c;
+        }
+        return map;
+    }, [availableCustomers]);
+
+    // Stable task comparator to avoid TDZ issues in inline sort callbacks
+    const compareTasksForSort = useCallback((taskA, taskB, sortKey, order) => {
+        const direction = order === 'asc' ? 1 : -1;
+
+        const safeDate = (v) => {
+            const d = toSafeDate(v);
+            return d && !isNaN(d.getTime()) ? d : null;
+        };
+
+        if (sortKey === 'dueDate') {
+            const aDate = safeDate(taskA.dueDate);
+            const bDate = safeDate(taskB.dueDate);
+            if (!aDate && !bDate) return 0;
+            if (!aDate) return 1; // nulls last
+            if (!bDate) return -1;
+            if (aDate.getTime() < bDate.getTime()) return -1 * direction;
+            if (aDate.getTime() > bDate.getTime()) return 1 * direction;
+            return 0;
+        }
+
+        if (sortKey === 'priority') {
+            const rank = { urgent: 4, high: 3, medium: 2, low: 1 };
+            const aRank = rank[String(taskA.priority || 'low').toLowerCase()] || 1;
+            const bRank = rank[String(taskB.priority || 'low').toLowerCase()] || 1;
+            if (aRank < bRank) return -1 * direction;
+            if (aRank > bRank) return 1 * direction;
+            return 0;
+        }
+
+        if (sortKey === 'status') {
+            const aStr = String(taskA.status || '').toLowerCase();
+            const bStr = String(taskB.status || '').toLowerCase();
+            if (aStr < bStr) return -1 * direction;
+            if (aStr > bStr) return 1 * direction;
+            return 0;
+        }
+
+        if (sortKey === 'title') {
+            const aStr = String(taskA.title || '').toLowerCase();
+            const bStr = String(taskB.title || '').toLowerCase();
+            if (aStr < bStr) return -1 * direction;
+            if (aStr > bStr) return 1 * direction;
+            return 0;
+        }
+
+        // Default to createdAt (fallback to dueDate)
+        const aCreated = safeDate(taskA.createdAt) || safeDate(taskA.dueDate);
+        const bCreated = safeDate(taskB.createdAt) || safeDate(taskB.dueDate);
+        if (!aCreated && !bCreated) return 0;
+        if (!aCreated) return 1;
+        if (!bCreated) return -1;
+        if (aCreated.getTime() < bCreated.getTime()) return -1 * direction;
+        if (aCreated.getTime() > bCreated.getTime()) return 1 * direction;
+        return 0;
+    }, []);
+
+    // Apply filters to tasks
+    const filteredTasks = useMemo(() => {
+        let filtered = [...tasks];
+
+        // If scoped to a specific shipment, enforce shipment-level filtering
+        if (scopeShipmentId) {
+            filtered = filtered.filter(t => t.shipmentId === scopeShipmentId);
+        }
+
+        // Lock company context for non-admin routes: ensure only tasks from the locked company are shown
+        if (!isAdminView) {
+            const lockedCompanyId = selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId;
+            if (lockedCompanyId) {
+                filtered = filtered.filter(t => (t.companyId === lockedCompanyId));
+            }
+        }
+
+        // Apply search term filter
+        if (searchTerm) {
+            const searchLower = searchTerm.toLowerCase();
+            filtered = filtered.filter(task => {
+                const shipment = shipmentData[task.shipmentId];
+                return (
+                    task.title?.toLowerCase().includes(searchLower) ||
+                    task.description?.toLowerCase().includes(searchLower) ||
+                    task.shipmentId?.toLowerCase().includes(searchLower) ||
+                    shipment?.shipmentID?.toLowerCase().includes(searchLower)
+                );
+            });
+        }
+
+        // Apply status filter
+        if (filters.status !== 'all') {
+            filtered = filtered.filter(task => task.status === filters.status);
+        }
+
+        // Apply priority filter
+        if (filters.priority !== 'all') {
+            filtered = filtered.filter(task => task.priority === filters.priority);
+        }
+
+        // Apply assigned to filter
+        if (filters.assignedTo !== 'all') {
+            if (filters.assignedTo === 'unassigned') {
+                filtered = filtered.filter(task => !task.assignedTo);
+            } else {
+                filtered = filtered.filter(task => task.assignedTo === filters.assignedTo);
+            }
+        }
+
+        // Apply category filter
+        if (filters.category !== 'all') {
+            filtered = filtered.filter(task => task.category === filters.category);
+        }
+
+        // Apply due date filter
+        if (filters.dueDate !== 'all') {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dayAfterTomorrow = new Date(tomorrow);
+            dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+            // Get start and end of current week (Sunday to Saturday)
+            const currentDay = now.getDay();
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - currentDay);
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+            // Get start and end of next week
+            const startOfNextWeek = new Date(endOfWeek);
+            const endOfNextWeek = new Date(startOfNextWeek);
+            endOfNextWeek.setDate(startOfNextWeek.getDate() + 7);
+
+            filtered = filtered.filter(task => {
+                const dueDate = toSafeDate(task.dueDate);
+                if (!dueDate || isNaN(dueDate.getTime())) return false;
+
+                switch (filters.dueDate) {
+                    case 'today':
+                        return dueDate >= today && dueDate < tomorrow;
+                    case 'tomorrow':
+                        return dueDate >= tomorrow && dueDate < dayAfterTomorrow;
+                    case 'overdue':
+                        return task.status !== 'completed' && dueDate < now;
+                    case 'this_week':
+                        return dueDate >= startOfWeek && dueDate < endOfWeek;
+                    case 'next_week':
+                        return dueDate >= startOfNextWeek && dueDate < endOfNextWeek;
+                    default:
+                        return true;
+                }
+            });
+        }
+
+        // Apply sorting using stable comparator
+        filtered.sort((a, b) => compareTasksForSort(a, b, sortBy, sortOrder));
+
+        return filtered;
+    }, [tasks, filters, searchTerm, sortBy, sortOrder, shipmentData, scopeShipmentId, isAdminView, selectedCompanyId, companyIdForAddress]);
+
+    // Reset page when filters change to avoid showing empty pages
+    useEffect(() => {
+        setPage(0);
+    }, [filters, searchTerm, scopeShipmentId]);
+
+    // Cross-company customer cache for correct owner resolution
+    const [customerCache, setCustomerCache] = useState({}); // key: resolvedCustomerId -> customer doc
+
+    // Resolve primary customer ID similar to ShipmentTableRow main table logic (NEVER use shipTo address)
+    const getResolvedCustomerId = (shipment, task) => {
+        return (
+            task?.customerId ||
+            shipment?.customerId ||
+            shipment?.customerID ||
+            shipment?.customer?.id ||
+            shipment?.shipFrom?.customerID ||
+            shipment?.shipFrom?.customerId ||
+            shipment?.shipFrom?.addressClassID ||
+            null
+        );
+    };
+
+    // Fetch and cache customer by ID (tries customerID field, then document ID)
+    const resolveAndCacheCustomer = useCallback(async (customerId) => {
+        if (!customerId || customerCache[customerId] === null || customerCache[customerId]) return;
+        try {
+            // Try by business customerID
+            const q = query(collection(db, 'customers'), where('customerID', '==', customerId), limit(1));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                const d = snap.docs[0];
+                setCustomerCache(prev => ({ ...prev, [customerId]: { id: d.id, ...d.data() } }));
+                return;
+            }
+            // Fallback to direct doc ID
+            try {
+                const ref = doc(db, 'customers', customerId);
+                const docSnap = await getDoc(ref);
+                if (docSnap.exists()) {
+                    setCustomerCache(prev => ({ ...prev, [customerId]: { id: docSnap.id, ...docSnap.data() } }));
+                    return;
+                }
+            } catch { }
+            // Mark as not found to avoid refetch loops
+            setCustomerCache(prev => ({ ...prev, [customerId]: null }));
+        } catch {
+            setCustomerCache(prev => ({ ...prev, [customerId]: null }));
+        }
+    }, [customerCache]);
+
+    // Helper to provide display info for customer column
+    const getTaskCustomerInfo = (task, shipment) => {
+        // 1) Prefer explicit task.customerId if available
+        if (task?.customerId && customersMap[task.customerId]) {
+            const c = customersMap[task.customerId];
+            return { name: c.name || '—', logo: c.logo || c.logoUrl || c.customerLogo || null };
+        }
+        // 2) Resolve proper owner customer ID from shipment/customer fields (NOT shipTo)
+        const resolvedId = getResolvedCustomerId(shipment, task);
+        if (resolvedId) {
+            const cached = customerCache[resolvedId];
+            if (cached) {
+                return { name: cached.name || cached.companyName || '—', logo: cached.logo || cached.logoUrl || cached.customerLogo || null };
+            }
+            // Kick off async resolve; return placeholder for now
+            resolveAndCacheCustomer(resolvedId);
+            // Try availableCustomers by business ID
+            const fallback = availableCustomers.find(c => c.customerID === resolvedId || c.id === resolvedId);
+            if (fallback) {
+                return { name: fallback.name || '—', logo: fallback.logo || fallback.logoUrl || fallback.customerLogo || null };
+            }
+        }
+        // 3) Last resort placeholder
+        return { name: '—', logo: null };
+    };
 
     // Statistics
     const [stats, setStats] = useState({
@@ -337,16 +594,18 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             console.log('🔄 loadTasks called!');
             setLoading(true);
 
-            // For super admins, "all" means ALL companies. For regular users, "all" means their company.
+            // Determine company filter based on route context
+            // On non-admin routes (regular dashboard), ALWAYS lock to dashboard company context
             let targetCompanyId = null;
-            if (selectedCompanyId === 'all') {
-                if (userRole === 'superadmin') {
-                    targetCompanyId = null; // No company filter - show all
-                } else {
-                    targetCompanyId = companyIdForAddress; // Regular users see only their company
-                }
+            if (!isAdminView) {
+                targetCompanyId = companyIdForAddress || (selectedCompanyId !== 'all' ? selectedCompanyId : null);
             } else {
-                targetCompanyId = selectedCompanyId; // Specific company selected
+                // Admin routes preserve existing behavior
+                if (selectedCompanyId === 'all') {
+                    targetCompanyId = (userRole === 'superadmin') ? null : null; // backend enforces admin scope
+                } else {
+                    targetCompanyId = selectedCompanyId; // Specific admin-selected company
+                }
             }
 
             console.log('🔄 Loading tasks with params:', {
@@ -364,6 +623,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             const result = await getFollowUpTasks({
                 companyId: targetCompanyId,
                 customerId: selectedCustomerId === 'all' ? null : selectedCustomerId,
+                shipmentId: scopeShipmentId || null,
                 status: filters.status === 'all' ? null : filters.status,
                 priority: filters.priority === 'all' ? null : filters.priority,
                 assignedTo: filters.assignedTo === 'all' ? null : filters.assignedTo,
@@ -376,6 +636,13 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             console.log('📋 Tasks array:', result.data?.tasks);
 
             const loadedTasks = result.data?.tasks || [];
+            try {
+                console.log('[FollowUps] Loaded tasks count:', loadedTasks.length);
+                loadedTasks.slice(0, 50).forEach(t => {
+                    const kind = t?.dueDate?.toDate ? 'Timestamp' : typeof t?.dueDate;
+                    console.log('[FollowUps] Task', t.id, 'dueDate raw:', t?.dueDate, 'kind:', kind);
+                });
+            } catch { }
             setTasks(loadedTasks);
 
             // Load shipment data for the tasks
@@ -388,6 +655,26 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             setTasks([]); // Ensure tasks is always an array
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Load predefined task templates
+    const loadTaskTemplates = async () => {
+        try {
+            setTaskTemplatesLoading(true);
+            const getEnabledFollowUpTasks = httpsCallable(functions, 'getEnabledFollowUpTasks');
+            const result = await getEnabledFollowUpTasks();
+
+            if (result.data && result.data.tasksByCategory) {
+                setTaskTemplates(result.data.tasksByCategory);
+            } else {
+                setTaskTemplates({});
+            }
+        } catch (error) {
+            console.error('Error loading task templates:', error);
+            setTaskTemplates({});
+        } finally {
+            setTaskTemplatesLoading(false);
         }
     };
 
@@ -533,6 +820,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             loadRules();
             loadStaff();
             loadShipments();
+            loadTaskTemplates();
         } else {
             console.log('❌ User not available, skipping data load');
         }
@@ -560,6 +848,13 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         setCreateTaskDialog(true);
     };
 
+    // Auto-open create dialog when requested (e.g., from ShipmentDetailX New Task)
+    useEffect(() => {
+        if (autoOpenCreate) {
+            setCreateTaskDialog(true);
+        }
+    }, [autoOpenCreate]);
+
     const handleCreateRule = () => {
         setCreateRuleDialog(true);
     };
@@ -570,27 +865,12 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     };
 
     const handleEditTask = (task) => {
-        // Normalize potentially invalid date fields before opening the dialog
-        const normalizeDate = (v) => {
-            try {
-                if (!v) return '';
-                const d = v?.toDate?.() || (v?.seconds ? new Date(v.seconds * 1000) : new Date(v));
-                return isNaN(d?.getTime?.()) ? '' : d.toISOString().split('T')[0];
-            } catch { return ''; }
-        };
-
-        const safeTask = {
-            ...task,
-            dueDate: normalizeDate(task?.dueDate),
-            completedAt: normalizeDate(task?.completedAt)
-        };
-
         // Attach shipment context if available for quick actions
+        const enriched = { ...task };
         if (task?.shipmentId && shipmentData[task.shipmentId]) {
-            safeTask.shipment = shipmentData[task.shipmentId];
+            enriched.shipment = shipmentData[task.shipmentId];
         }
-
-        setSelectedTask(safeTask);
+        setSelectedTask(enriched);
         setEditTaskDialog(true);
     };
 
@@ -621,24 +901,60 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
             // Build safe payload
             const payload = {
                 taskId: selectedTask.id,
-                shipmentId: selectedTask.shipmentId || selectedTask?.shipment?.id || null,
+                shipmentId: (updatedTaskData.shipmentId ?? selectedTask.shipmentId ?? selectedTask?.shipment?.id) || null,
                 title: updatedTaskData.title ?? selectedTask.title,
                 description: updatedTaskData.description ?? selectedTask.description,
                 priority: updatedTaskData.priority ?? selectedTask.priority,
                 status: updatedTaskData.status ?? selectedTask.status,
                 assignedTo: updatedTaskData.assignedTo ?? selectedTask.assignedTo,
                 category: updatedTaskData.category ?? selectedTask.category,
+                // Persist company/customer ownership
+                companyId: updatedTaskData.companyId ?? selectedTask.companyId ?? null,
+                customerId: updatedTaskData.customerId ?? selectedTask.customerId ?? null,
+                // Backend expects actionTypes, not 'actions'
+                actionTypes: Array.isArray(updatedTaskData.actions) ? updatedTaskData.actions : (selectedTask.actionTypes || []),
+                // Pass through reminders array if present (backend may use it for future scheduling)
+                reminders: Array.isArray(updatedTaskData.reminders) ? updatedTaskData.reminders : (selectedTask.reminders || []),
             };
 
+            // Combine due date + time if provided from Edit form (handle date-only, time-only, both, or none)
+            const existingDue = toSafeDate(selectedTask?.dueDate);
             if (updatedTaskData.dueDate instanceof Date) {
                 payload.dueDate = updatedTaskData.dueDate;
             } else if (typeof updatedTaskData.dueDate === 'string' && updatedTaskData.dueDate) {
-                const d = new Date(updatedTaskData.dueDate);
-                if (!isNaN(d.getTime())) payload.dueDate = d;
+                const [hh = existingDue ? String(existingDue.getHours()).padStart(2, '0') : '09', mm = existingDue ? String(existingDue.getMinutes()).padStart(2, '0') : '00'] = (updatedTaskData.dueTime || '').split(':');
+                const base = new Date(updatedTaskData.dueDate + 'T00:00:00');
+                if (!isNaN(base.getTime())) { base.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0); payload.dueDate = base; }
+            } else if (typeof updatedTaskData.dueTime === 'string' && updatedTaskData.dueTime && existingDue) {
+                const base = new Date(existingDue);
+                const [hh = '09', mm = '00'] = updatedTaskData.dueTime.split(':');
+                base.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+                if (!isNaN(base.getTime())) payload.dueDate = base;
             }
 
+            console.log('[FollowUps] Update payload:', payload);
+            if (payload.dueDate) {
+                try { console.log('[FollowUps] dueDate toISOString:', new Date(payload.dueDate).toISOString()); } catch { }
+            } else {
+                console.log('[FollowUps] dueDate missing in payload; strings:', payload.dueDateString, payload.dueTimeString);
+            }
+
+            // Keep backend schedulers aligned
+            if (payload.dueDate) {
+                payload.scheduledFor = payload.dueDate;
+            }
             const updateFollowUpTask = httpsCallable(functions, 'updateFollowUpTask');
-            await updateFollowUpTask(payload);
+            const result = await updateFollowUpTask(payload);
+            console.log('[FollowUps] updateFollowUpTask result:', result?.data || result);
+            try {
+                const postRef = doc(db, 'followUpTasks', selectedTask.id);
+                const postSnap = await getDoc(postRef);
+                const postData = postSnap.exists() ? postSnap.data() : null;
+                const postDue = postData?.dueDate?.toDate?.() || new Date(postData?.dueDate);
+                console.log('[FollowUps] Post-save Firestore doc:', { id: selectedTask.id, dueRaw: postData?.dueDate, dueParsed: postDue && !isNaN(postDue) ? postDue.toISOString() : null });
+            } catch (e) {
+                console.warn('[FollowUps] Post-save doc fetch failed:', e);
+            }
 
             // Optimistically update list to reflect changes immediately
             setTasks(prev => prev.map(t => (t.id === selectedTask.id ? { ...t, ...payload } : t)));
@@ -716,11 +1032,20 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         setSelectedCustomerId(event.target.value);
     };
 
+    // Lock company context for non-admin front-end dashboard usage
+    useEffect(() => {
+        // Lock to dashboard company context whenever not inside /admin routes
+        if (!isAdminView && companyIdForAddress) {
+            setSelectedCompanyId(companyIdForAddress);
+        }
+    }, [isAdminView, companyIdForAddress]);
+
     const refreshData = () => {
         loadTasks();
         loadRules();
         loadStaff();
         loadShipments();
+        loadTaskTemplates();
     };
 
     // Professional header with SolushipX styling
@@ -951,15 +1276,6 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 <Tab
                     label={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <DashboardIcon sx={{ fontSize: '16px' }} />
-                            Overview
-                        </Box>
-                    }
-                    value="overview"
-                />
-                <Tab
-                    label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TaskIcon sx={{ fontSize: '16px' }} />
                             Tasks
                             <Chip
@@ -1001,15 +1317,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     }
                     value="rules"
                 />
-                <Tab
-                    label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <ShipmentIcon sx={{ fontSize: '16px' }} />
-                            Shipments
-                        </Box>
-                    }
-                    value="shipments"
-                />
+
             </Tabs>
         </Box>
     );
@@ -1057,12 +1365,33 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     const toSafeDate = (value) => {
         try {
             if (!value) return null;
+            if (value instanceof Date) {
+                return isNaN(value.getTime()) ? null : value;
+            }
             if (value.toDate && typeof value.toDate === 'function') return value.toDate();
-            if (value.seconds && typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+            // Support both Firestore Timestamp shape and callable-serialized shape
+            if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+            if (typeof value._seconds === 'number') return new Date(value._seconds * 1000);
             const d = new Date(value);
             return isNaN(d.getTime()) ? null : d;
         } catch {
             return null;
+        }
+    };
+
+    // Task status chip styling (TASK status, not shipment status)
+    const getTaskStatusChipStyle = (status) => {
+        const s = (status || 'pending').toLowerCase();
+        switch (s) {
+            case 'in_progress':
+                return { label: 'In Progress', bg: '#dbeafe', fg: '#1d4ed8' };
+            case 'completed':
+                return { label: 'Completed', bg: '#dcfce7', fg: '#16a34a' };
+            case 'cancelled':
+                return { label: 'Cancelled', bg: '#e5e7eb', fg: '#374151' };
+            case 'pending':
+            default:
+                return { label: 'Pending', bg: '#fff6d6', fg: '#c9895e' };
         }
     };
 
@@ -1330,7 +1659,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     // Enhanced tasks list with professional styling
     const renderTasksList = () => (
         <Box sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography sx={{
                     fontSize: '16px',
                     fontWeight: 600,
@@ -1378,6 +1707,9 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     />
                 </Box>
             </Box>
+
+            {/* Company/Customer row placed above filters */}
+            {!scopeShipmentId && renderCompanyCustomerFilters()}
 
             {/* Task Filters */}
             <Box sx={{
@@ -1476,14 +1808,14 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 </FormControl>
 
                 <FormControl size="small" sx={{ minWidth: 120 }}>
-                    <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                    <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                     <Select
                         value={filters.category}
                         onChange={(e) => handleFilterChange('category', e.target.value)}
-                        label="Category"
+                        label="Type"
                         sx={{ fontSize: '12px' }}
                     >
-                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Categories</MenuItem>
+                        <MenuItem value="all" sx={{ fontSize: '12px' }}>All Types</MenuItem>
                         <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual</MenuItem>
                         <MenuItem value="automated" sx={{ fontSize: '12px' }}>Automated</MenuItem>
                         <MenuItem value="scheduled" sx={{ fontSize: '12px' }}>Scheduled</MenuItem>
@@ -1506,6 +1838,35 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                         <MenuItem value="next_week" sx={{ fontSize: '12px' }}>Next Week</MenuItem>
                     </Select>
                 </FormControl>
+
+                {/* Clear Filters Button */}
+                <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<ClearIcon />}
+                    onClick={() => {
+                        setFilters({
+                            status: 'all',
+                            priority: 'all',
+                            assignedTo: 'all',
+                            category: 'all',
+                            dueDate: 'all'
+                        });
+                        setSearchTerm('');
+                        setPage(0);
+                    }}
+                    sx={{
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        borderColor: '#d1d5db',
+                        '&:hover': {
+                            borderColor: '#9ca3af',
+                            backgroundColor: '#f9fafb'
+                        }
+                    }}
+                >
+                    Clear Filters
+                </Button>
             </Box>
 
             {loading ? (
@@ -1535,14 +1896,165 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                         Create your first task to get started
                     </Typography>
                 </Paper>
+            ) : filteredTasks.length === 0 ? (
+                <Paper sx={{
+                    p: 4,
+                    textAlign: 'center',
+                    border: '1px solid #e5e7eb',
+                    boxShadow: 'none',
+                    backgroundColor: '#f9fafb'
+                }}>
+                    <FilterIcon sx={{ fontSize: '48px', color: '#d1d5db', mb: 2 }} />
+                    <Typography sx={{
+                        fontSize: '14px',
+                        color: '#6b7280',
+                        mb: 1
+                    }}>
+                        No tasks match your current filters
+                    </Typography>
+                    <Typography sx={{
+                        fontSize: '12px',
+                        color: '#9ca3af'
+                    }}>
+                        Try adjusting your filter settings or clearing all filters
+                    </Typography>
+                </Paper>
             ) : (
-                <Box>
-                    {tasks
-                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                        .map(task => renderTaskCard(task))}
+                <Box sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb', boxShadow: 'none', borderRadius: '8px', width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+                        <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: embedded ? 0 : '800px' }}>
+                            <TableHead sx={{ backgroundColor: '#f8fafc' }}>
+                                <TableRow>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '10%' : { xs: '14%', sm: '14%' } }}>Shipment</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '22%' : { xs: '20%', sm: '18%' } }}>Title</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '14%' : { xs: '16%', sm: '16%' } }}>Customer</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '8%' : { xs: '10%', sm: '10%' } }}>Priority</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '12%' : { xs: '14%', sm: '14%' } }}>Assigned</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '12%' : { xs: '12%', sm: '12%' } }}>Due Date</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: 90 }}>Time</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '10%' : { xs: '10%', sm: '10%' } }}>Status</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '8%' : { xs: '10%', sm: '10%' } }}>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredTasks
+                                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                    .map((task) => {
+                                        const shipment = shipmentData[task.shipmentId];
+                                        const dueDateObj = toSafeDate(task.dueDate);
+                                        try {
+                                            const parsed = dueDateObj && !isNaN(dueDateObj.getTime()) ? dueDateObj.toISOString() : null;
+                                            if (!parsed && (task?.dueDate?._seconds || task?.dueDate?.seconds)) {
+                                                const secs = task?.dueDate?._seconds ?? task?.dueDate?.seconds;
+                                                console.log('[TasksTable] Row', task.id, 'fallback parse check seconds:', secs, 'date:', new Date(secs * 1000).toISOString());
+                                            }
+                                            console.log('[TasksTable] Row', task.id, 'dueDate raw:', task.dueDate, 'parsed:', parsed);
+                                        } catch { }
+                                        const { name: customerName, logo: customerLogo } = getTaskCustomerInfo(task, shipment);
+                                        return (
+                                            <TableRow
+                                                key={task.id}
+                                                hover
+                                                sx={{ cursor: 'pointer' }}
+                                                onClick={() => handleTaskClick(task)}
+                                            >
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Button
+                                                            variant="text"
+                                                            onClick={(e) => { e.stopPropagation(); handleEditTask(task); }}
+                                                            sx={{ p: 0, minWidth: 0, fontSize: '12px', textTransform: 'none', fontFamily: 'monospace', color: '#1f2937' }}
+                                                        >
+                                                            {shipment?.shipmentID || task.shipmentId || '—'}
+                                                        </Button>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', maxWidth: 420 }}>
+                                                    <Typography sx={{ fontSize: '12px', color: '#374151' }} noWrap>{task.title || '—'}</Typography>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Avatar src={customerLogo} sx={{ width: 16, height: 16, fontSize: '8px' }}>
+                                                            {customerName?.charAt(0) || 'C'}
+                                                        </Avatar>
+                                                        <Typography sx={{ fontSize: '12px' }}>{customerName}</Typography>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    <Chip
+                                                        label={task.priority || 'low'}
+                                                        size="small"
+                                                        sx={{
+                                                            height: '20px',
+                                                            fontSize: '10px',
+                                                            textTransform: 'capitalize',
+                                                            backgroundColor:
+                                                                task.priority === 'high' ? '#fee2e2' :
+                                                                    task.priority === 'medium' ? '#fef3c7' : '#f0fdf4',
+                                                            color:
+                                                                task.priority === 'high' ? '#dc2626' :
+                                                                    task.priority === 'medium' ? '#d97706' : '#16a34a'
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {task.assignedTo ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                            <Avatar src={getUserAvatar(task.assignedTo)} sx={{ width: 16, height: 16, fontSize: '8px', bgcolor: '#8b5cf6' }}>
+                                                                {getUserInitials(task.assignedTo)}
+                                                            </Avatar>
+                                                            <Typography sx={{ fontSize: '12px' }}>{getUserDisplayName(task.assignedTo)}</Typography>
+                                                        </Box>
+                                                    ) : 'Unassigned'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: (dueDateObj && !isNaN(dueDateObj.getTime()) && dueDateObj < new Date() && (task.status !== 'completed')) ? '#dc2626' : '#374151' }}>
+                                                    {dueDateObj && !isNaN(dueDateObj.getTime()) ? dueDateObj.toLocaleDateString() : '—'}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px', color: (dueDateObj && !isNaN(dueDateObj.getTime()) && dueDateObj < new Date() && (task.status !== 'completed')) ? '#dc2626' : '#374151' }}>
+                                                    {(() => {
+                                                        if (!dueDateObj || isNaN(dueDateObj.getTime())) return '—';
+                                                        // Show "-" if time is midnight (00:00), indicating no specific time was set
+                                                        const hours = dueDateObj.getHours();
+                                                        const minutes = dueDateObj.getMinutes();
+                                                        if (hours === 0 && minutes === 0) return '—';
+                                                        return dueDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                                    })()}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }} onClick={(e) => e.stopPropagation()}>
+                                                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                                                        {(() => {
+                                                            const { label, bg, fg } = getTaskStatusChipStyle(task.status);
+                                                            return (
+                                                                <Chip
+                                                                    label={label}
+                                                                    size="small"
+                                                                    sx={{ height: '20px', fontSize: '10px', backgroundColor: bg, color: fg, border: 'none' }}
+                                                                />
+                                                            );
+                                                        })()}
+                                                        <IconButton
+                                                            size="small"
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                            onClick={(e) => { e.stopPropagation(); setStatusMenu({ anchorEl: e.currentTarget, task }); }}
+                                                        >
+                                                            <EditIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                                                        </IconButton>
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }} onClick={(e) => e.stopPropagation()}>
+                                                    <Button size="small" variant="outlined" onClick={() => handleEditTask(task)} sx={{ textTransform: 'none', fontSize: '11px' }}>
+                                                        View
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
                     <TablePagination
                         component="div"
-                        count={tasks.length}
+                        count={filteredTasks.length}
                         page={page}
                         onPageChange={(e, newPage) => setPage(newPage)}
                         rowsPerPage={rowsPerPage}
@@ -1558,8 +2070,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
         </Box>
     );
 
-    // Enhanced shipments table with professional styling
-    const renderShipmentsTable = () => (
+    // Shipments tab removed per requirements
+    /* const renderShipmentsTable = () => (
         <Box sx={{ p: 3 }}>
             <Typography sx={{
                 fontSize: '16px',
@@ -1676,7 +2188,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 </Table>
             </TableContainer>
         </Box>
-    );
+    ); */
 
     // Enhanced company/customer filters with professional styling
     const renderCompanyCustomerFilters = () => (
@@ -1716,27 +2228,28 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                                     Company
                                 </Box>
                             }
-                            disabled={loadingCompanies}
+                            disabled={loadingCompanies || !isAdminView /* lock on non-admin routes, even for admin users */}
                         >
-                            {/* All Companies Option */}
-                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                    <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
-                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                        All Companies
-                                    </Typography>
-                                    <Chip
-                                        label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
-                                        size="small"
-                                        color="primary"
-                                        sx={{
-                                            height: 20,
-                                            fontSize: '10px',
-                                            ml: 'auto'
-                                        }}
-                                    />
-                                </Box>
-                            </MenuItem>
+                            {/* All Companies Option (admins only) */}
+                            {isAdminView && (
+                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            All Companies
+                                        </Typography>
+                                        <Chip
+                                            label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                            size="small"
+                                            color="primary"
+                                            sx={{
+                                                height: 20,
+                                                fontSize: '10px',
+                                                ml: 'auto'
+                                            }}
+                                        />
+                                    </Box>
+                                </MenuItem>)}
 
                             {/* Individual Companies */}
                             {availableCompanies.map(company => (
@@ -1917,63 +2430,10 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
     // Main tab content renderer
     const renderTabContent = () => {
         switch (selectedTab) {
-            case 'overview':
-                return (
-                    <Box>
-                        {renderStatsCards()}
-                        {renderCompanyCustomerFilters()}
-                        <Box sx={{ p: 3 }}>
-                            <Typography sx={{
-                                fontSize: '16px',
-                                fontWeight: 600,
-                                color: '#111827',
-                                mb: 2
-                            }}>
-                                Recent Activity
-                            </Typography>
-                            {loading ? (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                                    <CircularProgress size={24} />
-                                </Box>
-                            ) : tasks.length === 0 ? (
-                                <Alert
-                                    severity="info"
-                                    sx={{
-                                        fontSize: '12px',
-                                        backgroundColor: '#f0f9ff',
-                                        border: '1px solid #e0f2fe',
-                                        color: '#0369a1'
-                                    }}
-                                >
-                                    No follow-up tasks found. Tasks will appear here when created.
-                                </Alert>
-                            ) : (
-                                <Box>
-                                    {tasks.slice(0, 10).map(task => renderTaskCard(task))}
-                                    {tasks.length > 10 && (
-                                        <Box sx={{ textAlign: 'center', mt: 2 }}>
-                                            <Button
-                                                onClick={() => setSelectedTab('tasks')}
-                                                size="small"
-                                                sx={{
-                                                    fontSize: '12px',
-                                                    textTransform: 'none',
-                                                    color: '#6366f1'
-                                                }}
-                                            >
-                                                View all {tasks.length} tasks →
-                                            </Button>
-                                        </Box>
-                                    )}
-                                </Box>
-                            )}
-                        </Box>
-                    </Box>
-                );
+            // overview removed; default handled by tasks
             case 'tasks':
                 return (
                     <Box>
-                        {renderCompanyCustomerFilters()}
                         {renderTasksList()}
                     </Box>
                 );
@@ -2004,13 +2464,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                         </Box>
                     </Box>
                 );
-            case 'shipments':
-                return (
-                    <Box>
-                        {renderCompanyCustomerFilters()}
-                        {renderShipmentsTable()}
-                    </Box>
-                );
+
             default:
                 return null;
         }
@@ -2047,31 +2501,61 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
 
     return (
         <Box sx={{
-            height: '100vh',
+            height: embedded ? '100%' : '100vh',
+            width: '100%',
+            maxWidth: '100%',
+            overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             backgroundColor: '#f9fafb'
         }}>
-            {/* Modal Header */}
-            {isModal && (
+            {/* Modal Header (suppressed when embedded inside another modal) */}
+            {isModal && !embedded && (
                 <ModalHeader
-                    title="Follow-Up Management"
-                    onClose={onClose}
+                    title={scopeShipmentId ? 'Shipment Follow-Ups' : 'Follow-Up Management'}
+                    onClose={() => {
+                        // In a modal context, ensure parent can restore previous view
+                        if (typeof onClose === 'function') onClose();
+                        // Soft navigation guard for browser back in an embedded modal context
+                        try {
+                            if (window && window.history && window.history.state && window.history.length > 0) {
+                                // No-op: let parent control. Keeping hook in case of future deep linking
+                            }
+                        } catch { }
+                    }}
                     showCloseButton={true}
                 />
             )}
 
-            {/* Main Header */}
-            {renderHeader()}
-
-            {/* Navigation Tabs */}
-            {renderTabs()}
+            {/* Main Header & Tabs hidden when focused on a single shipment */}
+            {!scopeShipmentId && renderHeader()}
+            {!scopeShipmentId && renderTabs()}
 
             {/* Scrollable Content */}
             <Box sx={{
                 flex: 1,
+                minWidth: 0,
+                overflow: 'auto',
                 backgroundColor: '#ffffff'
             }}>
+                {/* Scoped header with New Task action when viewing a single shipment */}
+                {scopeShipmentId && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, borderBottom: '1px solid #e5e7eb' }}>
+                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+                            Shipment Follow-Ups
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={handleCreateTask}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            New Task
+                        </Button>
+                    </Box>
+                )}
+
                 {renderTabContent()}
             </Box>
 
@@ -2127,9 +2611,9 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 maxWidth="lg"
                 fullWidth
                 scroll="paper"
-                PaperProps={{ sx: { height: '80vh', display: 'flex', flexDirection: 'column' } }}
+                PaperProps={{ sx: { maxHeight: 'calc(80vh + 20px)', display: 'flex', flexDirection: 'column' } }}
             >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} component="div">
                     Create New Follow-Up Task
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button onClick={() => setCreateTaskDialog(false)} sx={{ fontSize: '12px', textTransform: 'none' }}>Cancel</Button>
@@ -2140,13 +2624,17 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                         >Create Task</Button>
                     </Box>
                 </DialogTitle>
-                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1 }}>
+                {/* Status menu moved to root below to ensure it overlays current dialog */}
+                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1, pb: 2.5, mb: 0 }}>
                     <CreateTaskForm
                         onSave={handleCreateNewTask}
                         onCancel={() => setCreateTaskDialog(false)}
                         staff={staff}
                         availableCompanies={availableCompanies}
-                        defaultCompanyId={selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId}
+                        defaultCompanyId={scopeShipmentId ? (scopeCompanyId || companyIdForAddress) : (selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId)}
+                        defaultShipmentId={scopeShipmentId || ''}
+                        defaultShipmentData={scopeShipmentData || null}
+                        lockContext={Boolean(scopeShipmentId)}
                     />
                 </DialogContent>
             </Dialog>
@@ -2176,29 +2664,48 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                 maxWidth="lg"
                 fullWidth
                 scroll="paper"
-                PaperProps={{ sx: { height: '80vh', display: 'flex', flexDirection: 'column' } }}
+                PaperProps={{ sx: { maxHeight: '80vh', display: 'flex', flexDirection: 'column' } }}
             >
                 <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Edit Follow-Up Task
-                    {/* Top-right actions */}
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button onClick={() => setEditTaskDialog(false)} sx={{ fontSize: '12px', textTransform: 'none' }}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => {
-                                // trigger child form submit via custom event
-                                const evt = new Event('submit-edit-task-form');
-                                window.dispatchEvent(evt);
-                            }}
-                            variant="contained"
-                            sx={{ fontSize: '12px', textTransform: 'none' }}
-                        >
-                            Save Changes
-                        </Button>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                            {(() => {
+                                const { label, bg, fg } = getTaskStatusChipStyle(selectedTask?.status);
+                                return (
+                                    <Chip label={label} size="small" sx={{ height: '22px', fontSize: '11px', backgroundColor: bg, color: fg, border: 'none' }} />
+                                );
+                            })()}
+                            <IconButton
+                                size="small"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setStatusMenu({ anchorEl: e.currentTarget, task: selectedTask });
+                                }}
+                            >
+                                <EditIcon sx={{ fontSize: 16, color: '#6b7280' }} />
+                            </IconButton>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button onClick={() => setEditTaskDialog(false)} sx={{ fontSize: '12px', textTransform: 'none' }}>
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    const form = document.getElementById('edit-task-form');
+                                    if (form) form.requestSubmit();
+                                }}
+                                variant="contained"
+                                sx={{ fontSize: '12px', textTransform: 'none' }}
+                            >
+                                Save Changes
+                            </Button>
+                        </Box>
                     </Box>
                 </DialogTitle>
-                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1 }}>
+                <DialogContent sx={{ flex: '1 1 auto', overflowY: 'auto', pr: 1, pb: 2.5, mb: 0 }}>
                     <EditTaskForm
                         task={selectedTask}
                         staff={staff}
@@ -2209,6 +2716,44 @@ const FollowUpsDashboard = ({ isModal = false, onClose }) => {
                     />
                 </DialogContent>
             </Dialog>
+            {/* Global status menu (portal) */}
+            <Menu
+                anchorEl={statusMenu.anchorEl}
+                open={Boolean(statusMenu.anchorEl)}
+                onClose={() => setStatusMenu({ anchorEl: null, task: null })}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                disablePortal={false}
+                container={document.body}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            zIndex: 9999,
+                            position: 'absolute',
+                            backgroundColor: 'white',
+                            border: '1px solid #ccc',
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                        }
+                    }
+                }}
+
+            >
+                {['pending', 'in_progress', 'completed', 'cancelled'].map(s => (
+                    <MenuItem
+                        key={s}
+                        onClick={async () => {
+                            const target = statusMenu.task;
+                            setStatusMenu({ anchorEl: null, task: null });
+                            if (!target) return;
+                            await handleInlineUpdateTask(target, { status: s });
+                            setSelectedTask(prev => prev && prev.id === target.id ? { ...prev, status: s } : prev);
+                        }}
+                        sx={{ fontSize: '12px', textTransform: 'capitalize' }}
+                    >
+                        {s.replace('_', ' ')}
+                    </MenuItem>
+                ))}
+            </Menu>
         </Box>
     );
 };
@@ -2226,13 +2771,44 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
         assignedTo: task?.assignedTo || '',
         companyId: task?.companyId || defaultCompanyId || '',
         customerId: task?.customerId || '',
-        dueDate: task?.dueDate ? new Date(task.dueDate.toDate?.() || task.dueDate).toISOString().split('T')[0] : '',
-        dueTime: task?.dueDate ? new Date(task.dueDate.toDate?.() || task.dueDate).toTimeString().slice(0, 5) : '',
-        category: task?.category || 'manual'
+        // Initialize blank; sync effect below will safely populate from Timestamp/Date
+        dueDate: '',
+        dueTime: '',
+        category: task?.category || 'manual',
+        shipmentId: task?.shipmentId || task?.shipment?.id || '',
+        selectedShipment: task?.shipment || null,
+        actions: Array.isArray(task?.actions) ? task.actions : [],
+        reminders: Array.isArray(task?.reminders) ? task.reminders : []
     });
 
     const [companyCustomers, setCompanyCustomers] = useState([]);
     const [validation, setValidation] = useState({ dueDateTime: '' });
+
+    // Shipment search state (match Create form UX)
+    const [shipmentSearchTerm, setShipmentSearchTerm] = useState('');
+    const [shipmentOptions, setShipmentOptions] = useState([]);
+    const [loadingShipments, setLoadingShipments] = useState(false);
+
+    // Action and reminder options (match Create form)
+    const actionOptions = [
+        { value: 'call_shipper', label: 'Call Shipper' },
+        { value: 'email_shipper', label: 'Email Shipper' },
+        { value: 'call_receiver', label: 'Call Receiver' },
+        { value: 'email_receiver', label: 'Email Receiver' },
+        { value: 'call_carrier_contact', label: 'Call Carrier Contact' },
+        { value: 'email_carrier_contact', label: 'Email Carrier Contact' },
+    ];
+    const actionLabelMap = Object.fromEntries(actionOptions.map(o => [o.value, o.label]));
+
+    const reminderOptions = [
+        { value: 'in_2h', label: 'In 2 hours' },
+        { value: 'at_4pm', label: 'At 4:00 PM' },
+        { value: 'tomorrow_9am', label: 'Tomorrow 9:00 AM' },
+        { value: 'in_24h', label: 'In 24 hours' },
+        { value: 'one_hour_before', label: '1 hour before Due' },
+        { value: 'on_due', label: 'On Due' },
+    ];
+    const reminderLabelMap = Object.fromEntries(reminderOptions.map(o => [o.value, o.label]));
 
     useEffect(() => {
         const loadCustomers = async () => {
@@ -2270,25 +2846,82 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
         }));
     };
 
+    // Keep form in sync when a different task is loaded (now task may carry Timestamp in task.dueDate)
+    useEffect(() => {
+        if (!task) return;
+        const toDateOnly = (v) => {
+            try {
+                if (!v) return '';
+                const d = v?.toDate?.()
+                    || (typeof v?.seconds === 'number' ? new Date(v.seconds * 1000)
+                        : (typeof v?._seconds === 'number' ? new Date(v._seconds * 1000) : new Date(v)));
+                if (isNaN(d.getTime())) return '';
+                // Format as yyyy-mm-dd (local)
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            } catch { return ''; }
+        };
+        const toTimeOnly = (v) => {
+            try {
+                if (!v) return '';
+                const d = v?.toDate?.()
+                    || (typeof v?.seconds === 'number' ? new Date(v.seconds * 1000)
+                        : (typeof v?._seconds === 'number' ? new Date(v._seconds * 1000) : new Date(v)));
+                if (isNaN(d.getTime())) return '';
+                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            } catch { return ''; }
+        };
+        console.log('[EditTaskForm] syncing from selectedTask:', { rawDue: task?.dueDate, date: toDateOnly(task?.dueDate), time: toTimeOnly(task?.dueDate) });
+        setFormData(prev => ({
+            ...prev,
+            title: task.title || '',
+            description: task.description || '',
+            priority: task.priority || 'medium',
+            status: task.status || 'pending',
+            assignedTo: task.assignedTo || '',
+            companyId: task.companyId || prev.companyId || defaultCompanyId || '',
+            customerId: task.customerId || '',
+            dueDate: toDateOnly(task.dueDate),
+            dueTime: toTimeOnly(task.dueDate),
+            category: task.category || 'manual',
+            shipmentId: task.shipmentId || task?.shipment?.id || '',
+            selectedShipment: task.shipment || null,
+            actions: Array.isArray(task.actions) ? task.actions : (Array.isArray(task.actionTypes) ? task.actionTypes : []),
+            reminders: Array.isArray(task.reminders) ? task.reminders : []
+        }));
+    }, [task, defaultCompanyId]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        // Combine date + time to one Date at local timezone
+        // Combine date + time to one Date at local timezone using setHours to avoid TZ drift
         let dueDateObj = null;
         if (formData.dueDate) {
-            const time = formData.dueTime || '09:00';
-            const combined = new Date(`${formData.dueDate}T${time}:00`);
-            if (!isNaN(combined.getTime())) dueDateObj = combined;
+            const [hh = '09', mm = '00'] = (formData.dueTime || '09:00').split(':');
+            const base = new Date(formData.dueDate + 'T00:00:00');
+            if (!isNaN(base.getTime())) {
+                base.setHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
+                dueDateObj = base;
+            }
         }
+        console.log('[EditTaskForm] due inputs:', { dueDateString: formData.dueDate, dueTimeString: formData.dueTime });
+        console.log('[EditTaskForm] computed dueDateObj:', dueDateObj ? dueDateObj.toISOString() : null, dueDateObj);
         // Validation: warn if due date in past
         if (dueDateObj && dueDateObj.getTime() < Date.now()) {
             setValidation({ dueDateTime: 'Selected time is in the past' });
         } else {
             setValidation({ dueDateTime: '' });
         }
-        onSave({
+        const payload = {
             ...formData,
-            dueDate: dueDateObj
-        });
+            dueDate: dueDateObj,
+            // Also send raw strings so parent can recompute if needed
+            dueDateString: formData.dueDate || '',
+            dueTimeString: formData.dueTime || ''
+        };
+        console.log('[EditTaskForm] Submitting payload:', payload);
+        onSave(payload);
     };
 
     // Allow parent header Save button to submit this form
@@ -2301,40 +2934,59 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
         return () => window.removeEventListener('submit-edit-task-form', handler);
     }, [formData]);
 
+    // Shipment search (match Create form)
+    const handleShipmentSearch = async (searchTerm) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            setShipmentOptions([]);
+            return;
+        }
+        if (!formData.companyId) {
+            setShipmentOptions([]);
+            return;
+        }
+        setLoadingShipments(true);
+        try {
+            const shipmentsQuery = query(
+                collection(db, 'shipments'),
+                where('companyID', '==', formData.companyId),
+                orderBy('createdAt', 'desc'),
+                limit(50)
+            );
+            const shipmentsSnapshot = await getDocs(shipmentsQuery);
+            const shipments = shipmentsSnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(shipment => [
+                    shipment.shipmentID,
+                    shipment.id,
+                    shipment.referenceNumber,
+                    shipment.shipperReferenceNumber,
+                    shipment.shipmentInfo?.referenceNumber,
+                    shipment.shipTo?.companyName,
+                    shipment.shipFrom?.companyName,
+                    shipment.carrierBookingConfirmation?.proNumber,
+                    shipment.trackingNumber
+                ].filter(Boolean).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
+            setShipmentOptions(shipments);
+        } catch (error) {
+            console.error('Error searching shipments (edit):', error);
+            setShipmentOptions([]);
+        } finally {
+            setLoadingShipments(false);
+        }
+    };
+
+    const handleShipmentSelect = (shipment) => {
+        setFormData(prev => ({
+            ...prev,
+            shipmentId: shipment.id,
+            selectedShipment: shipment
+        }));
+        setShipmentSearchTerm(shipment.shipmentID);
+    };
+
     return (
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1 }}>
+        <Box component="form" id="edit-task-form" onSubmit={handleSubmit} sx={{ mt: 2, pt: '15px', maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1, pb: 0, mb: 0 }}>
             <Grid container spacing={2}>
-                {/* Status dropdown */}
-                <Grid item xs={12} md={6}>
-                    <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
-                        <Select
-                            value={formData.status}
-                            onChange={(e) => handleChange('status', e.target.value)}
-                            label="Status"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
-                            <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
-                            <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
-                            <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
-                        </Select>
-                    </FormControl>
-                </Grid>
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Task Title"
-                        value={formData.title}
-                        onChange={(e) => handleChange('title', e.target.value)}
-                        required
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
                 {/* Company / Customer / Assignee */}
                 <Grid item xs={12} md={4}>
                     <FormControl fullWidth size="small">
@@ -2416,177 +3068,166 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
                         </Select>
                     </FormControl>
                 </Grid>
-                <Grid item xs={12} md={6}>
-                    <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
-                        <Select
-                            value={formData.priority}
-                            onChange={(e) => handleChange('priority', e.target.value)}
-                            label="Priority"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
-                            <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
-                            <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
-                        </Select>
-                    </FormControl>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
-                        <Select
-                            value={formData.status}
-                            onChange={(e) => handleChange('status', e.target.value)}
-                            label="Status"
-                            sx={{ fontSize: '12px' }}
-                        >
-                            <MenuItem value="pending" sx={{ fontSize: '12px' }}>Pending</MenuItem>
-                            <MenuItem value="in_progress" sx={{ fontSize: '12px' }}>In Progress</MenuItem>
-                            <MenuItem value="completed" sx={{ fontSize: '12px' }}>Completed</MenuItem>
-                            <MenuItem value="cancelled" sx={{ fontSize: '12px' }}>Cancelled</MenuItem>
-                        </Select>
-                    </FormControl>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Due Date"
-                        type="date"
-                        value={formData.dueDate}
-                        onChange={(e) => handleChange('dueDate', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Due Time"
-                        type="time"
-                        value={formData.dueTime}
-                        onChange={(e) => handleChange('dueTime', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        size="small"
-                        helperText={validation.dueDateTime}
-                        error={Boolean(validation.dueDateTime)}
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-
-                {/* Reminders quick actions */}
+                {/* Task Settings & Shipment selection */}
                 <Grid item xs={12}>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>Remind:</Typography>
-                        <Chip size="small" label="In 2h" onClick={() => {
-                            const base = new Date();
-                            base.setHours(base.getHours() + 2);
-                            const d = base.toISOString().slice(0, 10);
-                            const t = base.toTimeString().slice(0, 5);
-                            setFormData(prev => ({ ...prev, dueDate: d, dueTime: t }));
-                        }} />
-                        <Chip size="small" label="At 4:00 PM" onClick={() => {
-                            const base = new Date();
-                            const d = base.toISOString().slice(0, 10);
-                            setFormData(prev => ({ ...prev, dueDate: d, dueTime: '16:00' }));
-                        }} />
-                        <Chip size="small" color="primary" label="Schedule reminder…" onClick={async () => {
-                            try {
-                                const scheduleAt = window.prompt('Enter reminder datetime (YYYY-MM-DD HH:mm)');
-                                if (!scheduleAt) return;
-                                const [dp, tp] = scheduleAt.split(' ');
-                                const iso = `${dp}T${(tp || '09:00')}:00`;
-                                const scheduleTaskReminder = httpsCallable(functions, 'scheduleTaskReminder');
-                                await scheduleTaskReminder({ taskId: task.id, scheduledAt: iso });
-                                alert('Reminder scheduled');
-                            } catch (e) {
-                                console.error('schedule reminder failed', e);
-                                alert('Failed to schedule reminder');
-                            }
-                        }} />
-                    </Box>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                        Task Settings
+                    </Typography>
                 </Grid>
 
-                {/* Description moved to bottom and taller with templates */}
-                <Grid item xs={12}>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
-                        {['Delivery appointment confirmation', 'POD follow-up', 'Carrier status check', 'Customer notification'].map(tpl => (
-                            <Chip key={tpl} size="small" label={tpl} onClick={() => setFormData(prev => ({ ...prev, description: prev.description ? `${prev.description}\n${tpl}: ` : `${tpl}: ` }))} />
-                        ))}
-                    </Box>
-                    <TextField
-                        fullWidth
-                        label="Description"
-                        value={formData.description}
-                        onChange={(e) => handleChange('description', e.target.value)}
-                        multiline
-                        rows={6}
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-
-                {/* Quick actions based on shipment context */}
-                {task?.shipment && (
+                {!formData.selectedShipment ? (
                     <Grid item xs={12}>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button size="small" variant="outlined" sx={{ textTransform: 'none', fontSize: '12px' }}
-                                onClick={() => {
-                                    const phone = task.shipment?.shipTo?.phone || task.shipment?.shipTo?.contactPhone || '';
-                                    if (phone) window.open(`tel:${phone}`);
-                                }}
-                            >Call receiver</Button>
-                            <Button size="small" variant="outlined" sx={{ textTransform: 'none', fontSize: '12px' }}
-                                onClick={() => {
-                                    const email = task.shipment?.shipTo?.email || task.shipment?.shipTo?.contactEmail || '';
-                                    const subject = encodeURIComponent(`Shipment ${task.shipment?.shipmentID || task.shipment?.id}`);
-                                    window.open(`mailto:${email}?subject=${subject}`);
-                                }}
-                            >Email receiver</Button>
-                        </Box>
+                        <TextField
+                            fullWidth
+                            label="Select Shipment"
+                            value={shipmentSearchTerm}
+                            onChange={(e) => { const v = e.target.value; setShipmentSearchTerm(v); handleShipmentSearch(v); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleShipmentSearch(shipmentSearchTerm); } }}
+                            placeholder="Enter shipment ID, reference, tracking, or company..."
+                            size="small"
+                            sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        {loadingShipments ? <CircularProgress size={16} /> : null}
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+                        {shipmentOptions.length > 0 && (
+                            <Paper sx={{ mt: 1, maxHeight: 200, overflow: 'auto' }}>
+                                <List dense>
+                                    {shipmentOptions.map((s) => (
+                                        <ListItem key={s.id} button onClick={() => handleShipmentSelect(s)} sx={{ '&:hover': { backgroundColor: '#f5f5f5' }, cursor: 'pointer' }}>
+                                            <ListItemText
+                                                primary={
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>{s.shipmentID || s.id}</Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                            {(s.shipFrom?.city || 'N/A')} → {(s.shipTo?.city || 'N/A')} • {(s.createdAt?.toDate?.()?.toLocaleDateString?.() || 'N/A')}
+                                                        </Typography>
+                                                    </Box>
+                                                }
+                                                secondary={<Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Status: {s.status || 'Unknown'} • Ref: {s.referenceNumber || s.shipperReferenceNumber || 'N/A'} • Tracking: {s.trackingNumber || s.carrierBookingConfirmation?.proNumber || 'N/A'}</Typography>}
+                                            />
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            </Paper>
+                        )}
+                    </Grid>
+                ) : (
+                    <Grid item xs={12}>
+                        <Paper sx={{ p: 2, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <Box>
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>Selected Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}</Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>From: {formData.selectedShipment.shipFrom?.companyName || 'Unknown'}</Typography>
+                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>To: {formData.selectedShipment.shipTo?.companyName || 'Unknown'}</Typography>
+                                    <Chip label={formData.selectedShipment.status || 'pending'} size="small" sx={{ fontSize: '10px' }} />
+                                </Box>
+                                <Button size="small" sx={{ fontSize: '12px' }} onClick={() => { setFormData(prev => ({ ...prev, shipmentId: '', selectedShipment: null })); setShipmentSearchTerm(''); }}>Change</Button>
+                            </Box>
+                        </Paper>
                     </Grid>
                 )}
 
-                {/* Activity preview (last 3 notes/actions) with add note */}
-                <Grid item xs={12}>
-                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>Recent Activity</Typography>
-                    <Box sx={{ p: 1.5, border: '1px solid #e5e7eb', borderRadius: 1, background: '#fafafa', mb: 1 }}>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280', whiteSpace: 'pre-line' }}>
-                            {Array.isArray(task?.notes) && task.notes.length > 0 ? task.notes.slice(-3).map((n, i) => `• ${typeof n === 'string' ? n : (n?.text || '')}`).join('\n') : 'No recent notes'}
-                        </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            placeholder="Add a note…"
-                            value={formData.newNote || ''}
-                            onChange={(e) => setFormData(prev => ({ ...prev, newNote: e.target.value }))}
-                            sx={{ '& .MuiInputBase-root': { fontSize: '12px' } }}
-                        />
-                        <Button variant="contained" size="small" sx={{ textTransform: 'none', fontSize: '12px' }}
-                            onClick={async () => {
-                                if (!task?.id || !(formData.newNote || '').trim()) return;
-                                try {
-                                    const fn = httpsCallable(functions, 'addTaskNote');
-                                    await fn({ taskId: task.id, note: formData.newNote.trim() });
-                                    setFormData(prev => ({ ...prev, newNote: '' }));
-                                } catch (e) {
-                                    console.error('add note failed', e);
-                                }
-                            }}
-                        >Add</Button>
-                    </Box>
+                {/* Type / Priority / Actions */}
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
+                        <Select value={formData.category} onChange={(e) => handleChange('category', e.target.value)} label="Type" sx={{ fontSize: '12px' }}>
+                            <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual</MenuItem>
+                            <MenuItem value="automated" sx={{ fontSize: '12px' }}>Automated</MenuItem>
+                            <MenuItem value="scheduled" sx={{ fontSize: '12px' }}>Scheduled</MenuItem>
+                        </Select>
+                    </FormControl>
                 </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
+                        <Select value={formData.priority} onChange={(e) => handleChange('priority', e.target.value)} label="Priority" sx={{ fontSize: '12px' }}>
+                            <MenuItem value="low" sx={{ fontSize: '12px' }}>Low</MenuItem>
+                            <MenuItem value="medium" sx={{ fontSize: '12px' }}>Medium</MenuItem>
+                            <MenuItem value="high" sx={{ fontSize: '12px' }}>High</MenuItem>
+                            <MenuItem value="urgent" sx={{ fontSize: '12px' }}>Urgent</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Actions</InputLabel>
+                        <Select
+                            multiple
+                            value={formData.actions}
+                            onChange={(e) => handleChange('actions', typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                            label="Actions"
+                            sx={{ fontSize: '12px' }}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected || []).map((value) => (
+                                        <Chip key={value} size="small" label={actionLabelMap[value] || value} onMouseDown={(e) => e.stopPropagation()} onDelete={() => setFormData(prev => ({ ...prev, actions: (prev.actions || []).filter(v => v !== value) }))} />
+                                    ))}
+                                </Box>
+                            )}
+                        >
+                            {actionOptions.map(opt => (
+                                <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>{opt.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                {/* Due Date / Due Time / Reminders */}
+                <Grid item xs={12} md={4}>
+                    <TextField fullWidth label="Due Date" type="date" value={formData.dueDate} onChange={(e) => { console.log('[EditTaskForm] dueDate changed ->', e.target.value); handleChange('dueDate', e.target.value); }} InputLabelProps={{ shrink: true }} onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()} size="small" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <TextField fullWidth label="Due Time" type="time" value={formData.dueTime} onChange={(e) => { console.log('[EditTaskForm] dueTime changed ->', e.target.value); handleChange('dueTime', e.target.value); }} InputLabelProps={{ shrink: true }} onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()} size="small" helperText={validation.dueDateTime} error={Boolean(validation.dueDateTime)} sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Reminders</InputLabel>
+                        <Select
+                            multiple
+                            value={formData.reminders}
+                            onChange={(e) => handleChange('reminders', typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                            label="Reminders"
+                            sx={{ fontSize: '12px' }}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected || []).map((value) => (
+                                        <Chip key={value} size="small" label={reminderLabelMap[value] || value} onMouseDown={(e) => e.stopPropagation()} onDelete={() => setFormData(prev => ({ ...prev, reminders: (prev.reminders || []).filter(v => v !== value) }))} />
+                                    ))}
+                                </Box>
+                            )}
+                        >
+                            {reminderOptions.map(opt => (
+                                <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>{opt.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                {/* Task Details - clean (no template chips) */}
+                <Grid item xs={12}>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mt: 2 }}>Task Details</Typography>
+                </Grid>
+                <Grid item xs={12}>
+                    <TextField fullWidth label="Task Title" value={formData.title} onChange={(e) => handleChange('title', e.target.value)} required size="small" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} placeholder="e.g., Contact customer about delivery delay" />
+                </Grid>
+                <Grid item xs={12}>
+                    <TextField fullWidth label="Description" value={formData.description} onChange={(e) => handleChange('description', e.target.value)} multiline rows={5} size="small" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />
+                </Grid>
+
+                {/* Quick actions removed in Edit form for a cleaner UI */}
+
+                {/* Recent Activity and Add Note removed in Edit form */}
 
                 {/* Audit snippet */}
                 <Grid item xs={12}>
@@ -2595,21 +3236,7 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
                     </Typography>
                 </Grid>
             </Grid>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 3 }}>
-                <Button
-                    onClick={onCancel}
-                    sx={{ fontSize: '12px', textTransform: 'none' }}
-                >
-                    Cancel
-                </Button>
-                <Button
-                    type="submit"
-                    variant="contained"
-                    sx={{ fontSize: '12px', textTransform: 'none' }}
-                >
-                    Save Changes
-                </Button>
-            </Box>
+            {/* Bottom buttons removed; header buttons handle submit/cancel */}
         </Box>
     );
 };
@@ -2618,7 +3245,7 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
 // CREATE TASK FORM COMPONENT
 // ===================================================================
 
-const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId }) => {
+const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId, taskTemplates = {}, taskTemplatesLoading = false, defaultShipmentId = '', defaultShipmentData = null, lockContext = false }) => {
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -2630,8 +3257,11 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
         dueDate: '',
         dueTime: '',
         category: 'manual',
-        shipmentId: '',
-        selectedShipment: null
+        shipmentId: defaultShipmentId || '',
+        selectedShipment: defaultShipmentData || null,
+        actions: [],
+        reminders: [],
+        selectedTemplate: ''
     });
     const [companyCustomers, setCompanyCustomers] = useState([]);
 
@@ -2639,11 +3269,67 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
     const [shipmentOptions, setShipmentOptions] = useState([]);
     const [loadingShipments, setLoadingShipments] = useState(false);
 
+    // Action options for tasks
+    const actionOptions = [
+        { value: 'call_shipper', label: 'Call Shipper' },
+        { value: 'email_shipper', label: 'Email Shipper' },
+        { value: 'call_receiver', label: 'Call Receiver' },
+        { value: 'email_receiver', label: 'Email Receiver' },
+        { value: 'call_carrier_contact', label: 'Call Carrier Contact' },
+        { value: 'email_carrier_contact', label: 'Email Carrier Contact' },
+    ];
+    const actionLabelMap = Object.fromEntries(actionOptions.map(o => [o.value, o.label]));
+
+    // Reminder options for tasks
+    const reminderOptions = [
+        { value: 'in_2h', label: 'In 2 hours' },
+        { value: 'at_4pm', label: 'At 4:00 PM' },
+        { value: 'tomorrow_9am', label: 'Tomorrow 9:00 AM' },
+        { value: 'in_24h', label: 'In 24 hours' },
+        { value: 'one_hour_before', label: '1 hour before Due' },
+        { value: 'on_due', label: 'On Due' },
+    ];
+    const reminderLabelMap = Object.fromEntries(reminderOptions.map(o => [o.value, o.label]));
+
     const handleChange = (field, value) => {
         setFormData(prev => ({
             ...prev,
             [field]: value
         }));
+    };
+
+    const handleTemplateSelect = (templateValue) => {
+        if (templateValue === 'other') {
+            // Allow manual entry
+            setFormData(prev => ({
+                ...prev,
+                selectedTemplate: 'other',
+                title: ''
+            }));
+        } else if (templateValue) {
+            // Find the template by ID and set the title
+            let selectedTask = null;
+            Object.values(taskTemplates).forEach(categoryTasks => {
+                const found = categoryTasks.find(task => task.id === templateValue);
+                if (found) selectedTask = found;
+            });
+
+            if (selectedTask) {
+                setFormData(prev => ({
+                    ...prev,
+                    selectedTemplate: templateValue,
+                    title: selectedTask.taskName,
+                    description: selectedTask.description || prev.description
+                }));
+            }
+        } else {
+            // Clear selection
+            setFormData(prev => ({
+                ...prev,
+                selectedTemplate: '',
+                title: ''
+            }));
+        }
     };
 
     useEffect(() => {
@@ -2679,24 +3365,38 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
             setShipmentOptions([]);
             return;
         }
-
+        if (!formData.companyId) {
+            // Require a company selection to scope shipment search
+            setShipmentOptions([]);
+            return;
+        }
         setLoadingShipments(true);
         try {
-            // Search shipments by ID, reference number, or customer name
+            // Scoped to selected company; search latest shipments
             const shipmentsQuery = query(
                 collection(db, 'shipments'),
+                where('companyID', '==', formData.companyId),
                 orderBy('createdAt', 'desc'),
-                limit(10)
+                limit(50)
             );
 
             const shipmentsSnapshot = await getDocs(shipmentsQuery);
             const shipments = shipmentsSnapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
                 .filter(shipment =>
-                    (shipment.shipmentID?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        shipment.id?.toLowerCase?.().includes(searchTerm.toLowerCase())) ||
-                    shipment.referenceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    shipment.shipTo?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
+                    [
+                        shipment.shipmentID,
+                        shipment.id,
+                        shipment.referenceNumber,
+                        shipment.shipperReferenceNumber,
+                        shipment.shipmentInfo?.referenceNumber,
+                        shipment.shipTo?.companyName,
+                        shipment.shipFrom?.companyName,
+                        shipment.carrierBookingConfirmation?.proNumber,
+                        shipment.trackingNumber
+                    ]
+                        .filter(Boolean)
+                        .some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))
                 );
 
             setShipmentOptions(shipments);
@@ -2720,10 +3420,6 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!formData.shipmentId) {
-            alert('Please select a shipment for this follow-up task');
-            return;
-        }
         let dueDateObj = null;
         if (formData.dueDate) {
             const time = formData.dueTime || '09:00';
@@ -2744,23 +3440,8 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
     }, [formData]);
 
     return (
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1 }}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, pt: '15px', maxHeight: 'calc(80vh - 140px)', overflowY: 'auto', pr: 1, pb: 0, mb: 0 }}>
             <Grid container spacing={2}>
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Task Title"
-                        value={formData.title}
-                        onChange={(e) => handleChange('title', e.target.value)}
-                        required
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                    />
-                </Grid>
-
                 {/* Company / Customer / Assignee */}
                 <Grid item xs={12} md={4}>
                     <FormControl fullWidth size="small">
@@ -2770,6 +3451,7 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                             onChange={(e) => handleChange('companyId', e.target.value)}
                             label="Company"
                             sx={{ fontSize: '12px' }}
+                            disabled={lockContext}
                         >
                             <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
                             {availableCompanies.map(c => (
@@ -2794,6 +3476,7 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                             onChange={(e) => handleChange('customerId', e.target.value)}
                             label="Customer"
                             sx={{ fontSize: '12px' }}
+                            disabled={lockContext}
                         >
                             <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
                             {companyCustomers.map(cu => (
@@ -2850,21 +3533,28 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                         color: '#374151',
                         mb: 1
                     }}>
-                        Shipment Selection *
+                        Task Settings
                     </Typography>
                 </Grid>
 
-                {!formData.selectedShipment ? (
+                {!formData.selectedShipment && !lockContext ? (
                     <Grid item xs={12}>
                         <TextField
                             fullWidth
-                            label="Search Shipments"
+                            label="Select Shipment"
                             value={shipmentSearchTerm}
                             onChange={(e) => {
-                                setShipmentSearchTerm(e.target.value);
-                                handleShipmentSearch(e.target.value);
+                                const val = e.target.value;
+                                setShipmentSearchTerm(val);
+                                handleShipmentSearch(val);
                             }}
-                            placeholder="Enter shipment ID, Reference, or Customer..."
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleShipmentSearch(shipmentSearchTerm);
+                                }
+                            }}
+                            placeholder="Enter shipment ID, reference, tracking, or company..."
                             size="small"
                             sx={{
                                 '& .MuiInputBase-root': { fontSize: '12px' },
@@ -2876,9 +3566,9 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                                         <SearchIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
                                     </InputAdornment>
                                 ),
-                                endAdornment: loadingShipments && (
+                                endAdornment: (
                                     <InputAdornment position="end">
-                                        <CircularProgress size={16} />
+                                        {loadingShipments ? <CircularProgress size={16} /> : null}
                                     </InputAdornment>
                                 )
                             }}
@@ -2904,13 +3594,13 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                                                             {shipment.shipmentID || shipment.id}
                                                         </Typography>
                                                         <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            {shipment.shipTo?.companyName || 'Unknown'} • {shipment.referenceNumber || 'N/A'}
+                                                            {(shipment.shipFrom?.city || 'N/A')} → {(shipment.shipTo?.city || 'N/A')} • {(shipment.createdAt?.toDate?.()?.toLocaleDateString?.() || 'N/A')}
                                                         </Typography>
                                                     </Box>
                                                 }
                                                 secondary={
                                                     <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                        Status: {shipment.status || 'Unknown'}
+                                                        Status: {shipment.status || 'Unknown'} • Ref: {shipment.referenceNumber || shipment.shipperReferenceNumber || 'N/A'} • Tracking: {shipment.trackingNumber || shipment.carrierBookingConfirmation?.proNumber || 'N/A'}
                                                     </Typography>
                                                 }
                                             />
@@ -2940,72 +3630,34 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                                         sx={{ fontSize: '10px' }}
                                     />
                                 </Box>
-                                <Button
-                                    size="small"
-                                    onClick={() => {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            shipmentId: '',
-                                            selectedShipment: null
-                                        }));
-                                        setShipmentSearchTerm('');
-                                    }}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    Change
-                                </Button>
+                                {!lockContext && (
+                                    <Button
+                                        size="small"
+                                        onClick={() => {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                shipmentId: '',
+                                                selectedShipment: null
+                                            }));
+                                            setShipmentSearchTerm('');
+                                        }}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Change
+                                    </Button>
+                                )}
                             </Box>
                         </Paper>
                     </Grid>
                 )}
 
-                {/* Task Details */}
-                <Grid item xs={12}>
-                    <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mt: 2 }}>
-                        Task Details
-                    </Typography>
-                </Grid>
-
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Task Title"
-                        value={formData.title}
-                        onChange={(e) => handleChange('title', e.target.value)}
-                        required
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                        placeholder="e.g., Contact customer about delivery delay"
-                    />
-                </Grid>
-
-                <Grid item xs={12}>
-                    <TextField
-                        fullWidth
-                        label="Description"
-                        value={formData.description}
-                        onChange={(e) => handleChange('description', e.target.value)}
-                        multiline
-                        rows={3}
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                        placeholder="Detailed instructions for this follow-up task"
-                    />
-                </Grid>
-
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={4}>
                     <FormControl fullWidth size="small">
-                        <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                        <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                         <Select
                             value={formData.category}
                             onChange={(e) => handleChange('category', e.target.value)}
-                            label="Category"
+                            label="Type"
                             sx={{ fontSize: '12px' }}
                         >
                             <MenuItem value="manual" sx={{ fontSize: '12px' }}>Manual</MenuItem>
@@ -3015,7 +3667,7 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                     </FormControl>
                 </Grid>
 
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={4}>
                     <FormControl fullWidth size="small">
                         <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
                         <Select
@@ -3032,7 +3684,45 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                     </FormControl>
                 </Grid>
 
-                <Grid item xs={12} md={6}>
+                {/* Actions (multi-select) moved to same row as Type and Priority */}
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Actions</InputLabel>
+                        <Select
+                            multiple
+                            value={formData.actions}
+                            onChange={(e) => handleChange('actions', typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                            label="Actions"
+                            sx={{ fontSize: '12px' }}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected || []).map((value) => (
+                                        <Chip
+                                            key={value}
+                                            size="small"
+                                            label={actionLabelMap[value] || value}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onDelete={() => {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    actions: (prev.actions || []).filter(v => v !== value)
+                                                }));
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                        >
+                            {actionOptions.map(opt => (
+                                <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>
+                                    {opt.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={4}>
                     <TextField
                         fullWidth
                         label="Due Date"
@@ -3049,7 +3739,7 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                         }}
                     />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={4}>
                     <TextField
                         fullWidth
                         label="Due Time"
@@ -3065,6 +3755,86 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                         }}
                     />
                 </Grid>
+                {/* Reminders (multi-select) */}
+                <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Reminders</InputLabel>
+                        <Select
+                            multiple
+                            value={formData.reminders}
+                            onChange={(e) => handleChange('reminders', typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                            label="Reminders"
+                            sx={{ fontSize: '12px' }}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected || []).map((value) => (
+                                        <Chip
+                                            key={value}
+                                            size="small"
+                                            label={reminderLabelMap[value] || value}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onDelete={() => {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    reminders: (prev.reminders || []).filter(v => v !== value)
+                                                }));
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                        >
+                            {reminderOptions.map(opt => (
+                                <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '12px' }}>
+                                    {opt.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+
+                {/* Task Details */}
+                <Grid item xs={12}>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mt: 2 }}>
+                        Task Details
+                    </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Task Title"
+                        value={formData.title}
+                        onChange={(e) => handleChange('title', e.target.value)}
+                        required
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                        placeholder="e.g., Contact customer about delivery delay"
+                    />
+                </Grid>
+
+
+                <Grid item xs={12}>
+                    <TextField
+                        fullWidth
+                        label="Description"
+                        value={formData.description}
+                        onChange={(e) => handleChange('description', e.target.value)}
+                        multiline
+                        rows={5}
+                        size="small"
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: '12px' },
+                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                        }}
+                        placeholder="Detailed instructions for this follow-up task"
+                    />
+                </Grid>
+
+
+
             </Grid>
 
             {/* Bottom buttons removed; top-right controls handle submit/cancel */}
@@ -3436,11 +4206,11 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>Category</InputLabel>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                                         <Select
                                             value={formData.checkpoint.category}
                                             onChange={(e) => handleCheckpointChange('category', e.target.value)}
-                                            label="Category"
+                                            label="Type"
                                             sx={{ fontSize: '12px' }}
                                         >
                                             <MenuItem value="delivery" sx={{ fontSize: '12px' }}>Delivery</MenuItem>
