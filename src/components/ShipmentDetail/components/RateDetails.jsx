@@ -1352,7 +1352,7 @@ const RateDetails = ({
                                                             }}
                                                         />
                                                     ) : (
-                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '') ? formatCurrency(item.actualCost) : (
+                                                        (item.actualCost !== null && item.actualCost !== undefined && item.actualCost !== '' && Number(item.actualCost) !== 0) ? formatCurrency(item.actualCost) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1384,7 +1384,7 @@ const RateDetails = ({
                                                             }}
                                                         />
                                                     ) : (
-                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '') ? formatCurrency(item.actualCharge) : (
+                                                        (item.actualCharge !== null && item.actualCharge !== undefined && item.actualCharge !== '' && Number(item.actualCharge) !== 0) ? formatCurrency(item.actualCharge) : (
                                                             <Typography sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
                                                                 TBD
                                                             </Typography>
@@ -1614,11 +1614,11 @@ const RateDetails = ({
                                         </TableCell>
                                         {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', color: '#374151', fontWeight: 700 }}>
-                                                {formatCurrency(localEffectiveTotalCost)}
+                                                {formatCurrency(localTotalQuotedCost)}
                                             </TableCell>
                                         )}
                                         <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>
-                                            {formatCurrency(localEffectiveTotalCharge)}
+                                            {formatCurrency(localTotalQuotedCharge)}
                                         </TableCell>
                                         {canViewFinancials && (
                                             <TableCell sx={{ fontSize: '14px', textAlign: 'left', fontWeight: 700 }}>

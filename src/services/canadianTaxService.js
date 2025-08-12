@@ -258,11 +258,22 @@ export const calculateTaxableAmount = (rateBreakdown, chargeTypes) => {
  */
 export const calculateTaxableAmounts = (rateBreakdown, chargeTypes) => {
     if (!rateBreakdown || !Array.isArray(rateBreakdown)) {
-        return { quotedTaxable: 0, actualTaxable: 0 };
+        return {
+            quotedCostTaxable: 0,
+            quotedChargeTaxable: 0,
+            actualCostTaxable: 0,
+            actualChargeTaxable: 0,
+            hasActualCost: false,
+            hasActualCharge: false
+        };
     }
 
-    let quotedTaxable = 0;
-    let actualTaxable = 0;
+    let quotedCostTaxable = 0;
+    let quotedChargeTaxable = 0;
+    let actualCostTaxable = 0;
+    let actualChargeTaxable = 0;
+    let hasActualCost = false;
+    let hasActualCharge = false;
 
     rateBreakdown.forEach(rate => {
         if (rate.isTax || isTaxCharge(rate.code)) return;
@@ -277,14 +288,31 @@ export const calculateTaxableAmounts = (rateBreakdown, chargeTypes) => {
             return Number.isFinite(n) ? n : 0;
         };
 
-        const quoted = safeParse((rate.quotedCharge ?? rate.charge ?? 0));
-        const actual = safeParse((rate.actualCharge ?? rate.actualAmount ?? null) != null ? (rate.actualCharge ?? rate.actualAmount) : quoted);
+        // QUOTED bases (allow fallback to legacy fields, but not to actuals)
+        const qCost = safeParse((rate.quotedCost ?? rate.cost ?? 0));
+        const qCharge = safeParse((rate.quotedCharge ?? rate.charge ?? 0));
+        quotedCostTaxable += qCost;
+        quotedChargeTaxable += qCharge;
 
-        quotedTaxable += quoted;
-        actualTaxable += actual;
+        // ACTUAL bases (include only when explicitly provided; no fallback to quoted)
+        if ((rate.actualCost ?? null) != null) {
+            actualCostTaxable += safeParse(rate.actualCost);
+            hasActualCost = true;
+        }
+        if ((rate.actualCharge ?? rate.actualAmount ?? null) != null) {
+            actualChargeTaxable += safeParse(rate.actualCharge ?? rate.actualAmount);
+            hasActualCharge = true;
+        }
     });
 
-    return { quotedTaxable, actualTaxable };
+    return {
+        quotedCostTaxable,
+        quotedChargeTaxable,
+        actualCostTaxable,
+        actualChargeTaxable,
+        hasActualCost,
+        hasActualCharge
+    };
 };
 
 /**
@@ -314,18 +342,30 @@ export const isTaxCharge = (code) => {
  * Generate tax line items for shipment
  */
 export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextId = 1) => {
-    // Calculate taxable bases for quoted and actual
-    const { quotedTaxable, actualTaxable } = calculateTaxableAmounts(rateBreakdown, chargeTypes);
+    // Calculate taxable bases for quoted and actual (separate cost vs charge)
+    const {
+        quotedCostTaxable,
+        quotedChargeTaxable,
+        actualCostTaxable,
+        actualChargeTaxable,
+        hasActualCost,
+        hasActualCharge
+    } = calculateTaxableAmounts(rateBreakdown, chargeTypes);
 
     // Determine tax definitions (always return rows for domestic provinces, even if amount is 0)
     const taxDefs = getTaxConfigForProvince(province)?.taxes || [];
 
     // Build tax line items with both quoted and actual columns populated
     return taxDefs.map((tax, index) => {
-        const baseQuoted = Number.isFinite(quotedTaxable) ? quotedTaxable : 0;
-        const baseActual = Number.isFinite(actualTaxable) ? actualTaxable : 0;
-        const quotedTax = (baseQuoted * tax.rate) / 100;
-        const actualTax = (baseActual * tax.rate) / 100;
+        const baseQuotedCost = Number.isFinite(quotedCostTaxable) ? quotedCostTaxable : 0;
+        const baseQuotedCharge = Number.isFinite(quotedChargeTaxable) ? quotedChargeTaxable : 0;
+        const baseActualCost = Number.isFinite(actualCostTaxable) ? actualCostTaxable : 0;
+        const baseActualCharge = Number.isFinite(actualChargeTaxable) ? actualChargeTaxable : 0;
+
+        const quotedCostTax = (baseQuotedCost * tax.rate) / 100;
+        const quotedChargeTax = (baseQuotedCharge * tax.rate) / 100;
+        const actualCostTax = (baseActualCost * tax.rate) / 100;
+        const actualChargeTax = (baseActualCharge * tax.rate) / 100;
 
         return {
             id: nextId + index,
@@ -335,18 +375,17 @@ export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextI
             chargeName: tax.name,
             description: tax.name,
             name: tax.name,
-            // Legacy fields
-            // Taxes now populate both cost and charge so quoted/actual columns can each display values
-            cost: Number.isFinite(quotedTax) ? quotedTax.toFixed(2) : '0.00',
+            // Legacy fields (align legacy cost/charge with quoted columns)
+            cost: Number.isFinite(quotedCostTax) ? quotedCostTax.toFixed(2) : '0.00',
             costCurrency: 'CAD',
-            charge: Number.isFinite(quotedTax) ? quotedTax.toFixed(2) : '0.00',
+            charge: Number.isFinite(quotedChargeTax) ? quotedChargeTax.toFixed(2) : '0.00',
             chargeCurrency: 'CAD',
             currency: 'CAD',
             // New explicit columns
-            quotedCharge: Number.isFinite(quotedTax) ? quotedTax : 0,
-            actualCharge: Number.isFinite(actualTax) ? actualTax : 0,
-            quotedCost: Number.isFinite(quotedTax) ? quotedTax : 0,
-            actualCost: Number.isFinite(actualTax) ? actualTax : 0,
+            quotedCost: Number.isFinite(quotedCostTax) ? quotedCostTax : 0,
+            quotedCharge: Number.isFinite(quotedChargeTax) ? quotedChargeTax : 0,
+            actualCost: hasActualCost && Number.isFinite(actualCostTax) ? actualCostTax : null,
+            actualCharge: hasActualCharge && Number.isFinite(actualChargeTax) ? actualChargeTax : null,
             isTax: true,
             taxable: false,
             // Enable persistence/editing of identifiers on tax lines
