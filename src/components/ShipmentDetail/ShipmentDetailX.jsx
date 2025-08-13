@@ -102,6 +102,51 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
     ]);
     const [followUpsSliding, setFollowUpsSliding] = useState(false);
     const [followUpsMountedViews, setFollowUpsMountedViews] = useState(['shipment-detail']);
+
+    // Width management for follow-ups sliding container (prevents 2x overflow)
+    const followupsOuterRef = useRef(null);
+    const followupsTrackRef = useRef(null);
+    const [followupsOuterWidth, setFollowupsOuterWidth] = useState(0);
+    const slideRefs = useRef({});
+
+    // Recalculate and log widths
+    const recalcFollowupsWidths = useCallback((reason = 'recalc') => {
+        const outer = followupsOuterRef.current;
+        const track = followupsTrackRef.current;
+        if (!outer || !track) return;
+        const outerRect = outer.getBoundingClientRect();
+        const trackRect = track.getBoundingClientRect();
+        const newOuterWidth = Math.round(outerRect.width);
+        setFollowupsOuterWidth(newOuterWidth);
+
+        // eslint-disable-next-line no-console
+        const computed = window.getComputedStyle(track);
+        const firstSlide = slideRefs.current['shipment-detail'];
+        const secondSlide = slideRefs.current['follow-ups'];
+        console.log('[FollowUps Slide]', reason, {
+            outerWidth: newOuterWidth,
+            outerClientWidth: outer.clientWidth,
+            outerScrollWidth: outer.scrollWidth,
+            trackClientWidth: track.clientWidth,
+            trackScrollWidth: track.scrollWidth,
+            transform: computed?.transform,
+            mountedViews: followUpsMountedViews,
+            stackLen: followUpsNavigationStack.length,
+            firstSlideWidth: firstSlide?.getBoundingClientRect()?.width,
+            secondSlideWidth: secondSlide?.getBoundingClientRect()?.width
+        });
+    }, [followUpsMountedViews, followUpsNavigationStack.length]);
+
+    useEffect(() => {
+        recalcFollowupsWidths('mount');
+        const onResize = () => recalcFollowupsWidths('resize');
+        window.addEventListener('resize', onResize);
+        const id = setInterval(() => recalcFollowupsWidths('interval'), 1500); // periodic sanity log
+        return () => {
+            window.removeEventListener('resize', onResize);
+            clearInterval(id);
+        };
+    }, [recalcFollowupsWidths]);
     const [existingFollowUps, setExistingFollowUps] = useState([]);
     const [loadingFollowUps, setLoadingFollowUps] = useState(false);
     const [editingFollowUp, setEditingFollowUp] = useState(null);
@@ -1431,7 +1476,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
 
     return (
         <ErrorBoundary>
-            <Box sx={{ width: '100%', minHeight: '100vh', p: 3, pt: onBackToTable ? 1 : 3 }}>
+            <Box sx={{ width: '100%', minHeight: '100vh', p: 3, pt: onBackToTable ? 1 : 3, position: 'relative' }}>
                 {/* Header with action buttons */}
                 <ShipmentHeader
                     shipment={shipment}
@@ -1575,6 +1620,58 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         />
                     </Box>
                 </Drawer>
+
+                {/* Follow-Ups Sliding Container (outer wrapper clamps width to the ShipmentDetail panel) */}
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '100%',
+                        height: '100%',
+                        overflow: 'hidden',
+                        pointerEvents: followUpsNavigationStack.length > 1 ? 'auto' : 'none',
+                        zIndex: followUpsNavigationStack.length > 1 ? 10 : 0,
+                    }}
+                    ref={followupsOuterRef}
+                >
+                    {/* Sliding track handles the horizontal movement */}
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            width: followupsOuterWidth ? `${2 * followupsOuterWidth}px` : '200%',
+                            height: '100%',
+                            transform: followupsOuterWidth
+                                ? (followUpsNavigationStack.length > 1 ? `translateX(-${followupsOuterWidth}px)` : 'translateX(0px)')
+                                : (followUpsNavigationStack.length > 1 ? 'translateX(-100%)' : 'translateX(0%)'),
+                            transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            willChange: 'transform',
+                        }}
+                        ref={followupsTrackRef}
+                    >
+                        {followUpsMountedViews.map((key) => {
+                            const view = followUpsNavigationStack.find((v) => v.key === key);
+                            if (!view) {
+                                console.warn('⚠️ Follow-ups view not found in navigation stack:', key);
+                                return null;
+                            }
+                            return (
+                                <Box
+                                    key={key}
+                                    ref={(el) => { slideRefs.current[key] = el; }}
+                                    sx={{ width: followupsOuterWidth ? `${followupsOuterWidth}px` : '50%', flexShrink: 0, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, boxSizing: 'border-box' }}
+                                >
+                                    {/* Main Content Area (scrollable) */}
+                                    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, minWidth: 0 }}>
+                                        {renderFollowUpsView(view)}
+                                    </Box>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                </Box>
             </Box>
 
             {/* Modals and Dialogs */}
@@ -2225,42 +2322,6 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                     </Button>
                 </DialogActions>
             </Dialog>
-
-            {/* Follow-Ups Sliding Container - always mounted to animate between 0% and -50% */}
-            <Box
-                sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: 'flex',
-                    width: '200%',
-                    height: '100%',
-                    transform: followUpsNavigationStack.length > 1 ? 'translateX(-50%)' : 'translateX(0%)',
-                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    willChange: 'transform',
-                    pointerEvents: followUpsNavigationStack.length > 1 ? 'auto' : 'none',
-                    zIndex: followUpsNavigationStack.length > 1 ? 10 : 0,
-                }}
-            >
-                {followUpsMountedViews.map((key, idx) => {
-                    const view = followUpsNavigationStack.find((v) => v.key === key);
-                    if (!view) {
-                        console.warn('⚠️ Follow-ups view not found in navigation stack:', key);
-                        return null;
-                    }
-                    return (
-                        <div key={key} style={{ width: '50%', flexShrink: 0, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                            {/* Main Content Area (scrollable) */}
-                            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                                {renderFollowUpsView(view)}
-                            </Box>
-                        </div>
-                    );
-                })}
-            </Box>
-
 
         </ErrorBoundary>
     );

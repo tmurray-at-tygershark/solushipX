@@ -793,6 +793,9 @@ const RateDetails = ({
         };
 
         // Calculate what the rates should be with proper taxes (always rebuild to keep in sync)
+        // Ensure shipmentType is provided so Quebec freight correctly excludes QST
+        shipmentData.shipmentInfo = shipmentData.shipmentInfo || {};
+        shipmentData.shipmentInfo.shipmentType = shipment?.shipmentInfo?.shipmentType || shipment?.shipmentType || 'freight';
         const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes || []);
 
         // Compare existing vs new tax rows; only save if something actually changed

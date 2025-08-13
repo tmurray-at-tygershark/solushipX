@@ -171,6 +171,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
     // Dialog States
     const [createTaskDialog, setCreateTaskDialog] = useState(false);
     const [createRuleDialog, setCreateRuleDialog] = useState(false);
+    const [editRuleDialog, setEditRuleDialog] = useState(false);
+    const [ruleBeingEdited, setRuleBeingEdited] = useState(null);
     const [taskDetailDialog, setTaskDetailDialog] = useState(false);
     const [editTaskDialog, setEditTaskDialog] = useState(false);
     const [deleteTaskDialog, setDeleteTaskDialog] = useState(false);
@@ -188,6 +190,24 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
         }
         return map;
     }, [availableCustomers]);
+
+    // Date parsing helper for tasks (must be declared BEFORE any usage)
+    const toSafeDate = (value) => {
+        try {
+            if (!value) return null;
+            if (value instanceof Date) {
+                return isNaN(value.getTime()) ? null : value;
+            }
+            if (value.toDate && typeof value.toDate === 'function') return value.toDate();
+            // Support both Firestore Timestamp shape and callable-serialized shape
+            if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+            if (typeof value._seconds === 'number') return new Date(value._seconds * 1000);
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? null : d;
+        } catch {
+            return null;
+        }
+    };
 
     // Stable task comparator to avoid TDZ issues in inline sort callbacks
     const compareTasksForSort = useCallback((taskA, taskB, sortKey, order) => {
@@ -601,7 +621,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                 targetCompanyId = companyIdForAddress || (selectedCompanyId !== 'all' ? selectedCompanyId : null);
             } else {
                 // Admin routes preserve existing behavior
-                if (selectedCompanyId === 'all') {
+            if (selectedCompanyId === 'all') {
                     targetCompanyId = (userRole === 'superadmin') ? null : null; // backend enforces admin scope
                 } else {
                     targetCompanyId = selectedCompanyId; // Specific admin-selected company
@@ -1361,23 +1381,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
         return userId.charAt(0).toUpperCase();
     };
 
-    // Date parsing helper for tasks
-    const toSafeDate = (value) => {
-        try {
-            if (!value) return null;
-            if (value instanceof Date) {
-                return isNaN(value.getTime()) ? null : value;
-            }
-            if (value.toDate && typeof value.toDate === 'function') return value.toDate();
-            // Support both Firestore Timestamp shape and callable-serialized shape
-            if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
-            if (typeof value._seconds === 'number') return new Date(value._seconds * 1000);
-            const d = new Date(value);
-            return isNaN(d.getTime()) ? null : d;
-        } catch {
-            return null;
-        }
-    };
+
 
     // Task status chip styling (TASK status, not shipment status)
     const getTaskStatusChipStyle = (status) => {
@@ -1920,9 +1924,9 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                     </Typography>
                 </Paper>
             ) : (
-                <Box sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
-                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb', boxShadow: 'none', borderRadius: '8px', width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
-                        <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: embedded ? 0 : '800px' }}>
+                <Box sx={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto' }}>
+                    <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb', boxShadow: 'none', borderRadius: '8px', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto' }}>
+                        <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: 0 }}>
                             <TableHead sx={{ backgroundColor: '#f8fafc' }}>
                                 <TableRow>
                                     <TableCell sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', width: embedded ? '10%' : { xs: '14%', sm: '14%' } }}>Shipment</TableCell>
@@ -2232,23 +2236,23 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                         >
                             {/* All Companies Option (admins only) */}
                             {isAdminView && (
-                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                        <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
-                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                            All Companies
-                                        </Typography>
-                                        <Chip
-                                            label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
-                                            size="small"
-                                            color="primary"
-                                            sx={{
-                                                height: 20,
-                                                fontSize: '10px',
-                                                ml: 'auto'
-                                            }}
-                                        />
-                                    </Box>
+                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                    <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        All Companies
+                                    </Typography>
+                                    <Chip
+                                        label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                        size="small"
+                                        color="primary"
+                                        sx={{
+                                            height: 20,
+                                            fontSize: '10px',
+                                            ml: 'auto'
+                                        }}
+                                    />
+                                </Box>
                                 </MenuItem>)}
 
                             {/* Individual Companies */}
@@ -2442,25 +2446,72 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                     <Box>
                         {renderCompanyCustomerFilters()}
                         <Box sx={{ p: 3 }}>
-                            <Typography sx={{
-                                fontSize: '16px',
-                                fontWeight: 600,
-                                color: '#111827',
-                                mb: 2
-                            }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                                <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
                                 Automation Rules
                             </Typography>
-                            <Alert
-                                severity="info"
-                                sx={{
-                                    fontSize: '12px',
-                                    backgroundColor: '#f0f9ff',
-                                    border: '1px solid #e0f2fe',
-                                    color: '#0369a1'
-                                }}
-                            >
-                                Rules management interface will be displayed here...
-                            </Alert>
+                                <Button size="small" variant="contained" onClick={handleCreateRule} sx={{ textTransform: 'none', fontSize: '12px' }}>
+                                    New Rule
+                                </Button>
+                            </Box>
+                            <Paper sx={{ p: 0, border: '1px solid #e5e7eb' }}>
+                                <Table size="small" sx={{ '& th, & td': { fontSize: '12px' } }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Rule</TableCell>
+                                            <TableCell>Scope</TableCell>
+                                            <TableCell>Trigger</TableCell>
+                                            <TableCell>Task</TableCell>
+                                            <TableCell>Priority</TableCell>
+                                            <TableCell>Status</TableCell>
+                                            <TableCell align="right">Actions</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {(Array.isArray(rules) ? rules : []).map((rule) => {
+                                            const scopeLabel = (() => {
+                                                const t = rule?.scope?.type;
+                                                const v = rule?.scope?.value || rule?.scope?.companyId || rule?.companyId;
+                                                if (t === 'all_shipments') return 'All shipments';
+                                                if (t === 'specific_company') return `Company: ${v || '—'}`;
+                                                if (t === 'shipment_type') return `Type: ${rule?.scope?.shipmentType || v || '—'}`;
+                                                if (t === 'service_level') return `Service: ${rule?.scope?.serviceLevel || v || '—'}`;
+                                                if (t === 'carrier') return `Carrier: ${rule?.scope?.carrier || v || '—'}`;
+                                                if (t === 'conditions') return 'Custom conditions';
+                                                return t || '—';
+                                            })();
+                                            const trig = rule?.timing?.trigger || '—';
+                                            const taskTitle = rule?.taskTemplate?.title || rule?.checkpoint?.name || '—';
+                                            const priority = rule?.taskTemplate?.priority || rule?.checkpoint?.priority || '—';
+                                            const statusChip = rule?.isActive ? (
+                                                <Chip label="Active" size="small" sx={{ color: '#16a34a', backgroundColor: '#dcfce7' }} />
+                                            ) : (
+                                                <Chip label="Inactive" size="small" sx={{ color: '#6b7280', backgroundColor: '#e5e7eb' }} />
+                                            );
+                                            return (
+                                                <TableRow key={rule.id} hover>
+                                                    <TableCell>{rule.name || 'Untitled Rule'}</TableCell>
+                                                    <TableCell>{scopeLabel}</TableCell>
+                                                    <TableCell sx={{ textTransform: 'capitalize' }}>{String(trig).replaceAll('_', ' ')}</TableCell>
+                                                    <TableCell>{taskTitle}</TableCell>
+                                                    <TableCell sx={{ textTransform: 'capitalize' }}>{priority}</TableCell>
+                                                    <TableCell>{statusChip}</TableCell>
+                                                    <TableCell align="right">
+                                                        <Button size="small" sx={{ textTransform: 'none', mr: 1 }} onClick={() => { setRuleBeingEdited(rule); setEditRuleDialog(true); }}>Edit</Button>
+                                                        <Button size="small" color={rule.isActive ? 'warning' : 'success'} sx={{ textTransform: 'none' }} onClick={async () => {
+                                                            try {
+                                                                const updateFollowUpRule = httpsCallable(functions, 'updateFollowUpRule');
+                                                                await updateFollowUpRule({ ruleId: rule.id, isActive: !rule.isActive });
+                                                                loadRules();
+                                                            } catch (e) { console.error('Toggle rule failed', e); }
+                                                        }}>{rule.isActive ? 'Disable' : 'Enable'}</Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </Paper>
                         </Box>
                     </Box>
                 );
@@ -2504,6 +2555,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
             height: embedded ? '100%' : '100vh',
             width: '100%',
             maxWidth: '100%',
+            minWidth: 0,
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
@@ -2635,6 +2687,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                         defaultShipmentId={scopeShipmentId || ''}
                         defaultShipmentData={scopeShipmentData || null}
                         lockContext={Boolean(scopeShipmentId)}
+                        taskTemplates={taskTemplates}
+                        taskTemplatesLoading={taskTemplatesLoading}
                     />
                 </DialogContent>
             </Dialog>
@@ -2653,6 +2707,9 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                     <CreateRuleForm
                         onSave={handleCreateNewRule}
                         onCancel={() => setCreateRuleDialog(false)}
+                        availableCompanies={availableCompanies}
+                        taskTemplates={taskTemplates}
+                        taskTemplatesLoading={taskTemplatesLoading}
                     />
                 </DialogContent>
             </Dialog>
@@ -2711,6 +2768,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                         staff={staff}
                         availableCompanies={availableCompanies}
                         defaultCompanyId={selectedCompanyId === 'all' ? companyIdForAddress : selectedCompanyId}
+                        taskTemplates={taskTemplates}
+                        taskTemplatesLoading={taskTemplatesLoading}
                         onSave={handleUpdateTask}
                         onCancel={() => setEditTaskDialog(false)}
                     />
@@ -2762,7 +2821,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
 // EDIT TASK FORM COMPONENT
 // ===================================================================
 
-const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId }) => {
+const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies = [], defaultCompanyId, taskTemplates = {}, taskTemplatesLoading = false }) => {
     const [formData, setFormData] = useState({
         title: task?.title || '',
         description: task?.description || '',
@@ -2778,7 +2837,8 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
         shipmentId: task?.shipmentId || task?.shipment?.id || '',
         selectedShipment: task?.shipment || null,
         actions: Array.isArray(task?.actions) ? task.actions : [],
-        reminders: Array.isArray(task?.reminders) ? task.reminders : []
+        reminders: Array.isArray(task?.reminders) ? task.reminders : [],
+        selectedTemplate: ''
     });
 
     const [companyCustomers, setCompanyCustomers] = useState([]);
@@ -2840,11 +2900,83 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
     }, [formData.companyId]);
 
     const handleChange = (field, value) => {
-        setFormData(prev => ({
+        console.log('🔧 EditTaskForm handleChange called:', { field, value });
+        setFormData(prev => {
+            const newData = {
             ...prev,
             [field]: value
-        }));
+            };
+            console.log('📊 EditTaskForm formData updated:', { field, oldValue: prev[field], newValue: value, selectedTemplate: newData.selectedTemplate });
+            return newData;
+        });
     };
+
+    const findTemplateById = useCallback((id) => {
+        let tpl = null;
+        Object.values(taskTemplates || {}).forEach(list => {
+            const found = (list || []).find(t => t.id === id);
+            if (found) tpl = found;
+        });
+        return tpl;
+    }, [taskTemplates]);
+
+    const commitTemplateSelection = useCallback((id) => {
+        const tpl = findTemplateById(id);
+        setFormData(prev => ({
+            ...prev,
+            selectedTemplate: id || '',
+            title: tpl?.taskName || (id ? prev.title : ''),
+            description: tpl?.description || prev.description,
+            __templateMenuOpen: false
+        }));
+    }, [findTemplateById]);
+
+    const handleTemplateSelect = (templateValue) => {
+        if (templateValue === 'other') {
+            setFormData(prev => ({
+                ...prev,
+                selectedTemplate: 'other',
+                title: ''
+            }));
+        } else if (templateValue) {
+            commitTemplateSelection(templateValue);
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                selectedTemplate: '',
+                title: ''
+            }));
+        }
+    };
+
+    // Auto-detect selected template when editing an existing task
+    useEffect(() => {
+        // Don't override if already set by user or detection completed
+        if (formData.selectedTemplate) return;
+
+        // 1) Use saved selectedTemplate if present and valid
+        const saved = task?.selectedTemplate;
+        if (saved) {
+            if (saved === 'other') {
+                setFormData(prev => ({ ...prev, selectedTemplate: 'other' }));
+                return;
+            }
+            const exists = findTemplateById(saved);
+            if (exists) {
+                setFormData(prev => ({ ...prev, selectedTemplate: saved }));
+                return;
+            }
+        }
+
+        // 2) Match by title against template names (unique match)
+        const title = task?.title?.trim?.();
+        if (!title) return;
+        const all = Object.values(taskTemplates || {}).flatMap(list => list || []);
+        const matches = all.filter(t => (t?.taskName || '').trim() === title);
+        if (matches.length === 1) {
+            setFormData(prev => ({ ...prev, selectedTemplate: matches[0].id }));
+        }
+    }, [task, taskTemplates, formData.selectedTemplate, findTemplateById]);
 
     // Keep form in sync when a different task is loaded (now task may carry Timestamp in task.dueDate)
     useEffect(() => {
@@ -3123,16 +3255,31 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
                     </Grid>
                 ) : (
                     <Grid item xs={12}>
-                        <Paper sx={{ p: 2, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <Box>
-                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>Selected Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}</Typography>
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>From: {formData.selectedShipment.shipFrom?.companyName || 'Unknown'}</Typography>
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>To: {formData.selectedShipment.shipTo?.companyName || 'Unknown'}</Typography>
+                        <Paper sx={{ p: 1.25, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Grid container alignItems="center" spacing={1} wrap="wrap">
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '11px', color: '#374151' }}>
+                                        From: <Box component="span" sx={{ fontWeight: 600, color: '#111827' }}>{formData.selectedShipment.shipFrom?.companyName || 'Unknown'}</Box>
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '11px', color: '#374151' }}>
+                                        To: <Box component="span" sx={{ fontWeight: 600, color: '#111827' }}>{formData.selectedShipment.shipTo?.companyName || 'Unknown'}</Box>
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs="auto">
                                     <Chip label={formData.selectedShipment.status || 'pending'} size="small" sx={{ fontSize: '10px' }} />
-                                </Box>
+                                </Grid>
+                                <Grid item sx={{ flexGrow: 1 }} />
+                                <Grid item xs="auto">
                                 <Button size="small" sx={{ fontSize: '12px' }} onClick={() => { setFormData(prev => ({ ...prev, shipmentId: '', selectedShipment: null })); setShipmentSearchTerm(''); }}>Change</Button>
-                            </Box>
+                                </Grid>
+                            </Grid>
                         </Paper>
                     </Grid>
                 )}
@@ -3214,13 +3361,150 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
                     </FormControl>
                 </Grid>
 
-                {/* Task Details - clean (no template chips) */}
+                {/* Task Details with template selector */}
                 <Grid item xs={12}>
                     <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mt: 2 }}>Task Details</Typography>
                 </Grid>
-                <Grid item xs={12}>
-                    <TextField fullWidth label="Task Title" value={formData.title} onChange={(e) => handleChange('title', e.target.value)} required size="small" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} placeholder="e.g., Contact customer about delivery delay" />
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Task Title (Template)</InputLabel>
+                        {/* Controlled open to avoid focus/blur issues in embedded panels */}
+                        <Select
+                            open={Boolean(formData.__templateMenuOpen)}
+                            onOpen={() => {
+                                setFormData(prev => ({ ...prev, __templateMenuOpen: true }));
+                                console.log('📂 Template Dropdown opened:', {
+                                    currentValue: formData.selectedTemplate,
+                                    taskTemplates: taskTemplates,
+                                    taskTemplatesLoading: taskTemplatesLoading,
+                                    formDataKeys: Object.keys(formData),
+                                    allTemplateIds: Object.values(taskTemplates || {}).flatMap(arr => (arr || []).map(t => t.id))
+                                });
+                            }}
+                            onClose={() => {
+                                console.log('📪 Template Dropdown closed');
+                                setFormData(prev => ({ ...prev, __templateMenuOpen: false }));
+                            }}
+                            value={formData.selectedTemplate || ''}
+                            renderValue={(val) => {
+                                if (!val) return 'None';
+                                if (val === 'other') return 'Other…';
+                                let t = null;
+                                Object.values(taskTemplates || {}).forEach(list => {
+                                    const f = (list || []).find(x => x.id === val);
+                                    if (f) t = f;
+                                });
+                                return t?.taskName || val;
+                            }}
+                            onChange={(e) => {
+                                const templateValue = e.target.value;
+                                console.log('🎯 Template Dropdown onChange triggered:', {
+                                    templateValue,
+                                    eventTargetValue: e.target.value,
+                                    currentSelectedTemplate: formData.selectedTemplate,
+                                    taskTemplatesKeys: Object.keys(taskTemplates || {}),
+                                    totalTemplates: Object.values(taskTemplates || {}).reduce((sum, arr) => sum + (arr || []).length, 0)
+                                });
+
+                                handleChange('selectedTemplate', templateValue);
+                                console.log('✅ Called handleChange for selectedTemplate:', templateValue);
+
+                                if (templateValue === 'other') {
+                                    console.log('🔄 Template is "other", clearing title');
+                                    handleChange('title', '');
+                                } else if (templateValue) {
+                                    console.log('🔍 Looking for template with ID:', templateValue);
+                                    // Find template and populate
+                                    let selectedTemplate = null;
+                                    Object.values(taskTemplates || {}).forEach(categoryTasks => {
+                                        const found = (categoryTasks || []).find(t => t.id === templateValue);
+                                        if (found) {
+                                            selectedTemplate = found;
+                                            console.log('✅ Found template:', { id: found.id, taskName: found.taskName });
+                                        }
+                                    });
+
+                                    if (selectedTemplate) {
+                                        console.log('📝 Populating fields with template data:', {
+                                            title: selectedTemplate.taskName,
+                                            description: selectedTemplate.description
+                                        });
+                                        handleChange('title', selectedTemplate.taskName || '');
+                                        handleChange('description', selectedTemplate.description || formData.description);
+                                    } else {
+                                        console.warn('❌ Template not found for ID:', templateValue);
+                                    }
+                                } else {
+                                    console.log('🧹 Template value is empty, clearing title');
+                                    handleChange('title', '');
+                                }
+
+                                console.log('🏁 Template onChange handler completed');
+                            }}
+                            label="Task Title (Template)"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }} onMouseEnter={() => console.log('🖱️ Hovering over "None" item')} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setFormData(prev => ({ ...prev, selectedTemplate: '', title: '', __templateMenuOpen: false })); }}>None</MenuItem>
+                            {(taskTemplatesLoading ? [] : Object.entries(taskTemplates || {})).map(([category, items]) => (
+                                <React.Fragment key={category}>
+                                    <MenuItem disabled sx={{ fontSize: '11px', color: '#6b7280' }}>— {category} —</MenuItem>
+                                    {(items || []).map(tpl => {
+                                        console.log('🏗️ Rendering MenuItem:', { id: tpl.id, taskName: tpl.taskName, value: tpl.id });
+                                        return (
+                                            <MenuItem
+                                                key={tpl.id}
+                                                value={tpl.id}
+                                                sx={{ fontSize: '12px' }}
+                                                onMouseEnter={() => console.log('🖱️ Hovering over template:', { id: tpl.id, taskName: tpl.taskName })}
+                                                onMouseDown={(e) => {
+                                                    // Commit selection before blur/close
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    const v = tpl.id;
+                                                    console.log('✅ onMouseDown committing template select:', v);
+                                                    // Manually mirror onChange flow
+                                                    setFormData(prev => ({ ...prev, selectedTemplate: v }));
+                                                    let found = null;
+                                                    Object.values(taskTemplates || {}).forEach(list => {
+                                                        const f = (list || []).find(t => t.id === v);
+                                                        if (f) found = f;
+                                                    });
+                                                    if (found) {
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            selectedTemplate: v,
+                                                            title: found.taskName || prev.title,
+                                                            description: found.description || prev.description
+                                                        }));
+                                                    }
+                                                    // Close menu explicitly
+                                                    setFormData(prev => ({ ...prev, __templateMenuOpen: false }));
+                                                }}
+                                            >
+                                                {tpl.taskName}
+                                            </MenuItem>
+                                        );
+                                    })}
+                                </React.Fragment>
+                            ))}
+                            <MenuItem value="other" sx={{ fontSize: '12px' }} onMouseEnter={() => console.log('🖱️ Hovering over "Other" item')} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setFormData(prev => ({ ...prev, selectedTemplate: 'other', title: '', __templateMenuOpen: false })); }}>Other…</MenuItem>
+                        </Select>
+                    </FormControl>
                 </Grid>
+                {formData.selectedTemplate === 'other' && (
+                    <Grid item xs={12} md={6}>
+                        <TextField
+                            fullWidth
+                            label="Task Title"
+                            value={formData.title}
+                            onChange={(e) => handleChange('title', e.target.value)}
+                            required
+                            size="small"
+                            sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                            placeholder="e.g., Contact customer about delivery delay"
+                        />
+                    </Grid>
+                )}
                 <Grid item xs={12}>
                     <TextField fullWidth label="Description" value={formData.description} onChange={(e) => handleChange('description', e.target.value)} multiline rows={5} size="small" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />
                 </Grid>
@@ -3292,38 +3576,41 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
     const reminderLabelMap = Object.fromEntries(reminderOptions.map(o => [o.value, o.label]));
 
     const handleChange = (field, value) => {
-        setFormData(prev => ({
+        console.log('🔧 CreateTaskForm handleChange called:', { field, value });
+        setFormData(prev => {
+            const newData = {
             ...prev,
             [field]: value
-        }));
+            };
+            console.log('📊 CreateTaskForm formData updated:', { field, oldValue: prev[field], newValue: value, selectedTemplate: newData.selectedTemplate });
+            return newData;
+        });
     };
 
     const handleTemplateSelect = (templateValue) => {
         if (templateValue === 'other') {
-            // Allow manual entry
             setFormData(prev => ({
                 ...prev,
                 selectedTemplate: 'other',
                 title: ''
             }));
         } else if (templateValue) {
-            // Find the template by ID and set the title
-            let selectedTask = null;
-            Object.values(taskTemplates).forEach(categoryTasks => {
-                const found = categoryTasks.find(task => task.id === templateValue);
-                if (found) selectedTask = found;
+            // Find template and populate
+            let selectedTemplate = null;
+            Object.values(taskTemplates || {}).forEach(categoryTasks => {
+                const found = (categoryTasks || []).find(t => t.id === templateValue);
+                if (found) selectedTemplate = found;
             });
 
-            if (selectedTask) {
+            if (selectedTemplate) {
                 setFormData(prev => ({
                     ...prev,
                     selectedTemplate: templateValue,
-                    title: selectedTask.taskName,
-                    description: selectedTask.description || prev.description
+                    title: selectedTemplate.taskName || '',
+                    description: selectedTemplate.description || prev.description
                 }));
             }
         } else {
-            // Clear selection
             setFormData(prev => ({
                 ...prev,
                 selectedTemplate: '',
@@ -3612,41 +3899,46 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                     </Grid>
                 ) : (
                     <Grid item xs={12}>
-                        <Paper sx={{ p: 2, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <Box>
-                                    <Typography sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
-                                        Selected Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}
+                        <Paper sx={{ p: 1.25, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <Grid container alignItems="center" spacing={1} wrap="wrap">
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                        Shipment: {formData.selectedShipment.shipmentID || formData.selectedShipment.id}
                                     </Typography>
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
-                                        From: {formData.selectedShipment.shipFrom?.companyName || 'Unknown'}
+                                </Grid>
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '11px', color: '#374151' }}>
+                                        From: <Box component="span" sx={{ fontWeight: 600, color: '#111827' }}>{formData.selectedShipment.shipFrom?.companyName || 'Unknown'}</Box>
                                     </Typography>
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
-                                        To: {formData.selectedShipment.shipTo?.companyName || 'Unknown'}
+                                </Grid>
+                                <Grid item xs="auto">
+                                    <Typography sx={{ fontSize: '11px', color: '#374151' }}>
+                                        To: <Box component="span" sx={{ fontWeight: 600, color: '#111827' }}>{formData.selectedShipment.shipTo?.companyName || 'Unknown'}</Box>
                                     </Typography>
-                                    <Chip
-                                        label={formData.selectedShipment.status || 'pending'}
-                                        size="small"
-                                        sx={{ fontSize: '10px' }}
-                                    />
-                                </Box>
+                                </Grid>
+                                <Grid item xs="auto">
+                                    <Chip label={formData.selectedShipment.status || 'pending'} size="small" sx={{ fontSize: '10px' }} />
+                                </Grid>
+                                <Grid item sx={{ flexGrow: 1 }} />
                                 {!lockContext && (
-                                    <Button
-                                        size="small"
-                                        onClick={() => {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                shipmentId: '',
-                                                selectedShipment: null
-                                            }));
-                                            setShipmentSearchTerm('');
-                                        }}
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Change
-                                    </Button>
+                                    <Grid item xs="auto">
+                                <Button
+                                    size="small"
+                                    onClick={() => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            shipmentId: '',
+                                            selectedShipment: null
+                                        }));
+                                        setShipmentSearchTerm('');
+                                    }}
+                                    sx={{ fontSize: '12px' }}
+                                >
+                                    Change
+                                </Button>
+                                    </Grid>
                                 )}
-                            </Box>
+                            </Grid>
                         </Paper>
                     </Grid>
                 )}
@@ -3799,7 +4091,92 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                         Task Details
                     </Typography>
                 </Grid>
-                <Grid item xs={12}>
+                <Grid item xs={12} md={6}>
+                    <FormControl fullWidth size="small">
+                        <InputLabel sx={{ fontSize: '12px' }}>Task Title (Template)</InputLabel>
+                        <Select
+                            open={Boolean(formData.__templateMenuOpen)}
+                            onOpen={() => setFormData(prev => ({ ...prev, __templateMenuOpen: true }))}
+                            onClose={() => setFormData(prev => ({ ...prev, __templateMenuOpen: false }))}
+                            value={formData.selectedTemplate || ''}
+                            renderValue={(val) => {
+                                if (!val) return 'None';
+                                if (val === 'other') return 'Other…';
+                                let t = null;
+                                Object.values(taskTemplates || {}).forEach(list => {
+                                    const f = (list || []).find(x => x.id === val);
+                                    if (f) t = f;
+                                });
+                                return t?.taskName || val;
+                            }}
+                            /* extra debug on manual open */
+                            onCloseCapture={() => console.log('📪 Template Dropdown close (capture)')}
+                            onOpenCapture={() => console.log('📂 Template Dropdown open (capture)')}
+                            onChange={(e) => {
+                                const templateValue = e.target.value;
+                                console.log('🎯 Template Dropdown onChange triggered:', {
+                                    templateValue,
+                                    eventTargetValue: e.target.value,
+                                    currentSelectedTemplate: formData.selectedTemplate,
+                                    taskTemplatesKeys: Object.keys(taskTemplates || {}),
+                                    totalTemplates: Object.values(taskTemplates || {}).reduce((sum, arr) => sum + (arr || []).length, 0)
+                                });
+
+                                handleChange('selectedTemplate', templateValue);
+                                console.log('✅ Called handleChange for selectedTemplate:', templateValue);
+
+                                if (templateValue === 'other') {
+                                    console.log('🔄 Template is "other", clearing title');
+                                    handleChange('title', '');
+                                } else if (templateValue) {
+                                    console.log('🔍 Looking for template with ID:', templateValue);
+                                    // Find template and populate
+                                    let selectedTemplate = null;
+                                    Object.values(taskTemplates || {}).forEach(categoryTasks => {
+                                        const found = (categoryTasks || []).find(t => t.id === templateValue);
+                                        if (found) {
+                                            selectedTemplate = found;
+                                            console.log('✅ Found template:', { id: found.id, taskName: found.taskName });
+                                        }
+                                    });
+
+                                    if (selectedTemplate) {
+                                        console.log('📝 Populating fields with template data:', {
+                                            title: selectedTemplate.taskName,
+                                            description: selectedTemplate.description
+                                        });
+                                        handleChange('title', selectedTemplate.taskName || '');
+                                        handleChange('description', selectedTemplate.description || formData.description);
+                                    } else {
+                                        console.warn('❌ Template not found for ID:', templateValue);
+                                    }
+                                } else {
+                                    console.log('🧹 Template value is empty, clearing title');
+                                    handleChange('title', '');
+                                }
+
+                                console.log('🏁 Template onChange handler completed');
+                            }}
+                            label="Task Title (Template)"
+                            sx={{ fontSize: '12px' }}
+                        >
+                            <MenuItem value="" sx={{ fontSize: '12px' }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setFormData(prev => ({ ...prev, selectedTemplate: '', title: '', __templateMenuOpen: false })); }}>None</MenuItem>
+                            {Object.entries(taskTemplates || {}).map(([category, items]) => (
+                                <React.Fragment key={category}>
+                                    <MenuItem disabled sx={{ fontSize: '11px', color: '#6b7280' }}>{category.toUpperCase()}</MenuItem>
+                                    {(items || []).map(item => (
+                                        <MenuItem key={item.id} value={item.id} sx={{ fontSize: '12px' }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setFormData(prev => ({ ...prev, selectedTemplate: item.id, title: item.taskName || prev.title, description: item.description || prev.description, __templateMenuOpen: false })); }}>
+                                            {item.taskName}
+                                        </MenuItem>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                            <MenuItem value="other" sx={{ fontSize: '12px' }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setFormData(prev => ({ ...prev, selectedTemplate: 'other', title: '', __templateMenuOpen: false })); }}>Other…</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Grid>
+                {formData.selectedTemplate === 'other' && (
+                    <Grid item xs={12} md={6}>
                     <TextField
                         fullWidth
                         label="Task Title"
@@ -3814,6 +4191,7 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                         placeholder="e.g., Contact customer about delivery delay"
                     />
                 </Grid>
+                )}
 
 
                 <Grid item xs={12}>
@@ -3846,21 +4224,20 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
 // CREATE RULE FORM COMPONENT
 // ===================================================================
 
-const CreateRuleForm = ({ onSave, onCancel }) => {
+const CreateRuleForm = ({ onSave, onCancel, availableCompanies = [], taskTemplates = {}, taskTemplatesLoading = false }) => {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
         active: true,
         scope: {
-            type: 'all_shipments', // all_shipments, specific_company, shipment_type, service_level, carrier, conditions
-            companyId: '',
-            shipmentType: '',
-            serviceLevel: '',
-            carrier: '',
-            conditions: []
+            type: 'all_shipments', // all_shipments, specific_company, shipment_type, service_level, carrier
+            companies: [],
+            shipmentTypes: [],
+            serviceLevels: [],
+            carriers: []
         },
         timing: {
-            trigger: 'status_change', // status_change, time_before_eta, time_after_eta, fixed_time, manual
+            trigger: 'status_change', // status_change, time_before_eta, time_after_eta, fixed_time, fixed_date, manual
             statusChange: {
                 fromStatus: '',
                 toStatus: ''
@@ -3869,7 +4246,8 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                 value: 1,
                 unit: 'hours' // minutes, hours, days
             },
-            fixedTime: ''
+            fixedTime: '',
+            fixedDate: ''
         },
         checkpoints: {
             statusChecks: [],
@@ -3917,11 +4295,11 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
         }));
     };
 
-    const handleCheckpointChange = (field, value) => {
+    const handleTaskTemplateChange = (field, value) => {
         setFormData(prev => ({
             ...prev,
-            checkpoints: {
-                ...prev.checkpoints,
+            taskTemplate: {
+                ...prev.taskTemplate,
                 [field]: value
             }
         }));
@@ -4014,7 +4392,7 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                         </AccordionSummary>
                         <AccordionDetails>
                             <Grid container spacing={2}>
-                                <Grid item xs={12}>
+                                <Grid item xs={12} md={6}>
                                     <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>Apply To</InputLabel>
                                         <Select
@@ -4028,19 +4406,41 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                             <MenuItem value="shipment_type" sx={{ fontSize: '12px' }}>Shipment Type</MenuItem>
                                             <MenuItem value="service_level" sx={{ fontSize: '12px' }}>Service Level</MenuItem>
                                             <MenuItem value="carrier" sx={{ fontSize: '12px' }}>Specific Carrier</MenuItem>
-                                            <MenuItem value="conditions" sx={{ fontSize: '12px' }}>Custom Conditions</MenuItem>
                                         </Select>
                                     </FormControl>
                                 </Grid>
 
+                                {formData.scope.type === 'specific_company' && (
+                                    <Grid item xs={12} md={6}>
+                                        <Autocomplete
+                                            size="small"
+                                            options={availableCompanies}
+                                            getOptionLabel={(opt) => `${opt.name || opt.companyName || 'Company'} (${opt.companyID || opt.companyId || opt.id || '—'})`}
+                                            value={availableCompanies.find(c => c.companyID === formData.scope.companies?.[0]) || null}
+                                            onChange={(e, val) => handleScopeChange('companies', val ? [val.companyID || val.companyId || val.id] : [])}
+                                            renderInput={(params) => <TextField {...params} label="Company" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />}
+                                            renderOption={(props, option) => (
+                                                <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Avatar src={getCircleLogo(option)} sx={{ width: 20, height: 20 }} />
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <Typography sx={{ fontSize: '12px' }}>{option.name || option.companyName}</Typography>
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Company ID: {option.companyID || option.companyId || option.id}</Typography>
+                                                    </Box>
+                                                </Box>
+                                            )}
+                                        />
+                                    </Grid>
+                                )}
+
                                 {formData.scope.type === 'shipment_type' && (
                                     <Grid item xs={12} md={6}>
                                         <FormControl fullWidth size="small">
-                                            <InputLabel sx={{ fontSize: '12px' }}>Shipment Type</InputLabel>
+                                            <InputLabel sx={{ fontSize: '12px' }}>Shipment Types</InputLabel>
                                             <Select
-                                                value={formData.scope.shipmentType}
-                                                onChange={(e) => handleScopeChange('shipmentType', e.target.value)}
-                                                label="Shipment Type"
+                                                multiple
+                                                value={formData.scope.shipmentTypes}
+                                                onChange={(e) => handleScopeChange('shipmentTypes', typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                                                label="Shipment Types"
                                                 sx={{ fontSize: '12px' }}
                                             >
                                                 <MenuItem value="courier" sx={{ fontSize: '12px' }}>Courier</MenuItem>
@@ -4052,19 +4452,15 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                     </Grid>
                                 )}
 
+                                {formData.scope.type === 'service_level' && (
+                                    <Grid item xs={12} md={6}>
+                                        <ServiceLevelsSelect value={formData.scope.serviceLevels} onChange={(vals) => handleScopeChange('serviceLevels', vals)} />
+                                    </Grid>
+                                )}
+
                                 {formData.scope.type === 'carrier' && (
                                     <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            label="Carrier Name"
-                                            value={formData.scope.carrier}
-                                            onChange={(e) => handleScopeChange('carrier', e.target.value)}
-                                            size="small"
-                                            sx={{
-                                                '& .MuiInputBase-root': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                        />
+                                        <ConnectedCarriersSelect value={formData.scope.carriers} onChange={(vals) => handleScopeChange('carriers', vals)} />
                                     </Grid>
                                 )}
                             </Grid>
@@ -4158,6 +4554,21 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                         />
                                     </Grid>
                                 )}
+
+                                {formData.timing.trigger === 'fixed_date' && (
+                                    <Grid item xs={12} md={6}>
+                                        <TextField
+                                            fullWidth
+                                            label="Date"
+                                            type="date"
+                                            value={formData.timing.fixedDate}
+                                            onChange={(e) => handleTimingChange('fixedDate', e.target.value)}
+                                            size="small"
+                                            InputLabelProps={{ shrink: true }}
+                                            sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
+                                        />
+                                    </Grid>
+                                )}
                             </Grid>
                         </AccordionDetails>
                     </Accordion>
@@ -4167,40 +4578,28 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                 <Grid item xs={12}>
                     <Accordion>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                Task to Create
-                            </Typography>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>Task to Create</Typography>
                         </AccordionSummary>
                         <AccordionDetails>
                             <Grid container spacing={2}>
                                 <Grid item xs={12}>
-                                    <TextField
-                                        fullWidth
-                                        label="Task Title"
-                                        value={formData.checkpoint.name}
-                                        onChange={(e) => handleCheckpointChange('name', e.target.value)}
-                                        required
-                                        size="small"
-                                        sx={{
-                                            '& .MuiInputBase-root': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                        }}
-                                        placeholder="e.g., Contact customer about delayed delivery"
+                                    <TaskTemplateSelect
+                                        taskTemplates={taskTemplates}
+                                        loading={taskTemplatesLoading}
+                                        value={formData.taskTemplate}
+                                        onChange={(tpl) => setFormData(prev => ({ ...prev, taskTemplate: { ...prev.taskTemplate, title: tpl?.taskName || '', description: tpl?.taskDescription || '', category: tpl?.category || prev.taskTemplate.category } }))}
                                     />
                                 </Grid>
                                 <Grid item xs={12}>
                                     <TextField
                                         fullWidth
                                         label="Task Description"
-                                        value={formData.checkpoint.description}
-                                        onChange={(e) => handleCheckpointChange('description', e.target.value)}
+                                        value={formData.taskTemplate.description}
+                                        onChange={(e) => handleTaskTemplateChange('description', e.target.value)}
                                         multiline
                                         rows={2}
                                         size="small"
-                                        sx={{
-                                            '& .MuiInputBase-root': { fontSize: '12px' },
-                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                        }}
+                                        sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }}
                                         placeholder="Detailed instructions for the task"
                                     />
                                 </Grid>
@@ -4208,8 +4607,8 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                     <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>Type</InputLabel>
                                         <Select
-                                            value={formData.checkpoint.category}
-                                            onChange={(e) => handleCheckpointChange('category', e.target.value)}
+                                            value={formData.taskTemplate.category}
+                                            onChange={(e) => handleTaskTemplateChange('category', e.target.value)}
                                             label="Type"
                                             sx={{ fontSize: '12px' }}
                                         >
@@ -4226,8 +4625,8 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                     <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>Priority</InputLabel>
                                         <Select
-                                            value={formData.checkpoint.priority}
-                                            onChange={(e) => handleCheckpointChange('priority', e.target.value)}
+                                            value={formData.taskTemplate.priority}
+                                            onChange={(e) => handleTaskTemplateChange('priority', e.target.value)}
                                             label="Priority"
                                             sx={{ fontSize: '12px' }}
                                         >
@@ -4257,7 +4656,7 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                     <FormControl fullWidth size="small">
                                         <InputLabel sx={{ fontSize: '12px' }}>Assignment Type</InputLabel>
                                         <Select
-                                            value={formData.assignment.type}
+                                            value={formData.taskTemplate.assignmentRules.type}
                                             onChange={(e) => handleAssignmentChange('type', e.target.value)}
                                             label="Assignment Type"
                                             sx={{ fontSize: '12px' }}
@@ -4272,9 +4671,9 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                 <Grid item xs={12} md={6}>
                                     <TextField
                                         fullWidth
-                                        label={formData.assignment.type === 'specific_user' ? 'User Email' :
-                                            formData.assignment.type === 'role_based' ? 'Role' : 'Team'}
-                                        value={formData.assignment.value}
+                                        label={formData.taskTemplate.assignmentRules.type === 'specific_user' ? 'User Email' :
+                                            formData.taskTemplate.assignmentRules.type === 'role_based' ? 'Role' : 'Team'}
+                                        value={formData.taskTemplate.assignmentRules.value || ''}
                                         onChange={(e) => handleAssignmentChange('value', e.target.value)}
                                         size="small"
                                         sx={{
@@ -4282,8 +4681,8 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
                                             '& .MuiInputLabel-root': { fontSize: '12px' }
                                         }}
                                         placeholder={
-                                            formData.assignment.type === 'specific_user' ? 'user@company.com' :
-                                                formData.assignment.type === 'role_based' ? 'customer_service' : 'team_name'
+                                            formData.taskTemplate.assignmentRules.type === 'specific_user' ? 'user@company.com' :
+                                                formData.taskTemplate.assignmentRules.type === 'role_based' ? 'customer_service' : 'team_name'
                                         }
                                     />
                                 </Grid>
@@ -4313,3 +4712,85 @@ const CreateRuleForm = ({ onSave, onCancel }) => {
 };
 
 export default FollowUpsDashboard; 
+
+// Lightweight selects used by CreateRuleForm
+function ServiceLevelsSelect({ value = [], onChange }) {
+    const [options, setOptions] = React.useState([]);
+    const [loading, setLoading] = React.useState(false);
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setLoading(true);
+                const qref = query(collection(db, 'serviceLevels'), where('enabled', '==', true));
+                const snap = await getDocs(qref);
+                const list = snap.docs.map(d => ({ code: d.data().code, label: d.data().label }));
+                setOptions(list);
+            } catch (e) {
+                setOptions([]);
+            } finally { setLoading(false); }
+        };
+        load();
+    }, []);
+    return (
+        <FormControl fullWidth size="small">
+            <InputLabel sx={{ fontSize: '12px' }}>Service Levels</InputLabel>
+            <Select multiple value={value} label="Service Levels" onChange={(e) => onChange(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)} sx={{ fontSize: '12px' }}>
+                {options.map(opt => (
+                    <MenuItem key={opt.code} value={opt.code} sx={{ fontSize: '12px' }}>{opt.label}</MenuItem>
+                ))}
+            </Select>
+        </FormControl>
+    );
+}
+
+function ConnectedCarriersSelect({ value = [], onChange }) {
+    const [options, setOptions] = React.useState([]);
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const carriers = [];
+                const snap1 = await getDocs(collection(db, 'carriers'));
+                snap1.forEach(d => carriers.push({ id: d.id, name: d.data().name }));
+                const snap2 = await getDocs(collection(db, 'quickshipCarriers'));
+                snap2.forEach(d => carriers.push({ id: d.id, name: d.data().name }));
+                carriers.sort((a, b) => a.name.localeCompare(b.name));
+                setOptions(carriers);
+            } catch (e) { setOptions([]); }
+        };
+        load();
+    }, []);
+    return (
+        <Autocomplete
+            multiple
+            size="small"
+            options={options}
+            value={options.filter(o => value.includes(o.name) || value.includes(o.id))}
+            getOptionLabel={(o) => o.name}
+            onChange={(e, vals) => onChange(vals.map(v => v.name))}
+            renderInput={(params) => <TextField {...params} label="Carriers" sx={{ '& .MuiInputBase-root': { fontSize: '12px' }, '& .MuiInputLabel-root': { fontSize: '12px' } }} />}
+        />
+    );
+}
+
+function TaskTemplateSelect({ taskTemplates = {}, loading, value, onChange }) {
+    const all = Object.values(taskTemplates || {}).flatMap(l => l || []);
+    return (
+        <FormControl fullWidth size="small">
+            <InputLabel sx={{ fontSize: '12px' }}>Task Title (Template)</InputLabel>
+            <Select
+                value={value?.selectedTemplate || ''}
+                label="Task Title (Template)"
+                onChange={(e) => {
+                    const tpl = all.find(t => t.id === e.target.value) || null;
+                    onChange(tpl);
+                }}
+                sx={{ fontSize: '12px' }}
+            >
+                <MenuItem value="" sx={{ fontSize: '12px' }}>None</MenuItem>
+                {all.map(t => (
+                    <MenuItem key={t.id} value={t.id} sx={{ fontSize: '12px' }}>{t.taskName}</MenuItem>
+                ))}
+            </Select>
+        </FormControl>
+    );
+}

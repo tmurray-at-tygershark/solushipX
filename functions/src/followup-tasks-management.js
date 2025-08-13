@@ -11,15 +11,33 @@ async function verifyAdminAccess(context) {
     }
 
     try {
-        const userRecord = await getAuth().getUser(context.auth.uid);
+        const uid = context.auth.uid;
+        const userRecord = await getAuth().getUser(uid);
         const customClaims = userRecord.customClaims || {};
-        const userRole = customClaims.role || 'user';
+        let userRole = customClaims.role || null;
 
-        if (!['admin', 'superadmin'].includes(userRole)) {
+        // Fallback: read Firestore users collection if custom claims don't carry role
+        if (!userRole) {
+            try {
+                const userDoc = await getFirestore().collection('users').doc(uid).get();
+                if (userDoc.exists) {
+                    const data = userDoc.data() || {};
+                    userRole = data.role || data.userRole || null;
+                }
+            } catch (e) {
+                // Non-fatal; continue with null role
+            }
+        }
+
+        // Normalize role text
+        const normalizedRole = (userRole || '').toString().toLowerCase();
+        const isAdmin = ['admin', 'superadmin', 'super_admin'].includes(normalizedRole);
+
+        if (!isAdmin) {
             throw new HttpsError('permission-denied', 'Admin access required');
         }
 
-        return { userRole, userEmail: userRecord.email };
+        return { userRole: normalizedRole, userEmail: userRecord.email };
     } catch (error) {
         console.error('Error verifying admin access:', error);
         throw new HttpsError('permission-denied', 'Invalid user permissions');

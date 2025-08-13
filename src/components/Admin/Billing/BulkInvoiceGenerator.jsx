@@ -166,6 +166,8 @@ const BulkInvoiceGenerator = () => {
 
     // ✅ NEW: INVOICE DATE SELECTION
     const [invoiceIssueDate, setInvoiceIssueDate] = useState(null); // Custom invoice issue date
+    // ✅ NEW: OPTIONAL INVOICE NUMBER OVERRIDE
+    const [invoiceNumberOverride, setInvoiceNumberOverride] = useState('');
 
     // ✅ NEW: PREVIEW & EMAIL FUNCTIONALITY
     const [previewOpen, setPreviewOpen] = useState(false);
@@ -211,6 +213,7 @@ const BulkInvoiceGenerator = () => {
                 invoiceMode: invoiceMode,
                 previewMode: true, // ✅ NEW: Enable preview mode
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
+                invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -276,6 +279,7 @@ const BulkInvoiceGenerator = () => {
                 invoiceMode: invoiceMode,
                 emailMode: true, // ✅ NEW: Enable email mode
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
+                invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -368,6 +372,7 @@ const BulkInvoiceGenerator = () => {
                     bcc: testEmailBcc
                 }, // ✅ NEW: Multiple email recipients
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
+                invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
                     dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
                     dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
@@ -1122,6 +1127,22 @@ IC-CUSTOMER-789"
                                         Payment Terms: NET 30
                                     </Typography>
                                 </Box>
+                            </Grid>
+                            {/* ✅ NEW: INVOICE NUMBER OVERRIDE */}
+                            <Grid item xs={12}>
+                                <TextField
+                                    label="Set Invoice # (Optional)"
+                                    value={invoiceNumberOverride}
+                                    onChange={(e) => setInvoiceNumberOverride(e.target.value)}
+                                    placeholder="Enter an invoice number to override auto-generation (e.g., INV-ICAL-20250124)"
+                                    fullWidth
+                                    size="small"
+                                    sx={{
+                                        '& .MuiInputBase-input': { fontSize: '12px' },
+                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                    }}
+                                    helperText="If provided, this exact invoice number will be used when sending test emails or generating ZIPs. Leave empty to auto-generate."
+                                />
                             </Grid>
                         </Grid>
 

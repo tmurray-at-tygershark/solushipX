@@ -342,6 +342,12 @@ export const isTaxCharge = (code) => {
  * Generate tax line items for shipment
  */
 export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextId = 1) => {
+    let options = {};
+    // Backward compatibility: allow older call signature without options
+    if (typeof nextId === 'object' && nextId !== null) {
+        options = nextId;
+        nextId = 1;
+    }
     // Calculate taxable bases for quoted and actual (separate cost vs charge)
     const {
         quotedCostTaxable,
@@ -353,7 +359,15 @@ export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextI
     } = calculateTaxableAmounts(rateBreakdown, chargeTypes);
 
     // Determine tax definitions (always return rows for domestic provinces, even if amount is 0)
-    const taxDefs = getTaxConfigForProvince(province)?.taxes || [];
+    let taxDefs = getTaxConfigForProvince(province)?.taxes || [];
+
+    // Business rule: For freight shipments to Quebec, charge GST only (no QST)
+    const provinceUpper = String(province || '').toUpperCase();
+    const shipmentType = String(options?.shipmentType || '').toLowerCase();
+    const isQuebec = provinceUpper === 'QC' || provinceUpper === 'QUEBEC';
+    if (isQuebec && shipmentType === 'freight') {
+        taxDefs = taxDefs.filter(t => (t.type || '').toUpperCase() !== 'QST');
+    }
 
     // Build tax line items with both quoted and actual columns populated
     return taxDefs.map((tax, index) => {

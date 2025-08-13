@@ -47,7 +47,8 @@ export const recalculateShipmentTaxes = (shipmentData, chargeTypes) => {
         shipmentData.manualRates = recalculateRateArrayTaxes(
             shipmentData.manualRates, 
             province, 
-            chargeTypes
+            chargeTypes,
+            { shipmentType: shipmentData?.shipmentInfo?.shipmentType || shipmentData?.shipmentType }
         );
         console.log('🍁 Canadian Tax: Manual rates updated', {
             originalCount: originalCount,
@@ -61,7 +62,8 @@ export const recalculateShipmentTaxes = (shipmentData, chargeTypes) => {
         shipmentData.carrierConfirmationRates = recalculateRateArrayTaxes(
             shipmentData.carrierConfirmationRates, 
             province, 
-            chargeTypes
+            chargeTypes,
+            { shipmentType: shipmentData?.shipmentInfo?.shipmentType || shipmentData?.shipmentType }
         );
         console.log('🍁 Canadian Tax: Carrier confirmation rates updated', {
             originalCount: originalCount,
@@ -75,7 +77,7 @@ export const recalculateShipmentTaxes = (shipmentData, chargeTypes) => {
 /**
  * Recalculate taxes for a rate array
  */
-export const recalculateRateArrayTaxes = (rateArray, province, chargeTypes) => {
+export const recalculateRateArrayTaxes = (rateArray, province, chargeTypes, options = {}) => {
     if (!rateArray || !Array.isArray(rateArray)) return [];
 
     // Capture existing tax metadata (invoice/edi) so we can preserve it across recalculations
@@ -105,7 +107,7 @@ export const recalculateRateArrayTaxes = (rateArray, province, chargeTypes) => {
     const nextId = maxId + 1;
 
     // Generate new tax line items (will return rows even when taxable base is zero)
-    let taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, nextId);
+    let taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, { nextId, shipmentType: options.shipmentType });
 
     // Merge preserved invoice/edi numbers from previously existing tax rows
     taxLineItems = taxLineItems.map(item => {

@@ -32,6 +32,8 @@ import {
     Close as CloseIcon
 } from '@mui/icons-material';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { db } from '../../../firebase/db';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useSnackbar } from 'notistack';
 
 const FollowUpTasksConfiguration = () => {
@@ -125,7 +127,7 @@ const FollowUpTasksConfiguration = () => {
         }
     };
 
-    // Initialize predefined tasks if none exist
+    // Initialize predefined tasks (direct DB write, no button)
     const initializePredefinedTasks = async () => {
         try {
             setSaving(true);
@@ -145,10 +147,13 @@ const FollowUpTasksConfiguration = () => {
                 });
             });
 
-            const createFollowUpTaskTemplate = httpsCallable(functions, 'createFollowUpTaskTemplate');
-
-            // Create all tasks in parallel
-            await Promise.all(tasks.map(task => createFollowUpTaskTemplate(task)));
+            // Directly write to Firestore to avoid callable dependency
+            const colRef = collection(db, 'followUpTaskTemplates');
+            await Promise.all(tasks.map(task => addDoc(colRef, {
+                ...task,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            })));
 
             enqueueSnackbar(`Successfully initialized ${tasks.length} predefined follow-up tasks`, { variant: 'success' });
             await loadFollowUpTasks();
@@ -280,6 +285,15 @@ const FollowUpTasksConfiguration = () => {
         loadFollowUpTasks();
     }, []);
 
+    // Auto-seed defaults when table is empty
+    useEffect(() => {
+        if (!loading && tasks && tasks.length === 0 && !saving) {
+            // Seed once when empty
+            initializePredefinedTasks();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, tasks]);
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
@@ -298,18 +312,6 @@ const FollowUpTasksConfiguration = () => {
                     Manage predefined follow-up tasks that can be assigned when creating shipment follow-ups
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    {tasks.length === 0 && (
-                        <Button
-                            variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={initializePredefinedTasks}
-                            size="small"
-                            disabled={saving}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Initialize Default Tasks
-                        </Button>
-                    )}
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}

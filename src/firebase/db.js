@@ -1,7 +1,7 @@
 import { getFirestore, doc, setDoc, getDoc, collection } from 'firebase/firestore';
 import { app } from './firebase';
 
-const db = getFirestore(app);
+export const db = getFirestore(app);
 
 // Function to save customer data
 export const saveCustomerData = async (userId, customerData) => {

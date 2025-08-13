@@ -4732,6 +4732,9 @@ const QuickShip = ({
         });
 
         // Recalculate taxes (this handles empty manual rates gracefully)
+        // Ensure shipmentType is available for province-specific rules (e.g., QC freight → GST only)
+        shipmentData.shipmentInfo = shipmentData.shipmentInfo || {};
+        shipmentData.shipmentInfo.shipmentType = shipmentInfo?.shipmentType || shipmentData.shipmentType || 'freight';
         const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
 
         // Update manual rates if taxes changed
@@ -4781,6 +4784,8 @@ const QuickShip = ({
                 manualRates: manualRates
             };
 
+            shipmentData.shipmentInfo = shipmentData.shipmentInfo || {};
+            shipmentData.shipmentInfo.shipmentType = shipmentInfo?.shipmentType || shipmentData.shipmentType || 'freight';
             const updatedShipmentData = recalculateShipmentTaxes(shipmentData, availableChargeTypes);
 
             if (JSON.stringify(updatedShipmentData.manualRates) !== JSON.stringify(manualRates)) {
