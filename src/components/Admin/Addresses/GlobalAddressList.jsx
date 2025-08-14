@@ -51,11 +51,13 @@ import {
     CloudUpload as UploadIcon,
     MoreVert as MoreVertIcon,
     Visibility as VisibilityIcon,
-    Delete as DeleteIcon
+    Delete as DeleteIcon,
+    Close as CloseIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
-import { collection, getDocs, query, where, doc, getDoc, limit } from 'firebase/firestore';
+import { useSnackbar } from 'notistack';
+import { collection, getDocs, query, where, doc, getDoc, limit, updateDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useNavigate } from 'react-router-dom';
 import AdminBreadcrumb from '../AdminBreadcrumb';
@@ -659,6 +661,8 @@ const GlobalAddressList = () => {
 // Custom component to show addresses from all companies with full table functionality
 const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all', selectedCustomerId = 'all', viewMode = 'all' }) => {
     const navigate = useNavigate();
+    const { enqueueSnackbar } = useSnackbar();
+    const { user } = useAuth();
     const [addresses, setAddresses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(0);
@@ -671,6 +675,8 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
     const [selectedAddress, setSelectedAddress] = useState(null);
     const [showAddressDetail, setShowAddressDetail] = useState(false);
     const [showEditAddressForm, setShowEditAddressForm] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     // Create mapping from companyID to Firebase document ID
@@ -838,6 +844,37 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
             </Box>
         );
     }
+
+    // Handle soft delete (mark as inactive)
+    const handleDeleteAddress = async () => {
+        if (!selectedAddress) return;
+
+        try {
+            setDeleting(true);
+
+            // Soft delete: Update status to inactive instead of permanent deletion
+            const addressRef = doc(db, 'addressBook', selectedAddress.id);
+            await updateDoc(addressRef, {
+                status: 'inactive',
+                deactivatedAt: new Date(),
+                deactivatedBy: user?.email || 'Unknown'
+            });
+
+            // Close dialogs and refresh
+            setShowDeleteConfirm(false);
+            setShowAddressDetail(false);
+            setSelectedAddress(null);
+            setRefreshTrigger(prev => prev + 1);
+
+            // Show success message
+            enqueueSnackbar('Address deactivated successfully', { variant: 'success' });
+        } catch (error) {
+            console.error('Error deactivating address:', error);
+            enqueueSnackbar('Failed to deactivate address', { variant: 'error' });
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     return (
         <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -1036,7 +1073,8 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                                                     }
                                                 }}
                                                 onClick={() => {
-                                                    navigate(`/admin/companies/${companyIdToDocId[address.companyID || address.ownerCompanyID]}`);
+                                                    setSelectedAddress(address);
+                                                    setShowAddressDetail(true);
                                                 }}
                                             >
                                                 {address.companyName || 'N/A'}
@@ -1271,15 +1309,65 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
             )}
 
             {/* Address Detail Dialog */}
-            <AddressDetail
+            <Dialog
                 open={showAddressDetail}
                 onClose={() => {
                     setShowAddressDetail(false);
                     setSelectedAddress(null);
                 }}
-                address={selectedAddress}
-                isModal={true}
-            />
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        height: '90vh',
+                        maxHeight: '90vh'
+                    }
+                }}
+            >
+                {/* Close button in top right */}
+                <IconButton
+                    onClick={() => {
+                        setShowAddressDetail(false);
+                        setSelectedAddress(null);
+                    }}
+                    sx={{
+                        position: 'absolute',
+                        right: 8,
+                        top: 8,
+                        zIndex: 1,
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        '&:hover': {
+                            backgroundColor: 'rgba(255, 255, 255, 1)'
+                        }
+                    }}
+                    size="small"
+                >
+                    <CloseIcon fontSize="small" />
+                </IconButton>
+
+                <DialogContent sx={{ p: 0, overflow: 'hidden' }}>
+                    {selectedAddress && (
+                        <AddressDetail
+                            addressId={selectedAddress.id}
+                            onEdit={() => {
+                                // Close detail dialog and open edit dialog
+                                setShowAddressDetail(false);
+                                setShowEditAddressForm(true);
+                                // selectedAddress is already set
+                            }}
+                            onBack={() => {
+                                setShowAddressDetail(false);
+                                setSelectedAddress(null);
+                            }}
+                            onDelete={() => {
+                                // Show delete confirmation
+                                setShowDeleteConfirm(true);
+                            }}
+                            isModal={true}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Address Edit Dialog */}
             <AddressFormDialog
@@ -1298,6 +1386,64 @@ const AllCompaniesAddressView = ({ companies, userRole, selectedCompanyId = 'all
                 companyId={selectedAddress?.companyID}
                 customerId={selectedAddress?.addressClassID}
             />
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={showDeleteConfirm}
+                onClose={() => !deleting && setShowDeleteConfirm(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <DeleteIcon sx={{ color: 'error.main' }} />
+                        Confirm Address Deletion
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <Alert severity="warning" sx={{ mb: 2, fontSize: '12px' }}>
+                        <strong>Soft Delete:</strong> This address will be marked as inactive instead of permanently deleted to preserve shipment history.
+                    </Alert>
+                    <Typography sx={{ fontSize: '12px', mb: 2 }}>
+                        Are you sure you want to deactivate the address for <strong>{selectedAddress?.companyName}</strong>?
+                    </Typography>
+                    {selectedAddress && (
+                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block', mb: 0.5 }}>
+                                Address to be deactivated:
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: '12px' }}>
+                                {selectedAddress.street || 'N/A'}
+                                {selectedAddress.street2 && `, ${selectedAddress.street2}`}
+                                <br />
+                                {selectedAddress.city || 'N/A'}, {selectedAddress.state || 'N/A'} {selectedAddress.postalCode || 'N/A'}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', display: 'block', mt: 1 }}>
+                                Contact: {selectedAddress.firstName || ''} {selectedAddress.lastName || ''} {selectedAddress.phone && `• ${selectedAddress.phone}`}
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        disabled={deleting}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteAddress}
+                        color="error"
+                        variant="contained"
+                        disabled={deleting}
+                        startIcon={deleting ? <CircularProgress size={16} /> : <DeleteIcon />}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {deleting ? 'Deactivating...' : 'Deactivate Address'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

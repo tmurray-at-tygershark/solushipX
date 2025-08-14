@@ -22,7 +22,9 @@ import {
     Divider,
     FormControl,
     InputLabel,
-    Select
+    Select,
+    Avatar,
+    Chip
 } from '@mui/material';
 import {
     LocationOn as LocationIcon,
@@ -705,37 +707,246 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                         <CardContent sx={{ pt: 1 }}>
                             <Grid container spacing={2}>
                                 <Grid item xs={12}>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel sx={{ fontSize: '12px' }}>
-                                            Select Customer *
-                                        </InputLabel>
-                                        <Select
-                                            value={selectedCustomerId}
-                                            onChange={(e) => setSelectedCustomerId(e.target.value)}
-                                            sx={{
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                            }}
-                                            disabled={loadingCustomers}
-                                            required
-                                            error={!!errors.selectedCustomerId}
-                                        >
-                                            {availableCustomers.map((customer) => (
-                                                <MenuItem
-                                                    key={customer.id}
-                                                    value={customer.customerID || customer.id}
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    {customer.name} ({customer.customerID || customer.id})
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                        {errors.selectedCustomerId && (
-                                            <Typography variant="caption" color="error" sx={{ fontSize: '11px', mt: 0.5 }}>
-                                                {errors.selectedCustomerId}
-                                            </Typography>
-                                        )}
-                                    </FormControl>
+                                    {/* Debug info - remove after testing */}
+                                    {console.log('[AddressForm Debug]', {
+                                        isEditing,
+                                        selectedCustomerId,
+                                        availableCustomersLength: availableCustomers.length,
+                                        addressId,
+                                        loadingCustomers
+                                    })}
+
+                                    {isEditing && selectedCustomerId ? (
+                                        // Edit mode: Show customer info as non-editable display
+                                        (() => {
+                                            // Try to find customer by customerID first, then by id
+                                            let selectedCustomer = availableCustomers.find(
+                                                c => c.customerID === selectedCustomerId
+                                            );
+
+                                            if (!selectedCustomer) {
+                                                selectedCustomer = availableCustomers.find(
+                                                    c => c.id === selectedCustomerId
+                                                );
+                                            }
+
+                                            // If still not found and we have customers, show a fallback
+                                            if (!selectedCustomer && availableCustomers.length > 0) {
+                                                return (
+                                                    <Box>
+                                                        <Typography
+                                                            variant="caption"
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                color: '#6b7280',
+                                                                display: 'block',
+                                                                mb: 1
+                                                            }}
+                                                        >
+                                                            Assigned Customer
+                                                        </Typography>
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 2,
+                                                            p: 2,
+                                                            border: '1px solid #e5e7eb',
+                                                            borderRadius: 1,
+                                                            bgcolor: '#fff3cd'
+                                                        }}>
+                                                            <Avatar
+                                                                sx={{
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    bgcolor: '#f59e0b',
+                                                                    fontSize: '14px',
+                                                                    fontWeight: 600,
+                                                                    border: '2px solid #e5e7eb'
+                                                                }}
+                                                            >
+                                                                {selectedCustomerId.charAt(0).toUpperCase()}
+                                                            </Avatar>
+                                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                                <Typography sx={{
+                                                                    fontSize: '14px',
+                                                                    fontWeight: 600,
+                                                                    color: '#374151'
+                                                                }}>
+                                                                    Customer ID: {selectedCustomerId}
+                                                                </Typography>
+                                                                <Typography sx={{
+                                                                    fontSize: '12px',
+                                                                    color: '#f59e0b'
+                                                                }}>
+                                                                    Customer details not found
+                                                                </Typography>
+                                                            </Box>
+                                                            <Chip
+                                                                label="Assigned"
+                                                                size="small"
+                                                                sx={{
+                                                                    bgcolor: '#fef3c7',
+                                                                    color: '#d97706',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600
+                                                                }}
+                                                            />
+                                                        </Box>
+                                                    </Box>
+                                                );
+                                            }
+
+                                            // Still loading customers
+                                            if (!selectedCustomer && loadingCustomers) {
+                                                return (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2 }}>
+                                                        <CircularProgress size={20} />
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                            Loading customer information...
+                                                        </Typography>
+                                                    </Box>
+                                                );
+                                            }
+
+                                            // Customer found - show the card
+                                            if (selectedCustomer) {
+                                                return (
+                                                    <Box>
+                                                        <Typography
+                                                            variant="caption"
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                color: '#6b7280',
+                                                                display: 'block',
+                                                                mb: 1
+                                                            }}
+                                                        >
+                                                            Assigned Customer
+                                                        </Typography>
+                                                        <Box sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 2,
+                                                            p: 2,
+                                                            border: '1px solid #e5e7eb',
+                                                            borderRadius: 1,
+                                                            bgcolor: '#f9fafb'
+                                                        }}>
+                                                            <Avatar
+                                                                src={selectedCustomer.logo || selectedCustomer.companyLogo}
+                                                                sx={{
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    bgcolor: '#059669',
+                                                                    fontSize: '14px',
+                                                                    fontWeight: 600,
+                                                                    border: '2px solid #e5e7eb'
+                                                                }}
+                                                            >
+                                                                {!selectedCustomer.logo && !selectedCustomer.companyLogo &&
+                                                                    (selectedCustomer.name || 'C').charAt(0).toUpperCase()
+                                                                }
+                                                            </Avatar>
+                                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                                <Typography sx={{
+                                                                    fontSize: '14px',
+                                                                    fontWeight: 600,
+                                                                    color: '#374151',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    {selectedCustomer.name}
+                                                                </Typography>
+                                                                <Typography sx={{
+                                                                    fontSize: '12px',
+                                                                    color: '#6b7280',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    Customer ID: {selectedCustomer.customerID || selectedCustomer.id}
+                                                                </Typography>
+                                                            </Box>
+                                                            <Chip
+                                                                label="Assigned"
+                                                                size="small"
+                                                                sx={{
+                                                                    bgcolor: '#dcfce7',
+                                                                    color: '#16a34a',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600
+                                                                }}
+                                                            />
+                                                        </Box>
+                                                    </Box>
+                                                );
+                                            }
+
+                                            // Fallback if nothing works
+                                            return (
+                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    Customer information not available
+                                                </Typography>
+                                            );
+                                        })()
+                                    ) : (
+                                        // Create mode: Show dropdown for customer selection
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel sx={{ fontSize: '12px' }}>
+                                                Select Customer *
+                                            </InputLabel>
+                                            <Select
+                                                value={selectedCustomerId}
+                                                onChange={(e) => setSelectedCustomerId(e.target.value)}
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                disabled={loadingCustomers}
+                                                required
+                                                error={!!errors.selectedCustomerId}
+                                            >
+                                                {availableCustomers.map((customer) => (
+                                                    <MenuItem
+                                                        key={customer.id}
+                                                        value={customer.customerID || customer.id}
+                                                        sx={{ fontSize: '12px' }}
+                                                    >
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                                            <Avatar
+                                                                src={customer.logo || customer.companyLogo}
+                                                                sx={{
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    bgcolor: '#059669',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600
+                                                                }}
+                                                            >
+                                                                {!customer.logo && !customer.companyLogo &&
+                                                                    (customer.name || 'C').charAt(0).toUpperCase()
+                                                                }
+                                                            </Avatar>
+                                                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                    {customer.name}
+                                                                </Typography>
+                                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                    {customer.customerID || customer.id}
+                                                                </Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                            {errors.selectedCustomerId && (
+                                                <Typography variant="caption" color="error" sx={{ fontSize: '11px', mt: 0.5 }}>
+                                                    {errors.selectedCustomerId}
+                                                </Typography>
+                                            )}
+                                        </FormControl>
+                                    )}
                                 </Grid>
 
                             </Grid>

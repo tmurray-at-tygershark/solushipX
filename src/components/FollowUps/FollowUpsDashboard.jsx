@@ -621,7 +621,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                 targetCompanyId = companyIdForAddress || (selectedCompanyId !== 'all' ? selectedCompanyId : null);
             } else {
                 // Admin routes preserve existing behavior
-            if (selectedCompanyId === 'all') {
+                if (selectedCompanyId === 'all') {
                     targetCompanyId = (userRole === 'superadmin') ? null : null; // backend enforces admin scope
                 } else {
                     targetCompanyId = selectedCompanyId; // Specific admin-selected company
@@ -2236,23 +2236,23 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                         >
                             {/* All Companies Option (admins only) */}
                             {isAdminView && (
-                            <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                                    <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
-                                    <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                        All Companies
-                                    </Typography>
-                                    <Chip
-                                        label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
-                                        size="small"
-                                        color="primary"
-                                        sx={{
-                                            height: 20,
-                                            fontSize: '10px',
-                                            ml: 'auto'
-                                        }}
-                                    />
-                                </Box>
+                                <MenuItem value="all" sx={{ fontSize: '12px' }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        <ViewListIcon sx={{ fontSize: 18, color: '#1976d2' }} />
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                            All Companies
+                                        </Typography>
+                                        <Chip
+                                            label={userRole === 'superadmin' ? 'All' : `${availableCompanies.length} Connected`}
+                                            size="small"
+                                            color="primary"
+                                            sx={{
+                                                height: 20,
+                                                fontSize: '10px',
+                                                ml: 'auto'
+                                            }}
+                                        />
+                                    </Box>
                                 </MenuItem>)}
 
                             {/* Individual Companies */}
@@ -2448,8 +2448,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                         <Box sx={{ p: 3 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                                 <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
-                                Automation Rules
-                            </Typography>
+                                    Automation Rules
+                                </Typography>
                                 <Button size="small" variant="contained" onClick={handleCreateRule} sx={{ textTransform: 'none', fontSize: '12px' }}>
                                     New Rule
                                 </Button>
@@ -2903,8 +2903,8 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
         console.log('🔧 EditTaskForm handleChange called:', { field, value });
         setFormData(prev => {
             const newData = {
-            ...prev,
-            [field]: value
+                ...prev,
+                [field]: value
             };
             console.log('📊 EditTaskForm formData updated:', { field, oldValue: prev[field], newValue: value, selectedTemplate: newData.selectedTemplate });
             return newData;
@@ -3277,7 +3277,7 @@ const EditTaskForm = ({ task, onSave, onCancel, staff = [], availableCompanies =
                                 </Grid>
                                 <Grid item sx={{ flexGrow: 1 }} />
                                 <Grid item xs="auto">
-                                <Button size="small" sx={{ fontSize: '12px' }} onClick={() => { setFormData(prev => ({ ...prev, shipmentId: '', selectedShipment: null })); setShipmentSearchTerm(''); }}>Change</Button>
+                                    <Button size="small" sx={{ fontSize: '12px' }} onClick={() => { setFormData(prev => ({ ...prev, shipmentId: '', selectedShipment: null })); setShipmentSearchTerm(''); }}>Change</Button>
                                 </Grid>
                             </Grid>
                         </Paper>
@@ -3579,8 +3579,8 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
         console.log('🔧 CreateTaskForm handleChange called:', { field, value });
         setFormData(prev => {
             const newData = {
-            ...prev,
-            [field]: value
+                ...prev,
+                [field]: value
             };
             console.log('📊 CreateTaskForm formData updated:', { field, oldValue: prev[field], newValue: value, selectedTemplate: newData.selectedTemplate });
             return newData;
@@ -3922,20 +3922,20 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                                 <Grid item sx={{ flexGrow: 1 }} />
                                 {!lockContext && (
                                     <Grid item xs="auto">
-                                <Button
-                                    size="small"
-                                    onClick={() => {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            shipmentId: '',
-                                            selectedShipment: null
-                                        }));
-                                        setShipmentSearchTerm('');
-                                    }}
-                                    sx={{ fontSize: '12px' }}
-                                >
-                                    Change
-                                </Button>
+                                        <Button
+                                            size="small"
+                                            onClick={() => {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    shipmentId: '',
+                                                    selectedShipment: null
+                                                }));
+                                                setShipmentSearchTerm('');
+                                            }}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Change
+                                        </Button>
                                     </Grid>
                                 )}
                             </Grid>
@@ -4177,20 +4177,20 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                 </Grid>
                 {formData.selectedTemplate === 'other' && (
                     <Grid item xs={12} md={6}>
-                    <TextField
-                        fullWidth
-                        label="Task Title"
-                        value={formData.title}
-                        onChange={(e) => handleChange('title', e.target.value)}
-                        required
-                        size="small"
-                        sx={{
-                            '& .MuiInputBase-root': { fontSize: '12px' },
-                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                        }}
-                        placeholder="e.g., Contact customer about delivery delay"
-                    />
-                </Grid>
+                        <TextField
+                            fullWidth
+                            label="Task Title"
+                            value={formData.title}
+                            onChange={(e) => handleChange('title', e.target.value)}
+                            required
+                            size="small"
+                            sx={{
+                                '& .MuiInputBase-root': { fontSize: '12px' },
+                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                            }}
+                            placeholder="e.g., Contact customer about delivery delay"
+                        />
+                    </Grid>
                 )}
 
 
@@ -4711,7 +4711,7 @@ const CreateRuleForm = ({ onSave, onCancel, availableCompanies = [], taskTemplat
     );
 };
 
-export default FollowUpsDashboard; 
+export default FollowUpsDashboard;
 
 // Lightweight selects used by CreateRuleForm
 function ServiceLevelsSelect({ value = [], onChange }) {

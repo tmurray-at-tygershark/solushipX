@@ -1083,40 +1083,60 @@ IC-CUSTOMER-789"
                         </Box>
                     </Paper>
 
-                    {/* INVOICE DATE SELECTION */}
+                    {/* INVOICE CUSTOMIZATION */}
                     <Paper sx={{ p: 3, mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
                         <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
-                            Invoice Date Settings
+                            Invoice Customization
                         </Typography>
                         <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
-                            Set a custom invoice issue date (optional). Due date will automatically be 30 days after the issue date.
+                            Set custom invoice generation preferences
                         </Typography>
 
                         <Grid container spacing={3}>
                             <Grid item xs={12} md={6}>
-                                <DatePicker
-                                    label="Invoice Issue Date (Optional)"
-                                    value={invoiceIssueDate}
-                                    onChange={(newValue) => setInvoiceIssueDate(newValue)}
-                                    slotProps={{
-                                        textField: {
-                                            size: 'small',
-                                            fullWidth: true,
-                                            helperText: invoiceIssueDate ? `Due date will be: ${dayjs(invoiceIssueDate).add(30, 'day').format('MMM DD, YYYY')}` : 'Leave empty to use today\'s date',
-                                            sx: {
-                                                '& .MuiInputBase-input': { fontSize: '12px' },
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <DatePicker
+                                        label="Invoice Issue Date (Optional)"
+                                        value={invoiceIssueDate}
+                                        onChange={(newValue) => setInvoiceIssueDate(newValue)}
+                                        slotProps={{
+                                            textField: {
+                                                size: 'small',
+                                                fullWidth: true,
+                                                helperText: 'Leave empty to use today\'s date',
+                                                sx: {
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                                }
                                             }
-                                        }
-                                    }}
-                                />
+                                        }}
+                                    />
+                                    <TextField
+                                        label="Set Invoice # (Optional)"
+                                        value={invoiceNumberOverride}
+                                        onChange={(e) => setInvoiceNumberOverride(e.target.value)}
+                                        placeholder="Enter an invoice number to override auto-generation (e.g., INV-ICAL-20250124)"
+                                        fullWidth
+                                        size="small"
+                                        sx={{
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                        }}
+                                        helperText="If provided, this exact invoice number will be used. Leave empty to auto-generate."
+                                    />
+                                </Box>
                             </Grid>
                             <Grid item xs={12} md={6}>
                                 <Box sx={{ p: 2, backgroundColor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>
                                     <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                        Date Information:
+                                        {(invoiceNumberOverride || invoiceIssueDate) ? 'Custom Settings:' : 'Date Information:'}
                                     </Typography>
+                                    {invoiceNumberOverride && (
+                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                            Invoice #: {invoiceNumberOverride}
+                                        </Typography>
+                                    )}
                                     <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
                                         Issue Date: {invoiceIssueDate ? dayjs(invoiceIssueDate).format('MMM DD, YYYY') : 'Today'}
                                     </Typography>
@@ -1127,22 +1147,6 @@ IC-CUSTOMER-789"
                                         Payment Terms: NET 30
                                     </Typography>
                                 </Box>
-                            </Grid>
-                            {/* ✅ NEW: INVOICE NUMBER OVERRIDE */}
-                            <Grid item xs={12}>
-                                <TextField
-                                    label="Set Invoice # (Optional)"
-                                    value={invoiceNumberOverride}
-                                    onChange={(e) => setInvoiceNumberOverride(e.target.value)}
-                                    placeholder="Enter an invoice number to override auto-generation (e.g., INV-ICAL-20250124)"
-                                    fullWidth
-                                    size="small"
-                                    sx={{
-                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                    }}
-                                    helperText="If provided, this exact invoice number will be used when sending test emails or generating ZIPs. Leave empty to auto-generate."
-                                />
                             </Grid>
                         </Grid>
 
@@ -1245,15 +1249,6 @@ IC-CUSTOMER-789"
 
                     {/* ENHANCED SUMMARY INFO */}
                     <Box sx={{ mt: 3 }}>
-                        <Alert severity="info" sx={{ mb: 2, fontSize: '12px' }}>
-                            <strong>✨ New Features:</strong> <strong>Preview Invoices</strong> to see what will be generated,
-                            <strong>Email Invoices</strong> to send directly to customers using professional templates, and
-                            <strong>Send Test Email</strong> to tyler@tygershark.com for validation. Original ZIP download still available.
-                        </Alert>
-
-                        <Alert severity="success" sx={{ mb: 2, fontSize: '12px' }}>
-                            <strong>Workflow:</strong> 1) Configure filters → 2) Preview invoices → 3) Send test email for approval → 4) Email to customers or download ZIP
-                        </Alert>
 
                         {selectedCompany && (
                             <Box sx={{ p: 2, backgroundColor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>

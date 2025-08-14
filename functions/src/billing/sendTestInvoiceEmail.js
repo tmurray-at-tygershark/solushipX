@@ -106,13 +106,20 @@ exports.sendTestInvoiceEmail = onRequest(
                 }
 
                 // Generate invoices for each customer (EXACT SAME AS ZIP GENERATOR)
+                let globalInvoiceSequence = 1; // Track sequence across all invoices
                 for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
                     for (const shipment of customerShipments) {
                         try {
                             // Get customer billing information (EXACT SAME AS ZIP GENERATOR)
                             const companyInfo = await getCustomerBillingInfo(shipment, companyId);
                             
-                            const realInvoiceData = await createInvoiceDataForShipment(shipment, companyId, customerName, currency, companyInfo, invoiceIssueDate, invoiceNumberOverride);
+                            // Calculate total invoices to determine if we need sequence numbers
+                            const totalInvoices = Object.values(customerGroups).reduce((total, shipments) => total + shipments.length, 0);
+                            const sequenceNumber = (invoiceNumberOverride && totalInvoices > 1) ? globalInvoiceSequence : null;
+                            
+                            const realInvoiceData = await createInvoiceDataForShipment(shipment, companyId, customerName, currency, companyInfo, invoiceIssueDate, invoiceNumberOverride, sequenceNumber);
+                            
+                            globalInvoiceSequence++; // Increment for next invoice
                             
                             const pdfBuffer = await generateInvoicePDF(realInvoiceData, companyInfo);
                             
@@ -326,16 +333,22 @@ async function fetchFilteredShipments(companyId, filters) {
 /**
  * Create invoice data for a single shipment (EXACT SAME AS ZIP GENERATOR)
  */
-async function createInvoiceDataForShipment(shipment, companyId, customerName, currency, companyInfo, invoiceIssueDate = null, invoiceNumberOverride = null) {
+async function createInvoiceDataForShipment(shipment, companyId, customerName, currency, companyInfo, invoiceIssueDate = null, invoiceNumberOverride = null, invoiceSequence = null) {
     const charges = getSimpleShipmentCharges(shipment);
     const shipmentId = shipment.shipmentID || shipment.id;
     
     console.log(`Generating PDF for shipment ${shipmentId} (${charges} ${currency})...`);
 
     // ✅ UPDATED: Use invoice number override if provided, otherwise generate sequential number
-    const sequentialInvoiceNumber = invoiceNumberOverride && invoiceNumberOverride.trim() 
-        ? invoiceNumberOverride.trim() 
-        : await getNextInvoiceNumber();
+    let sequentialInvoiceNumber;
+    if (invoiceNumberOverride && invoiceNumberOverride.trim()) {
+        // If we have an override and a sequence number (for multiple invoices), append sequence
+        sequentialInvoiceNumber = invoiceSequence 
+            ? `${invoiceNumberOverride.trim()}-${invoiceSequence}`
+            : invoiceNumberOverride.trim();
+    } else {
+        sequentialInvoiceNumber = await getNextInvoiceNumber();
+    }
     
     console.log(`Invoice number for shipment ${shipmentId}: ${sequentialInvoiceNumber} ${invoiceNumberOverride ? '(OVERRIDE)' : '(AUTO-GENERATED)'}`);
 
