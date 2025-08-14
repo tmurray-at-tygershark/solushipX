@@ -224,7 +224,30 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         }
     });
     
-    // CRITICAL FIX: Calculate agreed rate with ONLY carrier costs (NEVER customer charges)
+    // Helper function to check if a charge is a tax charge
+    const isTaxCharge = (code) => {
+        if (!code) return false;
+        
+        const taxCodes = [
+            'HST', 'GST', 'QST', 'QGST', 'HST ON', 'HST BC', 'HST NB', 
+            'HST NS', 'HST NL', 'HST PE', 'PST BC', 'PST SK', 'PST MB'
+        ];
+        
+        return taxCodes.includes(code.toUpperCase());
+    };
+
+    // Filter out tax line items from manual rates for carrier confirmation
+    const nonTaxManualRates = manualRates.filter(rate => !isTaxCharge(rate.code));
+    
+    // Calculate non-tax total from actualRates if available (for dual rate system)
+    let nonTaxActualRatesTotal = 0;
+    if (shipmentData.actualRates?.charges && Array.isArray(shipmentData.actualRates.charges)) {
+        nonTaxActualRatesTotal = shipmentData.actualRates.charges
+            .filter(charge => !isTaxCharge(charge.code))
+            .reduce((sum, charge) => sum + (parseFloat(charge.actualAmount || charge.amount) || 0), 0);
+    }
+    
+    // CRITICAL FIX: Calculate agreed rate with ONLY carrier costs (NEVER customer charges) AND NO TAXES
     let agreedRate = 0;
     
     if (shipmentData.status === 'cancelled' || shipmentData.status === 'canceled') {
@@ -232,21 +255,47 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         agreedRate = 0;
         console.log('🚫 CARRIER CONFIRMATION: Using $0 for cancelled shipment');
     } else {
-        // For active shipments, use ONLY carrier costs - NEVER customer charges
-        // Priority order: actualRates.totalCharges > manualRates costs > booking.totalCost > 0
-        agreedRate = shipmentData.actualRates?.totalCharges || // CARRIER COSTS from dual rate system
-                    manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0) || // QuickShip manual costs
+        // For active shipments, use ONLY carrier costs - NEVER customer charges OR taxes
+        // Priority order: actualRates non-tax total > manualRates non-tax costs > booking.totalCost > 0
+        const manualRatesNonTaxTotal = nonTaxManualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0);
+        
+        agreedRate = nonTaxActualRatesTotal || // CARRIER COSTS from dual rate system (no taxes)
+                    manualRatesNonTaxTotal || // QuickShip manual costs (no taxes)
                     booking.totalCost || // Legacy booking costs
                     0; // Fallback to 0
         
-        console.log('💰 CARRIER CONFIRMATION: Calculated agreed rate (CARRIER COSTS ONLY):', {
+        console.log('💰 CARRIER CONFIRMATION: Calculated agreed rate (CARRIER COSTS ONLY, NO TAXES):', {
             actualRatesTotalCharges: shipmentData.actualRates?.totalCharges,
+            actualRatesNonTaxTotal: nonTaxActualRatesTotal,
             manualRatesTotal: manualRates.reduce((sum, rate) => sum + (parseFloat(rate.cost) || 0), 0),
+            manualRatesNonTaxTotal: manualRatesNonTaxTotal,
+            totalManualRateItems: manualRates.length,
+            nonTaxManualRateItems: nonTaxManualRates.length,
+            taxItemsFiltered: manualRates.length - nonTaxManualRates.length,
             bookingTotalCost: booking.totalCost,
             finalAgreedRate: agreedRate,
-            note: 'FIXED: Using actualRates.totalCharges (carrier costs) instead of markupRates.totalCharges (customer charges)',
+            note: 'FIXED: Excluding tax line items from carrier confirmation agreed rate',
             dualRateSystemAvailable: !!(shipmentData.actualRates && shipmentData.markupRates),
-            customerChargesWouldBe: shipmentData.markupRates?.totalCharges || 'N/A'
+            customerChargesWouldBe: shipmentData.markupRates?.totalCharges || 'N/A',
+            shipmentId: shipmentId,
+            firebaseDocId: firebaseDocId
+        });
+        
+        // DEBUG: Log the manual rates to see what tax items are being filtered
+        console.log('🔍 CARRIER CONFIRMATION DEBUG - Manual Rates Analysis:', {
+            allManualRates: manualRates.map(rate => ({
+                code: rate.code,
+                chargeName: rate.chargeName,
+                cost: rate.cost,
+                charge: rate.charge,
+                isTax: isTaxCharge(rate.code)
+            })),
+            nonTaxRates: nonTaxManualRates.map(rate => ({
+                code: rate.code,
+                chargeName: rate.chargeName,
+                cost: rate.cost,
+                charge: rate.charge
+            }))
         });
     }
     
