@@ -4,6 +4,8 @@ const admin = require('firebase-admin');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const axios = require('axios');
 const uuid = require('uuid');
 
 const db = admin.firestore();
@@ -18,7 +20,7 @@ const storage = admin.storage();
  */
 async function generateCarrierConfirmationCore(shipmentId, firebaseDocId, carrierDetails) {
     try {
-        logger.info('generateCarrierConfirmationCore called with:', { 
+        logger.info('🚨🚨🚨 CARRIER CONFIRMATION CORE FUNCTION CALLED 🚨🚨🚨', { 
             shipmentId, 
             firebaseDocId,
             carrierName: carrierDetails?.name 
@@ -74,8 +76,54 @@ async function generateCarrierConfirmationCore(shipmentId, firebaseDocId, carrie
             throw new Error(`Shipment ${shipmentId} not found`);
         }
         
+        // Enrich shipment data with company info for invoice logo usage
+        let companyInfo = null;
+        try {
+            if (shipmentData.companyID) {
+                const snap = await db.collection('companies').where('companyID', '==', shipmentData.companyID).limit(1).get();
+                if (!snap.empty) {
+                    companyInfo = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                }
+            }
+        } catch (e) {
+            logger.warn('Carrier Confirmation: Failed to fetch company info', { error: e?.message });
+        }
+
+        // Attempt to download document logo locally for PDFKit (prioritize document logo over invoice logo)
+        let documentLogoLocalPath = null;
+        logger.info('Carrier Confirmation: Logo download debug', { 
+            hasCompanyInfo: !!companyInfo,
+            companyLogos: companyInfo?.logos,
+            documentLogo: companyInfo?.logos?.document,
+            invoiceLogo: companyInfo?.logos?.invoice || companyInfo?.invoiceLogo
+        });
+        try {
+            // Priority: document logo > invoice logo > legacy invoiceLogo field
+            const documentUrl = companyInfo?.logos?.document || companyInfo?.logos?.invoice || companyInfo?.invoiceLogo;
+            logger.info('Carrier Confirmation: Logo URL check', { 
+                hasDocumentLogo: !!companyInfo?.logos?.document,
+                hasInvoiceLogo: !!companyInfo?.logos?.invoice,
+                hasLegacyLogo: !!companyInfo?.invoiceLogo,
+                selectedUrl: documentUrl,
+                startsWithHttp: documentUrl?.startsWith('http') 
+            });
+            
+            if (documentUrl && documentUrl.startsWith('http')) {
+                const axios = require('axios');
+                const fs = require('fs');
+                const os = require('os');
+                const resp = await axios.get(documentUrl, { responseType: 'arraybuffer' });
+                const tmpPath = path.join(os.tmpdir(), `carrier_document_logo_${Date.now()}.png`);
+                fs.writeFileSync(tmpPath, Buffer.from(resp.data));
+                documentLogoLocalPath = tmpPath;
+                logger.info('Carrier Confirmation: Successfully downloaded document logo locally', { tmpPath });
+            }
+        } catch (e) {
+            logger.warn('Carrier Confirmation: Failed to download document logo', { error: e?.message });
+        }
+
         // Extract data for confirmation generation with enhanced mapping
-        const confirmationData = extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetails);
+        const confirmationData = extractEnhancedConfirmationData({ ...shipmentData, companyInfo, documentLogoLocalPath }, shipmentId, carrierDetails, firebaseDocId);
         
         // Generate the PDF confirmation with world-class design
         const pdfBuffer = await generateEnhancedConfirmationPDF(confirmationData);
@@ -143,7 +191,7 @@ const generateCarrierConfirmation = onCall({
  * Extracts confirmation data with comprehensive mapping and intelligent fallbacks
  * Enhanced to handle all data formats and ensure complete information extraction
  */
-function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetails) {
+function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetails, firebaseDocId) {
     console.log('extractEnhancedConfirmationData: Processing shipment data with enhanced mapping');
     
     // Extract addresses with comprehensive fallback logic
@@ -728,6 +776,9 @@ function extractEnhancedConfirmationData(shipmentData, shipmentId, carrierDetail
         billType: shipmentData.shipmentInfo?.billType || 'third_party',
         trackingNumber: shipmentData.trackingNumber || shipmentData.carrierTrackingNumber || shipmentId,
         
+        // Logo information - pass through the downloaded logo path
+        documentLogoLocalPath: shipmentData.documentLogoLocalPath,
+        
         // Complete shipment data for reference
         shipmentData: shipmentData
     };
@@ -1056,25 +1107,35 @@ function drawEnhancedHeader(doc, data) {
     doc.rect(20, 20, 572, 80)
        .fill('#f8f9fa');
     
-    // Logo section
+    // Logo section (prefer company document logo local path, fallback to asset)
     try {
-        // Use the SolushipX logo from assets
-        const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
-        if (fs.existsSync(logoPath)) {
-            doc.image(logoPath, 35, 30, {
-                width: 150,
-                height: 60,
-                fit: [150, 60],
-                align: 'left',
-                valign: 'center'
-            });
+        const documentLogoLocalPath = data?.documentLogoLocalPath;
+        logger.info('🎨 LOGO DEBUG: PDF Generation', { 
+            hasDocumentLogoLocalPath: !!documentLogoLocalPath,
+            documentLogoLocalPath,
+            fileExists: documentLogoLocalPath ? fs.existsSync(documentLogoLocalPath) : 'N/A',
+            dataKeys: Object.keys(data || {})
+        });
+        
+        if (documentLogoLocalPath && fs.existsSync(documentLogoLocalPath)) {
+            try {
+                doc.image(documentLogoLocalPath, 35, 30, { width: 150, height: 60, fit: [150, 60], align: 'left', valign: 'center' });
+                logger.info('Carrier Confirmation: Successfully embedded custom document logo');
+            } catch (e) {
+                console.warn('Carrier Confirmation: Failed to embed downloaded document logo, falling back to asset logo:', e?.message);
+                const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
+                if (fs.existsSync(logoPath)) {
+                    doc.image(logoPath, 35, 30, { width: 150, height: 60, fit: [150, 60], align: 'left', valign: 'center' });
+                }
+            }
         } else {
-            console.error('Logo file not found at:', logoPath);
-            // Fallback - just leave empty space for logo
+            const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
+            if (fs.existsSync(logoPath)) {
+                doc.image(logoPath, 35, 30, { width: 150, height: 60, fit: [150, 60], align: 'left', valign: 'center' });
+            }
         }
     } catch (error) {
         console.error('Error loading logo:', error);
-        // Fallback - just leave empty space for logo
     }
     
     // Header info section (right side)

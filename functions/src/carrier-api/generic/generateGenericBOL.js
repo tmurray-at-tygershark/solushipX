@@ -4,6 +4,8 @@ const admin = require('firebase-admin');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const axios = require('axios');
 const uuid = require('uuid');
 
 const db = admin.firestore();
@@ -67,8 +69,46 @@ async function generateBOLCore(shipmentId, firebaseDocId) {
             throw new Error(`Shipment ${shipmentId} not found`);
         }
         
+        // Try to load company info for invoice logo support
+        let companyInfo = null;
+        try {
+            if (shipmentData.companyID) {
+                const snap = await admin.firestore().collection('companies')
+                    .where('companyID', '==', shipmentData.companyID)
+                    .limit(1).get();
+                if (!snap.empty) {
+                    companyInfo = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                }
+            }
+        } catch (e) {
+            logger.warn('BOL: Failed to fetch company info for logos', { error: e?.message });
+        }
+
+        // Attempt to download document logo locally for PDFKit (prioritize document logo over invoice logo)
+        let documentLogoLocalPath = null;
+        try {
+            // Priority: document logo > invoice logo > legacy invoiceLogo field
+            const documentUrl = companyInfo?.logos?.document || companyInfo?.logos?.invoice || companyInfo?.invoiceLogo;
+            logger.info('BOL: Logo download priority check', { 
+                hasDocumentLogo: !!companyInfo?.logos?.document,
+                hasInvoiceLogo: !!companyInfo?.logos?.invoice,
+                hasLegacyLogo: !!companyInfo?.invoiceLogo,
+                selectedUrl: documentUrl
+            });
+            
+            if (documentUrl && documentUrl.startsWith('http')) {
+                const resp = await axios.get(documentUrl, { responseType: 'arraybuffer' });
+                const tmpPath = path.join(os.tmpdir(), `document_logo_${Date.now()}.png`);
+                fs.writeFileSync(tmpPath, Buffer.from(resp.data));
+                documentLogoLocalPath = tmpPath;
+                logger.info('BOL: Successfully downloaded document logo locally', { tmpPath });
+            }
+        } catch (e) {
+            logger.warn('BOL: Failed to download document logo', { error: e?.message });
+        }
+
         // Extract data for BOL generation
-        const bolData = extractBOLData(shipmentData, shipmentId);
+        const bolData = extractBOLData(shipmentData, shipmentId, companyInfo, documentLogoLocalPath);
         
         // DEBUG: Log final broker object AFTER bolData is created
         if (bolData && bolData.broker) {
@@ -151,7 +191,7 @@ const generateGenericBOL = onCall({
  * @param {string} shipmentId - QuickShip shipment ID
  * @returns {Object} - Formatted BOL data
  */
-function extractBOLData(shipmentData, shipmentId) {
+function extractBOLData(shipmentData, shipmentId, companyInfo = null, documentLogoLocalPath = null) {
     console.log('extractBOLData: Processing QuickShip data for Generic BOL');
     
     try {
@@ -330,6 +370,8 @@ function extractBOLData(shipmentData, shipmentId) {
             proNumber: proNumber,
             customerRef: referenceNumber,
             referenceNumbers: referenceNumbers,
+            // Company info for header logo usage
+            companyInfo: companyInfo ? { ...companyInfo, documentLogoLocalPath } : null,
         
         // Ship From Information - Enhanced extraction for QuickShip
         shipFrom: {
@@ -645,33 +687,39 @@ function drawExactHeader(doc, bolData) {
     
     // Company logo area (top-left) - REPOSITIONED for better spacing
     try {
-        const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
-        if (fs.existsSync(logoPath)) {
-            // Embed the actual logo image with better positioning
-            doc.image(logoPath, 30, 35, {
-                width: 180, // Increased width for better visibility
-                height: 50, // Reduced height for better proportion
-                fit: [180, 50],
-                align: 'left',
-                valign: 'center'
-            });
+        // Dynamic document logo support: prefer company-specific document logo if provided
+        const documentLogoUrl = bolData.companyInfo?.documentLogoLocalPath || bolData.companyInfo?.logos?.document || bolData.companyInfo?.logos?.invoice || bolData.companyInfo?.invoiceLogo || null;
+        if (documentLogoUrl) {
+            try {
+                doc.image(documentLogoUrl, 30, 27, {
+                    width: 180,
+                    height: 50,
+                    fit: [180, 50],
+                    align: 'left',
+                    valign: 'center'
+                });
+            } catch (e) {
+                console.warn('BOL: Failed to embed invoice logo URL, falling back to asset logo:', e?.message);
+                const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
+                if (fs.existsSync(logoPath)) {
+                    doc.image(logoPath, 30, 27, { width: 180, height: 50, fit: [180, 50], align: 'left', valign: 'center' });
+                } else {
+                    doc.font('Helvetica-Bold').fontSize(18).fillColor('#000000').text('SolushipX', 30, 40);
+                    doc.fontSize(8).text('®', 150, 35);
+                    doc.font('Helvetica').fontSize(10).text('INTEGRATED CARRIERS', 30, 60).fontSize(8).text('Freight Logistics & Transportation', 30, 72);
+                }
+            }
         } else {
+            // Fallback to packaged asset
+            const logoPath = path.join(__dirname, '../../assets/integratedcarrriers_logo_blk.png');
+            if (fs.existsSync(logoPath)) {
+                doc.image(logoPath, 30, 27, { width: 180, height: 50, fit: [180, 50], align: 'left', valign: 'center' });
+            } else {
             // Fallback to text-based logo with improved positioning
-            doc.font('Helvetica-Bold')
-               .fontSize(18) // Increased font size
-               .fillColor('#000000')
-               .text('SolushipX', 30, 40);
-            
-            // Add registered trademark symbol
-            doc.fontSize(8) // Increased trademark size
-               .text('®', 150, 35);
-            
-            // Company subtitle with better spacing
-            doc.font('Helvetica')
-               .fontSize(10) // Increased subtitle size
-               .text('INTEGRATED CARRIERS', 30, 60)
-               .fontSize(8)
-               .text('Freight Logistics & Transportation', 30, 72);
+            doc.font('Helvetica-Bold').fontSize(18).fillColor('#000000').text('SolushipX', 30, 40);
+            doc.fontSize(8).text('®', 150, 35);
+            doc.font('Helvetica').fontSize(10).text('INTEGRATED CARRIERS', 30, 60).fontSize(8).text('Freight Logistics & Transportation', 30, 72);
+            }
         }
     } catch (error) {
         console.error('Error loading logo image:', error);

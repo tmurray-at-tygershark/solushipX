@@ -74,7 +74,10 @@ const CompanyForm = () => {
         logos: {
             dark: '', // Dark background logo URL
             light: '', // Light background logo URL
-            circle: '' // Circle logo URL
+            circle: '', // Circle logo URL
+            invoice: '', // Invoice/BOL/Confirmation logo URL
+            document: '', // Document headers/footers logo URL
+            email: '' // Email template logo URL
         },
         status: 'active',
         ownerID: '',
@@ -341,17 +344,26 @@ const CompanyForm = () => {
     const [selectedLogos, setSelectedLogos] = useState({
         dark: null,
         light: null,
-        circle: null
+        circle: null,
+        invoice: null,
+        document: null,
+        email: null
     });
     const [logoPreviews, setLogoPreviews] = useState({
         dark: null,
         light: null,
-        circle: null
+        circle: null,
+        invoice: null,
+        document: null,
+        email: null
     });
     const [logoErrors, setLogoErrors] = useState({
         dark: '',
         light: '',
-        circle: ''
+        circle: '',
+        invoice: '',
+        document: '',
+        email: ''
     });
 
     // Active logo tab state
@@ -442,7 +454,8 @@ const CompanyForm = () => {
                     logos: {
                         dark: logos.dark || legacyLogo, // Use legacy logo as fallback for dark
                         light: logos.light || '',
-                        circle: logos.circle || ''
+                        circle: logos.circle || '',
+                        invoice: logos.invoice || ''
                     },
                     status: companyDataFromDb.status || 'active',
                     ownerID: companyDataFromDb.ownerID || '',
@@ -465,7 +478,10 @@ const CompanyForm = () => {
                 setLogoPreviews({
                     dark: logos.dark || legacyLogo || null,
                     light: logos.light || null,
-                    circle: logos.circle || null
+                    circle: logos.circle || null,
+                    invoice: logos.invoice || null,
+                    document: logos.document || null,
+                    email: logos.email || null
                 });
 
                 // Set legacy logo preview for backward compatibility
@@ -491,6 +507,12 @@ const CompanyForm = () => {
                     adminUserIdsForForm: [],
                     availableServiceLevels: {
                         enabled: false, // Default: all service levels available
+                        freight: [],
+                        courier: []
+                    },
+                    // Ensure additional services structure exists for new companies
+                    availableAdditionalServices: {
+                        enabled: false,
                         freight: [],
                         courier: []
                     },
@@ -652,7 +674,10 @@ const CompanyForm = () => {
             const logoTypeNames = {
                 dark: 'Dark Background Logo',
                 light: 'Light Background Logo',
-                circle: 'Circle Logo'
+                circle: 'Circle Logo',
+                invoice: 'Invoice Logo',
+                document: 'Document Logo',
+                email: 'Email Logo'
             };
 
             enqueueSnackbar(`${logoTypeNames[logoType]} removed successfully!`, { variant: 'success' });
@@ -689,7 +714,7 @@ const CompanyForm = () => {
 
     // Render logo tab content
     const renderLogoTab = () => {
-        const logoTypes = ['dark', 'light', 'circle'];
+        const logoTypes = ['dark', 'light', 'circle', 'invoice', 'document', 'email'];
         const logoType = logoTypes[activeLogoTab];
 
         const logoTypeInfo = {
@@ -710,6 +735,24 @@ const CompanyForm = () => {
                 description: 'Used for avatars, favicons, and social media profiles',
                 backgroundDemo: '#f3f4f6',
                 backgroundLabel: 'Avatar Preview'
+            },
+            invoice: {
+                title: 'Invoice Logo',
+                description: 'Used on generated documents (BOL, Carrier Confirmation, and invoices)',
+                backgroundDemo: '#ffffff',
+                backgroundLabel: 'Invoice Header Preview'
+            },
+            document: {
+                title: 'Document Logo',
+                description: 'Used in document headers, footers, and official paperwork',
+                backgroundDemo: '#f9fafb',
+                backgroundLabel: 'Document Header Preview'
+            },
+            email: {
+                title: 'Email Logo',
+                description: 'Used in email templates, signatures, and notifications',
+                backgroundDemo: '#ffffff',
+                backgroundLabel: 'Email Header Preview'
             }
         };
 
@@ -873,7 +916,7 @@ const CompanyForm = () => {
             const firebaseApp = getApp();
             const customStorage = getStorage(firebaseApp, "gs://solushipx.firebasestorage.app");
 
-            for (const logoType of ['dark', 'light', 'circle']) {
+            for (const logoType of ['dark', 'light', 'circle', 'invoice', 'document', 'email']) {
                 if (selectedLogos[logoType] && formData.companyID) {
                     try {
                         const fileExtension = selectedLogos[logoType].name.split('.').pop();
@@ -1300,6 +1343,30 @@ const CompanyForm = () => {
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                         Circle Logo
                                                         {logoPreviews.circle && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                    </Box>
+                                                }
+                                            />
+                                            <Tab
+                                                label={
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        Invoice Logo
+                                                        {logoPreviews.invoice && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                    </Box>
+                                                }
+                                            />
+                                            <Tab
+                                                label={
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        Document Logo
+                                                        {logoPreviews.document && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                    </Box>
+                                                }
+                                            />
+                                            <Tab
+                                                label={
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        Email Logo
+                                                        {logoPreviews.email && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
                                                     </Box>
                                                 }
                                             />
@@ -1934,7 +2001,7 @@ const CompanyForm = () => {
                                             control={
                                                 <Switch
                                                     size="small"
-                                                    checked={formData.availableAdditionalServices.enabled}
+                                                    checked={Boolean(formData.availableAdditionalServices?.enabled)}
                                                     onChange={(e) => handleAdditionalServicesToggle(e.target.checked)}
                                                     sx={{
                                                         '& .MuiSwitch-switchBase.Mui-checked': {
@@ -1955,7 +2022,7 @@ const CompanyForm = () => {
                                     </Box>
 
                                     {/* Additional Service Selection - Only show when restrictions are enabled */}
-                                    {formData.availableAdditionalServices.enabled && (
+                                    {Boolean(formData.availableAdditionalServices?.enabled) && (
                                         <Box sx={{ px: 3, pb: 3 }}>
                                             {additionalServicesLoading ? (
                                                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
