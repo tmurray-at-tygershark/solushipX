@@ -6,6 +6,9 @@ const sgMail = require('@sendgrid/mail');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onCall } = require('firebase-functions/v2/https');
 const path = require('path');
+const axios = require('axios');
+const fs = require('fs');
+const os = require('os');
 
 const db = getFirestore();
 const storage = getStorage();
@@ -66,8 +69,9 @@ if (!sendgridApiKey) {
 sgMail.setApiKey(sendgridApiKey);
 
 // Email configuration constants - Updated per billing requirements
-const SEND_FROM_EMAIL = 'ap@integratedcarriers.com';
-const SEND_FROM_NAME = 'Integrated Carriers';
+// Note: These are now fallbacks - dynamic company data is used when available
+const SEND_FROM_EMAIL_FALLBACK = 'ap@integratedcarriers.com';
+const SEND_FROM_NAME_FALLBACK = 'Integrated Carriers';
 
 /**
  * Generate invoice PDF and send email - Helper function (no CORS needed)
@@ -102,8 +106,75 @@ async function generateInvoicePDFAndEmailHelper(invoiceData, companyId, testMode
         companyInfo = companyDoc.docs[0].data();
         logger.info('Company data retrieved from database');
         
-        // Generate PDF
-        const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+        // DEBUG: Log company info structure for invoice logo debugging
+        logger.info('🔍 INVOICE LOGO DEBUG - Company data loaded:', {
+            companyName: companyInfo?.name,
+            hasLogos: !!companyInfo?.logos,
+            logoKeys: companyInfo?.logos ? Object.keys(companyInfo.logos) : 'none',
+            invoiceLogoUrl: companyInfo?.logos?.invoice,
+            invoiceLogoLength: companyInfo?.logos?.invoice?.length || 0,
+            startsWithHttp: companyInfo?.logos?.invoice?.startsWith('http') || false
+        });
+        
+        // Get customer billing information for BILL TO section
+        let customerBillingInfo = null;
+        if (invoiceData.customerId) {
+            try {
+                logger.info('Loading customer billing info for BILL TO section:', invoiceData.customerId);
+                
+                // Try direct document lookup first
+                let customerDoc = await db.collection('customers').doc(invoiceData.customerId).get();
+                
+                if (!customerDoc.exists) {
+                    // Fallback: query by customerID field
+                    const customerQuery = db.collection('customers').where('customerID', '==', invoiceData.customerId).limit(1);
+                    const customerSnapshot = await customerQuery.get();
+                    
+                    if (!customerSnapshot.empty) {
+                        customerDoc = customerSnapshot.docs[0];
+                    }
+                }
+
+                if (customerDoc.exists) {
+                    const customerData = customerDoc.data();
+                    
+                    customerBillingInfo = {
+                        companyName: customerData.companyName || customerData.company || customerData.name || '',
+                        name: `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim(),
+                        address: customerData.address || {},
+                        billingAddress: customerData.billingAddress || customerData.address || {},
+                        phone: customerData.phone || customerData.contactPhone || '',
+                        email: customerData.email || customerData.contactEmail || '',
+                        billingPhone: customerData.billingPhone || customerData.phone || '',
+                        billingEmail: customerData.billingEmail || customerData.email || ''
+                    };
+                    
+                    logger.info('Customer billing info loaded successfully for BILL TO section');
+                } else {
+                    logger.warn('Customer not found for BILL TO section:', invoiceData.customerId);
+                }
+            } catch (error) {
+                logger.warn('Error loading customer billing info:', error.message);
+            }
+        }
+        
+        // Fallback: use invoice data for BILL TO if no customer found
+        if (!customerBillingInfo) {
+            logger.info('Using invoice data for BILL TO section (fallback)');
+            customerBillingInfo = {
+                companyName: invoiceData.companyName || '',
+                name: '',
+                address: {},
+                billingAddress: {},
+                phone: '',
+                email: '',
+                billingPhone: '',
+                billingEmail: ''
+            };
+        }
+        
+        // Generate PDF with proper data separation
+        const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo);
         
         // Upload PDF to Storage
         const fileName = testMode ? 
@@ -233,16 +304,20 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
             return `${currency} $${formatted}`;
         };
 
+        // Prepare dynamic company email branding
+        const fromEmail = companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || SEND_FROM_EMAIL_FALLBACK;
+        const companyDisplayName = companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || SEND_FROM_NAME_FALLBACK;
+
         // Email content using SendGrid directly (like QuickShip pattern)
         const emailContent = {
             to: recipientEmail,
             from: {
-                email: SEND_FROM_EMAIL,
-                name: SEND_FROM_NAME
+                email: fromEmail,
+                name: companyDisplayName
             },
             subject: testMode ? 
-                `[TEST] Integrated Carriers - Invoice Notification` :
-                `Integrated Carriers - Invoice Notification`,
+                `[TEST] ${companyDisplayName} - Invoice Notification` :
+                `${companyDisplayName} - Invoice Notification`,
             html: generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurrency),
             text: generateInvoiceEmailText(invoiceData, companyInfo, testMode, formatCurrency),
             attachments: attachments
@@ -271,8 +346,21 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
     }
 }
 
-async function generateInvoicePDF(invoiceData, companyInfo) {
-    return new Promise((resolve, reject) => {
+async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo = null) {
+    // 🔍 CORE PDF GENERATION DEBUG - This function is called by ALL invoice generation processes
+    logger.info('🚀 generateInvoicePDF CALLED - Core PDF generation starting:', {
+        hasInvoiceData: !!invoiceData,
+        hasCompanyInfo: !!companyInfo,
+        hasCustomerBillingInfo: !!customerBillingInfo,
+        invoiceNumber: invoiceData?.invoiceNumber,
+        companyName: companyInfo?.name,
+        customerCompany: customerBillingInfo?.companyName,
+        companyLogos: companyInfo?.logos ? Object.keys(companyInfo.logos) : 'none',
+        invoiceLogoExists: !!companyInfo?.logos?.invoice,
+        invoiceLogoUrl: companyInfo?.logos?.invoice
+    });
+    
+    return new Promise(async (resolve, reject) => {
         try {
             const doc = new PDFDocument({ 
                 margin: 30,
@@ -350,19 +438,82 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             // ==================== COMPACT HEADER SECTION ====================
             let currentY = margin;
 
-            // Company logo (top right corner) - MOVED UP 8PX
+            // Prepare company billing info for use throughout invoice
+            const billingInfo = companyInfo?.billingInfo || {};
+            const arContact = billingInfo.accountsReceivable || {};
+            const companyDisplayName = billingInfo.companyDisplayName || companyInfo?.name || 'INTEGRATED CARRIERS';
+
+            // Company logo (top right corner) - Use invoice logo if available
+            logger.info('🎨 LOGO SECTION DEBUG - Starting logo processing:', {
+                hasCompanyInfo: !!companyInfo,
+                hasLogos: !!companyInfo?.logos,
+                invoiceLogoUrl: companyInfo?.logos?.invoice,
+                logoUrlType: typeof companyInfo?.logos?.invoice,
+                isString: typeof companyInfo?.logos?.invoice === 'string',
+                startsWithHttp: companyInfo?.logos?.invoice?.startsWith('http')
+            });
+            
             try {
-                const logoPath = path.join(__dirname, 'assets', 'integratedcarrriers_logo_blk.png');
-                doc.image(logoPath, rightCol, currentY - 8, { // ✅ MOVED UP 8PX
-                    width: 130,
-                    fit: [130, 40]
-                });
+                let logoDisplayed = false;
+                
+                // Try to use company's invoice logo first - DOWNLOAD LOCALLY for PDFKit
+                const invoiceLogoUrl = companyInfo?.logos?.invoice;
+                logger.info('🔍 Logo URL check:', { invoiceLogoUrl, exists: !!invoiceLogoUrl, isHttp: invoiceLogoUrl?.startsWith('http') });
+                
+                if (invoiceLogoUrl && invoiceLogoUrl.startsWith('http')) {
+                    try {
+                        logger.info('Downloading company invoice logo for PDF generation', { invoiceLogoUrl });
+                        
+                        // Download logo locally (same as BOL/Carrier Confirmation)
+                        
+                        const resp = await axios.get(invoiceLogoUrl, { responseType: 'arraybuffer' });
+                        const tmpPath = path.join(os.tmpdir(), `invoice_logo_${Date.now()}.png`);
+                        fs.writeFileSync(tmpPath, Buffer.from(resp.data));
+                        
+                        logger.info('Successfully downloaded invoice logo locally', { tmpPath });
+                        
+                        // Use local path for PDFKit
+                        doc.image(tmpPath, rightCol, currentY - 8, {
+                            width: 130,
+                            fit: [130, 40]
+                        });
+                        logoDisplayed = true;
+                        
+                        logger.info('Successfully embedded custom invoice logo');
+                    } catch (logoError) {
+                        logger.warn('Failed to download/use company invoice logo, falling back to system logo:', logoError.message);
+                    }
+                } else {
+                    logger.warn('🚨 INVOICE LOGO SKIPPED - URL validation failed:', {
+                        invoiceLogoUrl,
+                        urlExists: !!invoiceLogoUrl,
+                        isString: typeof invoiceLogoUrl === 'string',
+                        startsWithHttp: invoiceLogoUrl?.startsWith('http'),
+                        urlLength: invoiceLogoUrl?.length || 0
+                    });
+                }
+                
+                // Fallback to system logo if company logo fails or doesn't exist
+                if (!logoDisplayed) {
+                    logger.warn('🎯 Using fallback system logo - company logo not displayed');
+                    try {
+                        const logoPath = path.join(__dirname, 'assets', 'integratedcarrriers_logo_blk.png');
+                        doc.image(logoPath, rightCol, currentY - 8, {
+                            width: 130,
+                            fit: [130, 40]
+                        });
+                        logger.info('✅ System asset logo displayed successfully');
+                    } catch (assetError) {
+                        logger.warn('System asset logo failed, using text logo:', assetError.message);
+                    }
+                }
             } catch (error) {
                 logger.warn('Logo not found, creating text logo');
+                // Use dynamic company name for text logo
                 doc.fillColor(colors.primary)
                    .fontSize(14)
                    .font('Helvetica-Bold')
-                   .text('INTEGRATED CARRIERS', rightCol, currentY - 8, { width: 130, align: 'center' }); // ✅ MOVED UP 8PX
+                   .text(companyDisplayName.toUpperCase(), rightCol, currentY - 8, { width: 130, align: 'center' });
             }
 
             // INVOICE title (left side)
@@ -375,27 +526,76 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
 
             // Invoice number removed from top-left - now in right-side details box
 
-            // ==================== ORGANIZED COMPANY INFORMATION ====================
+            // ==================== DYNAMIC COMPANY INFORMATION ====================
             doc.fillColor(colors.text)
                .fontSize(8)
                .font('Helvetica-Bold')
-               .text('INTEGRATED CARRIERS', leftCol, currentY);
+               .text(companyDisplayName.toUpperCase(), leftCol, currentY);
 
             currentY += 10;
             doc.fontSize(7)
                .font('Helvetica')
                .fillColor(colors.textLight);
 
-            // More organized company details in structured format
-            const companyDetails = [
-                '9 - 75 First Street, Suite 209',
-                'Orangeville, ON L9W 5B6, Canada',
-                '',
-                'Tel: (416) 603-0103',
-                'Email: ar@integratedcarriers.com', // ✅ CHANGED FROM ap@ to ar@
-                'Web: www.integratedcarriers.com',
-                'GST#: 84606 8013 RT0001'
-            ];
+            // Build dynamic company details from AR contact info
+            const companyDetails = [];
+            
+            // Address information
+            if (arContact.address1) {
+                companyDetails.push(arContact.address1);
+                if (arContact.address2) {
+                    companyDetails.push(arContact.address2);
+                }
+                
+                // City, State/Province, Postal Code, Country
+                const locationParts = [];
+                if (arContact.city) locationParts.push(arContact.city);
+                if (arContact.stateProv) locationParts.push(arContact.stateProv);
+                if (arContact.zipPostal) locationParts.push(arContact.zipPostal);
+                if (arContact.country && arContact.country !== 'CA') {
+                    locationParts.push(arContact.country === 'US' ? 'United States' : arContact.country);
+                } else if (arContact.country === 'CA' || !arContact.country) {
+                    locationParts.push('Canada');
+                }
+                
+                if (locationParts.length > 0) {
+                    companyDetails.push(locationParts.join(', '));
+                }
+            } else {
+                // Fallback to hardcoded address if no AR contact address
+                companyDetails.push('9 - 75 First Street, Suite 209');
+                companyDetails.push('Orangeville, ON L9W 5B6, Canada');
+            }
+            
+            companyDetails.push(''); // Spacing break
+            
+            // Contact information
+            if (arContact.phone) {
+                companyDetails.push(`Tel: ${arContact.phone}`);
+            } else {
+                companyDetails.push('Tel: (416) 603-0103'); // Fallback
+            }
+            
+            // Email - use first AR email or fallback
+            if (arContact.email && arContact.email.length > 0) {
+                companyDetails.push(`Email: ${arContact.email[0]}`);
+            } else {
+                companyDetails.push('Email: ar@integratedcarriers.com'); // Fallback
+            }
+            
+            // Website - use company website or fallback
+            if (companyInfo?.website) {
+                companyDetails.push(`Web: ${companyInfo.website}`);
+            } else {
+                companyDetails.push('Web: www.integratedcarriers.com'); // Fallback
+            }
+            
+            // Tax number
+            if (billingInfo.taxNumber) {
+                companyDetails.push(billingInfo.taxNumber);
+            } else {
+                companyDetails.push('GST#: 84606 8013 RT0001'); // Fallback
+            }
 
             companyDetails.forEach(line => {
                 if (line === '') {
@@ -471,18 +671,21 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             currentY += 10;
 
             // Customer billing information with complete address (increased spacing)
+            // Use customer billing info if provided, otherwise fall back to companyInfo (for backward compatibility)
+            const billToInfo = customerBillingInfo || companyInfo;
+            
             doc.fillColor(colors.text)
                .fontSize(8)
                .font('Helvetica-Bold')
-               .text(invoiceData.companyName || companyInfo.name, leftCol, currentY);
+               .text(billToInfo.companyName || billToInfo.name || invoiceData.companyName, leftCol, currentY);
 
             currentY += 12; // Increased from 8 to 12
             doc.fontSize(7)
                .font('Helvetica');
 
             // Use actual billing address if available, otherwise main address
-            const billingAddr = companyInfo.billingAddress || companyInfo.address || {};
-            const mainAddr = companyInfo.address || {};
+            const billingAddr = billToInfo.billingAddress || billToInfo.address || {};
+            const mainAddr = billToInfo.address || {};
             
             // ✅ FIXED: Combine street and suite on one line with comma
             const street = billingAddr.street || billingAddr.address1 || mainAddr.street;
@@ -516,13 +719,13 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
             }
 
             // Phone and email from billing or main contact
-            const phone = companyInfo.billingPhone || companyInfo.phone || companyInfo.mainContact?.phone;
+            const phone = billToInfo.billingPhone || billToInfo.phone || billToInfo.mainContact?.phone;
             if (phone) {
                 doc.text(`Phone: ${phone}`, leftCol, currentY);
                 currentY += 10;
             }
 
-            const email = companyInfo.billingEmail || companyInfo.email || companyInfo.mainContact?.email;
+            const email = billToInfo.billingEmail || billToInfo.email || billToInfo.mainContact?.email;
             if (email) {
                 doc.text(`Email: ${email}`, leftCol, currentY);
                 currentY += 10;
@@ -1106,88 +1309,66 @@ async function generateInvoicePDF(invoiceData, companyInfo) {
                .text(`All amounts in ${invoiceData.currency || 'USD'}`, 
                      totalsX + 8, currentTotalY + lineHeight + 5);
 
-            // ==================== ENHANCED PAYMENT INFORMATION ====================
-            // ✅ ENSURE PAYMENT INFO ON LAST PAGE: Check if enough space remains
-            const paymentSectionHeight = 120; // Estimate height needed for payment information
-            const pageBottomMargin = 80; // Space for footer
-            const availableSpaceForPayment = doc.page.height - (totalsStartY + 50) - pageBottomMargin;
+            // ==================== DYNAMIC PAYMENT INFORMATION ====================
+            // Only show payment section if company has configured payment information
+            const paymentInfo = companyInfo?.billingInfo?.paymentInformation;
             
-            let paymentY;
-            if (availableSpaceForPayment < paymentSectionHeight) {
-                // Not enough space, add new page for payment information
-                doc.addPage();
-                paymentY = margin + 20; // Start near top of new page
-                console.log('Added new page for payment information to ensure it appears on last page');
-            } else {
-                // Enough space on current page
-                paymentY = totalsStartY + 50;
-            }
-
-            doc.fillColor(colors.primary)
-               .fontSize(8)
-               .font('Helvetica-Bold')
-               .text('PAYMENT INFORMATION', leftCol, paymentY);
-
-            let payInfoY = paymentY + 15;
-            doc.fillColor(colors.text)
-               .fontSize(6)
-               .font('Helvetica');
-
-            // ✅ NEW: Enhanced payment information with E-transfer, EFT, and credit card options
-            const paymentSections = [
-                {
-                    title: 'FOR E-TRANSFER PAYMENT,',
-                    content: ['Please send to: ar@integratedcarriers.com']
-                },
-                {
-                    title: 'FOR EFT PAYMENT,',
-                    content: [
-                        'Bank name: Royal Bank of Canada',
-                        'Bank address: 4550 Hurontario St. Mississauga ON L5R 4E4',
-                        'Account Name: 6834884 Canada Inc. / Integrated Carriers',
-                        '',
-                        'Account address: 9 – 75 First Street, Suite 209, Orangeville, ON, L9W 5B6',
-                        '',
-                        'Bank #: 003  |  Branch Transit #: 03971',
-                        'RBC Canadian Account #: 1002567  |  US Account #: 4001947',
-                        '',
-                        'Payment notice sent to: ar@integratedcarriers.com'
-                    ]
+            if (paymentInfo && paymentInfo.trim()) {
+                logger.info('📝 Rendering dynamic payment information from company billing config');
+                
+                // ✅ ENSURE PAYMENT INFO ON LAST PAGE: Check if enough space remains
+                const paymentSectionHeight = 120; // Estimate height needed for payment information
+                const pageBottomMargin = 80; // Space for footer
+                const availableSpaceForPayment = doc.page.height - (totalsStartY + 50) - pageBottomMargin;
+                
+                let paymentY;
+                if (availableSpaceForPayment < paymentSectionHeight) {
+                    // Not enough space, add new page for payment information
+                    doc.addPage();
+                    paymentY = margin + 20; // Start near top of new page
+                    logger.info('Added new page for payment information to ensure it appears on last page');
+                } else {
+                    // Enough space on current page
+                    paymentY = totalsStartY + 50;
                 }
-            ];
 
-            // Render payment sections in compact format
-            paymentSections.forEach((section, sectionIndex) => {
-                // Section title
+                // Payment Information Header
+                doc.fillColor(colors.primary)
+                   .fontSize(8)
+                   .font('Helvetica-Bold')
+                   .text('PAYMENT INFORMATION', leftCol, paymentY);
+
+                let payInfoY = paymentY + 15;
+                
+                // Render custom payment information with line breaks preserved
                 doc.fillColor(colors.text)
                    .fontSize(6)
-                   .font('Helvetica-Bold')
-                   .text(section.title, leftCol, payInfoY);
-                payInfoY += 10;
+                   .font('Helvetica');
 
-                // Section content
-                doc.font('Helvetica');
-                section.content.forEach(line => {
+                // Split payment info by lines and render each line
+                const paymentLines = paymentInfo.split('\n');
+                paymentLines.forEach((line, index) => {
                     if (line.trim() === '') {
-                        payInfoY += 3; // Small gap for empty lines
+                        payInfoY += 4; // Small gap for empty lines
                     } else {
-                        doc.text(line, leftCol + 10, payInfoY, { width: contentWidth - 10 });
-                        payInfoY += 7;
+                        // Check if line looks like a section header (all caps or ends with comma)
+                        const isHeader = line.trim().toUpperCase() === line.trim() || line.trim().endsWith(',');
+                        
+                        if (isHeader) {
+                            doc.font('Helvetica-Bold');
+                        } else {
+                            doc.font('Helvetica');
+                        }
+                        
+                        doc.text(line.trim(), leftCol, payInfoY, { width: contentWidth });
+                        payInfoY += 8;
                     }
                 });
-
-                // Space between sections
-                if (sectionIndex < paymentSections.length - 1) {
-                payInfoY += 8;
-                }
-            });
-
-            // Credit card payment notice
-            payInfoY += 5;
-            doc.fillColor(colors.text)
-               .fontSize(6)
-               .font('Helvetica')
-               .text('We also accept credit card payment with a fee.', leftCol, payInfoY, { width: contentWidth });
+                
+                logger.info('✅ Dynamic payment information rendered successfully');
+            } else {
+                logger.info('📝 No payment information configured - skipping payment section');
+            }
 
             // ==================== FOOTER ====================
             const footerY = pageHeight - margin - 25;
@@ -1229,6 +1410,11 @@ function generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurr
         </div>
     ` : '';
 
+    // Dynamic company branding
+    const companyDisplayName = companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers';
+    const logoUrl = companyInfo?.logos?.email || companyInfo?.logos?.light || 'https://solushipx.web.app/images/integratedcarrriers_logo_white.png';
+    const supportEmail = companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || 'ar@integratedcarriers.com';
+
     // Format dates - use invoice data dates if available, otherwise use dynamic dates
     const issueDate = invoiceData.issueDate ? new Date(invoiceData.issueDate).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
     const dueDate = invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString('en-US') : new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US');
@@ -1236,7 +1422,7 @@ function generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurr
     return `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #1c277d; color: white; padding: 30px; border-radius: 0;">
-                <img src="https://solushipx.web.app/images/integratedcarrriers_logo_white.png" alt="Integrated Carriers" style="height: 40px; margin-bottom: 20px; display: block;" />
+                <img src="${logoUrl}" alt="${companyDisplayName}" style="height: 40px; margin-bottom: 20px; display: block;" />
                 <h1 style="margin: 0; font-size: 24px;">Invoice Notification</h1>
                 <p style="margin: 10px 0 0 0; opacity: 0.9;">Invoice for ${companyInfo.name || invoiceData.companyName}</p>
             </div>
@@ -1246,8 +1432,8 @@ function generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurr
                 
                 <!-- Introductory Content -->
                 <div style="background: white; padding: 20px; border-radius: 4px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <p style="color: #1c277d; margin: 0 0 15px 0; font-size: 16px; font-weight: bold;">Thank you for choosing Integrated Carriers</p>
-                    <p style="color: #333; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at <a href="mailto:ar@integratedcarriers.com" style="color: #1c277d;">ar@integratedcarriers.com</a></p>
+                    <p style="color: #1c277d; margin: 0 0 15px 0; font-size: 16px; font-weight: bold;">Thank you for choosing ${companyDisplayName}</p>
+                    <p style="color: #333; margin: 0 0 15px 0; font-size: 14px; line-height: 1.5;">Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at <a href="mailto:${supportEmail}" style="color: #1c277d;">${supportEmail}</a></p>
                     <p style="color: #333; margin: 0 0 15px 0; font-size: 14px;">We appreciate your business and look forward to serving you again.</p>
                     <p style="color: #1c277d; margin: 0; font-size: 14px; font-weight: bold;">(Invoices Attached)</p>
                 </div>
@@ -1267,7 +1453,7 @@ function generateInvoiceEmailHTML(invoiceData, companyInfo, testMode, formatCurr
             <!-- Footer -->
             <div style="text-align: center; margin-top: 30px; padding: 20px; color: #6b7280; font-size: 12px;">
                 <p style="margin: 0;">"Helping Everyone Succeed"</p>
-                <p style="margin: 5px 0 0 0;">© 2025 Integrated Carriers. All rights reserved.</p>
+                <p style="margin: 5px 0 0 0;">© 2025 ${companyDisplayName}. All rights reserved.</p>
             </div>
         </div>
     `;
@@ -1283,6 +1469,10 @@ This is a test invoice for formatting verification only.
 
 ` : '';
 
+    // Dynamic company branding
+    const companyDisplayName = companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers';
+    const supportEmail = companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || 'ar@integratedcarriers.com';
+
     // Format dates - use invoice data dates if available, otherwise use dynamic dates
     const issueDate = invoiceData.issueDate ? new Date(invoiceData.issueDate).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
     const dueDate = invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString('en-US') : new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US');
@@ -1291,9 +1481,9 @@ This is a test invoice for formatting verification only.
 ${testHeader}INVOICE NOTIFICATION
 Invoice for ${companyInfo.name || invoiceData.companyName}
 
-Thank you for choosing Integrated Carriers
+Thank you for choosing ${companyDisplayName}
 
-Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at ar@integratedcarriers.com
+Attached you'll find your detailed invoice for recent services. If you have any questions or need support, feel free to reply directly to this email or reach out to our billing team at ${supportEmail}
 
 We appreciate your business and look forward to serving you again.
 
@@ -1305,7 +1495,7 @@ Due Date: ${dueDate}
 Payment Terms: NET 30
 
 "Helping Everyone Succeed"
-© 2025 Integrated Carriers. All rights reserved.
+© 2025 ${companyDisplayName}. All rights reserved.
     `;
 }
 

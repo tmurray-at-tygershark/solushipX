@@ -338,7 +338,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
 
 
 
-    // Fetch owners for name lookup
+    // Fetch owners for name lookup and photos
     const fetchOwners = async () => {
         try {
             const usersRef = collection(db, 'users');
@@ -346,7 +346,10 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
             const ownersMap = {};
             querySnapshot.forEach(doc => {
                 const user = doc.data();
-                ownersMap[doc.id] = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                ownersMap[doc.id] = {
+                    name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+                    photoURL: user.photoURL || null
+                };
             });
             setOwners(ownersMap);
         } catch (error) {
@@ -408,7 +411,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
             filtered = filtered.filter(c => {
                 const companyName = c.name.toLowerCase();
                 const companyId = c.companyID?.toLowerCase() || '';
-                const ownerName = (owners[c.ownerID] || '').toLowerCase();
+                const ownerName = (owners[c.ownerID]?.name || '').toLowerCase();
 
                 return companyName.includes(searchTerm) ||
                     companyId.includes(searchTerm) ||
@@ -428,7 +431,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
         if (searchFields.ownerName && searchFields.ownerName !== searchFields.companyName) {
             const searchTerm = searchFields.ownerName.toLowerCase();
             filtered = filtered.filter(c => {
-                const ownerName = (owners[c.ownerID] || '').toLowerCase();
+                const ownerName = (owners[c.ownerID]?.name || '').toLowerCase();
                 return ownerName.includes(searchTerm);
             });
         }
@@ -665,34 +668,65 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                         flexShrink: 0
                                                     }}
                                                 >
-                                                    {company.logoUrl ? (
-                                                        <Box
-                                                            component="img"
-                                                            src={company.logoUrl}
-                                                            alt={`${company.name} logo`}
-                                                            sx={{
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                objectFit: 'cover'
-                                                            }}
-                                                            onError={(e) => {
-                                                                e.target.style.display = 'none';
-                                                                e.target.nextSibling.style.display = 'flex';
-                                                            }}
-                                                        />
-                                                    ) : null}
-                                                    <Box
-                                                        sx={{
-                                                            display: company.logoUrl ? 'none' : 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            width: '100%',
-                                                            height: '100%',
-                                                            color: '#6b7280'
-                                                        }}
-                                                    >
-                                                        <BusinessIcon sx={{ fontSize: '16px' }} />
-                                                    </Box>
+                                                    {(() => {
+                                                        // Priority: circle > light > legacy logoUrl > placeholder
+                                                        if (company.logos?.circle) {
+                                                            return (
+                                                                <Box
+                                                                    component="img"
+                                                                    src={company.logos.circle}
+                                                                    alt={`${company.name} logo`}
+                                                                    sx={{
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        objectFit: 'cover'
+                                                                    }}
+                                                                    onError={(e) => {
+                                                                        e.target.style.display = 'none';
+                                                                        e.target.nextSibling.style.display = 'flex';
+                                                                    }}
+                                                                />
+                                                            );
+                                                        } else if (company.logos?.light) {
+                                                            return (
+                                                                <Box
+                                                                    component="img"
+                                                                    src={company.logos.light}
+                                                                    alt={`${company.name} logo`}
+                                                                    sx={{
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        objectFit: 'cover'
+                                                                    }}
+                                                                    onError={(e) => {
+                                                                        e.target.style.display = 'none';
+                                                                        e.target.nextSibling.style.display = 'flex';
+                                                                    }}
+                                                                />
+                                                            );
+                                                        } else if (company.logoUrl) {
+                                                            return (
+                                                                <Box
+                                                                    component="img"
+                                                                    src={company.logoUrl}
+                                                                    alt={`${company.name} logo`}
+                                                                    sx={{
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        objectFit: 'cover'
+                                                                    }}
+                                                                    onError={(e) => {
+                                                                        e.target.style.display = 'none';
+                                                                        e.target.nextSibling.style.display = 'flex';
+                                                                    }}
+                                                                />
+                                                            );
+                                                        } else {
+                                                            return (
+                                                                <BusinessIcon sx={{ fontSize: '16px', color: '#6b7280' }} />
+                                                            );
+                                                        }
+                                                    })()}
                                                 </Box>
                                                 <Box>
                                                     <MuiLink
@@ -727,6 +761,7 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                                 <Avatar
+                                                    src={owners[company.ownerID]?.photoURL || undefined}
                                                     sx={{
                                                         width: 32,
                                                         height: 32,
@@ -735,13 +770,13 @@ const CompanyList = ({ isModal = false, onClose = null, showCloseButton = false 
                                                         fontWeight: 500
                                                     }}
                                                 >
-                                                    {owners[company.ownerID] ?
-                                                        owners[company.ownerID].split(' ').map(n => n[0]).join('').toUpperCase() :
+                                                    {owners[company.ownerID]?.name ?
+                                                        owners[company.ownerID].name.split(' ').map(n => n[0]).join('').toUpperCase() :
                                                         'NA'
                                                     }
                                                 </Avatar>
                                                 <Typography sx={{ fontSize: '12px' }}>
-                                                    {owners[company.ownerID] || 'No owner assigned'}
+                                                    {owners[company.ownerID]?.name || 'No owner assigned'}
                                                 </Typography>
                                             </Box>
                                         </TableCell>

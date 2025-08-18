@@ -35,7 +35,10 @@ import {
     Switch,
     Tabs,
     Tab,
-    Chip
+    Chip,
+    Menu,
+    ListItemIcon,
+    ListItemText
 } from '@mui/material';
 import {
     Close as CloseIcon,
@@ -45,7 +48,13 @@ import {
     DeleteOutline as DeleteOutlineIcon,
     CloudUpload as CloudUploadIcon,
     Delete as DeleteIcon,
-    Business as BusinessIcon
+    Business as BusinessIcon,
+    Person as PersonIcon,
+    Receipt as ReceiptIcon,
+    Palette as PaletteIcon,
+    Settings as SettingsIcon,
+    AdminPanelSettings as AdminIcon,
+    MoreVert as MoreVertIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, arrayUnion, arrayRemove, FieldValue } from 'firebase/firestore';
@@ -55,6 +64,8 @@ import { db } from '../../../firebase/firebase';
 import { useSnackbar } from 'notistack';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import { getAllAdditionalServices } from '../../../utils/serviceLevelUtils';
+import { getStateOptions, getStateLabel } from '../../../utils/stateUtils';
+import EmailChipsField from './EmailChipsField';
 
 const CompanyForm = () => {
     const { id: companyFirestoreId } = useParams();
@@ -65,6 +76,11 @@ const CompanyForm = () => {
     const [pageLoading, setPageLoading] = useState(isEditMode);
     const [saveLoading, setSaveLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [currentTab, setCurrentTab] = useState(0);
+
+    // Delete confirmation dialog and action menu
+    const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -101,6 +117,35 @@ const CompanyForm = () => {
             firstName: '', lastName: '', email: '', phone: '',
             address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA',
             nickname: 'Head Office', isDefault: true,
+        },
+        // NEW: Enhanced billing information for invoices
+        billingInfo: {
+            companyDisplayName: '', // For invoice header
+            taxNumber: '', // Full tax string (e.g., "GST#: 84606 8013 RT0001")
+            paymentInformation: '', // Custom payment info text for invoices (replaces hardcoded payment details)
+            accountsReceivable: {
+                firstName: '', lastName: '',
+                email: [], // Array of emails
+                phone: '',
+                address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA',
+                sameAsPayable: false
+            },
+            accountsPayable: {
+                firstName: '', lastName: '',
+                email: [], // Array of emails  
+                phone: '',
+                address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA'
+            }
+        },
+        // Brand colors for theming
+        brandColors: {
+            primary: '#3b82f6',
+            secondary: '#6b7280'
+        },
+        // Email template settings
+        emailSettings: {
+            headerText: '',
+            footerText: ''
         }
     });
     const [originalAdminUserIds, setOriginalAdminUserIds] = useState([]);
@@ -110,8 +155,7 @@ const CompanyForm = () => {
     const [allUsers, setAllUsers] = useState([]);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
-    // State for delete confirmation dialog
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    // State for delete confirmation dialog - moved to top
 
     // State for Service Levels Management
     const [globalServiceLevels, setGlobalServiceLevels] = useState([]);
@@ -127,7 +171,7 @@ const CompanyForm = () => {
     const [activeAdditionalServiceTab, setActiveAdditionalServiceTab] = useState('freight');
     const [additionalServiceCategoryFilter, setAdditionalServiceCategoryFilter] = useState('all');
 
-    const [sameAsMainContact, setSameAsMainContact] = useState(false);
+
 
     // Load global service levels from configuration
     const loadGlobalServiceLevels = useCallback(async () => {
@@ -403,6 +447,9 @@ const CompanyForm = () => {
                 }
                 const companyDataFromDb = companyDoc.data();
                 console.log("[fetchData] Fetched companyDataFromDb:", companyDataFromDb);
+                console.log("[DEBUG] billingInfo from database:", companyDataFromDb.billingInfo);
+                console.log("[DEBUG] AR email from database:", companyDataFromDb.billingInfo?.accountsReceivable?.email);
+                console.log("[DEBUG] AP email from database:", companyDataFromDb.billingInfo?.accountsPayable?.email);
 
                 let fetchedMainContact = { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true };
                 let fetchedBillingAddress = { firstName: '', lastName: '', email: '', phone: '', address1: '', address2: '', city: '', stateProv: '', zipPostal: '', country: 'CA', nickname: 'Head Office', isDefault: true };
@@ -455,7 +502,9 @@ const CompanyForm = () => {
                         dark: logos.dark || legacyLogo, // Use legacy logo as fallback for dark
                         light: logos.light || '',
                         circle: logos.circle || '',
-                        invoice: logos.invoice || ''
+                        invoice: logos.invoice || '',
+                        document: logos.document || '',
+                        email: logos.email || ''
                     },
                     status: companyDataFromDb.status || 'active',
                     ownerID: companyDataFromDb.ownerID || '',
@@ -472,6 +521,47 @@ const CompanyForm = () => {
                     },
                     mainContact: fetchedMainContact, // Set directly
                     billingAddress: fetchedBillingAddress,
+                    // NEW: Load billing info or set defaults
+                    billingInfo: {
+                        companyDisplayName: companyDataFromDb.billingInfo?.companyDisplayName || companyDataFromDb.name || '',
+                        taxNumber: companyDataFromDb.billingInfo?.taxNumber || '',
+                        paymentInformation: companyDataFromDb.billingInfo?.paymentInformation || '',
+                        accountsReceivable: {
+                            firstName: companyDataFromDb.billingInfo?.accountsReceivable?.firstName || '',
+                            lastName: companyDataFromDb.billingInfo?.accountsReceivable?.lastName || '',
+                            email: companyDataFromDb.billingInfo?.accountsReceivable?.email || [],
+                            phone: companyDataFromDb.billingInfo?.accountsReceivable?.phone || '',
+                            address1: companyDataFromDb.billingInfo?.accountsReceivable?.address1 || '',
+                            address2: companyDataFromDb.billingInfo?.accountsReceivable?.address2 || '',
+                            city: companyDataFromDb.billingInfo?.accountsReceivable?.city || '',
+                            stateProv: companyDataFromDb.billingInfo?.accountsReceivable?.stateProv || '',
+                            zipPostal: companyDataFromDb.billingInfo?.accountsReceivable?.zipPostal || '',
+                            country: companyDataFromDb.billingInfo?.accountsReceivable?.country || 'CA',
+                            sameAsPayable: companyDataFromDb.billingInfo?.accountsReceivable?.sameAsPayable || false
+                        },
+                        accountsPayable: {
+                            firstName: companyDataFromDb.billingInfo?.accountsPayable?.firstName || '',
+                            lastName: companyDataFromDb.billingInfo?.accountsPayable?.lastName || '',
+                            email: companyDataFromDb.billingInfo?.accountsPayable?.email || [],
+                            phone: companyDataFromDb.billingInfo?.accountsPayable?.phone || '',
+                            address1: companyDataFromDb.billingInfo?.accountsPayable?.address1 || '',
+                            address2: companyDataFromDb.billingInfo?.accountsPayable?.address2 || '',
+                            city: companyDataFromDb.billingInfo?.accountsPayable?.city || '',
+                            stateProv: companyDataFromDb.billingInfo?.accountsPayable?.stateProv || '',
+                            zipPostal: companyDataFromDb.billingInfo?.accountsPayable?.zipPostal || '',
+                            country: companyDataFromDb.billingInfo?.accountsPayable?.country || 'CA'
+                        }
+                    },
+                    // Load brand colors or set defaults
+                    brandColors: companyDataFromDb.brandColors || {
+                        primary: '#3b82f6',
+                        secondary: '#6b7280'
+                    },
+                    // Load email settings or set defaults
+                    emailSettings: companyDataFromDb.emailSettings || {
+                        headerText: '',
+                        footerText: ''
+                    }
                 }));
 
                 // Set multi-logo previews
@@ -568,14 +658,15 @@ const CompanyForm = () => {
     const handleMainContactChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => {
-            const updated = {
-                ...prev,
-                mainContact: { ...prev.mainContact, [name]: value }
-            };
-            if (!isEditMode && sameAsMainContact) {
-                updated.billingAddress = { ...updated.mainContact };
+            const updatedContact = { ...prev.mainContact, [name]: value };
+            // If country changes, reset state/province
+            if (name === 'country') {
+                updatedContact.stateProv = '';
             }
-            return updated;
+            return {
+                ...prev,
+                mainContact: updatedContact
+            };
         });
     };
 
@@ -584,6 +675,105 @@ const CompanyForm = () => {
         setFormData(prev => ({
             ...prev,
             billingAddress: { ...prev.billingAddress, [name]: value }
+        }));
+    };
+
+    // NEW: Enhanced billing info handlers
+    const handleBillingInfoChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            billingInfo: { ...prev.billingInfo, [name]: value }
+        }));
+    };
+
+    const handleAccountsReceivableChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => {
+            const updatedAccountsReceivable = { ...prev.billingInfo.accountsReceivable, [name]: value };
+            // If country changes, reset state/province
+            if (name === 'country') {
+                updatedAccountsReceivable.stateProv = '';
+            }
+            return {
+                ...prev,
+                billingInfo: {
+                    ...prev.billingInfo,
+                    accountsReceivable: updatedAccountsReceivable
+                }
+            };
+        });
+    };
+
+    const handleAccountsPayableChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => {
+            const updatedAccountsPayable = { ...prev.billingInfo.accountsPayable, [name]: value };
+            // If country changes, reset state/province
+            if (name === 'country') {
+                updatedAccountsPayable.stateProv = '';
+            }
+            return {
+                ...prev,
+                billingInfo: {
+                    ...prev.billingInfo,
+                    accountsPayable: updatedAccountsPayable
+                }
+            };
+        });
+    };
+
+    const handleSameAsPayableChange = (checked) => {
+        setFormData(prev => ({
+            ...prev,
+            billingInfo: {
+                ...prev.billingInfo,
+                accountsReceivable: {
+                    ...prev.billingInfo.accountsReceivable,
+                    sameAsPayable: checked,
+                    ...(checked ? {
+                        firstName: prev.billingInfo.accountsPayable.firstName,
+                        lastName: prev.billingInfo.accountsPayable.lastName,
+                        email: [...prev.billingInfo.accountsPayable.email],
+                        phone: prev.billingInfo.accountsPayable.phone,
+                        address1: prev.billingInfo.accountsPayable.address1,
+                        address2: prev.billingInfo.accountsPayable.address2,
+                        city: prev.billingInfo.accountsPayable.city,
+                        stateProv: prev.billingInfo.accountsPayable.stateProv,
+                        zipPostal: prev.billingInfo.accountsPayable.zipPostal,
+                        country: prev.billingInfo.accountsPayable.country
+                    } : {})
+                }
+            }
+        }));
+    };
+
+    // Email array handlers for AR/AP
+    const handleAddEmail = (contactType) => (email) => {
+        if (!email || !email.includes('@')) return;
+
+        setFormData(prev => ({
+            ...prev,
+            billingInfo: {
+                ...prev.billingInfo,
+                [contactType]: {
+                    ...prev.billingInfo[contactType],
+                    email: [...prev.billingInfo[contactType].email, email]
+                }
+            }
+        }));
+    };
+
+    const handleRemoveEmail = (contactType) => (emailToRemove) => {
+        setFormData(prev => ({
+            ...prev,
+            billingInfo: {
+                ...prev.billingInfo,
+                [contactType]: {
+                    ...prev.billingInfo[contactType],
+                    email: prev.billingInfo[contactType].email.filter(email => email !== emailToRemove)
+                }
+            }
         }));
     };
 
@@ -974,6 +1164,18 @@ const CompanyForm = () => {
                 ownerID: formData.ownerID,
                 availableServiceLevels: formData.availableServiceLevels, // Include service level restrictions
                 availableAdditionalServices: formData.availableAdditionalServices, // Include additional services restrictions
+                // NEW: Enhanced billing information for invoices
+                billingInfo: {
+                    companyDisplayName: formData.billingInfo.companyDisplayName ? formData.billingInfo.companyDisplayName.trim() : formData.name.trim(),
+                    taxNumber: formData.billingInfo.taxNumber ? formData.billingInfo.taxNumber.trim() : '',
+                    paymentInformation: formData.billingInfo.paymentInformation ? formData.billingInfo.paymentInformation.trim() : '',
+                    accountsReceivable: formData.billingInfo.accountsReceivable,
+                    accountsPayable: formData.billingInfo.accountsPayable
+                },
+                // Brand colors for theming
+                brandColors: formData.brandColors,
+                // Email template settings
+                emailSettings: formData.emailSettings,
                 updatedAt: now,
             };
             if (!isEditMode) {
@@ -1153,6 +1355,9 @@ const CompanyForm = () => {
     const handleDeleteCompany = async () => {
         if (!companyFirestoreId || !formData.companyID) return;
         setSaveLoading(true);
+        setActionMenuAnchor(null);
+        setDeleteConfirmOpen(false);
+
         try {
             // 1. Delete company doc
             await deleteDoc(doc(db, 'companies', companyFirestoreId));
@@ -1171,24 +1376,20 @@ const CompanyForm = () => {
         }
     };
 
-    // Helper to compare main contact and billing address fields
-    const isBillingSameAsMainContact = (main, billing) => {
-        const keys = [
-            'firstName', 'lastName', 'email', 'phone',
-            'address1', 'address2', 'city', 'stateProv', 'zipPostal', 'country', 'nickname', 'isDefault'
-        ];
-        return keys.every(key => (main?.[key] || '') === (billing?.[key] || ''));
+    const handleActionMenuOpen = (event) => {
+        setActionMenuAnchor(event.currentTarget);
     };
 
-    // Set sameAsMainContact to true by default on create, or on edit if billing matches main contact
-    useEffect(() => {
-        if (!isEditMode) {
-            setSameAsMainContact(true);
-        } else if (isEditMode && initialLoadComplete) {
-            setSameAsMainContact(isBillingSameAsMainContact(formData.mainContact, formData.billingAddress));
-        }
-        // eslint-disable-next-line
-    }, [isEditMode, initialLoadComplete]);
+    const handleActionMenuClose = () => {
+        setActionMenuAnchor(null);
+    };
+
+    const handleDeleteClick = () => {
+        setActionMenuAnchor(null);
+        setDeleteConfirmOpen(true);
+    };
+
+
 
     // Add debounced company ID check
     useEffect(() => {
@@ -1219,6 +1420,11 @@ const CompanyForm = () => {
         return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
     }
 
+    // Tab change handler
+    const handleTabChange = (event, newValue) => {
+        setCurrentTab(newValue);
+    };
+
     return (
         <Box sx={{
             display: 'flex',
@@ -1229,15 +1435,65 @@ const CompanyForm = () => {
             <Box sx={{ p: 3 }}>
                 {/* Title and Actions Row */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
-                            {isEditMode ? `Edit Company: ${formData.name || 'Loading...'}` : 'Add New Company'}
-                        </Typography>
-                        {/* Breadcrumb */}
-                        <AdminBreadcrumb
-                            entityName={isEditMode ? formData.name : null}
-                            showEntityName={isEditMode}
-                        />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {/* Company Logo */}
+                        {isEditMode && (
+                            <Box sx={{
+                                width: 60,
+                                height: 60,
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                border: '1px solid #e5e7eb',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                bgcolor: '#f9fafb'
+                            }}>
+                                {(() => {
+                                    // Priority: circle > light > placeholder
+                                    if (formData.logos?.circle) {
+                                        return (
+                                            <img
+                                                src={formData.logos.circle}
+                                                alt={`${formData.name} logo`}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover'
+                                                }}
+                                            />
+                                        );
+                                    } else if (formData.logos?.light) {
+                                        return (
+                                            <img
+                                                src={formData.logos.light}
+                                                alt={`${formData.name} logo`}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover'
+                                                }}
+                                            />
+                                        );
+                                    } else {
+                                        return (
+                                            <BusinessIcon sx={{ fontSize: 32, color: '#9ca3af' }} />
+                                        );
+                                    }
+                                })()}
+                            </Box>
+                        )}
+
+                        <Box>
+                            <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 2 }}>
+                                {isEditMode ? `Edit Company: ${formData.name || 'Loading...'}` : 'Add New Company'}
+                            </Typography>
+                            {/* Breadcrumb */}
+                            <AdminBreadcrumb
+                                entityName={isEditMode ? formData.name : null}
+                                showEntityName={isEditMode}
+                            />
+                        </Box>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                         <Button
@@ -1259,13 +1515,71 @@ const CompanyForm = () => {
                             form="company-form-id"
                             sx={{ fontSize: '12px' }}
                         >
-                            {saveLoading ? <CircularProgress size={16} color="inherit" /> : (isEditMode ? 'Save Changes' : 'Create Company')}
+                            {saveLoading ? <CircularProgress size={16} color="inherit" /> : (isEditMode ? 'Save' : 'Create Company')}
                         </Button>
+                        {isEditMode && (
+                            <IconButton
+                                size="small"
+                                onClick={handleActionMenuOpen}
+                                disabled={saveLoading || pageLoading}
+                                sx={{
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '6px'
+                                }}
+                            >
+                                <MoreVertIcon sx={{ fontSize: '16px' }} />
+                            </IconButton>
+                        )}
                     </Box>
                 </Box>
             </Box>
 
-            {/* Form Section */}
+            {/* Tabs Navigation */}
+            <Box sx={{ borderBottom: '1px solid #e5e7eb', bgcolor: '#ffffff' }}>
+                <Tabs
+                    value={currentTab}
+                    onChange={handleTabChange}
+                    sx={{
+                        px: 3,
+                        '& .MuiTab-root': {
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            textTransform: 'none',
+                            minWidth: 'auto',
+                            px: 2,
+                            py: 1.5
+                        }
+                    }}
+                >
+                    <Tab
+                        icon={<BusinessIcon sx={{ fontSize: '16px' }} />}
+                        label="Company Info"
+                        iconPosition="start"
+                    />
+                    <Tab
+                        icon={<PersonIcon sx={{ fontSize: '16px' }} />}
+                        label="Contact & Billing"
+                        iconPosition="start"
+                    />
+                    <Tab
+                        icon={<PaletteIcon sx={{ fontSize: '16px' }} />}
+                        label="Theme & Branding"
+                        iconPosition="start"
+                    />
+                    <Tab
+                        icon={<SettingsIcon sx={{ fontSize: '16px' }} />}
+                        label="Services & Restrictions"
+                        iconPosition="start"
+                    />
+                    <Tab
+                        icon={<AdminIcon sx={{ fontSize: '16px' }} />}
+                        label="Company Admins"
+                        iconPosition="start"
+                    />
+                </Tabs>
+            </Box>
+
+            {/* Tab Content */}
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                 <Box sx={{ width: '100%', px: 3, py: 3 }}>
                     <Paper
@@ -1282,972 +1596,1192 @@ const CompanyForm = () => {
                     >
                         {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-                        <Grid container spacing={3}>
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
-                                    Company Information
-                                </Typography>
-                            </Grid>
+                        {/* Tab 0: Company Information */}
+                        {currentTab === 0 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                        Company Information
+                                    </Typography>
+                                </Grid>
 
-                            {/* Multi-Logo Section */}
-                            <Grid item xs={12}>
-                                <Box sx={{
-                                    border: '2px dashed #e5e7eb',
-                                    borderRadius: '8px',
-                                    backgroundColor: '#f9fafb',
-                                    overflow: 'hidden'
-                                }}>
-                                    {/* Header */}
-                                    <Box sx={{ p: 3, pb: 0 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
-                                            Company Logos
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                                            Upload different versions of your company logo for various usage contexts
-                                        </Typography>
-                                    </Box>
 
-                                    {/* Logo Tabs */}
-                                    <Box sx={{ px: 3 }}>
-                                        <Tabs
-                                            value={activeLogoTab}
-                                            onChange={(e, newValue) => setActiveLogoTab(newValue)}
-                                            sx={{
-                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
-                                                '& .MuiTab-root': {
-                                                    fontSize: '12px',
-                                                    textTransform: 'none',
-                                                    minWidth: 120,
-                                                    '&.Mui-selected': { color: '#7c3aed' }
-                                                }
-                                            }}
-                                        >
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Dark Backgrounds
-                                                        {logoPreviews.dark && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Light Backgrounds
-                                                        {logoPreviews.light && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Circle Logo
-                                                        {logoPreviews.circle && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Invoice Logo
-                                                        {logoPreviews.invoice && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Document Logo
-                                                        {logoPreviews.document && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                            <Tab
-                                                label={
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        Email Logo
-                                                        {logoPreviews.email && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
-                                                    </Box>
-                                                }
-                                            />
-                                        </Tabs>
-                                    </Box>
-
-                                    {/* Tab Content */}
-                                    <Box sx={{ p: 3 }}>
-                                        {renderLogoTab()}
-                                    </Box>
-
-                                    {/* Global Logo Guidelines */}
-                                    <Box sx={{ px: 3, pb: 3 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
-                                            <strong>Guidelines:</strong> • Recommended size: 400x400 pixels or larger • Supported formats: JPEG, PNG, GIF, WebP • Maximum file size: 5MB per logo
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Company Name"
-                                    name="name"
-                                    value={formData.name}
-                                    onChange={handleCompanyDataChange}
-                                    required
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Company ID"
-                                    name="companyID"
-                                    value={formData.companyID}
-                                    onChange={handleCompanyDataChange}
-                                    required
-                                    disabled={isEditMode && formData.companyID !== ''}
-                                    error={Boolean(companyIdError)}
-                                    helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : 'Human-readable ID (e.g., COMPANY-NAME)')}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Website URL"
-                                    name="website"
-                                    type="url"
-                                    value={formData.website}
-                                    onChange={handleCompanyDataChange}
-                                    placeholder="https://www.example.com"
-                                    helperText="Company website (optional)"
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                        '& .MuiFormHelperText-root': { fontSize: '11px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <FormControl fullWidth size="small" required>
-                                    <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
-                                    <Select
-                                        name="status"
-                                        value={formData.status}
-                                        label="Status"
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Company Name"
+                                        name="name"
+                                        value={formData.name}
                                         onChange={handleCompanyDataChange}
-                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                    >
-                                        <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
-                                        <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
-                                    </Select>
-                                </FormControl>
+                                        required
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Company ID"
+                                        name="companyID"
+                                        value={formData.companyID}
+                                        onChange={handleCompanyDataChange}
+                                        required
+                                        disabled={isEditMode && formData.companyID !== ''}
+                                        error={Boolean(companyIdError)}
+                                        helperText={companyIdError || (isCheckingCompanyId ? 'Checking availability...' : 'Human-readable ID (e.g., COMPANY-NAME)')}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Website URL"
+                                        name="website"
+                                        type="url"
+                                        value={formData.website}
+                                        onChange={handleCompanyDataChange}
+                                        placeholder="https://www.example.com"
+                                        helperText="Company website (optional)"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth size="small" required>
+                                        <InputLabel sx={{ fontSize: '12px' }}>Status</InputLabel>
+                                        <Select
+                                            name="status"
+                                            value={formData.status}
+                                            label="Status"
+                                            onChange={handleCompanyDataChange}
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="active" sx={{ fontSize: '12px' }}>Active</MenuItem>
+                                            <MenuItem value="inactive" sx={{ fontSize: '12px' }}>Inactive</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Autocomplete
+                                        size="small"
+                                        options={allUsers}
+                                        getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
+                                        value={allUsers.find(u => u.id === formData.ownerID) || null}
+                                        onChange={(event, newValue) => handleAutocompleteChange('ownerID', newValue)}
+                                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                label="Company Owner"
+                                                required
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        )}
+                                    />
+                                </Grid>
                             </Grid>
-                            <Grid item xs={12} md={6}>
-                                <Autocomplete
-                                    size="small"
-                                    options={allUsers}
-                                    getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
-                                    value={allUsers.find(u => u.id === formData.ownerID) || null}
-                                    onChange={(event, newValue) => handleAutocompleteChange('ownerID', newValue)}
-                                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                                    renderInput={(params) => (
-                                        <TextField
-                                            {...params}
-                                            label="Company Owner"
-                                            required
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    )}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Company Admins
-                                </Typography>
-                                <Autocomplete
-                                    multiple
-                                    size="small"
-                                    id="company-adminUserIds-autocomplete"
-                                    options={allUsers}
-                                    getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
-                                    value={allUsers.filter(u => formData.adminUserIdsForForm.includes(u.id))}
-                                    onChange={(event, newValue) => handleAutocompleteChange('adminUserIdsForForm', newValue)}
-                                    filterSelectedOptions
-                                    renderInput={(params) => (
-                                        <TextField
-                                            {...params}
-                                            variant="outlined"
-                                            label="Select Company Admins"
-                                            placeholder="Users who can manage this company's settings/users"
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    )}
-                                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                                />
-                            </Grid>
+                        )}
 
-                            {/* Main Contact Fields */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Main Contact
-                                </Typography>
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact First Name"
-                                    name="firstName"
-                                    value={formData.mainContact.firstName || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Last Name"
-                                    name="lastName"
-                                    value={formData.mainContact.lastName || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Email"
-                                    name="email"
-                                    type="email"
-                                    value={formData.mainContact.email || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={6}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Contact Phone"
-                                    name="phone"
-                                    value={formData.mainContact.phone || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Address Line 1"
-                                    name="address1"
-                                    value={formData.mainContact.address1 || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Address Line 2"
-                                    name="address2"
-                                    value={formData.mainContact.address2 || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={4}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="City"
-                                    name="city"
-                                    value={formData.mainContact.city || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="State/Province"
-                                    name="stateProv"
-                                    value={formData.mainContact.stateProv || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={3}>
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Zip/Postal Code"
-                                    name="zipPostal"
-                                    value={formData.mainContact.zipPostal || ''}
-                                    onChange={handleMainContactChange}
-                                    sx={{
-                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                        '& .MuiInputBase-input': { fontSize: '12px' }
-                                    }}
-                                />
-                            </Grid>
-                            <Grid item xs={12} md={2}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
-                                    <Select
-                                        name="country"
-                                        value={formData.mainContact.country || 'CA'}
-                                        label="Country"
+                        {/* Tab 1: Contact & Billing */}
+                        {currentTab === 1 && (
+                            <Grid container spacing={3}>
+                                {/* Main Contact Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                        Main Contact
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Contact First Name"
+                                        name="firstName"
+                                        value={formData.mainContact.firstName || ''}
                                         onChange={handleMainContactChange}
-                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                    >
-                                        <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
-                                        <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-
-                            {/* Billing Address Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Billing Address
-                                </Typography>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            size="small"
-                                            checked={sameAsMainContact}
-                                            onChange={e => {
-                                                setSameAsMainContact(e.target.checked);
-                                                if (e.target.checked) {
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        billingAddress: Object.fromEntries(Object.entries(prev.mainContact).filter(([key]) => key !== 'id'))
-                                                    }));
-                                                }
-                                            }}
-                                        />
-                                    }
-                                    label={<Typography sx={{ fontSize: '12px' }}>Same as Main Contact</Typography>}
-                                />
-                            </Grid>
-                            {!sameAsMainContact && (
-                                <>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing First Name"
-                                            name="firstName"
-                                            value={formData.billingAddress.firstName || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Last Name"
-                                            name="lastName"
-                                            value={formData.billingAddress.lastName || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Email"
-                                            name="email"
-                                            type="email"
-                                            value={formData.billingAddress.email || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Phone"
-                                            name="phone"
-                                            value={formData.billingAddress.phone || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Address Line 1"
-                                            name="address1"
-                                            value={formData.billingAddress.address1 || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Address Line 2"
-                                            name="address2"
-                                            value={formData.billingAddress.address2 || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={4}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing City"
-                                            name="city"
-                                            value={formData.billingAddress.city || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing State/Province"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Contact Last Name"
+                                        name="lastName"
+                                        value={formData.mainContact.lastName || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Contact Email"
+                                        name="email"
+                                        type="email"
+                                        value={formData.mainContact.email || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Contact Phone"
+                                        name="phone"
+                                        value={formData.mainContact.phone || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Address Line 1"
+                                        name="address1"
+                                        value={formData.mainContact.address1 || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Address Line 2"
+                                        name="address2"
+                                        value={formData.mainContact.address2 || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="City"
+                                        name="city"
+                                        value={formData.mainContact.city || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>
+                                            {getStateLabel(formData.mainContact.country || 'CA')}
+                                        </InputLabel>
+                                        <Select
                                             name="stateProv"
-                                            value={formData.billingAddress.stateProv || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={3}>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Zip/Postal Code"
-                                            name="zipPostal"
-                                            value={formData.billingAddress.zipPostal || ''}
-                                            onChange={handleBillingAddressChange}
-                                            sx={{
-                                                '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                '& .MuiInputBase-input': { fontSize: '12px' }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={12} md={2}>
-                                        <FormControl fullWidth size="small">
-                                            <InputLabel sx={{ fontSize: '12px' }}>Billing Country</InputLabel>
-                                            <Select
-                                                name="country"
-                                                value={formData.billingAddress.country || 'CA'}
-                                                label="Billing Country"
-                                                onChange={handleBillingAddressChange}
-                                                sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                            value={formData.mainContact.stateProv || ''}
+                                            label={getStateLabel(formData.mainContact.country || 'CA')}
+                                            onChange={handleMainContactChange}
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            {getStateOptions(formData.mainContact.country || 'CA').map((option) => (
+                                                <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
+                                                    {option.label}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Zip/Postal Code"
+                                        name="zipPostal"
+                                        value={formData.mainContact.zipPostal || ''}
+                                        onChange={handleMainContactChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={2}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>Country</InputLabel>
+                                        <Select
+                                            name="country"
+                                            value={formData.mainContact.country || 'CA'}
+                                            label="Country"
+                                            onChange={handleMainContactChange}
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                            <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+
+                                {/* Invoice & Billing Information Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 4 }}>
+                                        Invoice & Billing Information
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                        Configure company information that will appear on generated invoices and billing documents.
+                                    </Typography>
+                                </Grid>
+
+                                {/* Company Display Name and Tax Number */}
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Company Display Name (for invoices)"
+                                        name="companyDisplayName"
+                                        value={formData.billingInfo?.companyDisplayName || ''}
+                                        onChange={handleBillingInfoChange}
+                                        placeholder={formData.name || 'Enter company name for invoices'}
+                                        helperText="Company name as it appears on invoices (defaults to company name)"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Tax Number"
+                                        name="taxNumber"
+                                        value={formData.billingInfo?.taxNumber || ''}
+                                        onChange={handleBillingInfoChange}
+                                        placeholder="GST#: 84606 8013 RT0001"
+                                        helperText="Full tax number string as it should appear on invoices"
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Payment Information for Invoices */}
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Payment Information for Invoices"
+                                        name="paymentInformation"
+                                        value={formData.billingInfo?.paymentInformation || ''}
+                                        onChange={handleBillingInfoChange}
+                                        multiline
+                                        rows={8}
+                                        placeholder={`FOR E-TRANSFER PAYMENT,
+Please send to: ar@yourcompany.com
+
+FOR EFT PAYMENT,
+Bank name: Your Bank Name
+Bank address: Your Bank Address
+Account Name: Your Company Name
+Account address: Your Address
+Bank #: 000 | Branch Transit #: 00000
+Account #: 0000000 | US Account #: 0000000
+Payment notice sent to: ar@yourcompany.com
+
+We also accept credit card payment with a fee.`}
+                                        helperText="Custom payment instructions that will appear at the bottom of invoices. If left blank, no payment section will appear on invoices."
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' },
+                                            '& .MuiFormHelperText-root': { fontSize: '11px' }
+                                        }}
+                                    />
+                                </Grid>
+
+                                {/* Accounts Payable Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2, mt: 3 }}>
+                                        Accounts Payable Contact
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP First Name"
+                                        name="firstName"
+                                        value={formData.billingInfo?.accountsPayable?.firstName || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP Last Name"
+                                        name="lastName"
+                                        value={formData.billingInfo?.accountsPayable?.lastName || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <EmailChipsField
+                                        label="AP Email Addresses"
+                                        emails={formData.billingInfo?.accountsPayable?.email || []}
+                                        onAddEmail={handleAddEmail('accountsPayable')}
+                                        onRemoveEmail={handleRemoveEmail('accountsPayable')}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP Phone"
+                                        name="phone"
+                                        value={formData.billingInfo?.accountsPayable?.phone || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP Address Line 1"
+                                        name="address1"
+                                        value={formData.billingInfo?.accountsPayable?.address1 || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP Address Line 2"
+                                        name="address2"
+                                        value={formData.billingInfo?.accountsPayable?.address2 || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP City"
+                                        name="city"
+                                        value={formData.billingInfo?.accountsPayable?.city || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>
+                                            AP {getStateLabel(formData.billingInfo?.accountsPayable?.country || 'CA')}
+                                        </InputLabel>
+                                        <Select
+                                            name="stateProv"
+                                            value={formData.billingInfo?.accountsPayable?.stateProv || ''}
+                                            label={`AP ${getStateLabel(formData.billingInfo?.accountsPayable?.country || 'CA')}`}
+                                            onChange={handleAccountsPayableChange}
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            {getStateOptions(formData.billingInfo?.accountsPayable?.country || 'CA').map((option) => (
+                                                <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
+                                                    {option.label}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={2}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="AP Zip/Postal"
+                                        name="zipPostal"
+                                        value={formData.billingInfo?.accountsPayable?.zipPostal || ''}
+                                        onChange={handleAccountsPayableChange}
+                                        sx={{
+                                            '& .MuiInputLabel-root': { fontSize: '12px' },
+                                            '& .MuiInputBase-input': { fontSize: '12px' }
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={2}>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel sx={{ fontSize: '12px' }}>AP Country</InputLabel>
+                                        <Select
+                                            name="country"
+                                            value={formData.billingInfo?.accountsPayable?.country || 'CA'}
+                                            label="AP Country"
+                                            onChange={handleAccountsPayableChange}
+                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                        >
+                                            <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                            <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+
+                                {/* Accounts Receivable Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2, mt: 3 }}>
+                                        Accounts Receivable Contact (appears on invoices)
+                                    </Typography>
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                size="small"
+                                                checked={formData.billingInfo?.accountsReceivable?.sameAsPayable || false}
+                                                onChange={e => handleSameAsPayableChange(e.target.checked)}
+                                            />
+                                        }
+                                        label={<Typography sx={{ fontSize: '12px' }}>Same as Accounts Payable</Typography>}
+                                        sx={{ mb: 2 }}
+                                    />
+                                </Grid>
+
+                                {!formData.billingInfo?.accountsReceivable?.sameAsPayable && (
+                                    <>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR First Name"
+                                                name="firstName"
+                                                value={formData.billingInfo?.accountsReceivable?.firstName || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR Last Name"
+                                                name="lastName"
+                                                value={formData.billingInfo?.accountsReceivable?.lastName || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <EmailChipsField
+                                                label="AR Email Addresses"
+                                                emails={formData.billingInfo?.accountsReceivable?.email || []}
+                                                onAddEmail={handleAddEmail('accountsReceivable')}
+                                                onRemoveEmail={handleRemoveEmail('accountsReceivable')}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR Phone"
+                                                name="phone"
+                                                value={formData.billingInfo?.accountsReceivable?.phone || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR Address Line 1"
+                                                name="address1"
+                                                value={formData.billingInfo?.accountsReceivable?.address1 || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR Address Line 2"
+                                                name="address2"
+                                                value={formData.billingInfo?.accountsReceivable?.address2 || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR City"
+                                                name="city"
+                                                value={formData.billingInfo?.accountsReceivable?.city || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={4}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>
+                                                    AR {getStateLabel(formData.billingInfo?.accountsReceivable?.country || 'CA')}
+                                                </InputLabel>
+                                                <Select
+                                                    name="stateProv"
+                                                    value={formData.billingInfo?.accountsReceivable?.stateProv || ''}
+                                                    label={`AR ${getStateLabel(formData.billingInfo?.accountsReceivable?.country || 'CA')}`}
+                                                    onChange={handleAccountsReceivableChange}
+                                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                >
+                                                    {getStateOptions(formData.billingInfo?.accountsReceivable?.country || 'CA').map((option) => (
+                                                        <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
+                                                            {option.label}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                        <Grid item xs={12} md={2}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="AR Zip/Postal"
+                                                name="zipPostal"
+                                                value={formData.billingInfo?.accountsReceivable?.zipPostal || ''}
+                                                onChange={handleAccountsReceivableChange}
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={2}>
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel sx={{ fontSize: '12px' }}>AR Country</InputLabel>
+                                                <Select
+                                                    name="country"
+                                                    value={formData.billingInfo?.accountsReceivable?.country || 'CA'}
+                                                    label="AR Country"
+                                                    onChange={handleAccountsReceivableChange}
+                                                    sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                >
+                                                    <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
+                                                    <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Grid>
+                                    </>
+                                )}
+                            </Grid>
+                        )}
+
+                        {/* Placeholder for other tabs - will implement incrementally */}
+                        {currentTab === 2 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                        Theme & Branding
+                                    </Typography>
+                                </Grid>
+
+                                {/* Multi-Logo Section */}
+                                <Grid item xs={12}>
+                                    <Box sx={{
+                                        border: '2px dashed #e5e7eb',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#f9fafb',
+                                        overflow: 'hidden'
+                                    }}>
+                                        {/* Header */}
+                                        <Box sx={{ p: 3, pb: 0 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                                Company Logos
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
+                                                Upload different versions of your company logo for various usage contexts
+                                            </Typography>
+                                        </Box>
+
+                                        {/* Logo Tabs */}
+                                        <Box sx={{ px: 3 }}>
+                                            <Tabs
+                                                value={activeLogoTab}
+                                                onChange={(e, newValue) => setActiveLogoTab(newValue)}
+                                                sx={{
+                                                    '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
+                                                    '& .MuiTab-root': {
+                                                        fontSize: '12px',
+                                                        textTransform: 'none',
+                                                        minWidth: 120,
+                                                        '&.Mui-selected': { color: '#7c3aed' }
+                                                    }
+                                                }}
                                             >
-                                                <MenuItem value="CA" sx={{ fontSize: '12px' }}>Canada</MenuItem>
-                                                <MenuItem value="US" sx={{ fontSize: '12px' }}>United States</MenuItem>
-                                            </Select>
-                                        </FormControl>
-                                    </Grid>
-                                </>
-                            )}
-
-                            {/* Available Service Levels Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Available Service Levels
-                                </Typography>
-                                <Box sx={{
-                                    border: '2px dashed #e5e7eb',
-                                    borderRadius: '8px',
-                                    backgroundColor: '#f9fafb',
-                                    overflow: 'hidden'
-                                }}>
-                                    {/* Header */}
-                                    <Box sx={{ p: 3, pb: 0 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            Service Level Restrictions
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                                            By default, this company has access to all service levels. Enable restrictions to limit available service levels.
-                                        </Typography>
-
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    size="small"
-                                                    checked={formData.availableServiceLevels.enabled}
-                                                    onChange={(e) => handleServiceLevelsToggle(e.target.checked)}
-                                                    sx={{
-                                                        '& .MuiSwitch-switchBase.Mui-checked': {
-                                                            color: '#7c3aed',
-                                                        },
-                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                            backgroundColor: '#7c3aed',
-                                                        },
-                                                    }}
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Dark Backgrounds
+                                                            {logoPreviews.dark && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
                                                 />
-                                            }
-                                            label={
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    Restrict available service levels for this company
-                                                </Typography>
-                                            }
-                                        />
-                                    </Box>
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Light Backgrounds
+                                                            {logoPreviews.light && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
+                                                />
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Circle Logo
+                                                            {logoPreviews.circle && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
+                                                />
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Invoice Logo
+                                                            {logoPreviews.invoice && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
+                                                />
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Document Logo
+                                                            {logoPreviews.document && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
+                                                />
+                                                <Tab
+                                                    label={
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            Email Logo
+                                                            {logoPreviews.email && <Chip size="small" label="✓" sx={{ height: 16, fontSize: '10px' }} />}
+                                                        </Box>
+                                                    }
+                                                />
+                                            </Tabs>
+                                        </Box>
 
-                                    {/* Service Level Selection - Only show when restrictions are enabled */}
-                                    {formData.availableServiceLevels.enabled && (
+                                        {/* Tab Content */}
+                                        <Box sx={{ p: 3 }}>
+                                            {renderLogoTab()}
+                                        </Box>
+
+                                        {/* Global Logo Guidelines */}
                                         <Box sx={{ px: 3, pb: 3 }}>
+                                            <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
+                                                <strong>Guidelines:</strong> • Recommended size: 400x400 pixels or larger • Supported formats: JPEG, PNG, GIF, WebP • Maximum file size: 5MB per logo
+                                            </Typography>
+                                        </Box>
+                                    </Box>
+                                </Grid>
+
+                                {/* Brand Colors Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                        Brand Colors
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} sm={6} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Primary Brand Color"
+                                                value={formData.brandColors?.primary || '#3b82f6'}
+                                                onChange={(e) => setFormData(prev => ({
+                                                    ...prev,
+                                                    brandColors: {
+                                                        ...prev.brandColors,
+                                                        primary: e.target.value
+                                                    }
+                                                }))}
+                                                type="color"
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                InputLabelProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                helperText="Primary color for company branding"
+                                                FormHelperTextProps={{
+                                                    sx: { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} sm={6} md={4}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Secondary Brand Color"
+                                                value={formData.brandColors?.secondary || '#6b7280'}
+                                                onChange={(e) => setFormData(prev => ({
+                                                    ...prev,
+                                                    brandColors: {
+                                                        ...prev.brandColors,
+                                                        secondary: e.target.value
+                                                    }
+                                                }))}
+                                                type="color"
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                InputLabelProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                helperText="Secondary color for accents"
+                                                FormHelperTextProps={{
+                                                    sx: { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+
+                                {/* Email Templates Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                        Email Template Settings
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Email Header Text"
+                                                value={formData.emailSettings?.headerText || ''}
+                                                onChange={(e) => setFormData(prev => ({
+                                                    ...prev,
+                                                    emailSettings: {
+                                                        ...prev.emailSettings,
+                                                        headerText: e.target.value
+                                                    }
+                                                }))}
+                                                multiline
+                                                rows={2}
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                InputLabelProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                helperText="Custom header text for company emails"
+                                                FormHelperTextProps={{
+                                                    sx: { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Email Footer Text"
+                                                value={formData.emailSettings?.footerText || ''}
+                                                onChange={(e) => setFormData(prev => ({
+                                                    ...prev,
+                                                    emailSettings: {
+                                                        ...prev.emailSettings,
+                                                        footerText: e.target.value
+                                                    }
+                                                }))}
+                                                multiline
+                                                rows={2}
+                                                InputProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                InputLabelProps={{
+                                                    sx: { fontSize: '12px' }
+                                                }}
+                                                helperText="Custom footer text for company emails"
+                                                FormHelperTextProps={{
+                                                    sx: { fontSize: '11px' }
+                                                }}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+                        )}
+
+                        {currentTab === 3 && (
+                            <Grid container spacing={3}>
+                                {/* Available Service Levels Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                        Available Service Levels
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                        Configure service level restrictions for this company. When enabled, only selected service levels will be available when creating shipments.
+                                    </Typography>
+
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={formData.availableServiceLevels?.enabled || false}
+                                                onChange={(e) => handleServiceLevelsToggle(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                Enable service level restrictions
+                                            </Typography>
+                                        }
+                                        sx={{ mb: 2 }}
+                                    />
+
+                                    {(formData.availableServiceLevels?.enabled || false) && (
+                                        <Box sx={{ mt: 2 }}>
                                             {serviceLevelsLoading ? (
-                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                                                    <CircularProgress size={24} sx={{ color: '#7c3aed' }} />
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <CircularProgress size={16} />
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        Loading service levels...
+                                                    </Typography>
                                                 </Box>
                                             ) : (
                                                 <>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
-                                                        Select which service levels this company can use when creating shipments:
+                                                    {/* Freight Service Levels */}
+                                                    <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                        Freight Service Levels
                                                     </Typography>
-
-                                                    {/* Service Level Tabs */}
-                                                    <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                                                        <Tabs
-                                                            value={activeServiceLevelTab}
-                                                            onChange={(e, newValue) => setActiveServiceLevelTab(newValue)}
-                                                            sx={{
-                                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
-                                                                '& .MuiTab-root': {
-                                                                    fontSize: '12px',
-                                                                    textTransform: 'none',
-                                                                    minWidth: 100,
-                                                                    '&.Mui-selected': { color: '#7c3aed' }
-                                                                }
-                                                            }}
-                                                        >
-                                                            <Tab
-                                                                label={`Freight (${getFilteredServiceLevels('freight').length})`}
-                                                                value="freight"
-                                                            />
-                                                            <Tab
-                                                                label={`Courier (${getFilteredServiceLevels('courier').length})`}
-                                                                value="courier"
-                                                            />
-                                                        </Tabs>
-                                                    </Box>
-
-                                                    {/* Service Level Checkboxes */}
-                                                    <Box sx={{ mt: 2 }}>
-                                                        {getFilteredServiceLevels(activeServiceLevelTab).length > 0 ? (
-                                                            <Grid container spacing={1}>
-                                                                {getFilteredServiceLevels(activeServiceLevelTab).map((serviceLevel) => (
-                                                                    <Grid item xs={12} sm={6} md={4} key={serviceLevel.id}>
-                                                                        <FormControlLabel
-                                                                            control={
-                                                                                <Checkbox
-                                                                                    size="small"
-                                                                                    checked={isServiceLevelSelected(serviceLevel, activeServiceLevelTab)}
-                                                                                    onChange={() => handleServiceLevelToggle(serviceLevel, activeServiceLevelTab)}
-                                                                                    sx={{
-                                                                                        '&.Mui-checked': {
-                                                                                            color: '#7c3aed',
-                                                                                        },
-                                                                                    }}
-                                                                                />
-                                                                            }
-                                                                            label={
-                                                                                <Box>
-                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                        {serviceLevel.label}
-                                                                                    </Typography>
-                                                                                    <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                        {serviceLevel.code}
-                                                                                    </Typography>
-                                                                                    {serviceLevel.description && (
-                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                            {serviceLevel.description}
-                                                                                        </Typography>
-                                                                                    )}
-                                                                                </Box>
-                                                                            }
+                                                    <Grid container spacing={1} sx={{ mb: 3 }}>
+                                                        {getFilteredServiceLevels('freight').map((serviceLevel) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={serviceLevel.id}>
+                                                                <FormControlLabel
+                                                                    control={
+                                                                        <Checkbox
+                                                                            checked={isServiceLevelSelected(serviceLevel, 'freight')}
+                                                                            onChange={() => handleServiceLevelToggle(serviceLevel, 'freight')}
+                                                                            size="small"
                                                                         />
-                                                                    </Grid>
-                                                                ))}
+                                                                    }
+                                                                    label={
+                                                                        <Box>
+                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                {serviceLevel.label}
+                                                                            </Typography>
+                                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                                {serviceLevel.description}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    }
+                                                                />
                                                             </Grid>
-                                                        ) : (
-                                                            <Alert severity="info" sx={{ fontSize: '12px' }}>
-                                                                No {activeServiceLevelTab} service levels configured.
-                                                                Configure service levels in Admin → Configuration → Service Levels.
-                                                            </Alert>
-                                                        )}
-                                                    </Box>
+                                                        ))}
+                                                    </Grid>
 
-                                                    {/* Selection Summary */}
-                                                    {(formData.availableServiceLevels.freight.length > 0 || formData.availableServiceLevels.courier.length > 0) && (
-                                                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f3f4f6', borderRadius: 1 }}>
-                                                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                Selected Service Levels:
-                                                            </Typography>
-                                                            {formData.availableServiceLevels.freight.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Freight: {formData.availableServiceLevels.freight.join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                            {formData.availableServiceLevels.courier.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Courier: {formData.availableServiceLevels.courier.join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    )}
+                                                    {/* Courier Service Levels */}
+                                                    <Typography variant="subtitle1" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                                        Courier Service Levels
+                                                    </Typography>
+                                                    <Grid container spacing={1}>
+                                                        {getFilteredServiceLevels('courier').map((serviceLevel) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={serviceLevel.id}>
+                                                                <FormControlLabel
+                                                                    control={
+                                                                        <Checkbox
+                                                                            checked={isServiceLevelSelected(serviceLevel, 'courier')}
+                                                                            onChange={() => handleServiceLevelToggle(serviceLevel, 'courier')}
+                                                                            size="small"
+                                                                        />
+                                                                    }
+                                                                    label={
+                                                                        <Box>
+                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                {serviceLevel.label}
+                                                                            </Typography>
+                                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                                {serviceLevel.description}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    }
+                                                                />
+                                                            </Grid>
+                                                        ))}
+                                                    </Grid>
                                                 </>
                                             )}
                                         </Box>
                                     )}
-                                </Box>
-                            </Grid>
+                                </Grid>
 
-                            {/* Additional Services Section */}
-                            <Grid item xs={12}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 2 }}>
-                                    Additional Services
-                                </Typography>
-                                <Box sx={{
-                                    border: '2px dashed #e5e7eb',
-                                    borderRadius: '8px',
-                                    backgroundColor: '#f9fafb',
-                                    overflow: 'hidden'
-                                }}>
-                                    {/* Header */}
-                                    <Box sx={{ p: 3, pb: 0 }}>
-                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                            Additional Service Restrictions
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 3 }}>
-                                            By default, this company has access to all additional services. Enable restrictions to limit available additional services.
-                                        </Typography>
+                                {/* Additional Services Section */}
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2, mt: 3 }}>
+                                        Additional Services
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                                        Configure additional service restrictions for this company. When enabled, only selected additional services will be available when creating shipments.
+                                    </Typography>
 
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    size="small"
-                                                    checked={Boolean(formData.availableAdditionalServices?.enabled)}
-                                                    onChange={(e) => handleAdditionalServicesToggle(e.target.checked)}
-                                                    sx={{
-                                                        '& .MuiSwitch-switchBase.Mui-checked': {
-                                                            color: '#7c3aed',
-                                                        },
-                                                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                            backgroundColor: '#7c3aed',
-                                                        },
-                                                    }}
-                                                />
-                                            }
-                                            label={
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    Restrict available additional services for this company
-                                                </Typography>
-                                            }
-                                        />
-                                    </Box>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={formData.availableAdditionalServices?.enabled || false}
+                                                onChange={(e) => handleAdditionalServicesToggle(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                Enable additional service restrictions
+                                            </Typography>
+                                        }
+                                        sx={{ mb: 2 }}
+                                    />
 
-                                    {/* Additional Service Selection - Only show when restrictions are enabled */}
-                                    {Boolean(formData.availableAdditionalServices?.enabled) && (
-                                        <Box sx={{ px: 3, pb: 3 }}>
+                                    {(formData.availableAdditionalServices?.enabled || false) && (
+                                        <Box sx={{ mt: 2 }}>
                                             {additionalServicesLoading ? (
-                                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                                                    <CircularProgress size={24} sx={{ color: '#7c3aed' }} />
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <CircularProgress size={16} />
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        Loading additional services...
+                                                    </Typography>
                                                 </Box>
                                             ) : (
-                                                <>
-                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 2 }}>
-                                                        Select which additional services this company can use when creating shipments:
-                                                    </Typography>
-
-                                                    {/* Additional Service Tabs */}
+                                                <Box>
+                                                    {/* Tabs for Freight/Courier */}
                                                     <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
                                                         <Tabs
                                                             value={activeAdditionalServiceTab}
-                                                            onChange={(e, newValue) => {
-                                                                setActiveAdditionalServiceTab(newValue);
-                                                                setAdditionalServiceCategoryFilter('all'); // Reset filter when switching tabs
-                                                            }}
+                                                            onChange={(e, newValue) => setActiveAdditionalServiceTab(newValue)}
                                                             sx={{
-                                                                '& .MuiTabs-indicator': { backgroundColor: '#7c3aed' },
                                                                 '& .MuiTab-root': {
                                                                     fontSize: '12px',
                                                                     textTransform: 'none',
-                                                                    minWidth: 100,
-                                                                    '&.Mui-selected': { color: '#7c3aed' }
+                                                                    minHeight: 36
                                                                 }
                                                             }}
                                                         >
-                                                            <Tab
-                                                                label={`Freight (${getFilteredAdditionalServices('freight', 'all').length})`}
-                                                                value="freight"
-                                                            />
-                                                            <Tab
-                                                                label={`Courier (${getFilteredAdditionalServices('courier', 'all').length})`}
-                                                                value="courier"
-                                                            />
+                                                            <Tab label="Freight Services" value="freight" />
+                                                            <Tab label="Courier Services" value="courier" />
                                                         </Tabs>
                                                     </Box>
 
-                                                    {/* Category Filter Buttons */}
-                                                    <Box sx={{ mb: 2 }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mb: 1 }}>
-                                                            Filter by Category:
-                                                        </Typography>
-                                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                                            {(() => {
-                                                                const counts = getCategoryCounts(activeAdditionalServiceTab);
-                                                                return [
-                                                                    { key: 'all', label: 'All', count: counts.all },
-                                                                    { key: 'general', label: 'General', count: counts.general },
-                                                                    { key: 'pickup', label: 'Pickup', count: counts.pickup },
-                                                                    { key: 'delivery', label: 'Delivery', count: counts.delivery }
-                                                                ].map(category => (
-                                                                    <Button
-                                                                        key={category.key}
-                                                                        size="small"
-                                                                        variant={additionalServiceCategoryFilter === category.key ? 'contained' : 'outlined'}
-                                                                        onClick={() => setAdditionalServiceCategoryFilter(category.key)}
-                                                                        disabled={category.count === 0}
-                                                                        sx={{
-                                                                            fontSize: '10px',
-                                                                            minWidth: 'auto',
-                                                                            px: 1.5,
-                                                                            py: 0.5,
-                                                                            ...(additionalServiceCategoryFilter === category.key ? {
-                                                                                bgcolor: '#7c3aed',
-                                                                                color: 'white',
-                                                                                '&:hover': { bgcolor: '#6d28d9' }
-                                                                            } : {
-                                                                                borderColor: '#e5e7eb',
-                                                                                color: '#374151',
-                                                                                '&:hover': {
-                                                                                    bgcolor: '#f9fafb',
-                                                                                    borderColor: '#d1d5db'
-                                                                                }
-                                                                            })
-                                                                        }}
-                                                                    >
-                                                                        {category.label} ({category.count})
-                                                                    </Button>
-                                                                ));
-                                                            })()}
-                                                        </Box>
-                                                    </Box>
-
-                                                    {/* Additional Service Checkboxes */}
-                                                    <Box sx={{ mt: 2 }}>
-                                                        {getFilteredAdditionalServices(activeAdditionalServiceTab).length > 0 ? (
-                                                            <Grid container spacing={1}>
-                                                                {getFilteredAdditionalServices(activeAdditionalServiceTab).map((additionalService) => (
-                                                                    <Grid item xs={12} sm={6} md={4} key={additionalService.id}>
-                                                                        <Box sx={{
-                                                                            border: '1px solid #e5e7eb',
-                                                                            borderRadius: '8px',
-                                                                            p: 2,
-                                                                            bgcolor: isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab) ? '#f3f4f6' : 'white'
-                                                                        }}>
-                                                                            <FormControlLabel
-                                                                                control={
-                                                                                    <Checkbox
-                                                                                        size="small"
-                                                                                        checked={isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab)}
-                                                                                        onChange={() => handleAdditionalServiceToggle(additionalService, activeAdditionalServiceTab)}
-                                                                                        sx={{
-                                                                                            '&.Mui-checked': {
-                                                                                                color: '#7c3aed',
-                                                                                            },
-                                                                                        }}
-                                                                                    />
-                                                                                }
-                                                                                label={
-                                                                                    <Box>
-                                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                            {additionalService.label}
-                                                                                        </Typography>
-                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                            {additionalService.code}
-                                                                                        </Typography>
-                                                                                        {additionalService.description && (
-                                                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                                                {additionalService.description}
-                                                                                            </Typography>
-                                                                                        )}
-                                                                                    </Box>
-                                                                                }
-                                                                            />
-
-                                                                            {/* Default Enabled Toggle - Only show if service is selected */}
-                                                                            {isAdditionalServiceSelected(additionalService, activeAdditionalServiceTab) && (
-                                                                                <FormControlLabel
-                                                                                    control={
-                                                                                        <Checkbox
-                                                                                            size="small"
-                                                                                            checked={isDefaultEnabledForService(additionalService, activeAdditionalServiceTab)}
-                                                                                            onChange={() => handleDefaultEnabledToggle(additionalService, activeAdditionalServiceTab)}
-                                                                                            sx={{
-                                                                                                '&.Mui-checked': {
-                                                                                                    color: '#059669',
-                                                                                                },
-                                                                                                ml: 2
-                                                                                            }}
-                                                                                        />
-                                                                                    }
-                                                                                    label={
-                                                                                        <Typography sx={{ fontSize: '10px', color: '#059669', fontWeight: 500 }}>
-                                                                                            Auto-check in forms
-                                                                                        </Typography>
-                                                                                    }
-                                                                                />
-                                                                            )}
+                                                    {/* Service Selection */}
+                                                    <Grid container spacing={1}>
+                                                        {globalAdditionalServices[activeAdditionalServiceTab]?.map((service) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={service.id}>
+                                                                <FormControlLabel
+                                                                    control={
+                                                                        <Checkbox
+                                                                            checked={formData.availableAdditionalServices?.[activeAdditionalServiceTab]?.some(
+                                                                                item => (typeof item === 'string' ? item : item.code) === service.code
+                                                                            ) || false}
+                                                                            onChange={() => handleAdditionalServiceToggle(service, activeAdditionalServiceTab)}
+                                                                            size="small"
+                                                                        />
+                                                                    }
+                                                                    label={
+                                                                        <Box>
+                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                {service.label || service.name}
+                                                                            </Typography>
+                                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                                {service.description}
+                                                                            </Typography>
                                                                         </Box>
-                                                                    </Grid>
-                                                                ))}
+                                                                    }
+                                                                />
                                                             </Grid>
-                                                        ) : (
-                                                            <Alert severity="info" sx={{ fontSize: '12px' }}>
-                                                                No {activeAdditionalServiceTab} additional services configured.
-                                                                Configure additional services in Admin → Configuration → Additional Services.
-                                                            </Alert>
-                                                        )}
-                                                    </Box>
-
-                                                    {/* Selection Summary */}
-                                                    {(formData.availableAdditionalServices.freight.length > 0 || formData.availableAdditionalServices.courier.length > 0) && (
-                                                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f3f4f6', borderRadius: 1 }}>
-                                                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                                                Selected Additional Services:
-                                                            </Typography>
-                                                            {formData.availableAdditionalServices.freight.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Freight: {formData.availableAdditionalServices.freight.map(s => typeof s === 'string' ? s : s.code).join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                            {formData.availableAdditionalServices.courier.length > 0 && (
-                                                                <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                    Courier: {formData.availableAdditionalServices.courier.map(s => typeof s === 'string' ? s : s.code).join(', ')}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    )}
-                                                </>
+                                                        ))}
+                                                    </Grid>
+                                                </Box>
                                             )}
                                         </Box>
                                     )}
-                                </Box>
+                                </Grid>
                             </Grid>
+                        )}
 
-
-
-
-                        </Grid>
+                        {currentTab === 4 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
+                                        Company Admins
+                                    </Typography>
+                                    <Autocomplete
+                                        multiple
+                                        size="small"
+                                        id="company-adminUserIds-autocomplete"
+                                        options={allUsers}
+                                        getOptionLabel={(option) => `${option.name} (${option.email || 'N/A'})`}
+                                        value={allUsers.filter(u => formData.adminUserIdsForForm.includes(u.id))}
+                                        onChange={(event, newValue) => handleAutocompleteChange('adminUserIdsForForm', newValue)}
+                                        filterSelectedOptions
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                variant="outlined"
+                                                label="Select Company Admins"
+                                                placeholder="Users who can manage this company's settings/users"
+                                                sx={{
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                    '& .MuiInputBase-input': { fontSize: '12px' }
+                                                }}
+                                            />
+                                        )}
+                                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                                    />
+                                </Grid>
+                            </Grid>
+                        )}
                     </Paper>
                 </Box>
             </Box>
 
-            {/* Delete Company Section for Edit Mode */}
-            {isEditMode && (
-                <Box sx={{ p: 3, borderTop: '1px solid #e5e7eb', mt: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Box>
-                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 1 }}>
-                                Delete Company
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                Permanently delete this company and all associated data
-                            </Typography>
-                        </Box>
-                        <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            startIcon={<DeleteOutlineIcon />}
-                            onClick={handleDeleteCompany}
-                            disabled={saveLoading || pageLoading}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Delete Company
-                        </Button>
-                    </Box>
-                </Box>
-            )}
+            {/* Action Menu */}
+            <Menu
+                anchorEl={actionMenuAnchor}
+                open={Boolean(actionMenuAnchor)}
+                onClose={handleActionMenuClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'right',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'right',
+                }}
+            >
+                <MenuItem onClick={handleDeleteClick} sx={{ color: '#dc2626', fontSize: '12px' }}>
+                    <ListItemIcon>
+                        <DeleteIcon sx={{ fontSize: '16px', color: '#dc2626' }} />
+                    </ListItemIcon>
+                    <ListItemText
+                        primary="Delete Company"
+                        sx={{
+                            '& .MuiListItemText-primary': {
+                                fontSize: '12px'
+                            }
+                        }}
+                    />
+                </MenuItem>
+            </Menu>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Delete Company
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ fontSize: '12px', color: '#6b7280', mb: 2 }}>
+                        Are you sure you want to permanently delete <strong>{formData.name}</strong>?
+                    </DialogContentText>
+                    <DialogContentText sx={{ fontSize: '12px', color: '#dc2626' }}>
+                        ⚠️ This action cannot be undone. All company data, contacts, and associated records will be permanently removed.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ p: 3, gap: 1 }}>
+                    <Button
+                        onClick={() => setDeleteConfirmOpen(false)}
+                        variant="outlined"
+                        size="small"
+                        sx={{ fontSize: '12px' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleDeleteCompany}
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        startIcon={<DeleteIcon />}
+                        disabled={saveLoading}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {saveLoading ? <CircularProgress size={16} color="inherit" /> : 'Delete Company'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
         </Box>
     );
 };
 
-export default CompanyForm; 
+export default CompanyForm;

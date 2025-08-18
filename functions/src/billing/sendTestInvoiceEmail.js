@@ -26,6 +26,7 @@ const {
     calculateTotalWeight,
     getActualCustomerName,
     getCustomerBillingInfo,
+    getInvoiceCompanyInfo,
     getAllReferenceNumbers
 } = require('./bulkInvoiceGenerator');
 
@@ -110,18 +111,21 @@ exports.sendTestInvoiceEmail = onRequest(
                 for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
                     for (const shipment of customerShipments) {
                         try {
-                            // Get customer billing information (EXACT SAME AS ZIP GENERATOR)
-                            const companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                            // Get company info for invoice generation (logo, AR contact, etc.)
+                            const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
+                            
+                            // Get customer billing information for BILL TO section
+                            const customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
                             
                             // Calculate total invoices to determine if we need sequence numbers
                             const totalInvoices = Object.values(customerGroups).reduce((total, shipments) => total + shipments.length, 0);
                             const sequenceNumber = (invoiceNumberOverride && totalInvoices > 1) ? globalInvoiceSequence : null;
                             
-                            const realInvoiceData = await createInvoiceDataForShipment(shipment, companyId, customerName, currency, companyInfo, invoiceIssueDate, invoiceNumberOverride, sequenceNumber);
+                            const realInvoiceData = await createInvoiceDataForShipment(shipment, companyId, customerName, currency, customerBillingInfo, invoiceIssueDate, invoiceNumberOverride, sequenceNumber);
                             
                             globalInvoiceSequence++; // Increment for next invoice
                             
-                            const pdfBuffer = await generateInvoicePDF(realInvoiceData, companyInfo);
+                            const pdfBuffer = await generateInvoicePDF(realInvoiceData, invoiceCompanyInfo, customerBillingInfo);
                             
                             allInvoicePDFs.push({
                                 content: pdfBuffer.toString('base64'),
@@ -145,12 +149,15 @@ exports.sendTestInvoiceEmail = onRequest(
                 try {
                     const customerName = await getActualCustomerName(shipments[0], companyId);
                     
+                    // Get company info for invoice generation (logo, AR contact, etc.)
+                    const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
+                    
                     // Get customer billing info from first shipment (same for all shipments from same customer)
-                    const companyInfo = await getCustomerBillingInfo(shipments[0], companyId);
+                    const customerBillingInfo = await getCustomerBillingInfo(shipments[0], companyId);
                     
-                                            const realCombinedInvoiceData = await createCombinedInvoiceDataForCustomer(customerName, shipments, companyId, currency, companyInfo, invoiceIssueDate, invoiceNumberOverride);
+                    const realCombinedInvoiceData = await createCombinedInvoiceDataForCustomer(customerName, shipments, companyId, currency, customerBillingInfo, invoiceIssueDate, invoiceNumberOverride);
                     
-                    const pdfBuffer = await generateInvoicePDF(realCombinedInvoiceData, companyInfo);
+                    const pdfBuffer = await generateInvoicePDF(realCombinedInvoiceData, invoiceCompanyInfo, customerBillingInfo);
                     
                     allInvoicePDFs.push({
                         content: pdfBuffer.toString('base64'),
@@ -373,7 +380,7 @@ async function createInvoiceDataForShipment(shipment, companyId, customerName, c
             orderNumber: shipmentId,
             trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
             description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-            carrier: 'Integrated Carriers', // Override carrier for customer invoices
+            carrier: companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers', // Use dynamic company name for customer invoices
             service: shipment.service || 'Standard',
             date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
             charges: filteredCharges, // Use filtered amount (excludes transaction fees)
@@ -434,7 +441,7 @@ async function createCombinedInvoiceDataForCustomer(customerName, customerShipme
             orderNumber: shipmentId,
             trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
             description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-            carrier: 'Integrated Carriers', // Override carrier for customer invoices
+            carrier: companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers', // Use dynamic company name for customer invoices
             service: shipment.service || 'Standard',
             date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
             charges: filteredCharges, // Use filtered amount (excludes transaction fees)
@@ -581,10 +588,10 @@ async function sendTestEmailWithAllInvoices(allInvoicePDFs, companyId, testEmail
             cc: testEmails.cc.length > 0 ? testEmails.cc : undefined,
             bcc: testEmails.bcc.length > 0 ? testEmails.bcc : undefined,
             from: {
-                email: 'soluship@integratedcarriers.com',
-                name: 'Integrated Carriers'
+                email: companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || 'soluship@integratedcarriers.com',
+                name: companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'
             },
-            subject: `Integrated Carriers - Invoice Notification`,
+            subject: `${companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'} - Invoice Notification`,
             html: generateInvoiceEmailHTML(firstInvoiceData, companyInfo, false, formatCurrency),
             text: generateInvoiceEmailText(firstInvoiceData, companyInfo, false, formatCurrency),
             attachments: allInvoicePDFs.map(pdf => ({

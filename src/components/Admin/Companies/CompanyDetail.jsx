@@ -25,14 +25,24 @@ import {
     Avatar,
     IconButton,
     Tooltip,
-    TextField
+    TextField,
+    Tabs,
+    Tab,
+    Card,
+    CardContent
 } from '@mui/material';
 import {
     Edit as EditIcon,
     LocalShipping as LocalShippingIcon,
     Business as BusinessIcon,
     People as PeopleIcon,
-    Close as CloseIcon
+    Close as CloseIcon,
+    Dashboard as DashboardIcon,
+    Person as PersonIcon,
+    Receipt as ReceiptIcon,
+    Palette as PaletteIcon,
+    AdminPanelSettings as AdminIcon,
+    Settings as SettingsIcon
 } from '@mui/icons-material';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -63,6 +73,9 @@ const CompanyDetail = () => {
     // Local state for carrier display names (for immediate UI updates without database hits)
     const [localDisplayNames, setLocalDisplayNames] = useState({});
     const [savingDisplayNames, setSavingDisplayNames] = useState(new Set());
+
+    // Tab state management
+    const [currentTab, setCurrentTab] = useState(0);
 
     // Load all available carriers
     const loadCarriers = useCallback(async () => {
@@ -385,6 +398,680 @@ const CompanyDetail = () => {
         fetchData();
     }, [fetchData]);
 
+    // Tab change handler
+    const handleTabChange = (event, newValue) => {
+        setCurrentTab(newValue);
+    };
+
+    // Tab panels
+    const OverviewTab = () => (
+        <Grid container spacing={3}>
+            {/* Company Overview - Basic Information */}
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Company Overview
+                        </Typography>
+                        <Grid container spacing={3}>
+                            {/* Basic Company Information */}
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
+                                    Company Details
+                                </Typography>
+                                <Grid container spacing={2}>
+                                    <Grid item xs={12} sm={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company Name</Typography>
+                                        <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>{company.name}</Typography>
+                                    </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company ID</Typography>
+                                        <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827', fontFamily: 'monospace' }}>{company.companyID}</Typography>
+                                    </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Status</Typography>
+                                        <Chip
+                                            label={company.status === 'active' ? 'Active' : 'Inactive'}
+                                            size="small"
+                                            sx={{
+                                                backgroundColor: company.status === 'active' ? '#f1f8f5' : '#fef2f2',
+                                                color: company.status === 'active' ? '#0a875a' : '#dc2626',
+                                                fontWeight: 500,
+                                                fontSize: '11px',
+                                                '& .MuiChip-label': { px: 1.5 }
+                                            }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} sm={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Created</Typography>
+                                        <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>{formatDateString(company.createdAt)}</Typography>
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Website</Typography>
+                                        {company.website ? (
+                                            <Typography
+                                                variant="body1"
+                                                component="a"
+                                                href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                sx={{
+                                                    fontSize: '12px',
+                                                    color: '#3b82f6',
+                                                    textDecoration: 'none',
+                                                    '&:hover': { textDecoration: 'underline' }
+                                                }}
+                                            >
+                                                {company.website}
+                                            </Typography>
+                                        ) : (
+                                            <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>No website provided</Typography>
+                                        )}
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+
+                            {/* Owner Information */}
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
+                                    Company Owner
+                                </Typography>
+                                <Grid container spacing={2}>
+                                    <Grid item xs={12}>
+                                        {ownerDetails ? (
+                                            <Box>
+                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>
+                                                    {`${ownerDetails.firstName} ${ownerDetails.lastName}`}
+                                                </Typography>
+                                                {ownerDetails.email ? (
+                                                    <Typography
+                                                        variant="body2"
+                                                        component="a"
+                                                        href={`mailto:${ownerDetails.email}`}
+                                                        sx={{
+                                                            fontSize: '11px',
+                                                            color: '#3b82f6',
+                                                            textDecoration: 'none',
+                                                            '&:hover': { textDecoration: 'underline' }
+                                                        }}
+                                                    >
+                                                        {ownerDetails.email}
+                                                    </Typography>
+                                                ) : (
+                                                    <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                        No email provided
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        ) : (
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No owner assigned</Typography>
+                                        )}
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    </CardContent>
+                </Card>
+            </Grid>
+
+            {/* Main Contact Information */}
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Main Contact Information
+                        </Typography>
+                        {mainContact ? (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Contact Name</Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                        {(mainContact.firstName || mainContact.lastName)
+                                            ? `${mainContact.firstName || ''} ${mainContact.lastName || ''}`.trim()
+                                            : 'No name provided'
+                                        }
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Email Address</Typography>
+                                    {mainContact.email ? (
+                                        <Typography
+                                            component="a"
+                                            href={`mailto:${mainContact.email}`}
+                                            sx={{
+                                                fontSize: '12px',
+                                                color: '#3b82f6',
+                                                textDecoration: 'none',
+                                                '&:hover': { textDecoration: 'underline' }
+                                            }}
+                                        >
+                                            {mainContact.email}
+                                        </Typography>
+                                    ) : (
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            No email provided
+                                        </Typography>
+                                    )}
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Phone Number</Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                        {mainContact.phone || 'No phone provided'}
+                                    </Typography>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Address</Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                        {[
+                                            mainContact.address1,
+                                            mainContact.address2,
+                                            mainContact.city,
+                                            mainContact.stateProv,
+                                            mainContact.zipPostal,
+                                            mainContact.country
+                                        ].filter(Boolean).join(', ') || 'No address provided'}
+                                    </Typography>
+                                </Grid>
+                            </Grid>
+                        ) : (
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No main contact information available</Typography>
+                        )}
+                    </CardContent>
+                </Card>
+            </Grid>
+
+            {/* Billing & Invoice Information */}
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Billing & Invoice Information
+                        </Typography>
+
+                        <Grid container spacing={3}>
+                            {/* Invoice Settings */}
+                            {company.billingInfo && (
+                                <>
+                                    <Grid item xs={12} md={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company Display Name</Typography>
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            {company.billingInfo.companyDisplayName || 'Not configured'}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Tax Number</Typography>
+                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                            {company.billingInfo.taxNumber || 'Not configured'}
+                                        </Typography>
+                                    </Grid>
+                                    <Grid item xs={12}>
+                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Payment Information for Invoices</Typography>
+                                        <Typography sx={{ fontSize: '12px', color: '#111827', whiteSpace: 'pre-wrap' }}>
+                                            {company.billingInfo.paymentInformation || 'Not configured - no payment section will appear on invoices'}
+                                        </Typography>
+                                    </Grid>
+                                </>
+                            )}
+
+                            {/* Accounts Receivable */}
+                            {company.billingInfo?.accountsReceivable && (
+                                Object.values(company.billingInfo.accountsReceivable).some(value =>
+                                    value && (Array.isArray(value) ? value.length > 0 : value.toString().trim())
+                                ) && (
+                                    <>
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>AR Contact</Typography>
+                                            <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                {`${company.billingInfo.accountsReceivable.firstName || ''} ${company.billingInfo.accountsReceivable.lastName || ''}`.trim()}
+                                            </Typography>
+                                        </Grid>
+                                        {company.billingInfo.accountsReceivable.email?.length > 0 && (
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>AR Emails</Typography>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                                                    {company.billingInfo.accountsReceivable.email.map((email, index) => (
+                                                        <Chip
+                                                            key={index}
+                                                            label={email}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            component="a"
+                                                            href={`mailto:${email}`}
+                                                            clickable
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                color: '#3b82f6',
+                                                                borderColor: '#3b82f6',
+                                                                textDecoration: 'none',
+                                                                '&:hover': {
+                                                                    backgroundColor: '#eff6ff',
+                                                                    borderColor: '#2563eb'
+                                                                }
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                            </Grid>
+                                        )}
+                                    </>
+                                )
+                            )}
+
+                            {/* Accounts Payable */}
+                            {company.billingInfo?.accountsPayable && (
+                                Object.values(company.billingInfo.accountsPayable).some(value =>
+                                    value && (Array.isArray(value) ? value.length > 0 : value.toString().trim())
+                                ) && (
+                                    <>
+                                        <Grid item xs={12} md={6}>
+                                            <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>AP Contact</Typography>
+                                            <Typography sx={{ fontSize: '12px', color: '#111827' }}>
+                                                {`${company.billingInfo.accountsPayable.firstName || ''} ${company.billingInfo.accountsPayable.lastName || ''}`.trim()}
+                                            </Typography>
+                                        </Grid>
+                                        {company.billingInfo.accountsPayable.email?.length > 0 && (
+                                            <Grid item xs={12} md={6}>
+                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>AP Emails</Typography>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                                                    {company.billingInfo.accountsPayable.email.map((email, index) => (
+                                                        <Chip
+                                                            key={index}
+                                                            label={email}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            component="a"
+                                                            href={`mailto:${email}`}
+                                                            clickable
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                color: '#3b82f6',
+                                                                borderColor: '#3b82f6',
+                                                                textDecoration: 'none',
+                                                                '&:hover': {
+                                                                    backgroundColor: '#eff6ff',
+                                                                    borderColor: '#2563eb'
+                                                                }
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                            </Grid>
+                                        )}
+                                    </>
+                                )
+                            )}
+
+                            {/* Show message only if no billing info is configured */}
+                            {(!company.billingInfo ||
+                                (!company.billingInfo.companyDisplayName &&
+                                    !company.billingInfo.taxNumber &&
+                                    !company.billingInfo.paymentInformation &&
+                                    (!company.billingInfo.accountsReceivable || !Object.values(company.billingInfo.accountsReceivable).some(value => value && (Array.isArray(value) ? value.length > 0 : value.toString().trim()))) &&
+                                    (!company.billingInfo.accountsPayable || !Object.values(company.billingInfo.accountsPayable).some(value => value && (Array.isArray(value) ? value.length > 0 : value.toString().trim()))))) && (
+                                    <Grid item xs={12}>
+                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No billing information configured</Typography>
+                                    </Grid>
+                                )}
+                        </Grid>
+                    </CardContent>
+                </Card>
+            </Grid>
+        </Grid>
+    );
+
+
+
+    const ThemeTab = () => (
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Company Branding & Logos
+                        </Typography>
+                        <Grid container spacing={3}>
+                            {/* Logo Display */}
+                            {(() => {
+                                // Define all possible logo types
+                                const allLogoTypes = ['dark', 'light', 'circle', 'invoice', 'document', 'email'];
+
+                                return allLogoTypes.map((logoType) => {
+                                    const logoUrl = company.logos?.[logoType];
+                                    const hasLogo = logoUrl && logoUrl.trim() !== '';
+
+                                    return (
+                                        <Grid item xs={12} sm={6} md={4} key={logoType}>
+                                            <Box sx={{ textAlign: 'center' }}>
+                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500, mb: 1 }}>
+                                                    {logoType.charAt(0).toUpperCase() + logoType.slice(1)} Logo
+                                                </Typography>
+                                                <Box
+                                                    sx={{
+                                                        width: 120,
+                                                        height: 80,
+                                                        border: '1px solid #e5e7eb',
+                                                        borderRadius: '6px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        bgcolor: logoType === 'dark' ? '#111827' : '#f8fafc',
+                                                        mx: 'auto',
+                                                        overflow: 'hidden'
+                                                    }}
+                                                >
+                                                    {hasLogo ? (
+                                                        <Box
+                                                            component="img"
+                                                            src={logoUrl}
+                                                            alt={`${logoType} logo`}
+                                                            sx={{
+                                                                maxWidth: '100%',
+                                                                maxHeight: '100%',
+                                                                objectFit: 'contain'
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <Typography
+                                                            sx={{
+                                                                fontSize: '10px',
+                                                                color: logoType === 'dark' ? '#9ca3af' : '#9ca3af',
+                                                                textAlign: 'center',
+                                                                px: 1
+                                                            }}
+                                                        >
+                                                            No {logoType} logo
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        </Grid>
+                                    );
+                                });
+                            })()}
+                        </Grid>
+                    </CardContent>
+                </Card>
+            </Grid>
+        </Grid>
+    );
+
+    const AdminsTab = () => (
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Company Administrators
+                        </Typography>
+                        {adminUsers.length > 0 ? (
+                            <List sx={{ p: 0 }}>
+                                {adminUsers.map((admin) => (
+                                    <ListItem key={admin.id} sx={{ px: 0, py: 2, borderBottom: '1px solid #f3f4f6' }}>
+                                        <Avatar sx={{ mr: 2, bgcolor: '#6366f1' }}>
+                                            {admin.firstName?.charAt(0)}{admin.lastName?.charAt(0)}
+                                        </Avatar>
+                                        <ListItemText
+                                            primary={
+                                                <Typography sx={{ fontSize: '12px', color: '#111827', fontWeight: 500 }}>
+                                                    {`${admin.firstName} ${admin.lastName}`}
+                                                </Typography>
+                                            }
+                                            secondary={
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                    {admin.email}
+                                                </Typography>
+                                            }
+                                        />
+                                    </ListItem>
+                                ))}
+                            </List>
+                        ) : (
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No administrators assigned to this company</Typography>
+                        )}
+                    </CardContent>
+                </Card>
+            </Grid>
+        </Grid>
+    );
+
+    const CarriersTab = () => (
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                            <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
+                                Connected Carriers
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<LocalShippingIcon />}
+                                onClick={() => {
+                                    setCarrierDialogOpen(true);
+                                    loadCarriers();
+                                }}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Manage Carriers
+                            </Button>
+                        </Box>
+                        {company.connectedCarriers && company.connectedCarriers.length > 0 ? (
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier Name</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connected Since</TableCell>
+                                            <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Last Updated</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {company.connectedCarriers.map((carrier) => (
+                                            <TableRow key={carrier.carrierID}>
+                                                <TableCell sx={{ fontSize: '12px' }}>{carrier.carrierName}</TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={carrier.enabled ? 'Enabled' : 'Disabled'}
+                                                        size="small"
+                                                        sx={{
+                                                            backgroundColor: carrier.enabled ? '#f1f8f5' : '#fef2f2',
+                                                            color: carrier.enabled ? '#0a875a' : '#dc2626',
+                                                            fontWeight: 500,
+                                                            fontSize: '11px',
+                                                            '& .MuiChip-label': { px: 1.5 }
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{formatDateString(carrier.createdAt)}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{formatDateString(carrier.updatedAt)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        ) : (
+                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No carriers connected to this company.</Typography>
+                        )}
+                    </CardContent>
+                </Card>
+            </Grid>
+        </Grid>
+    );
+
+    const ServicesTab = () => (
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <Card sx={{ border: '1px solid #e5e7eb' }}>
+                    <CardContent sx={{ p: 3 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
+                            Service Level Configuration
+                        </Typography>
+
+                        {/* Available Service Levels */}
+                        <Grid container spacing={3} sx={{ mb: 4 }}>
+                            <Grid item xs={12}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
+                                    Available Service Levels
+                                </Typography>
+                            </Grid>
+                            {(() => {
+                                // Check if service level restrictions are configured and enabled
+                                const serviceRestrictions = company.availableServiceLevels;
+
+                                if (!serviceRestrictions || !serviceRestrictions.enabled) {
+                                    return (
+                                        <Grid item xs={12}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                No service level restrictions configured - all service levels are available
+                                            </Typography>
+                                        </Grid>
+                                    );
+                                }
+
+                                // Get enabled service levels from freight and courier arrays
+                                const enabledServices = [];
+
+                                // Add freight services
+                                if (serviceRestrictions.freight && serviceRestrictions.freight.length > 0) {
+                                    serviceRestrictions.freight.forEach(serviceCode => {
+                                        enabledServices.push({
+                                            type: 'FREIGHT',
+                                            code: serviceCode,
+                                            label: `FREIGHT: ${serviceCode}`
+                                        });
+                                    });
+                                }
+
+                                // Add courier services
+                                if (serviceRestrictions.courier && serviceRestrictions.courier.length > 0) {
+                                    serviceRestrictions.courier.forEach(serviceCode => {
+                                        enabledServices.push({
+                                            type: 'COURIER',
+                                            code: serviceCode,
+                                            label: `COURIER: ${serviceCode}`
+                                        });
+                                    });
+                                }
+
+                                if (enabledServices.length === 0) {
+                                    return (
+                                        <Grid item xs={12}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Service level restrictions are enabled but no specific services are configured
+                                            </Typography>
+                                        </Grid>
+                                    );
+                                }
+
+                                return (
+                                    <Grid item xs={12}>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                            {enabledServices.map((service, index) => (
+                                                <Chip
+                                                    key={index}
+                                                    label={service.label}
+                                                    size="small"
+                                                    sx={{
+                                                        backgroundColor: service.type === 'FREIGHT' ? '#f0f9ff' : '#fef3c7',
+                                                        color: service.type === 'FREIGHT' ? '#0369a1' : '#92400e',
+                                                        fontSize: '11px'
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    </Grid>
+                                );
+                            })()}
+                        </Grid>
+
+                        {/* Additional Services */}
+                        <Grid container spacing={3}>
+                            <Grid item xs={12}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
+                                    Additional Services
+                                </Typography>
+                            </Grid>
+                            {(() => {
+                                // Check if additional service restrictions are configured and enabled
+                                const additionalServiceRestrictions = company.availableAdditionalServices;
+
+                                if (!additionalServiceRestrictions || !additionalServiceRestrictions.enabled) {
+                                    return (
+                                        <Grid item xs={12}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                No additional service restrictions configured - all additional services are available
+                                            </Typography>
+                                        </Grid>
+                                    );
+                                }
+
+                                // Get enabled additional services from freight and courier arrays
+                                const enabledServices = [];
+
+                                // Add freight additional services
+                                if (additionalServiceRestrictions.freight && additionalServiceRestrictions.freight.length > 0) {
+                                    additionalServiceRestrictions.freight.forEach(service => {
+                                        if (service.defaultEnabled) {
+                                            enabledServices.push({
+                                                type: 'FREIGHT',
+                                                label: `FREIGHT: ${service.displayName || service.code}`,
+                                                service: service
+                                            });
+                                        }
+                                    });
+                                }
+
+                                // Add courier additional services
+                                if (additionalServiceRestrictions.courier && additionalServiceRestrictions.courier.length > 0) {
+                                    additionalServiceRestrictions.courier.forEach(service => {
+                                        if (service.defaultEnabled) {
+                                            enabledServices.push({
+                                                type: 'COURIER',
+                                                label: `COURIER: ${service.displayName || service.code}`,
+                                                service: service
+                                            });
+                                        }
+                                    });
+                                }
+
+                                if (enabledServices.length === 0) {
+                                    return (
+                                        <Grid item xs={12}>
+                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                Additional service restrictions are enabled but no specific services are configured
+                                            </Typography>
+                                        </Grid>
+                                    );
+                                }
+
+                                return (
+                                    <Grid item xs={12}>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                            {enabledServices.map((service, index) => (
+                                                <Chip
+                                                    key={index}
+                                                    label={service.label}
+                                                    size="small"
+                                                    sx={{
+                                                        backgroundColor: service.type === 'FREIGHT' ? '#f3e8ff' : '#fef3c7',
+                                                        color: service.type === 'FREIGHT' ? '#7c3aed' : '#92400e',
+                                                        fontSize: '11px'
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    </Grid>
+                                );
+                            })()}
+                        </Grid>
+                    </CardContent>
+                </Card>
+            </Grid>
+        </Grid>
+    );
+
     if (loading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
     }
@@ -396,345 +1083,177 @@ const CompanyDetail = () => {
     }
 
     return (
-        <Box sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%'
-        }}>
-            {/* Header Section */}
-            <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
-                {/* Title and Actions Row */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        {/* Company Logo */}
-                        <Box
-                            sx={{
-                                width: 64,
-                                height: 64,
-                                borderRadius: '50%',
-                                border: '2px solid #e5e7eb',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                bgcolor: '#f8fafc',
-                                overflow: 'hidden'
-                            }}
-                        >
-                            {(() => {
-                                // Use new multi-logo system for company detail display (light background)
-                                const logoUrl = getLightBackgroundLogo(company);
-
-                                return logoUrl ? (
-                                    <Box
-                                        component="img"
-                                        src={logoUrl}
-                                        alt={`${company.name} logo`}
-                                        sx={{
-                                            width: '100%',
-                                            height: '100%',
-                                            objectFit: 'cover'
-                                        }}
-                                        onError={(e) => {
-                                            e.target.style.display = 'none';
-                                            e.target.nextSibling.style.display = 'flex';
-                                        }}
-                                    />
-                                ) : null;
-                            })()}
+        <>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%'
+            }}>
+                {/* Header Section */}
+                <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                    {/* Title and Actions Row */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            {/* Company Logo */}
                             <Box
                                 sx={{
-                                    display: (() => {
-                                        const logoUrl = getLightBackgroundLogo(company);
-                                        return logoUrl ? 'none' : 'flex';
-                                    })(),
+                                    width: 64,
+                                    height: 64,
+                                    borderRadius: '50%',
+                                    border: '2px solid #e5e7eb',
+                                    display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    width: '100%',
-                                    height: '100%',
-                                    color: '#6b7280'
+                                    bgcolor: '#f8fafc',
+                                    overflow: 'hidden'
                                 }}
                             >
-                                <BusinessIcon sx={{ fontSize: '28px' }} />
+                                {(() => {
+                                    // Priority: circle > light > placeholder
+                                    if (company.logos?.circle) {
+                                        return (
+                                            <Box
+                                                component="img"
+                                                src={company.logos.circle}
+                                                alt={`${company.name} logo`}
+                                                sx={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover'
+                                                }}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    e.target.nextSibling.style.display = 'flex';
+                                                }}
+                                            />
+                                        );
+                                    } else if (company.logos?.light) {
+                                        return (
+                                            <Box
+                                                component="img"
+                                                src={company.logos.light}
+                                                alt={`${company.name} logo`}
+                                                sx={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover'
+                                                }}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    e.target.nextSibling.style.display = 'flex';
+                                                }}
+                                            />
+                                        );
+                                    } else {
+                                        return null;
+                                    }
+                                })()}
+                                <Box
+                                    sx={{
+                                        display: (() => {
+                                            // Show placeholder if no circle or light logo
+                                            return (company.logos?.circle || company.logos?.light) ? 'none' : 'flex';
+                                        })(),
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '100%',
+                                        height: '100%',
+                                        color: '#6b7280'
+                                    }}
+                                >
+                                    <BusinessIcon sx={{ fontSize: '28px' }} />
+                                </Box>
+                            </Box>
+
+                            {/* Company Name and Description */}
+                            <Box>
+                                <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
+                                    {company.name}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
+                                    Company details and configuration
+                                </Typography>
                             </Box>
                         </Box>
-
-                        {/* Company Name and Description */}
-                        <Box>
-                            <Typography variant="h5" sx={{ fontWeight: 600, color: '#111827', mb: 1 }}>
-                                {company.name}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
-                                Company details and configuration
-                            </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<PeopleIcon />}
+                                component={RouterLink}
+                                to={`/admin/customers?company=${company?.companyID}`}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Customers
+                            </Button>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<EditIcon />}
+                                component={RouterLink}
+                                to={`/admin/companies/${companyFirestoreId}/edit`}
+                                sx={{ fontSize: '12px' }}
+                            >
+                                Edit
+                            </Button>
                         </Box>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<PeopleIcon />}
-                            component={RouterLink}
-                            to={`/admin/customers?company=${company?.companyID}`}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Customers
-                        </Button>
-                        <Button
-                            variant="contained"
-                            size="small"
-                            startIcon={<EditIcon />}
-                            component={RouterLink}
-                            to={`/admin/companies/${companyFirestoreId}/edit`}
-                            sx={{ fontSize: '12px' }}
-                        >
-                            Edit
-                        </Button>
-                    </Box>
                 </Box>
-            </Box>
 
-            {/* Main Content Area */}
-            <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                <Box sx={{ p: 3 }}>
-                    <Grid container spacing={3}>
-                        {/* Company Overview - Consolidated Information */}
-                        <Grid item xs={12}>
-                            <Paper sx={{
-                                p: 3,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                                bgcolor: '#ffffff'
-                            }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 3 }}>
-                                    Company Overview
-                                </Typography>
-                                <Grid container spacing={3}>
-                                    {/* Basic Company Information */}
-                                    <Grid item xs={12} md={6}>
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
-                                            Company Details
-                                        </Typography>
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company Name</Typography>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>{company.name}</Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company ID</Typography>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827', fontFamily: 'monospace' }}>{company.companyID}</Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Status</Typography>
-                                                <Chip
-                                                    label={company.status === 'active' ? 'Active' : 'Inactive'}
-                                                    size="small"
-                                                    sx={{
-                                                        backgroundColor: company.status === 'active' ? '#f1f8f5' : '#fef2f2',
-                                                        color: company.status === 'active' ? '#0a875a' : '#dc2626',
-                                                        fontWeight: 500,
-                                                        fontSize: '11px',
-                                                        '& .MuiChip-label': { px: 1.5 }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Created</Typography>
-                                                <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>{formatDateString(company.createdAt)}</Typography>
-                                            </Grid>
-                                            <Grid item xs={12}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Website</Typography>
-                                                {company.website ? (
-                                                    <Typography
-                                                        variant="body1"
-                                                        component="a"
-                                                        href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        sx={{
-                                                            fontSize: '12px',
-                                                            color: '#3b82f6',
-                                                            textDecoration: 'none',
-                                                            '&:hover': { textDecoration: 'underline' }
-                                                        }}
-                                                    >
-                                                        {company.website}
-                                                    </Typography>
-                                                ) : (
-                                                    <Typography variant="body1" sx={{ fontSize: '12px', color: '#6b7280' }}>No website provided</Typography>
-                                                )}
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
+                {/* Tabs Navigation */}
+                <Box sx={{ borderBottom: '1px solid #e5e7eb', bgcolor: '#ffffff' }}>
+                    <Tabs
+                        value={currentTab}
+                        onChange={handleTabChange}
+                        sx={{
+                            px: 3,
+                            '& .MuiTab-root': {
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                textTransform: 'none',
+                                minWidth: 'auto',
+                                px: 2,
+                                py: 1.5
+                            }
+                        }}
+                    >
+                        <Tab
+                            icon={<DashboardIcon sx={{ fontSize: '16px' }} />}
+                            label="Overview"
+                            iconPosition="start"
+                        />
+                        <Tab
+                            icon={<PaletteIcon sx={{ fontSize: '16px' }} />}
+                            label="Theme & Branding"
+                            iconPosition="start"
+                        />
+                        <Tab
+                            icon={<AdminIcon sx={{ fontSize: '16px' }} />}
+                            label="Admins"
+                            iconPosition="start"
+                        />
+                        <Tab
+                            icon={<LocalShippingIcon sx={{ fontSize: '16px' }} />}
+                            label="Connected Carriers"
+                            iconPosition="start"
+                        />
+                        <Tab
+                            icon={<SettingsIcon sx={{ fontSize: '16px' }} />}
+                            label="Service Levels"
+                            iconPosition="start"
+                        />
+                    </Tabs>
+                </Box>
 
-                                    {/* Owner & Contact Information */}
-                                    <Grid item xs={12} md={6}>
-                                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#374151', fontSize: '14px', mb: 2 }}>
-                                            Owner & Contact
-                                        </Typography>
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={12}>
-                                                <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Company Owner</Typography>
-                                                {ownerDetails ? (
-                                                    <Box>
-                                                        <Typography variant="body1" sx={{ fontSize: '12px', color: '#111827' }}>
-                                                            {`${ownerDetails.firstName} ${ownerDetails.lastName}`}
-                                                        </Typography>
-                                                        <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            {ownerDetails.email}
-                                                        </Typography>
-                                                    </Box>
-                                                ) : (
-                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No owner assigned</Typography>
-                                                )}
-                                            </Grid>
-                                            {mainContact && (
-                                                <>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Main Contact</Typography>
-                                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                                            {(mainContact.firstName || mainContact.lastName)
-                                                                ? `${mainContact.firstName || ''} ${mainContact.lastName || ''}`.trim()
-                                                                : 'No name provided'
-                                                            }
-                                                        </Typography>
-                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            {mainContact.email || 'No email'}
-                                                        </Typography>
-                                                    </Grid>
-                                                    <Grid item xs={12} sm={6}>
-                                                        <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Contact Phone</Typography>
-                                                        <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                                            {mainContact.phone || 'No phone provided'}
-                                                        </Typography>
-                                                    </Grid>
-                                                </>
-                                            )}
-                                            {billingAddress && (
-                                                <Grid item xs={12}>
-                                                    <Typography variant="subtitle2" sx={{ color: '#6b7280', fontSize: '11px', fontWeight: 500 }}>Billing Contact</Typography>
-                                                    <Typography sx={{ fontSize: '12px', color: '#111827' }}>
-                                                        {(billingAddress.firstName || billingAddress.lastName)
-                                                            ? `${billingAddress.firstName || ''} ${billingAddress.lastName || ''}`.trim()
-                                                            : 'No billing contact'
-                                                        }
-                                                    </Typography>
-                                                    {billingAddress.email && (
-                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                            {billingAddress.email}
-                                                        </Typography>
-                                                    )}
-                                                </Grid>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-                                </Grid>
-                            </Paper>
-                        </Grid>
-
-                        {/* Company Admins */}
-                        <Grid item xs={12} md={6}>
-                            <Paper sx={{
-                                p: 3,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                                bgcolor: '#ffffff',
-                                height: '100%',
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}>
-                                <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px', mb: 2 }}>
-                                    Company Admins
-                                </Typography>
-                                <Box sx={{ flex: 1 }}>
-                                    {adminUsers.length > 0 ? (
-                                        <List sx={{ p: 0 }}>
-                                            {adminUsers.map((admin) => (
-                                                <ListItem key={admin.id} sx={{ px: 0, py: 1 }}>
-                                                    <ListItemText
-                                                        primary={<Typography sx={{ fontSize: '12px', color: '#111827', fontWeight: 500 }}>{`${admin.firstName} ${admin.lastName}`}</Typography>}
-                                                        secondary={<Typography sx={{ fontSize: '11px', color: '#6b7280' }}>{admin.email}</Typography>}
-                                                    />
-                                                </ListItem>
-                                            ))}
-                                        </List>
-                                    ) : (
-                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No admins assigned</Typography>
-                                    )}
-                                </Box>
-                            </Paper>
-                        </Grid>
-
-                        {/* Connected Carriers */}
-                        <Grid item xs={12} md={6}>
-                            <Paper sx={{
-                                p: 3,
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                                bgcolor: '#ffffff',
-                                height: '100%',
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#374151', fontSize: '16px' }}>
-                                        Connected Carriers
-                                    </Typography>
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        startIcon={<LocalShippingIcon />}
-                                        onClick={() => {
-                                            setCarrierDialogOpen(true);
-                                            loadCarriers();
-                                        }}
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        Manage Carriers
-                                    </Button>
-                                </Box>
-                                <Box sx={{ flex: 1 }}>
-                                    {company.connectedCarriers && company.connectedCarriers.length > 0 ? (
-                                        <TableContainer>
-                                            <Table>
-                                                <TableHead>
-                                                    <TableRow>
-                                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Carrier Name</TableCell>
-                                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Status</TableCell>
-                                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Connected Since</TableCell>
-                                                        <TableCell sx={{ backgroundColor: '#f8fafc', fontWeight: 600, color: '#374151', fontSize: '12px' }}>Last Updated</TableCell>
-                                                    </TableRow>
-                                                </TableHead>
-                                                <TableBody>
-                                                    {company.connectedCarriers.map((carrier) => (
-                                                        <TableRow key={carrier.carrierID}>
-                                                            <TableCell sx={{ fontSize: '12px' }}>{carrier.carrierName}</TableCell>
-                                                            <TableCell>
-                                                                <Chip
-                                                                    label={carrier.enabled ? 'Enabled' : 'Disabled'}
-                                                                    size="small"
-                                                                    sx={{
-                                                                        backgroundColor: carrier.enabled ? '#f1f8f5' : '#fef2f2',
-                                                                        color: carrier.enabled ? '#0a875a' : '#dc2626',
-                                                                        fontWeight: 500,
-                                                                        fontSize: '11px',
-                                                                        '& .MuiChip-label': { px: 1.5 }
-                                                                    }}
-                                                                />
-                                                            </TableCell>
-                                                            <TableCell sx={{ fontSize: '12px' }}>{formatDateString(carrier.createdAt)}</TableCell>
-                                                            <TableCell sx={{ fontSize: '12px' }}>{formatDateString(carrier.updatedAt)}</TableCell>
-                                                        </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                        </TableContainer>
-                                    ) : (
-                                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No carriers connected to this company.</Typography>
-                                    )}
-                                </Box>
-                            </Paper>
-                        </Grid>
-                    </Grid>
+                {/* Tab Content Area */}
+                <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                    <Box sx={{ p: 3 }}>
+                        {currentTab === 0 && <OverviewTab />}
+                        {currentTab === 1 && <ThemeTab />}
+                        {currentTab === 2 && <AdminsTab />}
+                        {currentTab === 3 && <CarriersTab />}
+                        {currentTab === 4 && <ServicesTab />}
+                    </Box>
                 </Box>
             </Box>
 
@@ -912,8 +1431,7 @@ const CompanyDetail = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-
-        </Box>
+        </>
     );
 };
 

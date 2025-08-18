@@ -588,6 +588,9 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
     let successCount = 0;
     let errorCount = 0;
 
+    // Load company data once for all invoices (for logo, AR contact, etc.)
+    const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
+
     // Fetch customer company data for proper billing information (BILL TO)
     for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
         console.log(`Processing ${customerShipments.length} shipments for ${customerName}...`);
@@ -599,8 +602,8 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                 
                 console.log(`Generating PDF for shipment ${shipmentId} (${charges} ${currency})...`);
 
-                // Get customer billing information
-                const companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                // Get customer billing information (for BILL TO section)
+                const customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
 
                 // ✅ UPDATED: Use sequential invoice numbering
                 const sequentialInvoiceNumber = await getNextInvoiceNumber();
@@ -618,7 +621,7 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                 const invoiceData = {
                     invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From `INV-${shipmentId}` to sequential number
                     companyId: companyId,
-                    companyName: companyInfo.companyName || customerName || companyName || companyId,
+                    companyName: customerBillingInfo.companyName || customerName || companyName || companyId,
                     
                     // Single line item for this shipment
                     lineItems: [{
@@ -626,7 +629,7 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                         orderNumber: shipmentId,
                         trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
                         description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                        carrier: 'Integrated Carriers', // Override carrier for customer invoices
+                        carrier: invoiceCompanyInfo?.billingInfo?.companyDisplayName || invoiceCompanyInfo?.name || 'Integrated Carriers', // Use dynamic company name for customer invoices
                         service: shipment.service || 'Standard',
                         date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
                         charges: filteredCharges, // Use filtered amount (excludes transaction fees)
@@ -654,7 +657,7 @@ async function generateSeparateInvoices(customerGroups, companyId, companyName, 
                     hasQuebecTaxes: invoiceTotals.hasQuebecTaxes
                 };
 
-                const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+                const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
 
                 // Validate PDF buffer
                 if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
@@ -703,6 +706,9 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
     let successCount = 0;
     let errorCount = 0;
 
+    // Load company data once for all invoices (for logo, AR contact, etc.)
+    const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
+
     for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
         console.log(`Generating COMBINED invoice for ${customerName} with ${customerShipments.length} shipments...`);
         
@@ -711,7 +717,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
             let totalCharges = 0;
             const lineItems = [];
             const allChargeBreakdowns = [];
-            let companyInfo = null;
+            let customerBillingInfo = null;
 
             // Process all shipments for this customer
             for (const shipment of customerShipments) {
@@ -719,8 +725,8 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                 const shipmentId = shipment.shipmentID || shipment.id;
                 
                 // Get customer billing info from first shipment (same for all shipments from same customer)
-                if (!companyInfo) {
-                    companyInfo = await getCustomerBillingInfo(shipment, companyId);
+                if (!customerBillingInfo) {
+                    customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
                 }
 
                 // Get detailed charge breakdown for this shipment
@@ -739,7 +745,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
                     orderNumber: shipmentId,
                     trackingNumber: shipment.trackingNumber || shipment.carrierTrackingNumber || 'Pending',
                     description: `Shipment from ${shipment.shipFrom?.city || 'N/A'} to ${shipment.shipTo?.city || 'N/A'}`,
-                    carrier: 'Integrated Carriers', // Override carrier for customer invoices
+                    carrier: invoiceCompanyInfo?.billingInfo?.companyDisplayName || invoiceCompanyInfo?.name || 'Integrated Carriers', // Use dynamic company name for customer invoices
                     service: shipment.service || 'Standard',
                     date: shipment.shipmentDate || shipment.bookedAt || shipment.createdAt || new Date(),
                     charges: filteredCharges, // Use filtered amount (excludes transaction fees)
@@ -766,7 +772,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
             const invoiceData = {
                 invoiceNumber: sequentialInvoiceNumber, // ✅ CHANGED: From complex naming to sequential number
                 companyId: companyId,
-                companyName: companyInfo?.companyName || customerName || companyName || companyId,
+                companyName: customerBillingInfo?.companyName || customerName || companyName || companyId,
                 
                 // ✅ MULTIPLE LINE ITEMS: All shipments for this customer
                 lineItems: lineItems,
@@ -787,7 +793,7 @@ async function generateCombinedInvoices(customerGroups, companyId, companyName, 
 
             console.log(`Generated combined invoice ${sequentialInvoiceNumber} for ${customerName}: $${totalCharges} ${currency} (${lineItems.length} shipments)`);
 
-            const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo || {});
+            const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
 
             // Validate PDF buffer
             if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
@@ -821,6 +827,51 @@ Total Expected Charges: ${customerShipments.reduce((sum, s) => sum + getSimpleSh
         }
     }
     return { successCount, errorCount };
+}
+
+// ✅ HELPER: Get company billing information for invoice generation (logo, AR contact, etc.)
+async function getInvoiceCompanyInfo(companyId) {
+    try {
+        console.log(`Loading company info for invoice generation: ${companyId}`);
+        
+        const companyQuery = db.collection('companies').where('companyID', '==', companyId).limit(1);
+        const companySnapshot = await companyQuery.get();
+        
+        if (!companySnapshot.empty) {
+            const companyData = companySnapshot.docs[0].data();
+            console.log(`Loaded company data for invoices: ${companyData.name || companyId}`);
+            
+            return {
+                companyID: companyId,
+                name: companyData.name || companyId,
+                website: companyData.website || '',
+                logos: companyData.logos || {},
+                billingInfo: companyData.billingInfo || {},
+                mainContact: companyData.mainContact || {},
+                ...companyData
+            };
+        } else {
+            console.warn(`Company not found: ${companyId}, using fallback data`);
+            return {
+                companyID: companyId,
+                name: companyId,
+                website: '',
+                logos: {},
+                billingInfo: {},
+                mainContact: {}
+            };
+        }
+    } catch (error) {
+        console.error('Error loading company info for invoice:', error);
+        return {
+            companyID: companyId,
+            name: companyId,
+            website: '',
+            logos: {},
+            billingInfo: {},
+            mainContact: {}
+        };
+    }
 }
 
 // ✅ HELPER: Get customer billing information (extracted from existing logic)
@@ -1401,6 +1452,7 @@ exports.detectSimpleCurrency = detectSimpleCurrency;
 exports.calculateTotalWeight = calculateTotalWeight;
 exports.getActualCustomerName = getActualCustomerName;
 exports.getCustomerBillingInfo = getCustomerBillingInfo;
+exports.getInvoiceCompanyInfo = getInvoiceCompanyInfo;
 exports.getAllReferenceNumbers = getAllReferenceNumbers;
 
 // ✅ Note: Tax separation and $0.00 filtering is now active in production 

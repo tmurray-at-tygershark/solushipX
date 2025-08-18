@@ -16,7 +16,7 @@ const db = getFirestore();
 
 // Import the existing invoice generation functions
 const { generateInvoicePDF, getNextInvoiceNumber } = require('../generateInvoicePDFAndEmail');
-const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo, getAllReferenceNumbers } = require('./bulkInvoiceGenerator');
+const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo, getInvoiceCompanyInfo, getAllReferenceNumbers } = require('./bulkInvoiceGenerator');
 
 /**
  * Preview Bulk Invoices - Generates actual PDF invoices for preview
@@ -145,8 +145,8 @@ exports.previewBulkInvoices = onRequest(
             // 3. GENERATE ALL INVOICE PDFS FOR COMPLETE PREVIEW
             const sampleInvoices = [];
 
-            // Get company info for PDF generation
-            const companyInfo = await getCompanyInfo(companyId);
+            // Get company info for PDF generation (logo, AR contact, etc.)
+            const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
             
             if (invoiceMode === 'separate') {
                 // SEPARATE MODE: One invoice per shipment
@@ -156,8 +156,11 @@ exports.previewBulkInvoices = onRequest(
                 // Generate actual PDFs for ALL shipments
                 for (const shipment of shipments) {
                     try {
+                        // Get customer billing info for BILL TO section
+                        const customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
+                        
                         const invoiceData = await createInvoiceDataForShipment(shipment, companyId, invoiceIssueDate);
-                        const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+                        const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
                         
                         const charges = getSimpleShipmentCharges(shipment);
                         const customerName = getCustomerName(shipment);
@@ -202,8 +205,11 @@ exports.previewBulkInvoices = onRequest(
                 for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
                     
                     try {
+                        // Get customer billing info from first shipment (same for all shipments from same customer)
+                        const customerBillingInfo = await getCustomerBillingInfo(customerShipments[0], companyId);
+                        
                         const invoiceData = await createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate);
-                        const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
+                        const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
                         
                         let customerTotal = 0;
                         for (const shipment of customerShipments) {
