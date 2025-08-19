@@ -2787,13 +2787,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
         let delayed = 0;
         let cancelled = 0;
         let drafts = 0;
+        let pendingReview = 0;
 
         // Single pass through the array with direct status matching (same as filtering logic)
         allShipments.forEach(s => {
             const status = s.status?.toLowerCase()?.trim();
 
             if (status === 'draft') {
-                drafts++;
+                // Check if this is a pending review draft
+                if (s.pending_review === true) {
+                    pendingReview++;
+                } else {
+                    drafts++;
+                }
             } else if (status === 'pending' || status === 'scheduled' || status === 'booked' ||
                 status === 'awaiting_shipment' || status === 'ready_to_ship' || status === 'label_created') {
                 awaitingShipment++;
@@ -2814,7 +2820,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             }
         });
 
-        const nonDraftTotal = allShipments.length - drafts;
+        const nonDraftTotal = allShipments.length - drafts - pendingReview;
 
         console.log(`📊 Stats calculated:`, {
             total: allShipments.length,
@@ -2824,17 +2830,19 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             delivered,
             delayed,
             cancelled,
-            drafts
+            drafts,
+            pendingReview
         });
 
         return {
-            total: nonDraftTotal, // Total excludes drafts for the "All" tab
+            total: nonDraftTotal, // Total excludes drafts and pending review for the "All" tab
             awaitingShipment,
             inTransit,
             delivered,
             delayed,
             cancelled,
-            drafts
+            drafts,
+            pendingReview
         };
     }, [allShipments]);
 
@@ -3244,16 +3252,22 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
             console.log(`🏷️ Filtering for tab: ${activeTab}`);
 
             if (activeTab === 'all') {
-                // "All" tab excludes drafts only
+                // "All" tab excludes drafts and pending review
                 shipmentsData = shipmentsData.filter(s => {
                     const status = s.status?.toLowerCase()?.trim();
                     return status !== 'draft';
                 });
             } else if (activeTab === 'draft') {
-                // Draft tab includes only drafts
+                // Draft tab includes only drafts WITHOUT pending_review flag
                 shipmentsData = shipmentsData.filter(s => {
                     const status = s.status?.toLowerCase()?.trim();
-                    return status === 'draft';
+                    return status === 'draft' && s.pending_review !== true;
+                });
+            } else if (activeTab === 'pending_review') {
+                // Pending review tab includes only drafts WITH pending_review flag
+                shipmentsData = shipmentsData.filter(s => {
+                    const status = s.status?.toLowerCase()?.trim();
+                    return status === 'draft' && s.pending_review === true;
                 });
             } else if (activeTab === 'Awaiting Shipment') {
                 // Pre-shipment statuses: pending, scheduled, booked, awaiting_shipment
@@ -3978,6 +3992,7 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                         <Tab label={`Delayed (${stats.delayed})`} value="Delayed" />
                                         <Tab label={`Cancelled (${stats.cancelled})`} value="Cancelled" />
                                         <Tab label={`Ship Later (${stats.drafts})`} value="draft" />
+                                        <Tab label={`For Review (${stats.pendingReview})`} value="pending_review" />
                                     </Tabs>
 
                                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -4059,38 +4074,40 @@ const ShipmentsX = ({ isModal = false, onClose = null, showCloseButton = false, 
                                                 Quick Ship
                                             </Button>
                                         )}
-                                        {/* New shipment button - always visible (manufacturers should be able to create shipments) */}
-                                        <Button
-                                            onClick={() => {
-                                                if (onOpenCreateShipment) {
-                                                    // Open advanced CreateShipment with refresh callbacks
-                                                    onOpenCreateShipment(null, null, null, null, {
-                                                        onShipmentUpdated: handleShipmentUpdated,
-                                                        onDraftSaved: handleDraftSaved,
-                                                        onReturnToShipments: () => {
-                                                            // Refresh the table when returning from shipment creation
-                                                            setTimeout(() => loadShipments(null, unifiedSearch), 100);
-                                                        }
-                                                    });
-                                                } else {
-                                                    showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
+                                        {/* New shipment button - only show if user has USE_LIVE_RATES permission */}
+                                        {hasPermission(userRole, PERMISSIONS.USE_LIVE_RATES) && (
+                                            <Button
+                                                onClick={() => {
+                                                    if (onOpenCreateShipment) {
+                                                        // Open advanced CreateShipment with refresh callbacks
+                                                        onOpenCreateShipment(null, null, null, null, {
+                                                            onShipmentUpdated: handleShipmentUpdated,
+                                                            onDraftSaved: handleDraftSaved,
+                                                            onReturnToShipments: () => {
+                                                                // Refresh the table when returning from shipment creation
+                                                                setTimeout(() => loadShipments(null, unifiedSearch), 100);
+                                                            }
+                                                        });
+                                                    } else {
+                                                        showSnackbar('Create Shipment functionality requires parent modal integration', 'warning');
+                                                    }
+                                                }}
+                                                variant="contained"
+                                                startIcon={<AddIcon />}
+                                                size="small"
+                                                disabled={
+                                                    // Enable for super admins (they have company selector), disable for others without company
+                                                    userRole !== 'superadmin' && (
+                                                        !companyIdForAddress ||
+                                                        companyIdForAddress === 'all' ||
+                                                        (adminViewMode && adminViewMode === 'all')
+                                                    )
                                                 }
-                                            }}
-                                            variant="contained"
-                                            startIcon={<AddIcon />}
-                                            size="small"
-                                            disabled={
-                                                // Enable for super admins (they have company selector), disable for others without company
-                                                userRole !== 'superadmin' && (
-                                                    !companyIdForAddress ||
-                                                    companyIdForAddress === 'all' ||
-                                                    (adminViewMode && adminViewMode === 'all')
-                                                )
-                                            }
-                                            sx={{ fontSize: '11px', textTransform: 'none' }}
-                                        >
-                                            New
-                                        </Button>
+                                                sx={{ fontSize: '11px', textTransform: 'none' }}
+                                            >
+                                                New
+                                            </Button>
+                                        )}
                                     </Box>
                                 </Toolbar>
 

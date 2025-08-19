@@ -1377,10 +1377,10 @@ const ChargesTab = () => {
     const getChargeStatusChip = (status) => {
         const statusConfig = {
             'pending_review': {
-                label: 'Pending Review',
-                backgroundColor: '#fef7ed',
-                color: '#f59e0b',
-                border: '1px solid #fed7aa'
+                label: 'For Review',
+                backgroundColor: '#dbeafe',
+                color: '#2563eb',
+                border: '1px solid #93c5fd'
             },
             'ap_processed': {
                 label: 'Ready for Final Approval',

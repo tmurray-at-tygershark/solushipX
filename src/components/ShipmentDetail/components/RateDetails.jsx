@@ -126,6 +126,9 @@ const RateDetails = ({
     // State for tax calculation
     const [isCalculatingTaxes, setIsCalculatingTaxes] = useState(false);
 
+    // State to prevent refresh cycle after saving
+    const [isSavingCharges, setIsSavingCharges] = useState(false);
+
     // Company data state for carrier overrides
     const [companyData, setCompanyData] = useState(null);
 
@@ -312,6 +315,8 @@ const RateDetails = ({
         let updatedBreakdown = [...localRateBreakdown];
         const updatedItem = {
             ...updatedBreakdown[index],
+            // CRITICAL FIX: Preserve existing ID to prevent duplication
+            id: updatedBreakdown[index].id,
             description: editingValues.description.trim(),
             quotedCost: parseFloat(editingValues.quotedCost) || 0,
             quotedCharge: parseFloat(editingValues.quotedCharge) || 0,
@@ -334,7 +339,7 @@ const RateDetails = ({
             !isEditingTaxCharge) {
             const province = shipment.shipTo?.state;
             if (province) {
-                updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes || []);
+                updatedBreakdown = updateRateAndRecalculateTaxes(updatedBreakdown, updatedItem, province, availableChargeTypes || [], shipment?.id);
             }
         }
 
@@ -349,14 +354,20 @@ const RateDetails = ({
         // Save to database with proper error handling
         if (onChargesUpdate) {
             try {
+                setIsSavingCharges(true); // Prevent refresh during save
                 const result = await onChargesUpdate(updatedBreakdown);
                 if (result && result.success) {
                     console.log('✅ Charge saved successfully');
+                    // Allow a brief delay to ensure backend state is consistent before allowing refresh
+                    setTimeout(() => {
+                        setIsSavingCharges(false);
+                    }, 500);
                 } else {
                     throw new Error(result?.error || 'Save failed');
                 }
             } catch (error) {
                 console.error('❌ Error saving charges:', error);
+                setIsSavingCharges(false); // Clear flag on error
                 // Revert to original state
                 setLocalRateBreakdown(originalBreakdown);
                 setEditingIndex(index); // Go back to editing mode
@@ -430,7 +441,7 @@ const RateDetails = ({
             if (province && existingTaxCharges.length === 0) {
                 // Only add taxes if none exist
                 console.log('🍁 Canadian Tax: Adding taxes after adding first charge');
-                updatedBreakdown = addRateAndRecalculateTaxes(localRateBreakdown, newCharge, province, availableChargeTypes || []);
+                updatedBreakdown = addRateAndRecalculateTaxes(localRateBreakdown, newCharge, province, availableChargeTypes || [], shipment?.id);
             } else if (existingTaxCharges.length > 0) {
                 // Taxes already exist - just add the new charge without recalculating taxes
                 console.log('🍁 Canadian Tax: Preserving existing taxes when adding new charge');
@@ -473,7 +484,7 @@ const RateDetails = ({
             if (province && chargeToDelete && isDeletedChargeTax) {
                 // Only recalculate taxes if we're deleting a tax charge
                 console.log('🍁 Canadian Tax: Recalculating taxes after deleting tax charge');
-                updatedBreakdown = removeRateAndRecalculateTaxes(localRateBreakdown, chargeToDelete.id, province, availableChargeTypes || []);
+                updatedBreakdown = removeRateAndRecalculateTaxes(localRateBreakdown, chargeToDelete.id, province, availableChargeTypes || [], shipment?.id);
             } else if (chargeToDelete && !isDeletedChargeTax) {
                 // Deleting a non-tax charge - preserve existing taxes
                 console.log('🍁 Canadian Tax: Preserving existing taxes when deleting non-tax charge');
@@ -486,10 +497,16 @@ const RateDetails = ({
 
         // Notify parent component of changes - this will trigger the save to database
         if (onChargesUpdate) {
+            setIsSavingCharges(true);
             // Don't await - fire and forget for true optimistic updates
-            onChargesUpdate(updatedBreakdown).catch(error => {
-                console.error('❌ Error saving charges:', error);
-            });
+            onChargesUpdate(updatedBreakdown)
+                .then(() => {
+                    setTimeout(() => setIsSavingCharges(false), 500);
+                })
+                .catch(error => {
+                    console.error('❌ Error saving charges:', error);
+                    setIsSavingCharges(false);
+                });
         }
     }, [localRateBreakdown, onChargesUpdate, availableChargeTypes, shipment]);
 
@@ -690,8 +707,9 @@ const RateDetails = ({
             });
 
             // Convert to legacy format for current UI compatibility
-            const breakdown = rateData.charges.map(charge => ({
-                id: charge.id,
+            const breakdown = rateData.charges.map((charge, index) => ({
+                // CRITICAL FIX: Ensure every item has a consistent ID
+                id: charge.id || `${shipment.id}_charge_${index}`,
                 code: charge.code || 'UNK',
                 // Prefer description, then name, then code-based defaults
                 description: resolveChargeDescription(charge),
@@ -731,7 +749,7 @@ const RateDetails = ({
         // 2. shipment ID changed (new shipment loaded)
         // 3. shipment was modified externally
 
-        const shouldRefresh = editingIndex === null && shipment?.id;
+        const shouldRefresh = editingIndex === null && !isSavingCharges && shipment?.id;
 
         if (shouldRefresh) {
             const rateBreakdown = getRateBreakdown();
@@ -748,9 +766,11 @@ const RateDetails = ({
             });
             setLocalRateBreakdown(rateBreakdown);
         } else {
-            console.log('⚠️ Skipping rate breakdown reload - user is editing');
+            const reason = editingIndex !== null ? 'user is editing' :
+                isSavingCharges ? 'saving charges in progress' : 'no shipment ID';
+            console.log(`⚠️ Skipping rate breakdown reload - ${reason}`);
         }
-    }, [shipment?.id, shipment?.lastModified, editingIndex, getRateBreakdown]);
+    }, [shipment?.id, shipment?.lastModified, editingIndex, isSavingCharges, getRateBreakdown]);
 
     // 🍁 CANADIAN TAX AUTO-CALCULATION - Only add taxes when missing
     React.useEffect(() => {
@@ -847,12 +867,15 @@ const RateDetails = ({
             // Automatically save the updated charges to the database
             if (onChargesUpdate) {
                 console.log('🍁 Canadian Tax: Auto-saving newly added taxes to database');
+                setIsSavingCharges(true);
                 onChargesUpdate(updatedShipmentData.manualRates, false)
                     .then(() => {
                         console.log('🍁 Canadian Tax: Auto-save completed successfully');
+                        setTimeout(() => setIsSavingCharges(false), 500);
                     })
                     .catch(error => {
                         console.error('🍁 Canadian Tax: Failed to auto-save updated charges:', error);
+                        setIsSavingCharges(false);
                     })
                     .finally(() => {
                         // Always clear the calculating flag
@@ -1540,9 +1563,15 @@ const RateDetails = ({
                                                                 };
                                                                 setLocalRateBreakdown(updatedBreakdown);
                                                                 // Fire and forget for optimistic updates
-                                                                onChargesUpdate(updatedBreakdown).catch(error => {
-                                                                    console.error('❌ Error saving commissionable flag:', error);
-                                                                });
+                                                                setIsSavingCharges(true);
+                                                                onChargesUpdate(updatedBreakdown)
+                                                                    .then(() => {
+                                                                        setTimeout(() => setIsSavingCharges(false), 500);
+                                                                    })
+                                                                    .catch(error => {
+                                                                        console.error('❌ Error saving commissionable flag:', error);
+                                                                        setIsSavingCharges(false);
+                                                                    });
                                                             }
                                                         }}
                                                         size="small"

@@ -91,6 +91,11 @@ async function bookQuickShipmentInternal(data, auth = null) {
             status: 'pending', // Ensure status is set to pending
             bookingTimestamp: new Date().toISOString(), // Add booking timestamp
             
+            // CRITICAL: Remove pending_review flag when converting to actual booking
+            pending_review: admin.firestore.FieldValue.delete(),
+            submitted_for_review_at: admin.firestore.FieldValue.delete(),
+            submitted_for_review_by: admin.firestore.FieldValue.delete(),
+            
             // CRITICAL: Always set QuickShip shipments to not_invoiced status
             invoiceStatus: 'not_invoiced',
             

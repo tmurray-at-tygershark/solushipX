@@ -341,12 +341,16 @@ export const isTaxCharge = (code) => {
 /**
  * Generate tax line items for shipment
  */
-export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextId = 1) => {
+export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextIdOrOptions = 1) => {
     let options = {};
-    // Backward compatibility: allow older call signature without options
-    if (typeof nextId === 'object' && nextId !== null) {
-        options = nextId;
-        nextId = 1;
+    let nextId = 1;
+    
+    // Handle different parameter formats for backward compatibility
+    if (typeof nextIdOrOptions === 'object' && nextIdOrOptions !== null) {
+        options = nextIdOrOptions;
+        nextId = options.nextId || 1;
+    } else {
+        nextId = nextIdOrOptions || 1;
     }
     // Calculate taxable bases for quoted and actual (separate cost vs charge)
     const {
@@ -381,8 +385,13 @@ export const generateTaxLineItems = (rateBreakdown, province, chargeTypes, nextI
         const actualCostTax = (baseActualCost * tax.rate) / 100;
         const actualChargeTax = (baseActualCharge * tax.rate) / 100;
 
+        // Generate deterministic ID to prevent duplication
+        const taxId = options.shipmentId ? 
+            `${options.shipmentId}_tax_${tax.code}_${index}` : 
+            nextId + index;
+            
         return {
-            id: nextId + index,
+            id: taxId,
             carrier: '',
             code: tax.code,
             // Provide multiple friendly name fields so all UIs can render label

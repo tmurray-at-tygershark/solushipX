@@ -1311,7 +1311,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                 shipmentId: shipment.id,
                 charges: validCharges.map((charge, index) => ({
                     // 🔧 CRITICAL FIX: Only use fallbacks for truly missing/null values, preserve existing data
-                    id: charge.id || `charge_${index}`, // Add unique ID for tracking
+                    id: charge.id || `${shipment.id}_charge_${index}`, // Add unique ID for tracking - must match backend pattern
                     code: charge.code != null ? charge.code : 'FRT', // Preserve empty strings, only fallback for null/undefined
                     description: charge.description.trim(), // Ensure description is trimmed and not empty
                     quotedCost: charge.quotedCost != null ? (isNaN(parseFloat(charge.quotedCost)) ? 0 : parseFloat(charge.quotedCost)) : 0,
@@ -1357,7 +1357,7 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         // Update the shipment with new charge data
                         const updatedShipment = {
                             ...prevShipment,
-                            rateBreakdown: validCharges,
+                            // DON'T update rateBreakdown - let rateDataManager be the single source of truth
                             // 🚀 QuickShip: Update manualRates (rateDataManager priority field)
                             ...(isQuickShip && {
                                 manualRates: validCharges.map(charge => ({
@@ -1374,6 +1374,22 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                                     invoiceNumber: charge.invoiceNumber || '-',
                                     ediNumber: charge.ediNumber || '-',
                                     commissionable: charge.commissionable || false
+                                }))
+                            }),
+                            // 🚀 Regular shipments: Update updatedCharges (rateDataManager priority field)
+                            ...(!isQuickShip && {
+                                updatedCharges: validCharges.map(charge => ({
+                                    id: charge.id,
+                                    code: charge.code,
+                                    description: charge.description,
+                                    quotedCost: charge.quotedCost || 0,
+                                    quotedCharge: charge.quotedCharge || 0,
+                                    actualCost: charge.actualCost || 0,
+                                    actualCharge: charge.actualCharge || 0,
+                                    invoiceNumber: charge.invoiceNumber || '-',
+                                    ediNumber: charge.ediNumber || '-',
+                                    commissionable: charge.commissionable || false,
+                                    currency: charge.currency || 'CAD'
                                 }))
                             }),
                             // Update selectedRate if it exists
@@ -1430,7 +1446,8 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         return updatedShipment;
                     });
 
-                    return { success: true };
+                    // Don't trigger refresh since we just updated local state successfully
+                    return { success: true, skipRefresh: true };
                 } catch (stateUpdateError) {
                     console.warn('⚠️ State update failed, falling back to full refresh:', stateUpdateError);
 

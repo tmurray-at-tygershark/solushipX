@@ -47,6 +47,7 @@ export const PERMISSIONS = {
   VIEW_ALL_SHIPMENTS: 'view_all_shipments', // Admin can see all shipments
   EXPORT_SHIPMENTS: 'export_shipments',
   MANAGE_DRAFT_SHIPMENTS: 'manage_draft_shipments',
+  REVIEW_SHIPMENTS: 'review_shipments', // NEW: Permission to review and approve shipments
   
   // Shipment Document & Action Permissions
   VIEW_DOCUMENTS: 'view_documents', // NEW: View documents section (BOL, carrier confirmation, uploads)
@@ -141,6 +142,7 @@ export const PERMISSIONS = {
   MANAGE_MARKUPS: 'manage_markups',
   
   // Advanced Features
+  USE_LIVE_RATES: 'use_live_rates', // NEW: Permission for CreateShipmentX functionality
   USE_AI_AGENT: 'use_ai_agent',
   USE_ADVANCED_ROUTING: 'use_advanced_routing',
   MANAGE_INTEGRATIONS: 'manage_integrations',
@@ -153,7 +155,20 @@ export const PERMISSIONS = {
   
   // Shipment Information Fields
   VIEW_BILL_TYPE: 'view_bill_type',
-  VIEW_ETA_FIELDS: 'view_eta_fields',
+  VIEW_ETA_FIELDS: 'view_eta_fields', // Legacy - keeping for backward compatibility
+  EDIT_ETAS: 'edit_etas', // NEW: Consolidated ETA field editing
+  EDIT_SHIPMENT_REFERENCES: 'edit_shipment_references', // NEW: Primary reference numbers
+  EDIT_CARRIER_TRACKING: 'edit_carrier_tracking', // NEW: Carrier tracking number
+  
+  // QuickShip Form Controls
+  SELECT_QUICKSHIP_CARRIER: 'select_quickship_carrier', // NEW: Select carrier in QuickShip
+  SELECT_SHIP_FROM: 'select_ship_from', // NEW: Ship from address selection
+  SELECT_SHIP_TO: 'select_ship_to', // NEW: Ship to address selection
+  
+  // QuickShip Action Controls
+  USE_SWITCH_TO_LIVE_RATES: 'use_switch_to_live_rates', // NEW: Switch to live rates button
+  USE_SHIP_LATER: 'use_ship_later', // NEW: Ship later / save draft functionality
+  USE_BOOK_SHIPMENT: 'use_book_shipment', // NEW: Book shipment functionality
   
   // Package Information Fields  
   VIEW_DECLARED_VALUE: 'view_declared_value',
@@ -215,6 +230,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
+    [PERMISSIONS.REVIEW_SHIPMENTS]: true,
     
     // Shipment Document & Action Permissions - Full access for Admin
     [PERMISSIONS.VIEW_DOCUMENTS]: true,
@@ -303,6 +319,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features
     [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_LIVE_RATES]: true,
     [PERMISSIONS.USE_AI_AGENT]: true,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: true,
@@ -416,6 +433,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features
     [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_LIVE_RATES]: true,
     [PERMISSIONS.USE_AI_AGENT]: true,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: true,
@@ -427,7 +445,20 @@ export const ROLE_PERMISSIONS = {
     
     // Shipment Information Fields - FULL ACCESS for admins
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
-    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true, // Legacy
+    [PERMISSIONS.EDIT_ETAS]: true,
+    [PERMISSIONS.EDIT_SHIPMENT_REFERENCES]: true,
+    [PERMISSIONS.EDIT_CARRIER_TRACKING]: true,
+    
+    // QuickShip Form Controls - FULL ACCESS for admins
+    [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: true,
+    [PERMISSIONS.SELECT_SHIP_FROM]: true,
+    [PERMISSIONS.SELECT_SHIP_TO]: true,
+    
+    // QuickShip Action Controls - FULL ACCESS for admins
+    [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
+    [PERMISSIONS.USE_SHIP_LATER]: true,
+    [PERMISSIONS.USE_BOOK_SHIPMENT]: true,
     
     // Package Information Fields - FULL ACCESS for admins
     [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
@@ -470,6 +501,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
+    [PERMISSIONS.REVIEW_SHIPMENTS]: true,
     
     // Shipment Document & Action Permissions - Full access for Company Admin
     [PERMISSIONS.VIEW_DOCUMENTS]: true,
@@ -548,6 +580,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features
     [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_LIVE_RATES]: true,
     [PERMISSIONS.USE_AI_AGENT]: true,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: true,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
@@ -559,7 +592,20 @@ export const ROLE_PERMISSIONS = {
     
     // Shipment Information Fields - FULL ACCESS for company admins
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
-    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true, // Legacy
+    [PERMISSIONS.EDIT_ETAS]: true,
+    [PERMISSIONS.EDIT_SHIPMENT_REFERENCES]: true,
+    [PERMISSIONS.EDIT_CARRIER_TRACKING]: true,
+    
+    // QuickShip Form Controls - FULL ACCESS for company admins
+    [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: true,
+    [PERMISSIONS.SELECT_SHIP_FROM]: true,
+    [PERMISSIONS.SELECT_SHIP_TO]: true,
+    
+    // QuickShip Action Controls - FULL ACCESS for company admins
+    [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
+    [PERMISSIONS.USE_SHIP_LATER]: true,
+    [PERMISSIONS.USE_BOOK_SHIPMENT]: true,
     
     // Package Information Fields - FULL ACCESS for company admins
     [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
@@ -601,6 +647,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: true,
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
+    [PERMISSIONS.REVIEW_SHIPMENTS]: false,
     
     // Shipment Document & Action Permissions - View only for accounting
     [PERMISSIONS.VIEW_DOCUMENTS]: true, // Can view documents for billing purposes
@@ -678,6 +725,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features
     [PERMISSIONS.USE_QUICKSHIP]: false,
+    [PERMISSIONS.USE_LIVE_RATES]: true, // Manufacturer can use live rates but not QuickShip
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
@@ -689,7 +737,20 @@ export const ROLE_PERMISSIONS = {
     
     // Shipment Information Fields - FULL ACCESS for accounting
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
-    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true, // Legacy
+    [PERMISSIONS.EDIT_ETAS]: true,
+    [PERMISSIONS.EDIT_SHIPMENT_REFERENCES]: true,
+    [PERMISSIONS.EDIT_CARRIER_TRACKING]: true,
+    
+    // QuickShip Form Controls - FULL ACCESS for accounting
+    [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: true,
+    [PERMISSIONS.SELECT_SHIP_FROM]: true,
+    [PERMISSIONS.SELECT_SHIP_TO]: true,
+    
+    // QuickShip Action Controls - FULL ACCESS for accounting
+    [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
+    [PERMISSIONS.USE_SHIP_LATER]: true,
+    [PERMISSIONS.USE_BOOK_SHIPMENT]: true,
     
     // Package Information Fields - FULL ACCESS for accounting
     [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
@@ -732,6 +793,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false,
     [PERMISSIONS.EXPORT_SHIPMENTS]: true,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: true,
+    [PERMISSIONS.REVIEW_SHIPMENTS]: true,
     
     // Shipment Document & Action Permissions - Limited access for company staff
     [PERMISSIONS.VIEW_DOCUMENTS]: false, // Cannot view documents section
@@ -809,6 +871,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features
     [PERMISSIONS.USE_QUICKSHIP]: true,
+    [PERMISSIONS.USE_LIVE_RATES]: true,
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
@@ -820,7 +883,20 @@ export const ROLE_PERMISSIONS = {
     
     // Shipment Information Fields - FULL ACCESS for company staff
     [PERMISSIONS.VIEW_BILL_TYPE]: true,
-    [PERMISSIONS.VIEW_ETA_FIELDS]: true,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: true, // Legacy
+    [PERMISSIONS.EDIT_ETAS]: true,
+    [PERMISSIONS.EDIT_SHIPMENT_REFERENCES]: true,
+    [PERMISSIONS.EDIT_CARRIER_TRACKING]: true,
+    
+    // QuickShip Form Controls - FULL ACCESS for company staff
+    [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: true,
+    [PERMISSIONS.SELECT_SHIP_FROM]: true,
+    [PERMISSIONS.SELECT_SHIP_TO]: true,
+    
+    // QuickShip Action Controls - FULL ACCESS for company staff
+    [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
+    [PERMISSIONS.USE_SHIP_LATER]: true,
+    [PERMISSIONS.USE_BOOK_SHIPMENT]: true,
     
     // Package Information Fields - FULL ACCESS for company staff
     [PERMISSIONS.VIEW_DECLARED_VALUE]: true,
@@ -864,6 +940,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.VIEW_ALL_SHIPMENTS]: false, // Cannot see all shipments
     [PERMISSIONS.EXPORT_SHIPMENTS]: false,
     [PERMISSIONS.MANAGE_DRAFT_SHIPMENTS]: false,
+    [PERMISSIONS.REVIEW_SHIPMENTS]: false,
     
     // Shipment Document & Action Permissions - RESTRICTED: No access to document actions
     [PERMISSIONS.VIEW_DOCUMENTS]: false, // Cannot view documents section
@@ -956,6 +1033,7 @@ export const ROLE_PERMISSIONS = {
     
     // Advanced Features - RESTRICTED: No advanced features
     [PERMISSIONS.USE_QUICKSHIP]: false,
+    [PERMISSIONS.USE_LIVE_RATES]: false,
     [PERMISSIONS.USE_AI_AGENT]: false,
     [PERMISSIONS.USE_ADVANCED_ROUTING]: false,
     [PERMISSIONS.MANAGE_INTEGRATIONS]: false,
@@ -967,7 +1045,20 @@ export const ROLE_PERMISSIONS = {
     
     // Shipment Information Fields - RESTRICTED: Limited field access
     [PERMISSIONS.VIEW_BILL_TYPE]: false,
-    [PERMISSIONS.VIEW_ETA_FIELDS]: false,
+    [PERMISSIONS.VIEW_ETA_FIELDS]: false, // Legacy
+    [PERMISSIONS.EDIT_ETAS]: false,
+    [PERMISSIONS.EDIT_SHIPMENT_REFERENCES]: false,
+    [PERMISSIONS.EDIT_CARRIER_TRACKING]: false,
+    
+    // QuickShip Form Controls - RESTRICTED: No QuickShip access
+    [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: false,
+    [PERMISSIONS.SELECT_SHIP_FROM]: false,
+    [PERMISSIONS.SELECT_SHIP_TO]: false,
+    
+    // QuickShip Action Controls - RESTRICTED: No QuickShip actions
+    [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: false,
+    [PERMISSIONS.USE_SHIP_LATER]: false,
+    [PERMISSIONS.USE_BOOK_SHIPMENT]: false,
     
     // Package Information Fields - RESTRICTED: Limited package details
     [PERMISSIONS.VIEW_DECLARED_VALUE]: false,

@@ -9,6 +9,7 @@ import dynamicStatusService from '../../services/DynamicStatusService';
  */
 const EnhancedStatusChip = ({
     status,                    // Current shipment status identifier
+    shipment = null,          // NEW: Full shipment object for pending_review check
     size = 'small',           // 'small', 'medium', 'large'
     displayMode = 'auto',     // 'master', 'both', 'auto'
     showTooltip = true,       // Show tooltip with description
@@ -34,14 +35,19 @@ const EnhancedStatusChip = ({
 
                 // 🐛 DRAFT STATUS FIX: Handle draft status with hard-coded chip
                 if (status === 'draft' || (typeof status === 'string' && status.toLowerCase() === 'draft')) {
-                    console.log('[EnhancedStatusChip] Draft status detected - using hard-coded display');
+                    console.log('[EnhancedStatusChip] Draft status detected - checking for pending_review flag');
+
+                    // Check if this is a pending review draft
+                    const isPendingReview = shipment?.pending_review === true;
+                    console.log('[EnhancedStatusChip] isPendingReview:', isPendingReview);
+
                     const draftDisplay = {
                         masterStatus: {
-                            label: 'draft',
-                            displayLabel: 'DRAFT',
-                            color: '#64748b',
+                            label: isPendingReview ? 'pending_review' : 'draft',
+                            displayLabel: isPendingReview ? 'FOR REVIEW' : 'DRAFT',
+                            color: isPendingReview ? '#2563eb' : '#64748b',
                             fontColor: '#ffffff',
-                            description: 'Draft shipment'
+                            description: isPendingReview ? 'Submitted for review - awaiting operations team approval' : 'Draft shipment'
                         },
                         subStatus: null
                     };

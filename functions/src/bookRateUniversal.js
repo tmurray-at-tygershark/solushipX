@@ -216,6 +216,10 @@ exports.bookRateUniversal = onCall({
                 status: 'booked',
                 bookedAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                // CRITICAL: Remove pending_review flag when converting to actual booking
+                pending_review: admin.firestore.FieldValue.delete(),
+                submitted_for_review_at: admin.firestore.FieldValue.delete(),
+                submitted_for_review_by: admin.firestore.FieldValue.delete(),
                 // Add booking confirmation details if available
                 ...(bookingResult.data?.confirmationNumber && {
                     confirmationNumber: bookingResult.data.confirmationNumber

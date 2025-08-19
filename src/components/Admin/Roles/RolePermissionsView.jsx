@@ -316,7 +316,7 @@ const RolePermissionsView = () => {
         if (permissionKey.includes('USER')) return 'User Management';
         if (permissionKey.includes('COMPANY') || permissionKey.includes('COMPANIES')) return 'Company Management';
         if (permissionKey.includes('ORGANIZATION')) return 'Organization Management';
-        if (permissionKey.includes('SHIPMENT') || permissionKey.includes('BOL') || permissionKey.includes('CARRIER_CONFIRMATION') || permissionKey.includes('FOLLOW_UPS') || permissionKey.includes('ARCHIVE') || permissionKey.includes('CANCEL') || permissionKey.includes('DOCUMENTS') || permissionKey.includes('RATE_FILTERS')) return 'Shipment Management';
+        if (permissionKey.includes('SHIPMENT') || permissionKey.includes('BOL') || permissionKey.includes('CARRIER_CONFIRMATION') || permissionKey.includes('FOLLOW_UPS') || permissionKey.includes('ARCHIVE') || permissionKey.includes('CANCEL') || permissionKey.includes('DOCUMENTS') || permissionKey.includes('RATE_FILTERS') || permissionKey.includes('BILL_TYPE') || permissionKey.includes('ETA') || permissionKey.includes('DECLARED_VALUE') || permissionKey.includes('FREIGHT_CLASS') || permissionKey.includes('EDIT_CARRIER_TRACKING') || permissionKey.includes('EDIT_SHIPMENT_REFERENCES') || permissionKey.includes('SELECT_QUICKSHIP_CARRIER') || permissionKey.includes('SELECT_SHIP_FROM') || permissionKey.includes('SELECT_SHIP_TO') || permissionKey.includes('USE_SWITCH_TO_LIVE_RATES') || permissionKey.includes('USE_SHIP_LATER') || permissionKey.includes('USE_BOOK_SHIPMENT') || permissionKey.includes('REVIEW_SHIPMENTS')) return 'Shipment Management';
         if (permissionKey.includes('CUSTOMER')) return 'Customer Management';
         if (permissionKey.includes('BILLING') || permissionKey.includes('INVOICE')) return 'Billing & Invoicing';
         if (permissionKey.includes('CARRIER')) return 'Carrier Management';
@@ -325,9 +325,8 @@ const RolePermissionsView = () => {
         if (permissionKey.includes('PROFILE')) return 'Profile Management';
         if (permissionKey.includes('NOTIFICATION')) return 'Notification Management';
         if (permissionKey.includes('SETTINGS') || permissionKey.includes('ROLES') || permissionKey.includes('MARKUPS')) return 'System Settings';
-        if (permissionKey.includes('QUICKSHIP') || permissionKey.includes('AI') || permissionKey.includes('ROUTING')) return 'Advanced Features';
+        if (permissionKey.includes('QUICKSHIP') || permissionKey.includes('LIVE_RATES') || permissionKey.includes('AI') || permissionKey.includes('ROUTING')) return 'Advanced Features';
         if (permissionKey.includes('RATE') || permissionKey.includes('PRICING') || permissionKey.includes('BREAKDOWN')) return 'Rate & Pricing Visibility';
-        if (permissionKey.includes('BILL_TYPE') || permissionKey.includes('ETA') || permissionKey.includes('DECLARED_VALUE') || permissionKey.includes('FREIGHT_CLASS')) return 'Form Field Visibility';
         return 'Other';
     };
 
@@ -346,7 +345,6 @@ const RolePermissionsView = () => {
             case 'System Settings': return <SettingsIcon />;
             case 'Advanced Features': return <RouteIcon />;
             case 'Rate & Pricing Visibility': return <PricingIcon />;
-            case 'Form Field Visibility': return <VisibilityIcon />;
             default: return <BusinessIcon />;
         }
     };

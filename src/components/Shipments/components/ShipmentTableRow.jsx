@@ -1968,6 +1968,7 @@ const ShipmentTableRow = ({
                                 )}
                                 <EnhancedStatusChip
                                     status={shipment?.statusOverride?.enhancedStatus || shipment?.status}
+                                    shipment={shipment}
                                     size="small"
                                     compact={true}
                                     displayMode="master"

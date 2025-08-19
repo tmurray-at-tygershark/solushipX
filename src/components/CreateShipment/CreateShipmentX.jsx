@@ -64,7 +64,7 @@ import {
     FlashOn as FlashOnIcon
 } from '@mui/icons-material';
 import { db } from '../../firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, limit, increment, orderBy, deleteField } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useCompany } from '../../contexts/CompanyContext';
 import { getAvailableServiceLevels, getAvailableAdditionalServices, getCompanyAdditionalServices } from '../../utils/serviceLevelUtils';
@@ -3128,7 +3128,11 @@ const CreateShipmentX = (props) => {
                     ...cleanedShipmentData,
                     isDraft: false, // Convert draft to booked shipment
                     bookedAt: new Date(),
-                    status: 'pending' // Set appropriate booked status
+                    status: 'pending', // Set appropriate booked status
+                    // CRITICAL: Remove pending_review flag when converting to actual booking
+                    pending_review: deleteField(),
+                    submitted_for_review_at: deleteField(),
+                    submitted_for_review_by: deleteField()
                 });
                 console.log('✅ Converted draft to booked shipment:', draftFirestoreDocId);
             } else {

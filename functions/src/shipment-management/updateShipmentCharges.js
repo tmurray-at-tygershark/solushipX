@@ -111,6 +111,7 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         }
 
         const validatedCharge = {
+            id: charge.id || `${shipmentData.id}_charge_${index}`, // Preserve existing ID or create deterministic fallback matching frontend pattern
             code: charge.code || 'FRT',
             description: charge.description.trim(),
             // Respect explicit zeros; only fallback when null/undefined
@@ -151,7 +152,7 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
     if (isQuickShipShipment) {
         // For QuickShip: ONLY update manualRates (single source of truth)
         updateData.manualRates = validatedCharges.map((charge, index) => ({
-            id: index + 1, // Add ID for consistency with QuickShip format
+            id: charge.id || `${shipmentData.id}_manual_${index}`, // Preserve existing ID or create deterministic one
             carrier: shipmentData.selectedCarrier || shipmentData.carrier || '',
             code: charge.code,
             chargeName: charge.description,
@@ -177,8 +178,14 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
         });
     } else {
         // For regular shipments: Use chargesBreakdown and updatedCharges
-        updateData.chargesBreakdown = validatedCharges;
-        updateData.updatedCharges = validatedCharges;
+        updateData.chargesBreakdown = validatedCharges.map((charge, index) => ({
+            ...charge,
+            id: charge.id || `${shipmentData.id}_breakdown_${index}` // Ensure IDs are preserved/created
+        }));
+        updateData.updatedCharges = validatedCharges.map((charge, index) => ({
+            ...charge,
+            id: charge.id || `${shipmentData.id}_updated_${index}` // Ensure IDs are preserved/created
+        }));
         
         logger.info('Updated chargesBreakdown and updatedCharges for regular shipment');
     }

@@ -57,12 +57,14 @@ import {
     Flag as FlagIcon,
     Map as MapIcon,
     Save as SaveIcon,
-    TrendingUp as TrendingUpIcon
+    TrendingUp as TrendingUpIcon,
+    RateReview as ReviewIcon
 } from '@mui/icons-material';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { getAvailableServiceLevels, getAvailableAdditionalServices, getCompanyAdditionalServices } from '../../utils/serviceLevelUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, setDoc, increment, limit, deleteDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -514,6 +516,10 @@ const QuickShip = ({
 
     // Additional state for draft save success
     const [showDraftSuccess, setShowDraftSuccess] = useState(false);
+
+    // Review submission state
+    const [isSubmittingForReview, setIsSubmittingForReview] = useState(false);
+    const [showReviewDialog, setShowReviewDialog] = useState(false);
 
     // Error handling improvements
     const errorAlertRef = useRef(null);
@@ -3752,6 +3758,168 @@ const QuickShip = ({
         }
     };
 
+    // Submit for Review - Save as draft with pending_review flag
+    const handleSubmitForReview = () => {
+        console.log('🔍 SUBMIT FOR REVIEW: Starting submit for review process');
+
+        // Use lenient draft validation (same as Ship Later) - allows saving without all fields
+        if (!validateQuickShipDraft()) {
+            console.log('❌ SUBMIT FOR REVIEW: Draft validation failed');
+            return;
+        }
+
+        // Show confirmation dialog
+        setShowReviewDialog(true);
+    };
+
+    const handleConfirmSubmitForReview = async () => {
+        console.log('🔍 SUBMIT FOR REVIEW: Confirming submission for review');
+        setIsSubmittingForReview(true);
+        setError(null);
+
+        try {
+            // Calculate totals
+            const draftTotalWeight = packages.reduce((total, pkg) => total + (parseFloat(pkg.weight) || 0), 0);
+            const draftTotalPieces = packages.reduce((total, pkg) => total + (parseInt(pkg.quantity) || 1), 0);
+            const draftTotalPackageCount = packages.length;
+
+            const draftData = {
+                // Basic shipment fields
+                shipmentID: shipmentID,
+                status: 'draft',
+                creationMethod: 'quickship',
+                companyID: companyIdForAddress,
+                createdBy: currentUser?.uid || 'unknown',
+                updatedAt: new Date(),
+
+                // CRITICAL: Add pending_review flag
+                pending_review: true,
+                submitted_for_review_at: new Date(),
+                submitted_for_review_by: currentUser?.uid || 'unknown',
+
+                // Comprehensive shipment information
+                shipmentInfo: {
+                    ...shipmentInfo,
+                    shipmentType: shipmentInfo.shipmentType || 'freight',
+                    unitSystem: unitSystem,
+                    carrierTrackingNumber: shipmentInfo.carrierTrackingNumber || '',
+                    totalWeight: draftTotalWeight,
+                    totalPieces: draftTotalPieces,
+                    totalPackageCount: draftTotalPackageCount,
+                    serviceLevel: shipmentInfo.serviceLevel || 'any',
+                    dangerousGoodsType: shipmentInfo.dangerousGoodsType || 'none',
+                    signatureServiceType: shipmentInfo.signatureServiceType || 'none',
+                    notes: shipmentInfo.notes || '',
+                    shipperReferenceNumber: shipmentInfo.shipperReferenceNumber || '',
+                    bookingReferenceNumber: shipmentInfo.bookingReferenceNumber || '',
+                    bookingReferenceType: shipmentInfo.bookingReferenceType || 'PO',
+                    referenceNumbers: shipmentInfo.referenceNumbers || []
+                },
+                shipFrom: availableAddresses.find(addr => addr.id === shipFromAddress?.id) || shipFromAddress || null,
+                shipTo: availableAddresses.find(addr => addr.id === shipToAddress?.id) || shipToAddress || null,
+
+                // Enhanced package data with calculations
+                packages: packages.map((pkg, index) => ({
+                    ...pkg,
+                    totalWeight: parseFloat(pkg.weight) * parseInt(pkg.quantity),
+                    packageNumber: index + 1,
+                    formattedDescription: pkg.itemDescription || `Package ${index + 1}`,
+                    formattedDimensions: `${pkg.length || 0}" x ${pkg.width || 0}" x ${pkg.height || 0}"`,
+                    formattedWeight: `${pkg.weight || 0} ${unitSystem === 'metric' ? 'kg' : 'lbs'}`,
+                    volume: (parseFloat(pkg.length) || 0) * (parseFloat(pkg.width) || 0) * (parseFloat(pkg.height) || 0)
+                })),
+
+                // Carrier information (if selected)
+                selectedCarrier: selectedCarrier || null,
+                carrier: selectedCarrier ? {
+                    name: selectedCarrier,
+                    key: selectedCarrier.toLowerCase().replace(/\s+/g, '_')
+                } : null,
+
+                // Rate information (manual rates)
+                manualRates: manualRates.map(rate => ({
+                    ...rate,
+                    cost: parseFloat(rate.cost || 0),
+                    charge: parseFloat(rate.charge || 0),
+                    costCurrency: rate.costCurrency || 'CAD',
+                    chargeCurrency: rate.chargeCurrency || 'CAD'
+                })),
+
+                // Additional services
+                additionalServices: additionalServices || [],
+
+                // Total calculation
+                totalCost: manualRates.reduce((sum, rate) => sum + (parseFloat(rate.charge) || 0), 0),
+                currency: 'CAD',
+
+                // System metadata
+                formCompleteness: {
+                    hasShipFrom: !!shipFromAddress,
+                    hasShipTo: !!shipToAddress,
+                    hasPackages: packages.length > 0,
+                    hasRates: manualRates.length > 0,
+                    hasCarrier: !!selectedCarrier
+                }
+            };
+
+            console.log('🔍 SUBMIT FOR REVIEW: Draft data prepared:', draftData);
+
+            // Save the draft
+            let docRef;
+            let docId;
+
+            if (activeDraftId) {
+                // Update existing draft
+                docRef = doc(db, 'shipments', activeDraftId);
+                docId = activeDraftId;
+                await updateDoc(docRef, draftData);
+                console.log('Draft updated for review:', docId);
+            } else if (draftId) {
+                // Update existing draft passed as prop
+                docRef = doc(db, 'shipments', draftId);
+                docId = draftId;
+                await updateDoc(docRef, draftData);
+                console.log('Draft updated for review:', docId);
+            } else {
+                // Create new draft
+                draftData.createdAt = new Date();
+                docRef = await addDoc(collection(db, 'shipments'), draftData);
+                docId = docRef.id;
+                setActiveDraftId(docId);
+                console.log('New draft created for review:', docId);
+            }
+
+            console.log('✅ SUBMIT FOR REVIEW: Draft submitted successfully');
+
+            // Close dialog
+            setShowReviewDialog(false);
+
+            // Show success message
+            showSuccess('Shipment submitted for review successfully! The operations team will process your request.');
+
+            // Call callback to refresh shipments
+            if (onDraftSaved) {
+                onDraftSaved(docId, 'Shipment submitted for review');
+            }
+
+            // Close QuickShip modal after brief delay
+            setTimeout(() => {
+                if (onClose) {
+                    onClose();
+                }
+                if (onReturnToShipments) {
+                    onReturnToShipments();
+                }
+            }, 1500);
+
+        } catch (error) {
+            console.error('❌ SUBMIT FOR REVIEW: Error submitting for review:', error);
+            setError(`Failed to submit for review: ${error.message}`);
+        } finally {
+            setIsSubmittingForReview(false);
+        }
+    };
+
     // Coordinated data loading functions
     const loadAddressesForCompany = useCallback(async (companyId, customerId = null) => {
         console.log('🟡 loadAddressesForCompany called with:', { companyId, customerId });
@@ -5628,70 +5796,45 @@ const QuickShip = ({
                                                     }}
                                                 />
                                             </Grid>
-                                            {/* Multiple Reference Numbers */}
-                                            <Grid item xs={12}>
-                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                            Reference Numbers
-                                                        </Typography>
-                                                        <Button
-                                                            size="small"
-                                                            startIcon={<AddIcon />}
-                                                            onClick={() => {
-                                                                setShipmentInfo(prev => ({
-                                                                    ...prev,
-                                                                    referenceNumbers: [...(prev.referenceNumbers || []), '']
-                                                                }));
-                                                            }}
-                                                            sx={{
-                                                                fontSize: '11px',
-                                                                padding: '2px 8px',
-                                                                minWidth: 'auto',
-                                                                textTransform: 'none'
-                                                            }}
-                                                            tabIndex={-1}
-                                                        >
-                                                            Add Reference
-                                                        </Button>
-                                                    </Box>
+                                            {/* Multiple Reference Numbers - Only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.EDIT_SHIPMENT_REFERENCES) && (
+                                                <Grid item xs={12}>
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                Reference Numbers
+                                                            </Typography>
+                                                            <Button
+                                                                size="small"
+                                                                startIcon={<AddIcon />}
+                                                                onClick={() => {
+                                                                    setShipmentInfo(prev => ({
+                                                                        ...prev,
+                                                                        referenceNumbers: [...(prev.referenceNumbers || []), '']
+                                                                    }));
+                                                                }}
+                                                                sx={{
+                                                                    fontSize: '11px',
+                                                                    padding: '2px 8px',
+                                                                    minWidth: 'auto',
+                                                                    textTransform: 'none'
+                                                                }}
+                                                                tabIndex={-1}
+                                                            >
+                                                                Add Reference
+                                                            </Button>
+                                                        </Box>
 
-                                                    {/* Legacy single reference for backward compatibility */}
-                                                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                                        <TextField
-                                                            fullWidth
-                                                            size="small"
-                                                            label="Primary Reference"
-                                                            value={shipmentInfo.shipperReferenceNumber}
-                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
-                                                            autoComplete="off"
-                                                            tabIndex={11}
-                                                            onKeyDown={(e) => handleKeyDown(e, 'navigate')}
-                                                            sx={{
-                                                                '& .MuiInputBase-input': {
-                                                                    fontSize: '12px',
-                                                                    '&::placeholder': { fontSize: '12px' }
-                                                                },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                            }}
-                                                        />
-                                                    </Box>
-
-                                                    {/* Additional reference numbers */}
-                                                    {(shipmentInfo.referenceNumbers || []).map((ref, index) => (
-                                                        <Box key={index} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                        {/* Legacy single reference for backward compatibility */}
+                                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                                                             <TextField
                                                                 fullWidth
                                                                 size="small"
-                                                                label={`Reference ${index + 2}`}
-                                                                value={ref}
-                                                                onChange={(e) => {
-                                                                    const newRefs = [...shipmentInfo.referenceNumbers];
-                                                                    newRefs[index] = e.target.value;
-                                                                    setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
-                                                                }}
+                                                                label="Primary Reference"
+                                                                value={shipmentInfo.shipperReferenceNumber}
+                                                                onChange={(e) => setShipmentInfo(prev => ({ ...prev, shipperReferenceNumber: e.target.value }))}
                                                                 autoComplete="off"
-                                                                tabIndex={12 + index}
+                                                                tabIndex={11}
                                                                 onKeyDown={(e) => handleKeyDown(e, 'navigate')}
                                                                 sx={{
                                                                     '& .MuiInputBase-input': {
@@ -5701,1143 +5844,1182 @@ const QuickShip = ({
                                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
                                                                 }}
                                                             />
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => {
-                                                                    const newRefs = shipmentInfo.referenceNumbers.filter((_, i) => i !== index);
-                                                                    setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
-                                                                }}
-                                                                sx={{ padding: '4px' }}
-                                                                tabIndex={-1}
-                                                            >
-                                                                <DeleteIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
                                                         </Box>
-                                                    ))}
-                                                </Box>
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Carrier Tracking Number"
-                                                    value={shipmentInfo.carrierTrackingNumber}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
-                                                    autoComplete="off"
-                                                    tabIndex={20}
-                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            '&::placeholder': { fontSize: '12px' }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <Autocomplete
-                                                    size="small"
-                                                    options={[
-                                                        { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
-                                                        { value: 'collect', label: 'Collect (Receiver Pays)' },
-                                                        { value: 'third_party', label: 'Third Party' }
-                                                    ]}
-                                                    getOptionLabel={(option) => option.label}
-                                                    value={[
-                                                        { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
-                                                        { value: 'collect', label: 'Collect (Receiver Pays)' },
-                                                        { value: 'third_party', label: 'Third Party' }
-                                                    ].find(option => option.value === shipmentInfo.billType)}
-                                                    onChange={(event, newValue) => {
-                                                        setShipmentInfo(prev => ({ ...prev, billType: newValue ? newValue.value : 'third_party' }));
-                                                    }}
-                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
-                                                    renderInput={(params) => (
+
+                                                        {/* Additional reference numbers */}
+                                                        {(shipmentInfo.referenceNumbers || []).map((ref, index) => (
+                                                            <Box key={index} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                                                <TextField
+                                                                    fullWidth
+                                                                    size="small"
+                                                                    label={`Reference ${index + 2}`}
+                                                                    value={ref}
+                                                                    onChange={(e) => {
+                                                                        const newRefs = [...shipmentInfo.referenceNumbers];
+                                                                        newRefs[index] = e.target.value;
+                                                                        setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
+                                                                    }}
+                                                                    autoComplete="off"
+                                                                    tabIndex={12 + index}
+                                                                    onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                                    sx={{
+                                                                        '& .MuiInputBase-input': {
+                                                                            fontSize: '12px',
+                                                                            '&::placeholder': { fontSize: '12px' }
+                                                                        },
+                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                    }}
+                                                                />
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        const newRefs = shipmentInfo.referenceNumbers.filter((_, i) => i !== index);
+                                                                        setShipmentInfo(prev => ({ ...prev, referenceNumbers: newRefs }));
+                                                                    }}
+                                                                    sx={{ padding: '4px' }}
+                                                                    tabIndex={-1}
+                                                                >
+                                                                    <DeleteIcon sx={{ fontSize: '16px' }} />
+                                                                </IconButton>
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                </Grid>
+                                            )}
+                                            {/* Carrier Tracking Number - Only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.EDIT_CARRIER_TRACKING) && (
+                                                <Grid item xs={12} md={6}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Carrier Tracking Number"
+                                                        value={shipmentInfo.carrierTrackingNumber}
+                                                        onChange={(e) => setShipmentInfo(prev => ({ ...prev, carrierTrackingNumber: e.target.value }))}
+                                                        autoComplete="off"
+                                                        tabIndex={20}
+                                                        onKeyDown={(e) => handleKeyDown(e, 'navigate')}
+                                                        sx={{
+                                                            '& .MuiInputBase-input': {
+                                                                fontSize: '12px',
+                                                                '&::placeholder': { fontSize: '12px' }
+                                                            },
+                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                        }}
+                                                    />
+                                                </Grid>
+                                            )}
+                                            {/* Bill Type - Only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.VIEW_BILL_TYPE) && (
+                                                <Grid item xs={12} md={6}>
+                                                    <Autocomplete
+                                                        size="small"
+                                                        options={[
+                                                            { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
+                                                            { value: 'collect', label: 'Collect (Receiver Pays)' },
+                                                            { value: 'third_party', label: 'Third Party' }
+                                                        ]}
+                                                        getOptionLabel={(option) => option.label}
+                                                        value={[
+                                                            { value: 'prepaid', label: 'Prepaid (Sender Pays)' },
+                                                            { value: 'collect', label: 'Collect (Receiver Pays)' },
+                                                            { value: 'third_party', label: 'Third Party' }
+                                                        ].find(option => option.value === shipmentInfo.billType)}
+                                                        onChange={(event, newValue) => {
+                                                            setShipmentInfo(prev => ({ ...prev, billType: newValue ? newValue.value : 'third_party' }));
+                                                        }}
+                                                        isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                        renderInput={(params) => (
+                                                            <TextField
+                                                                {...params}
+                                                                label="Bill Type"
+                                                                tabIndex={21}
+                                                                sx={{
+                                                                    '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                }}
+                                                            />
+                                                        )}
+                                                        sx={{
+                                                            '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                        }}
+                                                    />
+                                                </Grid>
+                                            )}
+
+                                            {/* ETA Fields - Only show if user has permission */}
+                                            {hasPermission(userRole, PERMISSIONS.EDIT_ETAS) && (
+                                                <>
+                                                    <Grid item xs={12} md={6}>
                                                         <TextField
-                                                            {...params}
-                                                            label="Bill Type"
-                                                            tabIndex={21}
+                                                            fullWidth
+                                                            size="small"
+                                                            label="ETA 1"
+                                                            type="date"
+                                                            value={shipmentInfo.eta1 || ''}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
+                                                            autoComplete="off"
                                                             sx={{
-                                                                '& .MuiInputBase-root': { fontSize: '12px' },
-                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    cursor: 'pointer',
+                                                                    '&::placeholder': { fontSize: '12px' },
+                                                                    '&::-webkit-calendar-picker-indicator': {
+                                                                        position: 'absolute',
+                                                                        left: 0,
+                                                                        top: 0,
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        padding: 0,
+                                                                        margin: 0,
+                                                                        cursor: 'pointer',
+                                                                        opacity: 0
+                                                                    }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': {
+                                                                    cursor: 'pointer'
+                                                                }
+                                                            }}
+                                                            InputLabelProps={{
+                                                                shrink: true,
+                                                                sx: { fontSize: '12px' }
                                                             }}
                                                         />
-                                                    )}
-                                                    sx={{
-                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-
-
-
-                                            {/* ETA Fields - Matching Shipment Date Design */}
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="ETA 1"
-                                                    type="date"
-                                                    value={shipmentInfo.eta1 || ''}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta1: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            cursor: 'pointer',
-                                                            '&::placeholder': { fontSize: '12px' },
-                                                            '&::-webkit-calendar-picker-indicator': {
-                                                                position: 'absolute',
-                                                                left: 0,
-                                                                top: 0,
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                padding: 0,
-                                                                margin: 0,
-                                                                cursor: 'pointer',
-                                                                opacity: 0
-                                                            }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-root': {
-                                                            cursor: 'pointer'
-                                                        }
-                                                    }}
-                                                    InputLabelProps={{
-                                                        shrink: true,
-                                                        sx: { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
-                                            <Grid item xs={12} md={6}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="ETA 2"
-                                                    type="date"
-                                                    value={shipmentInfo.eta2 || ''}
-                                                    onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
-                                                    autoComplete="off"
-                                                    sx={{
-                                                        '& .MuiInputBase-input': {
-                                                            fontSize: '12px',
-                                                            cursor: 'pointer',
-                                                            '&::placeholder': { fontSize: '12px' },
-                                                            '&::-webkit-calendar-picker-indicator': {
-                                                                position: 'absolute',
-                                                                left: 0,
-                                                                top: 0,
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                padding: 0,
-                                                                margin: 0,
-                                                                cursor: 'pointer',
-                                                                opacity: 0
-                                                            }
-                                                        },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' },
-                                                        '& .MuiInputBase-root': {
-                                                            cursor: 'pointer'
-                                                        }
-                                                    }}
-                                                    InputLabelProps={{
-                                                        shrink: true,
-                                                        sx: { fontSize: '12px' }
-                                                    }}
-                                                />
-                                            </Grid>
+                                                    </Grid>
+                                                    <Grid item xs={12} md={6}>
+                                                        <TextField
+                                                            fullWidth
+                                                            size="small"
+                                                            label="ETA 2"
+                                                            type="date"
+                                                            value={shipmentInfo.eta2 || ''}
+                                                            onChange={(e) => setShipmentInfo(prev => ({ ...prev, eta2: e.target.value }))}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': {
+                                                                    fontSize: '12px',
+                                                                    cursor: 'pointer',
+                                                                    '&::placeholder': { fontSize: '12px' },
+                                                                    '&::-webkit-calendar-picker-indicator': {
+                                                                        position: 'absolute',
+                                                                        left: 0,
+                                                                        top: 0,
+                                                                        width: '100%',
+                                                                        height: '100%',
+                                                                        padding: 0,
+                                                                        margin: 0,
+                                                                        cursor: 'pointer',
+                                                                        opacity: 0
+                                                                    }
+                                                                },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' },
+                                                                '& .MuiInputBase-root': {
+                                                                    cursor: 'pointer'
+                                                                }
+                                                            }}
+                                                            InputLabelProps={{
+                                                                shrink: true,
+                                                                sx: { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    </Grid>
+                                                </>
+                                            )}
                                         </Grid>
                                     </CardContent>
                                 </Card>
 
-                                {/* Enhanced Carrier Selection Section */}
-                                <Card sx={{ mb: 2, border: '1px solid #e0e0e0' }}>
-                                    <CardContent sx={{ p: 2 }}>
-                                        <Box display="flex" alignItems="center" mb={2}>
-                                            <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                                Carrier Information
-                                            </Typography>
-                                            {selectedCarrier && selectedCarrierContactId && (
-                                                <Chip
-                                                    label="Complete"
-                                                    size="small"
-                                                    color="success"
-                                                    sx={{ ml: 2, height: '20px', fontSize: '10px' }}
-                                                />
-                                            )}
-                                            {!selectedCarrier && (
-                                                <Chip
-                                                    label="Optional for drafts"
-                                                    size="small"
-                                                    color="default"
-                                                    variant="outlined"
-                                                    sx={{ ml: 2, height: '20px', fontSize: '10px' }}
-                                                />
-                                            )}
-                                        </Box>
-
-                                        {/* Step 1: Carrier Selection */}
-                                        <Box sx={{
-                                            border: selectedCarrier ? '2px solid #4caf50' : '2px solid #e0e0e0',
-                                            borderRadius: '8px',
-                                            p: 2,
-                                            mb: 2,
-                                            backgroundColor: selectedCarrier ? '#f8fff8' : '#ffffff',
-                                            transition: 'all 0.3s ease'
-                                        }}>
-                                            <Box display="flex" alignItems="center" mb={1}>
-                                                <Box sx={{
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '50%',
-                                                    backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
-                                                    color: 'white',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    fontSize: '12px',
-                                                    fontWeight: 600,
-                                                    mr: 1,
-                                                    transition: 'all 0.3s ease'
-                                                }}>
-                                                    {selectedCarrier ? '✓' : '1'}
-                                                </Box>
-                                                <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
-                                                    Select Carrier <span style={{ fontSize: '11px', fontWeight: 400, color: '#6b7280' }}>(Optional for drafts)</span>
+                                {/* Enhanced Carrier Selection Section - Only show if user has permission */}
+                                {hasPermission(userRole, PERMISSIONS.SELECT_QUICKSHIP_CARRIER) && (
+                                    <Card sx={{ mb: 2, border: '1px solid #e0e0e0' }}>
+                                        <CardContent sx={{ p: 2 }}>
+                                            <Box display="flex" alignItems="center" mb={2}>
+                                                <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                    Carrier Information
                                                 </Typography>
-                                                {selectedCarrier && (
-                                                    <IconButton
+                                                {selectedCarrier && selectedCarrierContactId && (
+                                                    <Chip
+                                                        label="Complete"
                                                         size="small"
-                                                        onClick={() => {
-                                                            setSelectedCarrier('');
-                                                            setSelectedCarrierContactId('');
-                                                        }}
-                                                        sx={{ ml: 'auto' }}
-                                                    >
-                                                        <ClearIcon sx={{ fontSize: '16px' }} />
-                                                    </IconButton>
+                                                        color="success"
+                                                        sx={{ ml: 2, height: '20px', fontSize: '10px' }}
+                                                    />
+                                                )}
+                                                {!selectedCarrier && (
+                                                    <Chip
+                                                        label="Optional for drafts"
+                                                        size="small"
+                                                        color="default"
+                                                        variant="outlined"
+                                                        sx={{ ml: 2, height: '20px', fontSize: '10px' }}
+                                                    />
                                                 )}
                                             </Box>
 
-                                            {/* Carrier Dropdown */}
-                                            <Autocomplete
-                                                options={quickShipCarriers}
-                                                getOptionLabel={(option) => option.name || ''}
-                                                value={quickShipCarriers.find(carrier => carrier.name === selectedCarrier) || null}
-                                                onChange={(event, newValue) => {
-                                                    setSelectedCarrier(newValue ? newValue.name : '');
-                                                    setSelectedCarrierContactId(''); // Reset terminal selection
-                                                }}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        placeholder={selectedCarrier ? "Change carrier..." : "Choose a carrier (optional for drafts)..."}
-                                                        size="small"
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                    />
-                                                )}
-                                                renderOption={(props, option) => (
-                                                    <Box component="li" {...props} sx={{ p: 1 }}>
-                                                        <Box display="flex" alignItems="center" width="100%">
-                                                            {option.logo ? (
-                                                                <Avatar
-                                                                    src={option.logo}
-                                                                    sx={{ width: 24, height: 24, mr: 1 }}
-                                                                />
-                                                            ) : (
-                                                                <Avatar sx={{ width: 24, height: 24, mr: 1, fontSize: '10px' }}>
-                                                                    {option.name?.charAt(0)}
-                                                                </Avatar>
-                                                            )}
-                                                            <Box flex={1}>
-                                                                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                                    {option.name}
-                                                                </Typography>
-                                                                {option.contactEmail && (
-                                                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
-                                                                        {option.contactEmail}
-                                                                    </Typography>
-                                                                )}
-                                                            </Box>
-
-                                                        </Box>
+                                            {/* Step 1: Carrier Selection */}
+                                            <Box sx={{
+                                                border: selectedCarrier ? '2px solid #4caf50' : '2px solid #e0e0e0',
+                                                borderRadius: '8px',
+                                                p: 2,
+                                                mb: 2,
+                                                backgroundColor: selectedCarrier ? '#f8fff8' : '#ffffff',
+                                                transition: 'all 0.3s ease'
+                                            }}>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Box sx={{
+                                                        width: '24px',
+                                                        height: '24px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
+                                                        color: 'white',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        fontSize: '12px',
+                                                        fontWeight: 600,
+                                                        mr: 1,
+                                                        transition: 'all 0.3s ease'
+                                                    }}>
+                                                        {selectedCarrier ? '✓' : '1'}
                                                     </Box>
-                                                )}
-                                                sx={{ width: '100%' }}
-                                            />
+                                                    <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+                                                        Select Carrier <span style={{ fontSize: '11px', fontWeight: 400, color: '#6b7280' }}>(Optional for drafts)</span>
+                                                    </Typography>
+                                                    {selectedCarrier && (
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setSelectedCarrier('');
+                                                                setSelectedCarrierContactId('');
+                                                            }}
+                                                            sx={{ ml: 'auto' }}
+                                                        >
+                                                            <ClearIcon sx={{ fontSize: '16px' }} />
+                                                        </IconButton>
+                                                    )}
+                                                </Box>
 
-                                            {/* Carrier Action Buttons */}
-                                            <Box sx={{ mt: 1, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                                                {/* Edit Selected Carrier Button - Only show when carrier is selected */}
-                                                {selectedCarrier && (
+                                                {/* Carrier Dropdown */}
+                                                <Autocomplete
+                                                    options={quickShipCarriers}
+                                                    getOptionLabel={(option) => option.name || ''}
+                                                    value={quickShipCarriers.find(carrier => carrier.name === selectedCarrier) || null}
+                                                    onChange={(event, newValue) => {
+                                                        setSelectedCarrier(newValue ? newValue.name : '');
+                                                        setSelectedCarrierContactId(''); // Reset terminal selection
+                                                    }}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            placeholder={selectedCarrier ? "Change carrier..." : "Choose a carrier (optional for drafts)..."}
+                                                            size="small"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                        />
+                                                    )}
+                                                    renderOption={(props, option) => (
+                                                        <Box component="li" {...props} sx={{ p: 1 }}>
+                                                            <Box display="flex" alignItems="center" width="100%">
+                                                                {option.logo ? (
+                                                                    <Avatar
+                                                                        src={option.logo}
+                                                                        sx={{ width: 24, height: 24, mr: 1 }}
+                                                                    />
+                                                                ) : (
+                                                                    <Avatar sx={{ width: 24, height: 24, mr: 1, fontSize: '10px' }}>
+                                                                        {option.name?.charAt(0)}
+                                                                    </Avatar>
+                                                                )}
+                                                                <Box flex={1}>
+                                                                    <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                                                                        {option.name}
+                                                                    </Typography>
+                                                                    {option.contactEmail && (
+                                                                        <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
+                                                                            {option.contactEmail}
+                                                                        </Typography>
+                                                                    )}
+                                                                </Box>
+
+                                                            </Box>
+                                                        </Box>
+                                                    )}
+                                                    sx={{ width: '100%' }}
+                                                />
+
+                                                {/* Carrier Action Buttons */}
+                                                <Box sx={{ mt: 1, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                                    {/* Edit Selected Carrier Button - Only show when carrier is selected */}
+                                                    {selectedCarrier && (
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<EditIcon />}
+                                                            onClick={() => {
+                                                                console.log('✏️ EDIT BUTTON CLICKED! Selected carrier:', selectedCarrier);
+                                                                const carrierToEdit = quickShipCarriers.find(c => c.name === selectedCarrier);
+                                                                console.log('✏️ Found carrier data:', carrierToEdit);
+                                                                if (carrierToEdit) {
+                                                                    handleEditCarrier(carrierToEdit);
+                                                                }
+                                                            }}
+                                                            sx={{
+                                                                fontSize: '11px',
+                                                                borderColor: '#2196f3',
+                                                                color: '#2196f3',
+                                                                '&:hover': {
+                                                                    borderColor: '#1976d2',
+                                                                    backgroundColor: '#f3f8ff'
+                                                                }
+                                                            }}
+                                                        >
+                                                            Edit Carrier
+                                                        </Button>
+                                                    )}
+
+                                                    {/* Add New Carrier Button */}
                                                     <Button
                                                         variant="outlined"
                                                         size="small"
-                                                        startIcon={<EditIcon />}
-                                                        onClick={() => {
-                                                            console.log('✏️ EDIT BUTTON CLICKED! Selected carrier:', selectedCarrier);
-                                                            const carrierToEdit = quickShipCarriers.find(c => c.name === selectedCarrier);
-                                                            console.log('✏️ Found carrier data:', carrierToEdit);
-                                                            if (carrierToEdit) {
-                                                                handleEditCarrier(carrierToEdit);
-                                                            }
-                                                        }}
+                                                        startIcon={<AddIcon />}
+                                                        onClick={handleAddCarrier}
+                                                        tabIndex={-1}
                                                         sx={{
                                                             fontSize: '11px',
-                                                            borderColor: '#2196f3',
-                                                            color: '#2196f3',
-                                                            '&:hover': {
-                                                                borderColor: '#1976d2',
-                                                                backgroundColor: '#f3f8ff'
-                                                            }
+                                                            borderColor: '#e0e0e0',
+                                                            color: '#666'
                                                         }}
                                                     >
-                                                        Edit Carrier
+                                                        Add New Carrier
                                                     </Button>
-                                                )}
+                                                </Box>
+                                            </Box>
 
-                                                {/* Add New Carrier Button */}
+                                            {/* Step 2: Terminal Selection - Only show when carrier is selected */}
+                                            {selectedCarrier && (
+                                                <Collapse in={Boolean(selectedCarrier)} timeout={300}>
+                                                    <Box sx={{
+                                                        border: selectedCarrierContactId ? '2px solid #4caf50' : '2px solid #2196f3',
+                                                        borderRadius: '8px',
+                                                        p: 2,
+                                                        backgroundColor: selectedCarrierContactId ? '#f8fff8' : '#f3f8ff',
+                                                        transition: 'all 0.3s ease'
+                                                    }}>
+                                                        <Box display="flex" alignItems="center" mb={1}>
+                                                            <Box sx={{
+                                                                width: '24px',
+                                                                height: '24px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: selectedCarrierContactId ? '#4caf50' : '#2196f3',
+                                                                color: 'white',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                fontSize: '12px',
+                                                                fontWeight: 600,
+                                                                mr: 1,
+                                                                transition: 'all 0.3s ease'
+                                                            }}>
+                                                                {selectedCarrierContactId ? '✓' : '2'}
+                                                            </Box>
+                                                            <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+                                                                Select Terminal & Contact
+                                                            </Typography>
+                                                            {selectedCarrierContactId && (
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => setSelectedCarrierContactId('')}
+                                                                    sx={{ ml: 'auto' }}
+                                                                >
+                                                                    <ClearIcon sx={{ fontSize: '16px' }} />
+                                                                </IconButton>
+                                                            )}
+                                                        </Box>
+
+                                                        {/* Enhanced Email Contact Selector */}
+                                                        {(() => {
+                                                            const selectedCarrierData = quickShipCarriers.find(c => c.name === selectedCarrier);
+                                                            console.log('🔍 Selected carrier for email dropdown:', {
+                                                                selectedCarrier,
+                                                                carrierData: selectedCarrierData,
+                                                                emailContacts: selectedCarrierData?.emailContacts,
+                                                                hasEmailContacts: Boolean(selectedCarrierData?.emailContacts)
+                                                            });
+
+                                                            if (!selectedCarrierData?.emailContacts || !Array.isArray(selectedCarrierData.emailContacts)) {
+                                                                return (
+                                                                    <Box sx={{
+                                                                        p: 2,
+                                                                        border: '1px dashed #e0e0e0',
+                                                                        borderRadius: 1,
+                                                                        textAlign: 'center',
+                                                                        backgroundColor: '#fafafa'
+                                                                    }}>
+                                                                        <Typography sx={{ fontSize: '12px', color: '#666', mb: 1 }}>
+                                                                            📧 No email contacts configured for this carrier
+                                                                        </Typography>
+                                                                        <Button
+                                                                            size="small"
+                                                                            variant="outlined"
+                                                                            startIcon={<EditIcon />}
+                                                                            onClick={() => handleEditCarrier(selectedCarrierData)}
+                                                                            sx={{ fontSize: '11px' }}
+                                                                        >
+                                                                            Configure Email Contacts
+                                                                        </Button>
+                                                                    </Box>
+                                                                );
+                                                            }
+
+                                                            return (
+                                                                <EmailSelectorDropdown
+                                                                    key={`${selectedCarrierData.id}-${selectedCarrierData.emailContacts?.length || 0}-${selectedCarrierData.updatedAt || Date.now()}`}
+                                                                    carrier={selectedCarrierData}
+                                                                    value={selectedCarrierContactId}
+                                                                    onChange={(terminalId, terminalData) => {
+                                                                        console.log('📧 Terminal selected:', { terminalId, terminalData });
+                                                                        setSelectedCarrierContactId(terminalId);
+                                                                    }}
+                                                                    label="Select Terminal"
+                                                                    size="small"
+                                                                    fullWidth={true}
+                                                                />
+                                                            );
+                                                        })()}
+
+
+                                                    </Box>
+                                                </Collapse>
+                                            )}
+
+                                            {/* Progress Indicator */}
+                                            <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0' }}>
+                                                <Box display="flex" alignItems="center" justifyContent="space-between">
+                                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
+                                                        {!selectedCarrier ? 'Step 1 of 2: Select your carrier' :
+                                                            !selectedCarrierContactId ? 'Step 2 of 2: Choose terminal and contact' :
+                                                                'Carrier configuration complete ✓'}
+                                                    </Typography>
+                                                    <Box display="flex" gap={0.5}>
+                                                        <Box sx={{
+                                                            width: '8px',
+                                                            height: '8px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
+                                                            transition: 'all 0.3s ease'
+                                                        }} />
+                                                        <Box sx={{
+                                                            width: '8px',
+                                                            height: '8px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: selectedCarrierContactId ? '#4caf50' : (selectedCarrier ? '#2196f3' : '#e0e0e0'),
+                                                            transition: 'all 0.3s ease'
+                                                        }} />
+                                                    </Box>
+                                                </Box>
+                                            </Box>
+                                        </CardContent>
+                                    </Card>
+                                )}
+
+                                {/* Ship From Section - Only show if user has permission */}
+                                {hasPermission(userRole, PERMISSIONS.SELECT_SHIP_FROM) && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                    Ship From
+                                                </Typography>
                                                 <Button
                                                     variant="outlined"
                                                     size="small"
+                                                    onClick={() => handleOpenAddAddress('from')}
                                                     startIcon={<AddIcon />}
-                                                    onClick={handleAddCarrier}
                                                     tabIndex={-1}
-                                                    sx={{
-                                                        fontSize: '11px',
-                                                        borderColor: '#e0e0e0',
-                                                        color: '#666'
-                                                    }}
+                                                    sx={{ fontSize: '12px' }}
                                                 >
-                                                    Add New Carrier
+                                                    New Address
                                                 </Button>
                                             </Box>
-                                        </Box>
 
-                                        {/* Step 2: Terminal Selection - Only show when carrier is selected */}
-                                        {selectedCarrier && (
-                                            <Collapse in={Boolean(selectedCarrier)} timeout={300}>
-                                                <Box sx={{
-                                                    border: selectedCarrierContactId ? '2px solid #4caf50' : '2px solid #2196f3',
-                                                    borderRadius: '8px',
-                                                    p: 2,
-                                                    backgroundColor: selectedCarrierContactId ? '#f8fff8' : '#f3f8ff',
-                                                    transition: 'all 0.3s ease'
-                                                }}>
-                                                    <Box display="flex" alignItems="center" mb={1}>
-                                                        <Box sx={{
-                                                            width: '24px',
-                                                            height: '24px',
-                                                            borderRadius: '50%',
-                                                            backgroundColor: selectedCarrierContactId ? '#4caf50' : '#2196f3',
-                                                            color: 'white',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
+                                            {!shipFromAddress ? (
+                                                <Autocomplete
+                                                    fullWidth
+                                                    options={availableAddresses}
+                                                    getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
+                                                    value={shipFromAddress}
+                                                    onChange={(event, newValue) => handleAddressSelect(newValue, 'from')}
+                                                    loading={loadingAddresses}
+                                                    disabled={currentView === 'addaddress'}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Select Ship From Address"
+                                                            placeholder="Search addresses..."
+                                                            size="small"
+                                                            required
+                                                            disabled={currentView === 'addaddress'}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                ...params.InputProps,
+                                                                endAdornment: (
+                                                                    <>
+                                                                        {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                        {params.InputProps.endAdornment}
+                                                                    </>
+                                                                ),
+                                                            }}
+                                                        />
+                                                    )}
+                                                    renderOption={(props, option) => (
+                                                        <Box component="li" {...props} sx={{
                                                             fontSize: '12px',
-                                                            fontWeight: 600,
-                                                            mr: 1,
-                                                            transition: 'all 0.3s ease'
+                                                            flexDirection: 'column',
+                                                            alignItems: 'flex-start !important',
+                                                            py: 1,
+                                                            textAlign: 'left !important',
+                                                            justifyContent: 'flex-start !important',
+                                                            display: 'flex !important'
                                                         }}>
-                                                            {selectedCarrierContactId ? '✓' : '2'}
-                                                        </Box>
-                                                        <Typography variant="body2" sx={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
-                                                            Select Terminal & Contact
-                                                        </Typography>
-                                                        {selectedCarrierContactId && (
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => setSelectedCarrierContactId('')}
-                                                                sx={{ ml: 'auto' }}
-                                                            >
-                                                                <ClearIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        )}
-                                                    </Box>
-
-                                                    {/* Enhanced Email Contact Selector */}
-                                                    {(() => {
-                                                        const selectedCarrierData = quickShipCarriers.find(c => c.name === selectedCarrier);
-                                                        console.log('🔍 Selected carrier for email dropdown:', {
-                                                            selectedCarrier,
-                                                            carrierData: selectedCarrierData,
-                                                            emailContacts: selectedCarrierData?.emailContacts,
-                                                            hasEmailContacts: Boolean(selectedCarrierData?.emailContacts)
-                                                        });
-
-                                                        if (!selectedCarrierData?.emailContacts || !Array.isArray(selectedCarrierData.emailContacts)) {
-                                                            return (
-                                                                <Box sx={{
-                                                                    p: 2,
-                                                                    border: '1px dashed #e0e0e0',
-                                                                    borderRadius: 1,
-                                                                    textAlign: 'center',
-                                                                    backgroundColor: '#fafafa'
-                                                                }}>
-                                                                    <Typography sx={{ fontSize: '12px', color: '#666', mb: 1 }}>
-                                                                        📧 No email contacts configured for this carrier
-                                                                    </Typography>
-                                                                    <Button
-                                                                        size="small"
-                                                                        variant="outlined"
-                                                                        startIcon={<EditIcon />}
-                                                                        onClick={() => handleEditCarrier(selectedCarrierData)}
-                                                                        sx={{ fontSize: '11px' }}
-                                                                    >
-                                                                        Configure Email Contacts
-                                                                    </Button>
-                                                                </Box>
-                                                            );
-                                                        }
-
-                                                        return (
-                                                            <EmailSelectorDropdown
-                                                                key={`${selectedCarrierData.id}-${selectedCarrierData.emailContacts?.length || 0}-${selectedCarrierData.updatedAt || Date.now()}`}
-                                                                carrier={selectedCarrierData}
-                                                                value={selectedCarrierContactId}
-                                                                onChange={(terminalId, terminalData) => {
-                                                                    console.log('📧 Terminal selected:', { terminalId, terminalData });
-                                                                    setSelectedCarrierContactId(terminalId);
-                                                                }}
-                                                                label="Select Terminal"
-                                                                size="small"
-                                                                fullWidth={true}
-                                                            />
-                                                        );
-                                                    })()}
-
-
-                                                </Box>
-                                            </Collapse>
-                                        )}
-
-                                        {/* Progress Indicator */}
-                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0' }}>
-                                            <Box display="flex" alignItems="center" justifyContent="space-between">
-                                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#666' }}>
-                                                    {!selectedCarrier ? 'Step 1 of 2: Select your carrier' :
-                                                        !selectedCarrierContactId ? 'Step 2 of 2: Choose terminal and contact' :
-                                                            'Carrier configuration complete ✓'}
-                                                </Typography>
-                                                <Box display="flex" gap={0.5}>
-                                                    <Box sx={{
-                                                        width: '8px',
-                                                        height: '8px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: selectedCarrier ? '#4caf50' : '#e0e0e0',
-                                                        transition: 'all 0.3s ease'
-                                                    }} />
-                                                    <Box sx={{
-                                                        width: '8px',
-                                                        height: '8px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: selectedCarrierContactId ? '#4caf50' : (selectedCarrier ? '#2196f3' : '#e0e0e0'),
-                                                        transition: 'all 0.3s ease'
-                                                    }} />
-                                                </Box>
-                                            </Box>
-                                        </Box>
-                                    </CardContent>
-                                </Card>
-
-
-
-                                {/* Ship From Section */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                Ship From
-                                            </Typography>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => handleOpenAddAddress('from')}
-                                                startIcon={<AddIcon />}
-                                                tabIndex={-1}
-                                                sx={{ fontSize: '12px' }}
-                                            >
-                                                New Address
-                                            </Button>
-                                        </Box>
-
-                                        {!shipFromAddress ? (
-                                            <Autocomplete
-                                                fullWidth
-                                                options={availableAddresses}
-                                                getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
-                                                value={shipFromAddress}
-                                                onChange={(event, newValue) => handleAddressSelect(newValue, 'from')}
-                                                loading={loadingAddresses}
-                                                disabled={currentView === 'addaddress'}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Select Ship From Address"
-                                                        placeholder="Search addresses..."
-                                                        size="small"
-                                                        required
-                                                        disabled={currentView === 'addaddress'}
-                                                        autoComplete="off"
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                        InputProps={{
-                                                            ...params.InputProps,
-                                                            endAdornment: (
-                                                                <>
-                                                                    {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
-                                                                    {params.InputProps.endAdornment}
-                                                                </>
-                                                            ),
-                                                        }}
-                                                    />
-                                                )}
-                                                renderOption={(props, option) => (
-                                                    <Box component="li" {...props} sx={{
-                                                        fontSize: '12px',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'flex-start !important',
-                                                        py: 1,
-                                                        textAlign: 'left !important',
-                                                        justifyContent: 'flex-start !important',
-                                                        display: 'flex !important'
-                                                    }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
-                                                            {option.companyName}
-                                                        </Typography>
-                                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
-                                                            {formatAddressForDisplay(option)}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-                                                sx={{
-                                                    '& .MuiAutocomplete-option': {
-                                                        fontSize: '12px !important',
-                                                        textAlign: 'left !important',
-                                                        justifyContent: 'flex-start !important',
-                                                        alignItems: 'flex-start !important',
-                                                        display: 'flex !important'
-                                                    },
-                                                    '& .MuiAutocomplete-listbox': {
-                                                        '& .MuiAutocomplete-option': {
-                                                            textAlign: 'left !important',
-                                                            justifyContent: 'flex-start !important',
-                                                            alignItems: 'flex-start !important'
-                                                        }
-                                                    },
-                                                    '& .MuiAutocomplete-popper': {
-                                                        zIndex: currentView === 'addaddress' ? 800 : 1200,
-                                                        display: currentView === 'addaddress' ? 'none' : 'block'
-                                                    }
-                                                }}
-                                                ListboxProps={{
-                                                    sx: {
-                                                        '& .MuiAutocomplete-option': {
-                                                            textAlign: 'left !important',
-                                                            justifyContent: 'flex-start !important',
-                                                            alignItems: 'flex-start !important'
-                                                        }
-                                                    }
-                                                }}
-                                            />
-                                        ) : (
-                                            <Box sx={{
-                                                p: 2,
-                                                bgcolor: '#f0f9ff',
-                                                borderRadius: 2,
-                                                border: '1px solid #bae6fd',
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: 2,
-                                                position: 'relative'
-                                            }}>
-                                                {/* Action Buttons - Top Right */}
-                                                <Box sx={{
-                                                    position: 'absolute',
-                                                    top: 8,
-                                                    right: 8,
-                                                    display: 'flex',
-                                                    gap: 1,
-                                                    zIndex: 10
-                                                }}>
-                                                    {/* Edit Button - FIRST */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenEditAddress('from')}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255,255,255,0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#6366f1',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
-                                                    </IconButton>
-
-                                                    {/* Change Address Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => {
-                                                            console.log('Change Ship From address clicked');
-
-                                                            // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
-                                                            let customerContext = selectedCustomerId;
-
-                                                            // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
-                                                            const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
-
-                                                            if (!customerContext || customerContext === 'all' || isFirestoreId) {
-                                                                // Priority 1: Use addressClassID if it's a customer address (business customer ID)
-                                                                if (shipFromAddress?.addressClassID && shipFromAddress?.addressClass === 'customer') {
-                                                                    customerContext = shipFromAddress.addressClassID;
-                                                                }
-                                                                // Priority 2: Use customerID field (business customer ID)
-                                                                else if (shipFromAddress?.customerID) {
-                                                                    customerContext = shipFromAddress.customerID;
-                                                                }
-                                                                // Priority 3: Extract business customer ID from shipment data
-                                                                else if (editShipment?.shipTo?.customer?.customerID) {
-                                                                    customerContext = editShipment.shipTo.customer.customerID;
-                                                                }
-                                                                // Priority 4: Try other shipment customer fields (business IDs)
-                                                                else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
-                                                                    customerContext = editShipment.customerID; // Business customer ID
-                                                                }
-                                                                // Default: Show all company addresses
-                                                                else {
-                                                                    customerContext = 'all';
-                                                                }
-                                                            }
-
-                                                            console.log('🔍 Customer extraction process for ShipFrom:', {
-                                                                originalSelectedCustomerId: selectedCustomerId,
-                                                                shipFromAddress: {
-                                                                    addressClassID: shipFromAddress?.addressClassID,
-                                                                    addressClass: shipFromAddress?.addressClass,
-                                                                    customerID: shipFromAddress?.customerID
-                                                                },
-                                                                editShipment: {
-                                                                    customerID: editShipment?.customerID,
-                                                                    customerId: editShipment?.customerId,
-                                                                    shipToCustomerID: editShipment?.shipTo?.customer?.customerID
-                                                                },
-                                                                finalCustomerContext: customerContext
-                                                            });
-
-                                                            setShipFromAddress(null);
-
-                                                            // Refresh addresses with the determined customer context
-                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
-                                                                ? selectedCompanyId
-                                                                : companyIdForAddress;
-                                                            if (currentCompanyId) {
-                                                                console.log('🔄 Refreshing addresses after clearing ShipFrom:', {
-                                                                    currentCompanyId,
-                                                                    customerContext,
-                                                                    shouldFindAddressesFor: customerContext === 'all' ? 'ALL company addresses' : `Customer: ${customerContext}`
-                                                                });
-                                                                loadAddressesForCompany(currentCompanyId, customerContext);
-                                                            }
-                                                        }}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#f59e0b',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
-                                                    </IconButton>
-
-                                                    {/* View in Maps Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenInMaps(shipFromAddress)}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#10b981',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <MapIcon sx={{ fontSize: 14, color: '#10b981' }} />
-                                                    </IconButton>
-                                                </Box>
-
-                                                {/* Address Icon */}
-                                                <Box sx={{
-                                                    width: 50,
-                                                    height: 50,
-                                                    borderRadius: 2,
-                                                    overflow: 'hidden',
-                                                    border: '2px solid #10b981',
-                                                    bgcolor: 'white',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    flexShrink: 0
-                                                }}>
-                                                    <LocationOnIcon sx={{ fontSize: 28, color: '#10b981' }} />
-                                                </Box>
-
-                                                {/* Address Details */}
-                                                <Box sx={{ flex: 1, pr: 4 }}>
-                                                    {/* Company Name & Nickname */}
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
-                                                            {shipFromAddress.companyName}
-                                                        </Typography>
-                                                        {shipFromAddress.nickname && (
-                                                            <Chip
-                                                                label={shipFromAddress.nickname}
-                                                                size="small"
-                                                                sx={{
-                                                                    fontSize: '10px',
-                                                                    height: 18,
-                                                                    bgcolor: '#0ea5e9',
-                                                                    color: 'white'
-                                                                }}
-                                                            />
-                                                        )}
-                                                    </Box>
-
-                                                    {/* Address Information - Organized Layout */}
-                                                    <Grid container spacing={1} sx={{ mb: 1 }}>
-                                                        {/* Full Address */}
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
-                                                                {shipFromAddress.street}
-                                                                {shipFromAddress.street2 && `, ${shipFromAddress.street2}`}
+                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
+                                                                {option.companyName}
                                                             </Typography>
-                                                        </Grid>
-
-                                                        {/* City, State/Province, Postal Code, Country */}
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151' }}>
-                                                                {shipFromAddress.city}, {shipFromAddress.state} {shipFromAddress.postalCode}
-                                                                {shipFromAddress.country && (
-                                                                    <Chip
-                                                                        label={shipFromAddress.country === 'CA' ? 'Canada' : shipFromAddress.country === 'US' ? 'United States' : shipFromAddress.country}
-                                                                        size="small"
-                                                                        variant="outlined"
-                                                                        sx={{
-                                                                            fontSize: '10px',
-                                                                            height: 16,
-                                                                            ml: 1,
-                                                                            color: '#6b7280',
-                                                                            borderColor: '#d1d5db'
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </Typography>
-                                                        </Grid>
-                                                    </Grid>
-
-                                                    {/* Contact Information */}
-                                                    <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 1 }}>
-                                                        {(shipFromAddress.firstName || shipFromAddress.lastName) && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <PersonIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {`${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim()}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                        {shipFromAddress.phone && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <PhoneIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {shipFromAddress.phone}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                        {shipFromAddress.email && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <EmailIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {shipFromAddress.email}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                    </Box>
-
-                                                    {/* Special Instructions */}
-                                                    {shipFromAddress.specialInstructions && (
-                                                        <Box sx={{ mt: 1, p: 1, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                {shipFromAddress.specialInstructions}
+                                                            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
+                                                                {formatAddressForDisplay(option)}
                                                             </Typography>
                                                         </Box>
                                                     )}
-                                                </Box>
-                                            </Box>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                {/* Ship To Section */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                Ship To
-                                            </Typography>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => handleOpenAddAddress('to')}
-                                                startIcon={<AddIcon />}
-                                                tabIndex={-1}
-                                                sx={{ fontSize: '12px' }}
-                                            >
-                                                New Address
-                                            </Button>
-                                        </Box>
-
-                                        {!shipToAddress ? (
-                                            <Autocomplete
-                                                fullWidth
-                                                options={availableAddresses}
-                                                getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
-                                                value={shipToAddress}
-                                                onChange={(event, newValue) => handleAddressSelect(newValue, 'to')}
-                                                loading={loadingAddresses}
-                                                disabled={currentView === 'addaddress'}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Select Ship To Address"
-                                                        placeholder="Search addresses..."
-                                                        size="small"
-                                                        required
-                                                        disabled={currentView === 'addaddress'}
-                                                        autoComplete="off"
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                        InputProps={{
-                                                            ...params.InputProps,
-                                                            endAdornment: (
-                                                                <>
-                                                                    {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
-                                                                    {params.InputProps.endAdornment}
-                                                                </>
-                                                            ),
-                                                        }}
-                                                    />
-                                                )}
-                                                renderOption={(props, option) => (
-                                                    <Box component="li" {...props} sx={{
-                                                        fontSize: '12px',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'flex-start !important',
-                                                        py: 1,
-                                                        textAlign: 'left !important',
-                                                        justifyContent: 'flex-start !important',
-                                                        display: 'flex !important'
-                                                    }}>
-                                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
-                                                            {option.companyName}
-                                                        </Typography>
-                                                        <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
-                                                            {formatAddressForDisplay(option)}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-                                                sx={{
-                                                    '& .MuiAutocomplete-option': {
-                                                        fontSize: '12px !important',
-                                                        textAlign: 'left !important',
-                                                        justifyContent: 'flex-start !important',
-                                                        alignItems: 'flex-start !important',
-                                                        display: 'flex !important'
-                                                    },
-                                                    '& .MuiAutocomplete-listbox': {
+                                                    sx={{
                                                         '& .MuiAutocomplete-option': {
+                                                            fontSize: '12px !important',
                                                             textAlign: 'left !important',
                                                             justifyContent: 'flex-start !important',
-                                                            alignItems: 'flex-start !important'
-                                                        }
-                                                    },
-                                                    '& .MuiAutocomplete-popper': {
-                                                        zIndex: currentView === 'addaddress' ? 800 : 1200,
-                                                        display: currentView === 'addaddress' ? 'none' : 'block'
-                                                    }
-                                                }}
-                                                ListboxProps={{
-                                                    sx: {
-                                                        '& .MuiAutocomplete-option': {
-                                                            textAlign: 'left !important',
-                                                            justifyContent: 'flex-start !important',
-                                                            alignItems: 'flex-start !important'
-                                                        }
-                                                    }
-                                                }}
-                                            />
-                                        ) : (
-                                            <Box sx={{
-                                                p: 2,
-                                                bgcolor: '#f0f9ff',
-                                                borderRadius: 2,
-                                                border: '1px solid #bae6fd',
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: 2,
-                                                position: 'relative'
-                                            }}>
-                                                {/* Action Buttons - Top Right */}
-                                                <Box sx={{
-                                                    position: 'absolute',
-                                                    top: 8,
-                                                    right: 8,
-                                                    display: 'flex',
-                                                    gap: 1,
-                                                    zIndex: 10
-                                                }}>
-                                                    {/* Edit Button - FIRST */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenEditAddress('to')}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255,255,255,0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#6366f1',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
-                                                    </IconButton>
-
-                                                    {/* Change Address Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => {
-                                                            console.log('Change Ship To address clicked');
-
-                                                            // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
-                                                            let customerContext = selectedCustomerId;
-
-                                                            // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
-                                                            const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
-
-                                                            if (!customerContext || customerContext === 'all' || isFirestoreId) {
-                                                                // Priority 1: Use addressClassID if it's a customer address (business customer ID)
-                                                                if (shipToAddress?.addressClassID && shipToAddress?.addressClass === 'customer') {
-                                                                    customerContext = shipToAddress.addressClassID;
-                                                                }
-                                                                // Priority 2: Use customerID field (business customer ID)
-                                                                else if (shipToAddress?.customerID) {
-                                                                    customerContext = shipToAddress.customerID;
-                                                                }
-                                                                // Priority 3: Extract business customer ID from shipment data
-                                                                else if (editShipment?.shipTo?.customer?.customerID) {
-                                                                    customerContext = editShipment.shipTo.customer.customerID;
-                                                                }
-                                                                // Priority 4: Try other shipment customer fields (business IDs)
-                                                                else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
-                                                                    customerContext = editShipment.customerID; // Business customer ID
-                                                                }
-                                                                // Default: Show all company addresses
-                                                                else {
-                                                                    customerContext = 'all';
-                                                                }
+                                                            alignItems: 'flex-start !important',
+                                                            display: 'flex !important'
+                                                        },
+                                                        '& .MuiAutocomplete-listbox': {
+                                                            '& .MuiAutocomplete-option': {
+                                                                textAlign: 'left !important',
+                                                                justifyContent: 'flex-start !important',
+                                                                alignItems: 'flex-start !important'
                                                             }
+                                                        },
+                                                        '& .MuiAutocomplete-popper': {
+                                                            zIndex: currentView === 'addaddress' ? 800 : 1200,
+                                                            display: currentView === 'addaddress' ? 'none' : 'block'
+                                                        }
+                                                    }}
+                                                    ListboxProps={{
+                                                        sx: {
+                                                            '& .MuiAutocomplete-option': {
+                                                                textAlign: 'left !important',
+                                                                justifyContent: 'flex-start !important',
+                                                                alignItems: 'flex-start !important'
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                            ) : (
+                                                <Box sx={{
+                                                    p: 2,
+                                                    bgcolor: '#f0f9ff',
+                                                    borderRadius: 2,
+                                                    border: '1px solid #bae6fd',
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: 2,
+                                                    position: 'relative'
+                                                }}>
+                                                    {/* Action Buttons - Top Right */}
+                                                    <Box sx={{
+                                                        position: 'absolute',
+                                                        top: 8,
+                                                        right: 8,
+                                                        display: 'flex',
+                                                        gap: 1,
+                                                        zIndex: 10
+                                                    }}>
+                                                        {/* Edit Button - FIRST */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenEditAddress('from')}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255,255,255,0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#6366f1',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
+                                                        </IconButton>
 
-                                                            setShipToAddress(null);
+                                                        {/* Change Address Button */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                console.log('Change Ship From address clicked');
 
-                                                            // Refresh addresses with the determined customer context
-                                                            const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
-                                                                ? selectedCompanyId
-                                                                : companyIdForAddress;
-                                                            if (currentCompanyId) {
-                                                                console.log('🔄 Refreshing addresses after clearing ShipTo:', {
-                                                                    currentCompanyId,
-                                                                    customerContext,
+                                                                // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
+                                                                let customerContext = selectedCustomerId;
+
+                                                                // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
+                                                                const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
+
+                                                                if (!customerContext || customerContext === 'all' || isFirestoreId) {
+                                                                    // Priority 1: Use addressClassID if it's a customer address (business customer ID)
+                                                                    if (shipFromAddress?.addressClassID && shipFromAddress?.addressClass === 'customer') {
+                                                                        customerContext = shipFromAddress.addressClassID;
+                                                                    }
+                                                                    // Priority 2: Use customerID field (business customer ID)
+                                                                    else if (shipFromAddress?.customerID) {
+                                                                        customerContext = shipFromAddress.customerID;
+                                                                    }
+                                                                    // Priority 3: Extract business customer ID from shipment data
+                                                                    else if (editShipment?.shipTo?.customer?.customerID) {
+                                                                        customerContext = editShipment.shipTo.customer.customerID;
+                                                                    }
+                                                                    // Priority 4: Try other shipment customer fields (business IDs)
+                                                                    else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
+                                                                        customerContext = editShipment.customerID; // Business customer ID
+                                                                    }
+                                                                    // Default: Show all company addresses
+                                                                    else {
+                                                                        customerContext = 'all';
+                                                                    }
+                                                                }
+
+                                                                console.log('🔍 Customer extraction process for ShipFrom:', {
                                                                     originalSelectedCustomerId: selectedCustomerId,
-                                                                    shipToCustomer: shipToAddress?.customerID || shipToAddress?.addressClassID,
-                                                                    editShipmentCustomer: editShipment?.customerId || editShipment?.customerID
+                                                                    shipFromAddress: {
+                                                                        addressClassID: shipFromAddress?.addressClassID,
+                                                                        addressClass: shipFromAddress?.addressClass,
+                                                                        customerID: shipFromAddress?.customerID
+                                                                    },
+                                                                    editShipment: {
+                                                                        customerID: editShipment?.customerID,
+                                                                        customerId: editShipment?.customerId,
+                                                                        shipToCustomerID: editShipment?.shipTo?.customer?.customerID
+                                                                    },
+                                                                    finalCustomerContext: customerContext
                                                                 });
-                                                                loadAddressesForCompany(currentCompanyId, customerContext);
-                                                            }
-                                                        }}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#f59e0b',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
-                                                    </IconButton>
 
-                                                    {/* View in Maps Button */}
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleOpenInMaps(shipToAddress)}
-                                                        sx={{
-                                                            bgcolor: 'rgba(255, 255, 255, 0.95)',
-                                                            border: '1px solid #bae6fd',
-                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                                            '&:hover': {
-                                                                bgcolor: 'white',
-                                                                borderColor: '#ef4444',
-                                                                boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
-                                                            },
-                                                            width: 28,
-                                                            height: 28
-                                                        }}
-                                                    >
-                                                        <MapIcon sx={{ fontSize: 14, color: '#ef4444' }} />
-                                                    </IconButton>
-                                                </Box>
+                                                                setShipFromAddress(null);
 
-                                                {/* Address Icon */}
-                                                <Box sx={{
-                                                    width: 50,
-                                                    height: 50,
-                                                    borderRadius: 2,
-                                                    overflow: 'hidden',
-                                                    border: '2px solid #ef4444',
-                                                    bgcolor: 'white',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    flexShrink: 0
-                                                }}>
-                                                    <FlagIcon sx={{ fontSize: 28, color: '#ef4444' }} />
-                                                </Box>
+                                                                // Refresh addresses with the determined customer context
+                                                                const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
+                                                                    ? selectedCompanyId
+                                                                    : companyIdForAddress;
+                                                                if (currentCompanyId) {
+                                                                    console.log('🔄 Refreshing addresses after clearing ShipFrom:', {
+                                                                        currentCompanyId,
+                                                                        customerContext,
+                                                                        shouldFindAddressesFor: customerContext === 'all' ? 'ALL company addresses' : `Customer: ${customerContext}`
+                                                                    });
+                                                                    loadAddressesForCompany(currentCompanyId, customerContext);
+                                                                }
+                                                            }}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#f59e0b',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                                                        </IconButton>
 
-                                                {/* Address Details */}
-                                                <Box sx={{ flex: 1, pr: 4 }}>
-                                                    {/* Company Name & Nickname */}
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                                        <Typography variant="body2" sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
-                                                            {shipToAddress.companyName}
-                                                        </Typography>
-                                                        {shipToAddress.nickname && (
-                                                            <Chip
-                                                                label={shipToAddress.nickname}
-                                                                size="small"
-                                                                sx={{
-                                                                    fontSize: '10px',
-                                                                    height: 18,
-                                                                    bgcolor: '#0ea5e9',
-                                                                    color: 'white'
-                                                                }}
-                                                            />
-                                                        )}
+                                                        {/* View in Maps Button */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenInMaps(shipFromAddress)}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#10b981',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <MapIcon sx={{ fontSize: 14, color: '#10b981' }} />
+                                                        </IconButton>
                                                     </Box>
 
-                                                    {/* Address Information - Organized Layout */}
-                                                    <Grid container spacing={1} sx={{ mb: 1 }}>
-                                                        {/* Full Address */}
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
-                                                                {shipToAddress.street}
-                                                                {shipToAddress.street2 && `, ${shipToAddress.street2}`}
+                                                    {/* Address Icon */}
+                                                    <Box sx={{
+                                                        width: 50,
+                                                        height: 50,
+                                                        borderRadius: 2,
+                                                        overflow: 'hidden',
+                                                        border: '2px solid #10b981',
+                                                        bgcolor: 'white',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        <LocationOnIcon sx={{ fontSize: 28, color: '#10b981' }} />
+                                                    </Box>
+
+                                                    {/* Address Details */}
+                                                    <Box sx={{ flex: 1, pr: 4 }}>
+                                                        {/* Company Name & Nickname */}
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+                                                                {shipFromAddress.companyName}
                                                             </Typography>
+                                                            {shipFromAddress.nickname && (
+                                                                <Chip
+                                                                    label={shipFromAddress.nickname}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: 18,
+                                                                        bgcolor: '#0ea5e9',
+                                                                        color: 'white'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </Box>
+
+                                                        {/* Address Information - Organized Layout */}
+                                                        <Grid container spacing={1} sx={{ mb: 1 }}>
+                                                            {/* Full Address */}
+                                                            <Grid item xs={12}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
+                                                                    {shipFromAddress.street}
+                                                                    {shipFromAddress.street2 && `, ${shipFromAddress.street2}`}
+                                                                </Typography>
+                                                            </Grid>
+
+                                                            {/* City, State/Province, Postal Code, Country */}
+                                                            <Grid item xs={12}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151' }}>
+                                                                    {shipFromAddress.city}, {shipFromAddress.state} {shipFromAddress.postalCode}
+                                                                    {shipFromAddress.country && (
+                                                                        <Chip
+                                                                            label={shipFromAddress.country === 'CA' ? 'Canada' : shipFromAddress.country === 'US' ? 'United States' : shipFromAddress.country}
+                                                                            size="small"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: 16,
+                                                                                ml: 1,
+                                                                                color: '#6b7280',
+                                                                                borderColor: '#d1d5db'
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                </Typography>
+                                                            </Grid>
                                                         </Grid>
 
-                                                        {/* City, State/Province, Postal Code, Country */}
-                                                        <Grid item xs={12}>
-                                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151' }}>
-                                                                {shipToAddress.city}, {shipToAddress.state} {shipToAddress.postalCode}
-                                                                {shipToAddress.country && (
-                                                                    <Chip
-                                                                        label={shipToAddress.country === 'CA' ? 'Canada' : shipToAddress.country === 'US' ? 'United States' : shipToAddress.country}
-                                                                        size="small"
-                                                                        variant="outlined"
-                                                                        sx={{
-                                                                            fontSize: '10px',
-                                                                            height: 16,
-                                                                            ml: 1,
-                                                                            color: '#6b7280',
-                                                                            borderColor: '#d1d5db'
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </Typography>
-                                                        </Grid>
-                                                    </Grid>
+                                                        {/* Contact Information */}
+                                                        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 1 }}>
+                                                            {(shipFromAddress.firstName || shipFromAddress.lastName) && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <PersonIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {`${shipFromAddress.firstName || ''} ${shipFromAddress.lastName || ''}`.trim()}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                            {shipFromAddress.phone && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <PhoneIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {shipFromAddress.phone}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                            {shipFromAddress.email && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <EmailIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {shipFromAddress.email}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
 
-                                                    {/* Contact Information */}
-                                                    <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 1 }}>
-                                                        {(shipToAddress.firstName || shipToAddress.lastName) && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <PersonIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {`${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim()}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                        {shipToAddress.phone && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <PhoneIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {shipToAddress.phone}
-                                                                </Typography>
-                                                            </Box>
-                                                        )}
-                                                        {shipToAddress.email && (
-                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                                <EmailIcon sx={{ fontSize: 12, color: '#6b7280' }} />
-                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                    {shipToAddress.email}
+                                                        {/* Special Instructions */}
+                                                        {shipFromAddress.specialInstructions && (
+                                                            <Box sx={{ mt: 1, p: 1, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                    {shipFromAddress.specialInstructions}
                                                                 </Typography>
                                                             </Box>
                                                         )}
                                                     </Box>
+                                                </Box>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                )}
 
-                                                    {/* Special Instructions */}
-                                                    {shipToAddress.specialInstructions && (
-                                                        <Box sx={{ mt: 1, p: 1, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                                            <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                {shipToAddress.specialInstructions}
+                                {/* Ship To Section - Only show if user has permission */}
+                                {hasPermission(userRole, PERMISSIONS.SELECT_SHIP_TO) && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                    Ship To
+                                                </Typography>
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    onClick={() => handleOpenAddAddress('to')}
+                                                    startIcon={<AddIcon />}
+                                                    tabIndex={-1}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    New Address
+                                                </Button>
+                                            </Box>
+
+                                            {!shipToAddress ? (
+                                                <Autocomplete
+                                                    fullWidth
+                                                    options={availableAddresses}
+                                                    getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
+                                                    value={shipToAddress}
+                                                    onChange={(event, newValue) => handleAddressSelect(newValue, 'to')}
+                                                    loading={loadingAddresses}
+                                                    disabled={currentView === 'addaddress'}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Select Ship To Address"
+                                                            placeholder="Search addresses..."
+                                                            size="small"
+                                                            required
+                                                            disabled={currentView === 'addaddress'}
+                                                            autoComplete="off"
+                                                            sx={{
+                                                                '& .MuiInputBase-input': { fontSize: '12px' },
+                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                            }}
+                                                            InputProps={{
+                                                                ...params.InputProps,
+                                                                endAdornment: (
+                                                                    <>
+                                                                        {loadingAddresses ? <CircularProgress color="inherit" size={20} /> : null}
+                                                                        {params.InputProps.endAdornment}
+                                                                    </>
+                                                                ),
+                                                            }}
+                                                        />
+                                                    )}
+                                                    renderOption={(props, option) => (
+                                                        <Box component="li" {...props} sx={{
+                                                            fontSize: '12px',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'flex-start !important',
+                                                            py: 1,
+                                                            textAlign: 'left !important',
+                                                            justifyContent: 'flex-start !important',
+                                                            display: 'flex !important'
+                                                        }}>
+                                                            <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '12px', textAlign: 'left', width: '100%' }}>
+                                                                {option.companyName}
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '11px', textAlign: 'left', width: '100%' }}>
+                                                                {formatAddressForDisplay(option)}
                                                             </Typography>
                                                         </Box>
                                                     )}
+                                                    sx={{
+                                                        '& .MuiAutocomplete-option': {
+                                                            fontSize: '12px !important',
+                                                            textAlign: 'left !important',
+                                                            justifyContent: 'flex-start !important',
+                                                            alignItems: 'flex-start !important',
+                                                            display: 'flex !important'
+                                                        },
+                                                        '& .MuiAutocomplete-listbox': {
+                                                            '& .MuiAutocomplete-option': {
+                                                                textAlign: 'left !important',
+                                                                justifyContent: 'flex-start !important',
+                                                                alignItems: 'flex-start !important'
+                                                            }
+                                                        },
+                                                        '& .MuiAutocomplete-popper': {
+                                                            zIndex: currentView === 'addaddress' ? 800 : 1200,
+                                                            display: currentView === 'addaddress' ? 'none' : 'block'
+                                                        }
+                                                    }}
+                                                    ListboxProps={{
+                                                        sx: {
+                                                            '& .MuiAutocomplete-option': {
+                                                                textAlign: 'left !important',
+                                                                justifyContent: 'flex-start !important',
+                                                                alignItems: 'flex-start !important'
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                            ) : (
+                                                <Box sx={{
+                                                    p: 2,
+                                                    bgcolor: '#f0f9ff',
+                                                    borderRadius: 2,
+                                                    border: '1px solid #bae6fd',
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: 2,
+                                                    position: 'relative'
+                                                }}>
+                                                    {/* Action Buttons - Top Right */}
+                                                    <Box sx={{
+                                                        position: 'absolute',
+                                                        top: 8,
+                                                        right: 8,
+                                                        display: 'flex',
+                                                        gap: 1,
+                                                        zIndex: 10
+                                                    }}>
+                                                        {/* Edit Button - FIRST */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenEditAddress('to')}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255,255,255,0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#6366f1',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <EditIcon sx={{ fontSize: 14, color: '#6366f1' }} />
+                                                        </IconButton>
+
+                                                        {/* Change Address Button */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                console.log('Change Ship To address clicked');
+
+                                                                // 🔧 SMART CUSTOMER EXTRACTION: Get BUSINESS customer ID from address data (ignore selectedCustomerId if it's a Firestore ID)
+                                                                let customerContext = selectedCustomerId;
+
+                                                                // CRITICAL: If selectedCustomerId looks like a Firestore document ID, extract business ID from address
+                                                                const isFirestoreId = customerContext && customerContext.length > 15 && !customerContext.includes('-');
+
+                                                                if (!customerContext || customerContext === 'all' || isFirestoreId) {
+                                                                    // Priority 1: Use addressClassID if it's a customer address (business customer ID)
+                                                                    if (shipToAddress?.addressClassID && shipToAddress?.addressClass === 'customer') {
+                                                                        customerContext = shipToAddress.addressClassID;
+                                                                    }
+                                                                    // Priority 2: Use customerID field (business customer ID)
+                                                                    else if (shipToAddress?.customerID) {
+                                                                        customerContext = shipToAddress.customerID;
+                                                                    }
+                                                                    // Priority 3: Extract business customer ID from shipment data
+                                                                    else if (editShipment?.shipTo?.customer?.customerID) {
+                                                                        customerContext = editShipment.shipTo.customer.customerID;
+                                                                    }
+                                                                    // Priority 4: Try other shipment customer fields (business IDs)
+                                                                    else if (editShipment?.customerID && editShipment.customerID !== editShipment.customerId) {
+                                                                        customerContext = editShipment.customerID; // Business customer ID
+                                                                    }
+                                                                    // Default: Show all company addresses
+                                                                    else {
+                                                                        customerContext = 'all';
+                                                                    }
+                                                                }
+
+                                                                setShipToAddress(null);
+
+                                                                // Refresh addresses with the determined customer context
+                                                                const currentCompanyId = (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && selectedCompanyId
+                                                                    ? selectedCompanyId
+                                                                    : companyIdForAddress;
+                                                                if (currentCompanyId) {
+                                                                    console.log('🔄 Refreshing addresses after clearing ShipTo:', {
+                                                                        currentCompanyId,
+                                                                        customerContext,
+                                                                        originalSelectedCustomerId: selectedCustomerId,
+                                                                        shipToCustomer: shipToAddress?.customerID || shipToAddress?.addressClassID,
+                                                                        editShipmentCustomer: editShipment?.customerId || editShipment?.customerID
+                                                                    });
+                                                                    loadAddressesForCompany(currentCompanyId, customerContext);
+                                                                }
+                                                            }}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#f59e0b',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <SwapHorizIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                                                        </IconButton>
+
+                                                        {/* View in Maps Button */}
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleOpenInMaps(shipToAddress)}
+                                                            sx={{
+                                                                bgcolor: 'rgba(255, 255, 255, 0.95)',
+                                                                border: '1px solid #bae6fd',
+                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                '&:hover': {
+                                                                    bgcolor: 'white',
+                                                                    borderColor: '#ef4444',
+                                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.15)'
+                                                                },
+                                                                width: 28,
+                                                                height: 28
+                                                            }}
+                                                        >
+                                                            <MapIcon sx={{ fontSize: 14, color: '#ef4444' }} />
+                                                        </IconButton>
+                                                    </Box>
+
+                                                    {/* Address Icon */}
+                                                    <Box sx={{
+                                                        width: 50,
+                                                        height: 50,
+                                                        borderRadius: 2,
+                                                        overflow: 'hidden',
+                                                        border: '2px solid #ef4444',
+                                                        bgcolor: 'white',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        <FlagIcon sx={{ fontSize: 28, color: '#ef4444' }} />
+                                                    </Box>
+
+                                                    {/* Address Details */}
+                                                    <Box sx={{ flex: 1, pr: 4 }}>
+                                                        {/* Company Name & Nickname */}
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                                                            <Typography variant="body2" sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+                                                                {shipToAddress.companyName}
+                                                            </Typography>
+                                                            {shipToAddress.nickname && (
+                                                                <Chip
+                                                                    label={shipToAddress.nickname}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontSize: '10px',
+                                                                        height: 18,
+                                                                        bgcolor: '#0ea5e9',
+                                                                        color: 'white'
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </Box>
+
+                                                        {/* Address Information - Organized Layout */}
+                                                        <Grid container spacing={1} sx={{ mb: 1 }}>
+                                                            {/* Full Address */}
+                                                            <Grid item xs={12}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>
+                                                                    {shipToAddress.street}
+                                                                    {shipToAddress.street2 && `, ${shipToAddress.street2}`}
+                                                                </Typography>
+                                                            </Grid>
+
+                                                            {/* City, State/Province, Postal Code, Country */}
+                                                            <Grid item xs={12}>
+                                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#374151' }}>
+                                                                    {shipToAddress.city}, {shipToAddress.state} {shipToAddress.postalCode}
+                                                                    {shipToAddress.country && (
+                                                                        <Chip
+                                                                            label={shipToAddress.country === 'CA' ? 'Canada' : shipToAddress.country === 'US' ? 'United States' : shipToAddress.country}
+                                                                            size="small"
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontSize: '10px',
+                                                                                height: 16,
+                                                                                ml: 1,
+                                                                                color: '#6b7280',
+                                                                                borderColor: '#d1d5db'
+                                                                            }}
+                                                                        />
+                                                                    )}
+                                                                </Typography>
+                                                            </Grid>
+                                                        </Grid>
+
+                                                        {/* Contact Information */}
+                                                        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 1 }}>
+                                                            {(shipToAddress.firstName || shipToAddress.lastName) && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <PersonIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {`${shipToAddress.firstName || ''} ${shipToAddress.lastName || ''}`.trim()}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                            {shipToAddress.phone && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <PhoneIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {shipToAddress.phone}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                            {shipToAddress.email && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <EmailIcon sx={{ fontSize: 12, color: '#6b7280' }} />
+                                                                    <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                        {shipToAddress.email}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+
+                                                        {/* Special Instructions */}
+                                                        {shipToAddress.specialInstructions && (
+                                                            <Box sx={{ mt: 1, p: 1, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                                                <Typography variant="caption" sx={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                    {shipToAddress.specialInstructions}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                    </Box>
                                                 </Box>
-                                            </Box>
-                                        )}
-                                    </CardContent>
-                                </Card>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                )}
 
                                 {/* Packages Section */}
                                 <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
@@ -7186,95 +7368,97 @@ const QuickShip = ({
                                                             />
                                                         </Grid>
 
-                                                        {/* Declared Value */}
-                                                        <Grid item xs={12} md={3}>
-                                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                                <TextField
-                                                                    size="small"
-                                                                    label="Declared Value"
-                                                                    type="number"
-                                                                    value={pkg.declaredValue || ''}
-                                                                    onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
-                                                                    autoComplete="off"
-                                                                    sx={{
-                                                                        flex: 1,
-                                                                        '& .MuiInputBase-root': { fontSize: '12px' },
-                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                    }}
-                                                                    placeholder="0.00"
-                                                                />
-                                                                <Autocomplete
-                                                                    size="small"
-                                                                    options={[
-                                                                        { value: 'CAD', label: 'CAD' },
-                                                                        { value: 'USD', label: 'USD' }
-                                                                    ]}
-                                                                    getOptionLabel={(option) => option.label}
-                                                                    value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
-                                                                    onChange={(event, newValue) => {
-                                                                        updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
-                                                                    }}
-                                                                    isOptionEqualToValue={(option, value) => option.value === value.value}
-                                                                    renderInput={(params) => (
-                                                                        <TextField
-                                                                            {...params}
-                                                                            tabIndex={getPackageBaseTabIndex(index) + 7}
-                                                                            sx={{
-                                                                                minWidth: '70px',
-                                                                                '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
-                                                                                '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    renderOption={(props, option) => (
-                                                                        <Box component="li" {...props} sx={{ fontSize: '12px' }}>
-                                                                            {option.label}
-                                                                        </Box>
-                                                                    )}
-                                                                    sx={{
-                                                                        minWidth: '70px',
-                                                                        '& .MuiAutocomplete-input': { fontSize: '12px' }
-                                                                    }}
-                                                                />
-                                                            </Box>
-                                                        </Grid>
+                                                        {/* Declared Value - Only show if user has permission */}
+                                                        {hasPermission(userRole, PERMISSIONS.VIEW_DECLARED_VALUE) && (
+                                                            <Grid item xs={12} md={3}>
+                                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                    <TextField
+                                                                        size="small"
+                                                                        label="Declared Value"
+                                                                        type="number"
+                                                                        value={pkg.declaredValue || ''}
+                                                                        onChange={(e) => updatePackage(pkg.id, 'declaredValue', e.target.value)}
+                                                                        autoComplete="off"
+                                                                        sx={{
+                                                                            flex: 1,
+                                                                            '& .MuiInputBase-root': { fontSize: '12px' },
+                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                        }}
+                                                                        placeholder="0.00"
+                                                                    />
+                                                                    <Autocomplete
+                                                                        size="small"
+                                                                        options={[
+                                                                            { value: 'CAD', label: 'CAD' },
+                                                                            { value: 'USD', label: 'USD' }
+                                                                        ]}
+                                                                        getOptionLabel={(option) => option.label}
+                                                                        value={{ value: pkg.declaredValueCurrency || 'CAD', label: pkg.declaredValueCurrency || 'CAD' }}
+                                                                        onChange={(event, newValue) => {
+                                                                            updatePackage(pkg.id, 'declaredValueCurrency', newValue ? newValue.value : 'CAD');
+                                                                        }}
+                                                                        isOptionEqualToValue={(option, value) => option.value === value.value}
+                                                                        renderInput={(params) => (
+                                                                            <TextField
+                                                                                {...params}
+                                                                                tabIndex={getPackageBaseTabIndex(index) + 7}
+                                                                                sx={{
+                                                                                    minWidth: '70px',
+                                                                                    '& .MuiInputBase-root': { fontSize: '12px', padding: '6px 8px' },
+                                                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                        renderOption={(props, option) => (
+                                                                            <Box component="li" {...props} sx={{ fontSize: '12px' }}>
+                                                                                {option.label}
+                                                                            </Box>
+                                                                        )}
+                                                                        sx={{
+                                                                            minWidth: '70px',
+                                                                            '& .MuiAutocomplete-input': { fontSize: '12px' }
+                                                                        }}
+                                                                    />
+                                                                </Box>
+                                                            </Grid>
+                                                        )}
 
-
-
-                                                        {/* Freight Class - Optional field */}
-                                                        <Grid item xs={12}>
-                                                            <FormControl fullWidth size="small">
-                                                                <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
-                                                                <Select
-                                                                    value={pkg.freightClass || ''}
-                                                                    onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
-                                                                    label="Freight Class (Optional)"
-                                                                    sx={{
-                                                                        '& .MuiSelect-select': { fontSize: '12px' },
-                                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                                    }}
-                                                                    renderValue={(value) => {
-                                                                        if (!value) return '';
-                                                                        const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
-                                                                        return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
-                                                                    }}
-                                                                >
-                                                                    <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                                        <em>No freight class selected</em>
-                                                                    </MenuItem>
-                                                                    {FREIGHT_CLASSES.map((fc) => (
-                                                                        <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
-                                                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
-                                                                                Class {fc.class} - {fc.description}
-                                                                            </Typography>
+                                                        {/* Freight Class - Only show if user has permission */}
+                                                        {hasPermission(userRole, PERMISSIONS.VIEW_FREIGHT_CLASS) && (
+                                                            <Grid item xs={12}>
+                                                                <FormControl fullWidth size="small">
+                                                                    <InputLabel sx={{ fontSize: '12px' }}>Freight Class (Optional)</InputLabel>
+                                                                    <Select
+                                                                        value={pkg.freightClass || ''}
+                                                                        onChange={(e) => updatePackage(pkg.id, 'freightClass', e.target.value)}
+                                                                        label="Freight Class (Optional)"
+                                                                        sx={{
+                                                                            '& .MuiSelect-select': { fontSize: '12px' },
+                                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                                        }}
+                                                                        renderValue={(value) => {
+                                                                            if (!value) return '';
+                                                                            const classData = FREIGHT_CLASSES.find(fc => fc.class === value);
+                                                                            return classData ? `Class ${value} - ${classData.description}` : `Class ${value}`;
+                                                                        }}
+                                                                    >
+                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                                            <em>No freight class selected</em>
                                                                         </MenuItem>
-                                                                    ))}
-                                                                </Select>
-                                                                <FormHelperText sx={{ fontSize: '11px' }}>
-                                                                    Optional: Select freight class if applicable for your shipment
-                                                                </FormHelperText>
-                                                            </FormControl>
-                                                        </Grid>
+                                                                        {FREIGHT_CLASSES.map((fc) => (
+                                                                            <MenuItem key={fc.class} value={fc.class} sx={{ fontSize: '12px' }}>
+                                                                                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '12px' }}>
+                                                                                    Class {fc.class} - {fc.description}
+                                                                                </Typography>
+                                                                            </MenuItem>
+                                                                        ))}
+                                                                    </Select>
+                                                                    <FormHelperText sx={{ fontSize: '11px' }}>
+                                                                        Optional: Select freight class if applicable for your shipment
+                                                                    </FormHelperText>
+                                                                </FormControl>
+                                                            </Grid>
+                                                        )}
 
                                                     </Grid>
                                                 </Box>
@@ -7705,343 +7889,375 @@ const QuickShip = ({
                                     </Card>
                                 )}
 
-                                {/* Manual Rate Entry Section */}
-                                <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
-                                    <CardContent sx={{ p: 3 }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                Rates
-                                            </Typography>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                startIcon={<AddIcon />}
-                                                onClick={addRateLineItem}
-                                                tabIndex={-1}
-                                                sx={{ fontSize: '12px' }}
-                                            >
-                                                Add Line Item
-                                            </Button>
-                                        </Box>
+                                {/* Manual Rate Entry Section - Only show if user has permission */}
+                                {hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS) && (
+                                    <Card sx={{ mb: 3, border: '1px solid #e5e7eb', borderRadius: 2 }}>
+                                        <CardContent sx={{ p: 3 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                                <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                    Rates
+                                                </Typography>
+                                                <Button
+                                                    variant="outlined"
+                                                    size="small"
+                                                    startIcon={<AddIcon />}
+                                                    onClick={addRateLineItem}
+                                                    tabIndex={-1}
+                                                    sx={{ fontSize: '12px' }}
+                                                >
+                                                    Add Line Item
+                                                </Button>
+                                            </Box>
 
-                                        <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
-                                            <Table size="small">
-                                                <TableHead>
-                                                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Code</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: 'auto' }}>Charge Name</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Our Cost</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Customer Charge</TableCell>
-                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '60px' }}>Actions</TableCell>
-                                                    </TableRow>
-                                                </TableHead>
-                                                <TableBody>
-                                                    {manualRates.map((rate) => (
-                                                        <TableRow key={rate.id}>
-                                                            {/* Hidden carrier field - save but don't show */}
-                                                            <input type="hidden" value={rate.carrier} />
-                                                            <TableCell sx={{ width: '80px' }}>
-                                                                <FormControl fullWidth size="small">
-                                                                    <Select
-                                                                        value={rate.code}
-                                                                        onChange={(e) => updateRateLineItem(rate.id, 'code', e.target.value)}
-                                                                        sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
-                                                                        displayEmpty
-                                                                        disabled={loadingChargeTypes}
-                                                                    >
-                                                                        <MenuItem value="" sx={{ fontSize: '12px' }}>
-                                                                            <em>{loadingChargeTypes ? 'Loading...' : 'Select Code'}</em>
-                                                                        </MenuItem>
-                                                                        {availableChargeTypes.map(chargeType => (
-                                                                            <MenuItem key={chargeType.value} value={chargeType.value} sx={{ fontSize: '12px' }}>
-                                                                                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                        {chargeType.value}
-                                                                                    </Typography>
-                                                                                    {chargeType.description && (
-                                                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
-                                                                                            {chargeType.description}
-                                                                                        </Typography>
-                                                                                    )}
-                                                                                </Box>
-                                                                            </MenuItem>
-                                                                        ))}
-                                                                        {chargeTypesError && (
-                                                                            <MenuItem disabled sx={{ fontSize: '11px', color: '#dc2626', fontStyle: 'italic' }}>
-                                                                                Error loading charge types
-                                                                            </MenuItem>
-                                                                        )}
-                                                                    </Select>
-                                                                </FormControl>
-                                                            </TableCell>
-                                                            <TableCell sx={{ width: 'auto' }}>
-                                                                <TextField
-                                                                    fullWidth
-                                                                    size="small"
-                                                                    value={rate.chargeName}
-                                                                    onChange={(e) => updateRateLineItem(rate.id, 'chargeName', e.target.value)}
-                                                                    autoComplete="off"
-                                                                    sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
-                                                                    placeholder="Enter charge description"
-                                                                />
-                                                            </TableCell>
-                                                            <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
-                                                                <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
-                                                                    <TextField
-                                                                        size="small"
-                                                                        type="number"
-                                                                        value={rate.cost}
-                                                                        onChange={(e) => updateRateLineItem(rate.id, 'cost', e.target.value)}
-                                                                        autoComplete="off"
-                                                                        inputProps={{
-                                                                            step: 0.01,
-                                                                            min: 0,
-                                                                            onBlur: (e) => {
-                                                                                // Format to 2 decimal places on blur
-                                                                                const value = parseFloat(e.target.value);
-                                                                                if (!isNaN(value)) {
-                                                                                    updateRateLineItem(rate.id, 'cost', value.toFixed(2));
-                                                                                }
-                                                                            }
-                                                                        }}
-                                                                        sx={{
-                                                                            flex: 1,
-                                                                            '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
-                                                                            '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& input[type=number]': {
-                                                                                '-moz-appearance': 'textfield'
-                                                                            },
-                                                                            '& input[type=number]::-webkit-outer-spin-button': {
-                                                                                '-webkit-appearance': 'none',
-                                                                                margin: 0
-                                                                            },
-                                                                            '& input[type=number]::-webkit-inner-spin-button': {
-                                                                                '-webkit-appearance': 'none',
-                                                                                margin: 0
-                                                                            }
-                                                                        }}
-                                                                        placeholder="0.00"
-                                                                    />
-                                                                    <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
-                                                                        <Select
-                                                                            value={rate.costCurrency}
-                                                                            onChange={(e) => updateRateLineItem(rate.id, 'costCurrency', e.target.value)}
-                                                                            tabIndex={-1}
-                                                                            sx={{
-                                                                                '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
-                                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                                '& .MuiSelect-icon': { fontSize: '16px' }
-                                                                            }}
-                                                                        >
-                                                                            <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
-                                                                            <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
-                                                                        </Select>
-                                                                    </FormControl>
-                                                                </Box>
-                                                            </TableCell>
-                                                            <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
-                                                                <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
-                                                                    <TextField
-                                                                        size="small"
-                                                                        type="number"
-                                                                        value={rate.charge}
-                                                                        onChange={(e) => updateRateLineItem(rate.id, 'charge', e.target.value)}
-                                                                        autoComplete="off"
-                                                                        inputProps={{
-                                                                            step: 0.01,
-                                                                            min: 0,
-                                                                            onBlur: (e) => {
-                                                                                // Format to 2 decimal places on blur
-                                                                                const value = parseFloat(e.target.value);
-                                                                                if (!isNaN(value)) {
-                                                                                    updateRateLineItem(rate.id, 'charge', value.toFixed(2));
-                                                                                }
-                                                                            }
-                                                                        }}
-                                                                        sx={{
-                                                                            flex: 1,
-                                                                            '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
-                                                                            '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                            '& input[type=number]': {
-                                                                                '-moz-appearance': 'textfield'
-                                                                            },
-                                                                            '& input[type=number]::-webkit-outer-spin-button': {
-                                                                                '-webkit-appearance': 'none',
-                                                                                margin: 0
-                                                                            },
-                                                                            '& input[type=number]::-webkit-inner-spin-button': {
-                                                                                '-webkit-appearance': 'none',
-                                                                                margin: 0
-                                                                            }
-                                                                        }}
-                                                                        placeholder="0.00"
-                                                                    />
-                                                                    <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
-                                                                        <Select
-                                                                            value={rate.chargeCurrency}
-                                                                            onChange={(e) => updateRateLineItem(rate.id, 'chargeCurrency', e.target.value)}
-                                                                            tabIndex={-1}
-                                                                            sx={{
-                                                                                '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
-                                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                                                                '& .MuiSelect-icon': { fontSize: '16px' }
-                                                                            }}
-                                                                        >
-                                                                            <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
-                                                                            <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
-                                                                        </Select>
-                                                                    </FormControl>
-                                                                </Box>
-                                                            </TableCell>
-                                                            <TableCell sx={{ width: '60px' }}>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => removeRateLineItem(rate.id)}
-                                                                    tabIndex={-1}
-                                                                    sx={{ color: '#ef4444' }}
-                                                                >
-                                                                    <DeleteIcon fontSize="small" />
-                                                                </IconButton>
-                                                            </TableCell>
+                                            <TableContainer component={Paper} sx={{ border: '1px solid #e5e7eb' }}>
+                                                <Table size="small">
+                                                    <TableHead>
+                                                        <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '80px' }}>Code</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: 'auto' }}>Charge Name</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Our Cost</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '180px', textAlign: 'center' }}>Customer Charge</TableCell>
+                                                            <TableCell sx={{ fontWeight: 600, fontSize: '12px', width: '60px' }}>Actions</TableCell>
                                                         </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                        </TableContainer>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {manualRates.map((rate) => (
+                                                            <TableRow key={rate.id}>
+                                                                {/* Hidden carrier field - save but don't show */}
+                                                                <input type="hidden" value={rate.carrier} />
+                                                                <TableCell sx={{ width: '80px' }}>
+                                                                    <FormControl fullWidth size="small">
+                                                                        <Select
+                                                                            value={rate.code}
+                                                                            onChange={(e) => updateRateLineItem(rate.id, 'code', e.target.value)}
+                                                                            sx={{ '& .MuiSelect-select': { fontSize: '12px' } }}
+                                                                            displayEmpty
+                                                                            disabled={loadingChargeTypes}
+                                                                        >
+                                                                            <MenuItem value="" sx={{ fontSize: '12px' }}>
+                                                                                <em>{loadingChargeTypes ? 'Loading...' : 'Select Code'}</em>
+                                                                            </MenuItem>
+                                                                            {availableChargeTypes.map(chargeType => (
+                                                                                <MenuItem key={chargeType.value} value={chargeType.value} sx={{ fontSize: '12px' }}>
+                                                                                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                            {chargeType.value}
+                                                                                        </Typography>
+                                                                                        {chargeType.description && (
+                                                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                                                                {chargeType.description}
+                                                                                            </Typography>
+                                                                                        )}
+                                                                                    </Box>
+                                                                                </MenuItem>
+                                                                            ))}
+                                                                            {chargeTypesError && (
+                                                                                <MenuItem disabled sx={{ fontSize: '11px', color: '#dc2626', fontStyle: 'italic' }}>
+                                                                                    Error loading charge types
+                                                                                </MenuItem>
+                                                                            )}
+                                                                        </Select>
+                                                                    </FormControl>
+                                                                </TableCell>
+                                                                <TableCell sx={{ width: 'auto' }}>
+                                                                    <TextField
+                                                                        fullWidth
+                                                                        size="small"
+                                                                        value={rate.chargeName}
+                                                                        onChange={(e) => updateRateLineItem(rate.id, 'chargeName', e.target.value)}
+                                                                        autoComplete="off"
+                                                                        sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }}
+                                                                        placeholder="Enter charge description"
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
+                                                                    <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
+                                                                        <TextField
+                                                                            size="small"
+                                                                            type="number"
+                                                                            value={rate.cost}
+                                                                            onChange={(e) => updateRateLineItem(rate.id, 'cost', e.target.value)}
+                                                                            autoComplete="off"
+                                                                            inputProps={{
+                                                                                step: 0.01,
+                                                                                min: 0,
+                                                                                onBlur: (e) => {
+                                                                                    // Format to 2 decimal places on blur
+                                                                                    const value = parseFloat(e.target.value);
+                                                                                    if (!isNaN(value)) {
+                                                                                        updateRateLineItem(rate.id, 'cost', value.toFixed(2));
+                                                                                    }
+                                                                                }
+                                                                            }}
+                                                                            sx={{
+                                                                                flex: 1,
+                                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
+                                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& input[type=number]': {
+                                                                                    '-moz-appearance': 'textfield'
+                                                                                },
+                                                                                '& input[type=number]::-webkit-outer-spin-button': {
+                                                                                    '-webkit-appearance': 'none',
+                                                                                    margin: 0
+                                                                                },
+                                                                                '& input[type=number]::-webkit-inner-spin-button': {
+                                                                                    '-webkit-appearance': 'none',
+                                                                                    margin: 0
+                                                                                }
+                                                                            }}
+                                                                            placeholder="0.00"
+                                                                        />
+                                                                        <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
+                                                                            <Select
+                                                                                value={rate.costCurrency}
+                                                                                onChange={(e) => updateRateLineItem(rate.id, 'costCurrency', e.target.value)}
+                                                                                tabIndex={-1}
+                                                                                sx={{
+                                                                                    '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
+                                                                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                    '& .MuiSelect-icon': { fontSize: '16px' }
+                                                                                }}
+                                                                            >
+                                                                                <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
+                                                                                <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
+                                                                            </Select>
+                                                                        </FormControl>
+                                                                    </Box>
+                                                                </TableCell>
+                                                                <TableCell sx={{ width: '180px', padding: '8px 4px' }}>
+                                                                    <Box sx={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden' }}>
+                                                                        <TextField
+                                                                            size="small"
+                                                                            type="number"
+                                                                            value={rate.charge}
+                                                                            onChange={(e) => updateRateLineItem(rate.id, 'charge', e.target.value)}
+                                                                            autoComplete="off"
+                                                                            inputProps={{
+                                                                                step: 0.01,
+                                                                                min: 0,
+                                                                                onBlur: (e) => {
+                                                                                    // Format to 2 decimal places on blur
+                                                                                    const value = parseFloat(e.target.value);
+                                                                                    if (!isNaN(value)) {
+                                                                                        updateRateLineItem(rate.id, 'charge', value.toFixed(2));
+                                                                                    }
+                                                                                }
+                                                                            }}
+                                                                            sx={{
+                                                                                flex: 1,
+                                                                                '& .MuiInputBase-input': { fontSize: '12px', textAlign: 'right', padding: '6px 8px' },
+                                                                                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                '& input[type=number]': {
+                                                                                    '-moz-appearance': 'textfield'
+                                                                                },
+                                                                                '& input[type=number]::-webkit-outer-spin-button': {
+                                                                                    '-webkit-appearance': 'none',
+                                                                                    margin: 0
+                                                                                },
+                                                                                '& input[type=number]::-webkit-inner-spin-button': {
+                                                                                    '-webkit-appearance': 'none',
+                                                                                    margin: 0
+                                                                                }
+                                                                            }}
+                                                                            placeholder="0.00"
+                                                                        />
+                                                                        <FormControl size="small" sx={{ minWidth: '60px', backgroundColor: '#f9fafb' }}>
+                                                                            <Select
+                                                                                value={rate.chargeCurrency}
+                                                                                onChange={(e) => updateRateLineItem(rate.id, 'chargeCurrency', e.target.value)}
+                                                                                tabIndex={-1}
+                                                                                sx={{
+                                                                                    '& .MuiSelect-select': { fontSize: '11px', padding: '6px 8px' },
+                                                                                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                                                                                    '& .MuiSelect-icon': { fontSize: '16px' }
+                                                                                }}
+                                                                            >
+                                                                                <MenuItem value="CAD" sx={{ fontSize: '11px' }}>CAD</MenuItem>
+                                                                                <MenuItem value="USD" sx={{ fontSize: '11px' }}>USD</MenuItem>
+                                                                            </Select>
+                                                                        </FormControl>
+                                                                    </Box>
+                                                                </TableCell>
+                                                                <TableCell sx={{ width: '60px' }}>
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        onClick={() => removeRateLineItem(rate.id)}
+                                                                        tabIndex={-1}
+                                                                        sx={{ color: '#ef4444' }}
+                                                                    >
+                                                                        <DeleteIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        </CardContent>
+                                    </Card>
+                                )}
 
-                                        {/* Combined Total and Action Section */}
-                                        <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-                                                {/* Left side - Total cost */}
-                                                <Box sx={{ textAlign: 'left' }}>
-                                                    <Typography variant="h4" sx={{
-                                                        fontSize: '24px',
-                                                        fontWeight: 700,
-                                                        color: '#1f2937',
-                                                        mb: 0.5
-                                                    }}>
-                                                        Total: {formatCurrency(totalCost, 'CAD')}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                        Total
-                                                    </Typography>
-                                                </Box>
+                                {/* Combined Total and Action Section - Always visible */}
+                                <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS) ? 'space-between' : 'flex-end', alignItems: 'center', gap: 3 }}>
+                                        {/* Left side - Total cost - Only show if user can view rates */}
+                                        {hasPermission(userRole, PERMISSIONS.VIEW_SHIPMENT_COSTS) && (
+                                            <Box sx={{ textAlign: 'left' }}>
+                                                <Typography variant="h4" sx={{
+                                                    fontSize: '24px',
+                                                    fontWeight: 700,
+                                                    color: '#1f2937',
+                                                    mb: 0.5
+                                                }}>
+                                                    Total: {formatCurrency(totalCost, 'CAD')}
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    Total
+                                                </Typography>
+                                            </Box>
+                                        )}
 
-                                                {/* Right side - Action buttons (different for edit vs create mode) */}
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                                                        {!isEditingExistingShipment && (
+                                        {/* Right side - Action buttons (different for edit vs create mode) */}
+                                        <Box sx={{ textAlign: 'right' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                                                {!isEditingExistingShipment && hasPermission(userRole, PERMISSIONS.USE_SWITCH_TO_LIVE_RATES) && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        onClick={handleConvertToAdvanced}
+                                                        disabled={isConverting || isBooking || isSavingDraft}
+                                                        startIcon={<TrendingUpIcon />}
+                                                        sx={{
+                                                            fontSize: '12px',
+                                                            textTransform: 'none',
+                                                            minWidth: '140px'
+                                                        }}
+                                                    >
+                                                        {isConverting ? 'Converting...' : 'Switch to Live Rates'}
+                                                    </Button>
+                                                )}
+                                                {isEditingExistingShipment && (
+                                                    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+                                                        Update Shipment?
+                                                    </Typography>
+                                                )}
+                                                <Box sx={{ display: 'flex', gap: 2 }}>
+                                                    {isEditingExistingShipment ? (
+                                                        // Edit mode buttons
+                                                        <>
                                                             <Button
                                                                 variant="outlined"
-                                                                onClick={handleConvertToAdvanced}
-                                                                disabled={isConverting || isBooking || isSavingDraft}
-                                                                startIcon={<TrendingUpIcon />}
+                                                                onClick={handleCancelEdit}
+                                                                disabled={isLoading}
                                                                 sx={{
                                                                     fontSize: '12px',
                                                                     textTransform: 'none',
-                                                                    minWidth: '140px'
+                                                                    minWidth: '120px'
                                                                 }}
                                                             >
-                                                                {isConverting ? 'Converting...' : 'Switch to Live Rates'}
+                                                                Cancel Changes
                                                             </Button>
-                                                        )}
-                                                        {isEditingExistingShipment && (
-                                                            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                                                                Update Shipment?
-                                                            </Typography>
-                                                        )}
-                                                        <Box sx={{ display: 'flex', gap: 2 }}>
-                                                            {isEditingExistingShipment ? (
-                                                                // Edit mode buttons
-                                                                <>
-                                                                    <Button
-                                                                        variant="outlined"
-                                                                        onClick={handleCancelEdit}
-                                                                        disabled={isLoading}
-                                                                        sx={{
-                                                                            fontSize: '12px',
-                                                                            textTransform: 'none',
-                                                                            minWidth: '120px'
-                                                                        }}
-                                                                    >
-                                                                        Cancel Changes
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="contained"
-                                                                        color="primary"
-                                                                        onClick={handleUpdateShipment}
-                                                                        disabled={(() => {
-                                                                            // Check if we're editing a draft or booked shipment
-                                                                            const isEditingDraftShipment = editShipment?.status === 'draft';
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={handleUpdateShipment}
+                                                                disabled={(() => {
+                                                                    // Check if we're editing a draft or booked shipment
+                                                                    const isEditingDraftShipment = editShipment?.status === 'draft';
 
-                                                                            if (isEditingDraftShipment) {
-                                                                                // For drafts, only require basic fields (carrier is optional)
-                                                                                return isLoading;
-                                                                            } else {
-                                                                                // For booked shipments, require all fields including carrier
-                                                                                return isLoading || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0;
-                                                                            }
-                                                                        })()}
-                                                                        sx={{
-                                                                            fontSize: '12px',
-                                                                            textTransform: 'none',
-                                                                            minWidth: '120px'
-                                                                        }}
-                                                                        startIcon={isLoading ? <CircularProgress size={16} /> : null}
-                                                                    >
-                                                                        {isLoading ? 'Updating...' : 'Update Shipment'}
-                                                                    </Button>
-                                                                </>
-                                                            ) : (
-                                                                // Create mode buttons
-                                                                <>
-                                                                    <Button
-                                                                        variant="outlined"
-                                                                        onClick={handleShipLater}
-                                                                        disabled={isSavingDraft || isDraftLoading}
-                                                                        sx={{
-                                                                            fontSize: '12px',
-                                                                            textTransform: 'none',
-                                                                            minWidth: '120px'
-                                                                        }}
-                                                                        startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
-                                                                    >
-                                                                        {isSavingDraft ? 'Saving...' : 'Ship Later'}
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="contained"
-                                                                        color="primary"
-                                                                        onClick={handleBookShipment}
-                                                                        disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
-                                                                        sx={{
-                                                                            fontSize: '12px',
-                                                                            textTransform: 'none',
-                                                                            minWidth: '120px'
-                                                                        }}
-                                                                    >
-                                                                        {isBooking ? 'Booking...' : 'Book Shipment'}
-                                                                    </Button>
-                                                                </>
+                                                                    if (isEditingDraftShipment) {
+                                                                        // For drafts, only require basic fields (carrier is optional)
+                                                                        return isLoading;
+                                                                    } else {
+                                                                        // For booked shipments, require all fields including carrier
+                                                                        return isLoading || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0;
+                                                                    }
+                                                                })()}
+                                                                sx={{
+                                                                    fontSize: '12px',
+                                                                    textTransform: 'none',
+                                                                    minWidth: '120px'
+                                                                }}
+                                                                startIcon={isLoading ? <CircularProgress size={16} /> : null}
+                                                            >
+                                                                {isLoading ? 'Updating...' : 'Update Shipment'}
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        // Create mode buttons
+                                                        <>
+                                                            {hasPermission(userRole, PERMISSIONS.USE_SHIP_LATER) && (
+                                                                <Button
+                                                                    variant="outlined"
+                                                                    onClick={handleShipLater}
+                                                                    disabled={isSavingDraft || isDraftLoading}
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        textTransform: 'none',
+                                                                        minWidth: '120px'
+                                                                    }}
+                                                                    startIcon={isSavingDraft ? <CircularProgress size={16} /> : null}
+                                                                >
+                                                                    {isSavingDraft ? 'Saving...' : 'Ship Later'}
+                                                                </Button>
                                                             )}
-                                                        </Box>
-                                                    </Box>
+                                                            {hasPermission(userRole, PERMISSIONS.USE_BOOK_SHIPMENT) && (
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={handleBookShipment}
+                                                                    disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        textTransform: 'none',
+                                                                        minWidth: '120px'
+                                                                    }}
+                                                                >
+                                                                    {isBooking ? 'Booking...' : 'Book Shipment'}
+                                                                </Button>
+                                                            )}
 
-                                                    {/* Helper text below the buttons on the right */}
-                                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
-                                                        {isEditingExistingShipment
-                                                            ? 'Cancel to discard changes, or update to save your modifications.'
-                                                            : 'Save as draft to complete later, or book now to proceed with shipping.'
-                                                        }
-                                                    </Typography>
+                                                            {/* Submit for Review Button - Show when user has review permission (can show alongside Ship Later) */}
+                                                            {hasPermission(userRole, PERMISSIONS.REVIEW_SHIPMENTS) && (
+                                                                <Button
+                                                                    variant="outlined"
+                                                                    onClick={handleSubmitForReview}
+                                                                    disabled={isSubmittingForReview || isBooking || isSavingDraft}
+                                                                    startIcon={<ReviewIcon />}
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        textTransform: 'none',
+                                                                        minWidth: '140px',
+                                                                        borderColor: '#f59e0b',
+                                                                        color: '#f59e0b',
+                                                                        '&:hover': {
+                                                                            borderColor: '#e08d00',
+                                                                            color: '#e08d00',
+                                                                            backgroundColor: 'rgba(245, 158, 11, 0.04)'
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {isSubmittingForReview ? 'Submitting...' : 'Submit for Review'}
+                                                                </Button>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </Box>
                                             </Box>
+
+                                            {/* Helper text below the buttons on the right */}
+                                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mt: 1.5 }}>
+                                                {isEditingExistingShipment
+                                                    ? 'Cancel to discard changes, or update to save your modifications.'
+                                                    : 'Save as draft to complete later, or book now to proceed with shipping.'
+                                                }
+                                            </Typography>
                                         </Box>
-                                    </CardContent>
-                                </Card>
+                                    </Box>
+                                </Box>
 
                                 {/* Success Message for Carrier Operations */}
                                 {carrierSuccessMessage && (
@@ -8348,7 +8564,84 @@ const QuickShip = ({
                 </DialogContent>
             </Dialog>
 
-
+            {/* Submit for Review Confirmation Dialog */}
+            <Dialog
+                open={showReviewDialog}
+                onClose={() => setShowReviewDialog(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{
+                    textAlign: 'center',
+                    fontWeight: 600,
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1,
+                    color: '#f59e0b'
+                }}>
+                    <ReviewIcon sx={{ fontSize: 24 }} />
+                    Submit for Review
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body1" sx={{
+                        textAlign: 'center',
+                        fontSize: '14px',
+                        mb: 2,
+                        color: '#374151'
+                    }}>
+                        Are you sure you want to submit this shipment for review?
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                        textAlign: 'center',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        mb: 2
+                    }}>
+                        The operations team will review and complete the booking process. You won't be able to edit the shipment once submitted.
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                        textAlign: 'center',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#f59e0b'
+                    }}>
+                        Shipment ID: {shipmentID}
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 3 }}>
+                    <Button
+                        onClick={() => setShowReviewDialog(false)}
+                        variant="outlined"
+                        disabled={isSubmittingForReview}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            minWidth: '120px'
+                        }}
+                    >
+                        Continue Editing
+                    </Button>
+                    <Button
+                        onClick={handleConfirmSubmitForReview}
+                        variant="contained"
+                        disabled={isSubmittingForReview}
+                        sx={{
+                            fontSize: '12px',
+                            textTransform: 'none',
+                            minWidth: '120px',
+                            bgcolor: '#f59e0b',
+                            '&:hover': {
+                                bgcolor: '#d97706'
+                            }
+                        }}
+                        startIcon={isSubmittingForReview ? <CircularProgress size={16} /> : null}
+                    >
+                        {isSubmittingForReview ? 'Submitting...' : 'Confirm'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Conversion Confirmation Dialog */}
             <Dialog

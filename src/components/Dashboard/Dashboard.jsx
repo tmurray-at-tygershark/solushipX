@@ -3808,7 +3808,7 @@ const Dashboard = () => {
                     text: 'Create Shipment',
                     icon: <CalculateIcon />,
                     description: 'Advanced single-page rate comparison',
-                    permission: PERMISSIONS.CREATE_SHIPMENTS,
+                    permission: PERMISSIONS.USE_LIVE_RATES,
                     action: () => {
                         handleOpenCreateShipmentModal();
                         setNewShipmentExpanded(false);

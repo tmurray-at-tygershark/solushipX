@@ -109,8 +109,8 @@ export function convertToUniversalFormat(shipment) {
     if (isQuickShip) {
         // QuickShip: manualRates is the source of truth
         if (shipment.manualRates && Array.isArray(shipment.manualRates)) {
-            charges = shipment.manualRates.map(rate => ({
-                id: rate.id || Math.random().toString(),
+            charges = shipment.manualRates.map((rate, index) => ({
+                id: rate.id || `${shipment.id}_manual_${index}`,
                 code: rate.code || 'FRT',
                 name: rate.chargeName || 'Freight',
                 category: mapCodeToCategory(rate.code),
@@ -138,8 +138,8 @@ export function convertToUniversalFormat(shipment) {
         
         // Priority 1: updatedCharges (latest inline edits)
         if (shipment.updatedCharges && Array.isArray(shipment.updatedCharges)) {
-            charges = shipment.updatedCharges.map(charge => ({
-                id: charge.id || Math.random().toString(),
+            charges = shipment.updatedCharges.map((charge, index) => ({
+                id: charge.id || `${shipment.id}_updated_${index}`,
                 code: charge.code || 'FRT',
                 name: charge.description || charge.chargeName || 'Freight',
                 category: charge.category || mapCodeToCategory(charge.code),
@@ -167,8 +167,8 @@ export function convertToUniversalFormat(shipment) {
         }
         // Priority 3: selectedRate breakdown
         else if (shipment.selectedRate?.billingDetails) {
-            charges = shipment.selectedRate.billingDetails.map(detail => ({
-                id: Math.random().toString(),
+            charges = shipment.selectedRate.billingDetails.map((detail, index) => ({
+                id: `${shipment.id}_breakdown_${index}`,
                 code: detail.code || mapNameToCode(detail.name),
                 name: detail.name,
                 category: detail.category || mapCodeToCategory(detail.code),

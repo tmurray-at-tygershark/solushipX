@@ -36,6 +36,7 @@ import {
     Tabs,
     Tab,
     Chip,
+    Collapse,
     Menu,
     ListItemIcon,
     ListItemText
@@ -2639,33 +2640,91 @@ We also accept credit card payment with a fee.`}
                                                     </Box>
 
                                                     {/* Service Selection */}
-                                                    <Grid container spacing={1}>
-                                                        {globalAdditionalServices[activeAdditionalServiceTab]?.map((service) => (
-                                                            <Grid item xs={12} sm={6} md={4} key={service.id}>
-                                                                <FormControlLabel
-                                                                    control={
-                                                                        <Checkbox
-                                                                            checked={formData.availableAdditionalServices?.[activeAdditionalServiceTab]?.some(
-                                                                                item => (typeof item === 'string' ? item : item.code) === service.code
-                                                                            ) || false}
-                                                                            onChange={() => handleAdditionalServiceToggle(service, activeAdditionalServiceTab)}
-                                                                            size="small"
-                                                                        />
-                                                                    }
-                                                                    label={
-                                                                        <Box>
-                                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                                {service.label || service.name}
-                                                                            </Typography>
-                                                                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                                                                {service.description}
-                                                                            </Typography>
+                                                    <Box>
+                                                        {globalAdditionalServices[activeAdditionalServiceTab]?.map((service) => {
+                                                            const isSelected = isAdditionalServiceSelected(service, activeAdditionalServiceTab);
+                                                            const isAutoSelected = isDefaultEnabledForService(service, activeAdditionalServiceTab);
+
+                                                            return (
+                                                                <Box key={service.id} sx={{ mb: 2 }}>
+                                                                    <FormControlLabel
+                                                                        control={
+                                                                            <Checkbox
+                                                                                checked={isSelected}
+                                                                                onChange={() => handleAdditionalServiceToggle(service, activeAdditionalServiceTab)}
+                                                                                size="small"
+                                                                            />
+                                                                        }
+                                                                        label={
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                                <Box>
+                                                                                    <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                                                        {service.label || service.name}
+                                                                                    </Typography>
+                                                                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                                        {service.description}
+                                                                                    </Typography>
+                                                                                </Box>
+                                                                                {isAutoSelected && (
+                                                                                    <Chip
+                                                                                        label="Auto Selected"
+                                                                                        size="small"
+                                                                                        color="primary"
+                                                                                        variant="outlined"
+                                                                                        sx={{
+                                                                                            fontSize: '10px',
+                                                                                            height: '20px',
+                                                                                            '& .MuiChip-label': { px: 1 }
+                                                                                        }}
+                                                                                    />
+                                                                                )}
+                                                                            </Box>
+                                                                        }
+                                                                        sx={{
+                                                                            width: '100%',
+                                                                            alignItems: 'flex-start',
+                                                                            ml: 0,
+                                                                            mr: 0
+                                                                        }}
+                                                                    />
+
+                                                                    {/* Expandable Auto-Selected Section */}
+                                                                    <Collapse in={isSelected}>
+                                                                        <Box sx={{
+                                                                            ml: 4,
+                                                                            mt: 1,
+                                                                            p: 2,
+                                                                            bgcolor: '#f8fafc',
+                                                                            borderRadius: 1,
+                                                                            border: '1px solid #e2e8f0'
+                                                                        }}>
+                                                                            <FormControlLabel
+                                                                                control={
+                                                                                    <Checkbox
+                                                                                        checked={isAutoSelected}
+                                                                                        onChange={() => handleDefaultEnabledToggle(service, activeAdditionalServiceTab)}
+                                                                                        size="small"
+                                                                                        color="primary"
+                                                                                    />
+                                                                                }
+                                                                                label={
+                                                                                    <Box>
+                                                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500, color: '#374151' }}>
+                                                                                            Auto Selected
+                                                                                        </Typography>
+                                                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
+                                                                                            Automatically select this service when creating shipments for this company
+                                                                                        </Typography>
+                                                                                    </Box>
+                                                                                }
+                                                                                sx={{ mt: 0.5 }}
+                                                                            />
                                                                         </Box>
-                                                                    }
-                                                                />
-                                                            </Grid>
-                                                        ))}
-                                                    </Grid>
+                                                                    </Collapse>
+                                                                </Box>
+                                                            );
+                                                        })}
+                                                    </Box>
                                                 </Box>
                                             )}
                                         </Box>

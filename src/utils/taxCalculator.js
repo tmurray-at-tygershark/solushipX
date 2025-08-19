@@ -96,18 +96,14 @@ export const recalculateRateArrayTaxes = (rateArray, province, chargeTypes, opti
     // Remove existing tax charges
     const nonTaxRates = removeTaxCharges(rateArray);
 
-    // Calculate next numeric ID for new tax items (ignore non-numeric IDs)
-    const numericIds = nonTaxRates
-        .map(r => {
-            const n = Number(r.id);
-            return Number.isFinite(n) ? n : null;
-        })
-        .filter(n => n != null);
-    const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
-    const nextId = maxId + 1;
-
+    // Generate deterministic IDs for tax items to prevent duplication
+    const shipmentId = options.shipmentId;
+    
     // Generate new tax line items (will return rows even when taxable base is zero)
-    let taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, { nextId, shipmentType: options.shipmentType });
+    let taxLineItems = generateTaxLineItems(nonTaxRates, province, chargeTypes, { 
+        shipmentId, 
+        shipmentType: options.shipmentType 
+    });
 
     // Merge preserved invoice/edi numbers from previously existing tax rows
     taxLineItems = taxLineItems.map(item => {
@@ -218,7 +214,7 @@ export const validateTaxCalculation = (shipmentData, chargeTypes) => {
 /**
  * Helper function to update a single rate item and recalculate taxes
  */
-export const updateRateAndRecalculateTaxes = (rateArray, updatedRate, province, chargeTypes) => {
+export const updateRateAndRecalculateTaxes = (rateArray, updatedRate, province, chargeTypes, shipmentId = null) => {
     // Update the specific rate
     const updatedRates = rateArray.map(rate => 
         rate.id === updatedRate.id ? { ...rate, ...updatedRate } : rate
@@ -230,13 +226,13 @@ export const updateRateAndRecalculateTaxes = (rateArray, updatedRate, province, 
     }
 
     // Recalculate taxes for the updated rates
-    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes);
+    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes, { shipmentId });
 };
 
 /**
  * Add a new rate item and recalculate taxes
  */
-export const addRateAndRecalculateTaxes = (rateArray, newRate, province, chargeTypes) => {
+export const addRateAndRecalculateTaxes = (rateArray, newRate, province, chargeTypes, shipmentId = null) => {
     // Add the new rate
     const updatedRates = [...rateArray, newRate];
 
@@ -246,13 +242,13 @@ export const addRateAndRecalculateTaxes = (rateArray, newRate, province, chargeT
     }
 
     // Recalculate taxes
-    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes);
+    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes, { shipmentId });
 };
 
 /**
  * Remove a rate item and recalculate taxes
  */
-export const removeRateAndRecalculateTaxes = (rateArray, rateId, province, chargeTypes) => {
+export const removeRateAndRecalculateTaxes = (rateArray, rateId, province, chargeTypes, shipmentId = null) => {
     // Find the rate being removed
     const rateToRemove = rateArray.find(rate => rate.id === rateId);
     
@@ -265,5 +261,5 @@ export const removeRateAndRecalculateTaxes = (rateArray, rateId, province, charg
     }
 
     // Recalculate taxes
-    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes);
+    return recalculateRateArrayTaxes(updatedRates, province, chargeTypes, { shipmentId });
 }; 

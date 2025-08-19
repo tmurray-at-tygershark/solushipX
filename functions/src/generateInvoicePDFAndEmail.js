@@ -511,14 +511,14 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 logger.warn('Logo not found, creating text logo');
                 // Use dynamic company name for text logo
                 doc.fillColor(colors.primary)
-                   .fontSize(14)
+                   .fontSize(13.5)
                    .font('Helvetica-Bold')
                    .text(companyDisplayName.toUpperCase(), rightCol, currentY - 8, { width: 130, align: 'center' });
             }
 
             // INVOICE title (left side)
             doc.fillColor(colors.primary)
-               .fontSize(18)
+               .fontSize(17.5)
                .font('Helvetica-Bold')
                .text('INVOICE', leftCol, currentY);
 
@@ -528,14 +528,14 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
             // ==================== DYNAMIC COMPANY INFORMATION ====================
             doc.fillColor(colors.text)
-               .fontSize(8)
+               .fontSize(7.5)
                .font('Helvetica-Bold')
                .text(companyDisplayName.toUpperCase(), leftCol, currentY);
 
             currentY += 10;
-            doc.fontSize(7)
+            doc.fontSize(6.5)
                .font('Helvetica')
-               .fillColor(colors.textLight);
+               .fillColor(colors.text);
 
             // Build dynamic company details from AR contact info
             const companyDetails = [];
@@ -609,7 +609,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             // ==================== INVOICE DETAILS BOX ====================
             const detailsBoxY = margin + 45;
             const detailsBoxWidth = 160;
-            const detailsBoxHeight = 98; // Increased from 85 to accommodate Invoice # line
+            const detailsBoxHeight = 78; // Reduced by another 10px for optimal proportions
 
             // Draw details box
             doc.rect(rightCol, detailsBoxY, detailsBoxWidth, detailsBoxHeight)
@@ -622,7 +622,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             // Details content
             let detailY = detailsBoxY + 8;
             doc.fillColor(colors.text)
-               .fontSize(7)
+               .fontSize(6.5)
                .font('Helvetica-Bold');
 
             const invoiceDetails = [
@@ -648,7 +648,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
             // Bill To section (left side)
             doc.fillColor(colors.primary)
-               .fontSize(9)
+               .fontSize(8.5)
                .font('Helvetica-Bold')
                .text('BILL TO:', leftCol, currentY);
 
@@ -656,7 +656,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             const summaryX = rightCol; // Align with details box
             const summaryY = detailsBoxY + detailsBoxHeight + 15; // Position below details box
             doc.fillColor(colors.primary)
-               .fontSize(9)
+               .fontSize(8.5)
                .font('Helvetica-Bold')
                .text('INVOICE TOTAL:', summaryX, summaryY);
 
@@ -664,7 +664,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             const totalLabelY = summaryY;
             const totalAmountY = totalLabelY + 12; // ✅ FIXED: Single line spacing (12px down from label)
             doc.fillColor(colors.text)
-               .fontSize(12)
+               .fontSize(11.5)
                .font('Helvetica-Bold')
                .text(`${formatCurrency(invoiceData.total, invoiceData.currency)}`, summaryX, totalAmountY);
 
@@ -675,12 +675,12 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             const billToInfo = customerBillingInfo || companyInfo;
             
             doc.fillColor(colors.text)
-               .fontSize(8)
+               .fontSize(7.5)
                .font('Helvetica-Bold')
                .text(billToInfo.companyName || billToInfo.name || invoiceData.companyName, leftCol, currentY);
 
             currentY += 12; // Increased from 8 to 12
-            doc.fontSize(7)
+            doc.fontSize(6.5)
                .font('Helvetica');
 
             // Use actual billing address if available, otherwise main address
@@ -752,7 +752,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                .fill();
 
             doc.fillColor('white')
-               .fontSize(7)
+               .fontSize(6.5)
                .font('Helvetica-Bold');
 
             const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
@@ -760,15 +760,15 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 doc.text(header, colPositions[i] + 8, tableStartY + 7, { width: colWidths[i] - 16 });
             });
 
-            let tableY = tableStartY + 22 + 8; // Added 8px space below headers
+            let tableY = tableStartY + 22 + 6; // Reduced space below headers to match column padding
 
             // Invoice line items
             invoiceData.lineItems.forEach((item, index) => {
                 // ✅ DYNAMIC ROW HEIGHT: Calculate height needed based on content
-                let maxColumnHeight = 45; // Minimum row height
+                let maxColumnHeight = 38; // Reduced minimum row height for space efficiency
                 
                 // Calculate fees column height (typically the tallest)
-                let feesHeight = 16; // Base padding (8px top + 8px bottom)
+                let feesHeight = 12; // Reduced base padding (6px top + 6px bottom)
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
                     const maxCharges = 5;
                     const sortedCharges = [...item.chargeBreakdown].sort((a, b) => (b.amount || 0) - (a.amount || 0));
@@ -821,19 +821,19 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                     `${totalWeight} ${item.weightUnit || 'lbs'}`
                 ].filter(detail => detail);
                 
-                let calculatedDetailsHeight = 16; // Base padding (8px top + 8px bottom)
+                let calculatedDetailsHeight = 12; // Reduced base padding (6px top + 6px bottom)
                 detailsForHeight.forEach(detail => {
                     if (detail && detail.trim()) {
                         const textHeight = doc.heightOfString(detail.trim(), { 
                             width: colWidths[1] - 16 
                         });
-                        calculatedDetailsHeight += Math.max(textHeight, 9); // Use calculated height or minimum 9px
+                        calculatedDetailsHeight += Math.max(textHeight, 7); // Reduced line spacing for compactness
                     }
                 });
                 const detailsHeight = calculatedDetailsHeight;
                 
-                // Use the maximum height among all columns, with minimum of 45px
-                const rowHeight = Math.max(maxColumnHeight, feesHeight, detailsHeight, 45);
+                // Use the maximum height among all columns, with reduced minimum for space efficiency
+                const rowHeight = Math.max(maxColumnHeight, feesHeight, detailsHeight, 38);
                 
                 // ✅ PAGINATION: Check if we need a new page for combined invoices
                 const pageBottomMargin = 90; // Reserve space for totals and footer (optimized from 150)
@@ -848,7 +848,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                     
                     // Add condensed invoice header
                     doc.fillColor(colors.text)
-                       .fontSize(10)
+                       .fontSize(9.5)
                        .font('Helvetica-Bold')
                        .text(`Invoice ${invoiceData.invoiceNumber} (Continued)`, leftCol, margin);
                     
@@ -859,7 +859,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                        .fill();
 
                     doc.fillColor('white')
-                       .fontSize(7)
+                       .fontSize(6.5)
                        .font('Helvetica-Bold');
 
                     const headers = ['SHIPMENT ID', 'DETAILS', 'ORIGIN', 'DESTINATION', 'CARRIER & SERVICE', 'FEES', 'TOTAL'];
@@ -867,7 +867,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                         doc.text(header, colPositions[i] + 8, newTableStartY + 7, { width: colWidths[i] - 16 });
                     });
 
-                    tableY = newTableStartY + 22 + 8;
+                    tableY = newTableStartY + 22 + 6;
                 }
                 
                 // Alternate row backgrounds
@@ -888,12 +888,12 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
                 // Content
                 doc.fillColor(colors.text)
-                   .fontSize(6)
+                   .fontSize(5.5)
                    .font('Helvetica');
 
                 // Column 1: Shipment ID (top aligned)
                 const shipmentRef = item.shipmentId || item.id || 'N/A';
-                doc.text(shipmentRef, colPositions[0] + 8, tableY + 8, { 
+                doc.text(shipmentRef, colPositions[0] + 8, tableY + 6, { 
                     width: colWidths[0] - 16,
                     align: 'left',
                     baseline: 'top'
@@ -911,7 +911,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 ].filter(detail => detail); // Remove empty details
                 
                 // ✅ FIXED: Use proper text wrapping and height calculation for DETAILS column
-                let detailY = tableY + 8;
+                let detailY = tableY + 6;
                 shipmentDetails.forEach(detail => {
                     if (detail && detail.trim()) {
                         const textHeight = doc.heightOfString(detail.trim(), { 
@@ -922,7 +922,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                             align: 'left',
                             baseline: 'top' 
                         });
-                        detailY += Math.max(textHeight, 9); // Use calculated height or minimum 9px
+                        detailY += Math.max(textHeight, 7); // Reduced line spacing for compactness
                     }
                 });
 
@@ -958,7 +958,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 
                 // ✅ IMPROVED: Display origin with proper text wrapping and height calculation
                 if (originLines.length === 0) originLines = ['N/A'];
-                let originY = tableY + 8;
+                let originY = tableY + 6;
                 originLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
                         const textHeight = doc.heightOfString(line.trim(), { 
@@ -1005,7 +1005,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 
                 // ✅ IMPROVED: Display destination with proper text wrapping and height calculation
                 if (destLines.length === 0) destLines = ['N/A'];
-                let destY = tableY + 8;
+                let destY = tableY + 6;
                 destLines.slice(0, 4).forEach(line => {
                     if (line && line.trim()) {
                         const textHeight = doc.heightOfString(line.trim(), { 
@@ -1024,15 +1024,15 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 const carrierName = 'Integrated Carriers'; // Override carrier for customer invoices
                 const serviceInfo = item.service || 'Standard Ground';
                 
-                doc.fontSize(6)
+                doc.fontSize(5.5)
                    .font('Helvetica-Bold')
-                   .text(carrierName, colPositions[4] + 8, tableY + 8, { 
+                   .text(carrierName, colPositions[4] + 8, tableY + 6, { 
                        width: colWidths[4] - 16,
                        align: 'left',
                        baseline: 'top'
                    });
                 
-                doc.fontSize(6)
+                doc.fontSize(5.5)
                    .font('Helvetica')
                    .text(serviceInfo, colPositions[4] + 8, tableY + 24, { // ✅ CHANGED: From tableY + 18 to tableY + 24 (maintain spacing)
                        width: colWidths[4] - 16,
@@ -1042,11 +1042,11 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
                 // Column 6: Enhanced Fees with Professional Charge Breakdown
                 doc.font('Helvetica')
-                   .fontSize(6); // ✅ CHANGED: From fontSize(5) to fontSize(6) to match other columns
+                   .fontSize(5.5); // ✅ CHANGED: Reduced by 1px for compactness
                 
                 // 🔧 ENHANCED: More comprehensive charge breakdown display with $0.00 filtering
                 if (item.chargeBreakdown && Array.isArray(item.chargeBreakdown) && item.chargeBreakdown.length > 0) {
-                    let feeY = tableY + 8;
+                    let feeY = tableY + 6;
                     let chargesDisplayed = 0;
                     const maxCharges = 5;
                     
@@ -1101,7 +1101,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                         
                         const summaryText = `+${remainingCharges} more charges: ${formatCurrency(remainingAmount, invoiceData.currency)}`;
                         
-                        doc.fontSize(4)
+                        doc.fontSize(3.5)
                            .fillColor('#666666')
                            .text(summaryText, colPositions[5] + 8, feeY, { 
                                      width: colWidths[5] - 16,
@@ -1142,7 +1142,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                         }
                     }
                     
-                    let feeY = tableY + 8;
+                    let feeY = tableY + 6;
                     charges.forEach(charge => {
                         const chargeText = `${charge.code}: ${charge.name} - ${formatCurrency(charge.amount, invoiceData.currency)}`;
                         
@@ -1185,10 +1185,10 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
                 // Column 7: Total (top aligned)
                 const totalCharges = item.charges || 0;
-                doc.fontSize(6)
+                doc.fontSize(5.5)
                    .font('Helvetica-Bold')
                    .text(formatCurrency(totalCharges, invoiceData.currency), 
-                         colPositions[6] + 8, tableY + 8, { 
+                         colPositions[6] + 8, tableY + 6, { 
                              width: colWidths[6] - 16, 
                              align: 'right',
                              baseline: 'top'
@@ -1243,7 +1243,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
             // Header
             doc.fillColor(colors.primary)
-               .fontSize(8)
+               .fontSize(7.5)
                .font('Helvetica-Bold')
                .text('AMOUNT DUE', totalsX + 8, currentTotalY + 5);
 
@@ -1251,7 +1251,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
             // Subtotal line
             doc.fillColor(colors.text)
-               .fontSize(7)
+               .fontSize(6.5)
                .font('Helvetica')
                .text('Subtotal:', totalsX + 8, currentTotalY);
             doc.text(formatCurrency(invoiceData.subtotal || invoiceData.total, invoiceData.currency), 
@@ -1296,18 +1296,13 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                .fill();
 
             doc.fillColor('white')
-               .fontSize(9)
+               .fontSize(8.5)
                .font('Helvetica-Bold')
                .text('TOTAL DUE:', totalsX + 8, currentTotalY);
             doc.text(formatCurrency(invoiceData.total, invoiceData.currency), 
                      totalsX + 100, currentTotalY, { width: 70, align: 'right' });
 
-            // Currency notation
-            doc.fillColor(colors.textLight)
-               .fontSize(6)
-               .font('Helvetica')
-               .text(`All amounts in ${invoiceData.currency || 'USD'}`, 
-                     totalsX + 8, currentTotalY + lineHeight + 5);
+            // Currency notation removed per user request
 
             // ==================== DYNAMIC PAYMENT INFORMATION ====================
             // Only show payment section if company has configured payment information
@@ -1316,25 +1311,13 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             if (paymentInfo && paymentInfo.trim()) {
                 logger.info('📝 Rendering dynamic payment information from company billing config');
                 
-                // ✅ ENSURE PAYMENT INFO ON LAST PAGE: Check if enough space remains
-                const paymentSectionHeight = 120; // Estimate height needed for payment information
-                const pageBottomMargin = 80; // Space for footer
-                const availableSpaceForPayment = doc.page.height - (totalsStartY + 50) - pageBottomMargin;
-                
-                let paymentY;
-                if (availableSpaceForPayment < paymentSectionHeight) {
-                    // Not enough space, add new page for payment information
-                    doc.addPage();
-                    paymentY = margin + 20; // Start near top of new page
-                    logger.info('Added new page for payment information to ensure it appears on last page');
-                } else {
-                    // Enough space on current page
-                    paymentY = totalsStartY + 50;
-                }
+                // ✅ SIMPLE LOGIC: Always start payment info at same position as totals block
+                const paymentY = totalsStartY + 5; // Align with "AMOUNT DUE" header position
+                logger.info('Positioning payment information alongside totals section');
 
                 // Payment Information Header
                 doc.fillColor(colors.primary)
-                   .fontSize(8)
+                   .fontSize(7.5)
                    .font('Helvetica-Bold')
                    .text('PAYMENT INFORMATION', leftCol, paymentY);
 
@@ -1342,7 +1325,7 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
                 
                 // Render custom payment information with line breaks preserved
                 doc.fillColor(colors.text)
-                   .fontSize(6)
+                   .fontSize(5.5)
                    .font('Helvetica');
 
                 // Split payment info by lines and render each line
@@ -1382,11 +1365,11 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
 
             // Footer content
             doc.fillColor(colors.textLight)
-               .fontSize(7)
+               .fontSize(6.5)
                .font('Helvetica')
                .text('"Helping Everyone Succeed"', leftCol, footerY, { width: contentWidth, align: 'center' });
 
-            doc.fontSize(6)
+            doc.fontSize(5.5)
                .text(`Invoice ${invoiceData.invoiceNumber} • Page 1 • Generated ${new Date().toLocaleDateString()}`, 
                      leftCol, footerY + 10, { width: contentWidth, align: 'center' });
 
