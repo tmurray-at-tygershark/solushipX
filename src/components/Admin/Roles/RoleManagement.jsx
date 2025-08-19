@@ -126,6 +126,11 @@ const PERMISSION_DISPLAY_NAMES = {
     [ROLE_PERMISSIONS.USE_AI_AGENT]: 'Use AI Agent',
     [ROLE_PERMISSIONS.USE_ADVANCED_ROUTING]: 'Use Advanced Routing',
     [ROLE_PERMISSIONS.MANAGE_INTEGRATIONS]: 'Manage Integrations',
+
+    // Address Management Permissions
+    [ROLE_PERMISSIONS.SET_DEFAULT_ADDRESSES]: 'Set Default Addresses',
+    [ROLE_PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: 'View ShipFrom Addresses',
+    [ROLE_PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: 'View ShipTo Addresses',
 };
 
 const RoleManagement = () => {

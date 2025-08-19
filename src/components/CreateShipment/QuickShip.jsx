@@ -4532,12 +4532,11 @@ const QuickShip = ({
                     addressClassID: addr.addressClassID
                 }))
             });
-            // Find default ship from address
+            // Find default ship from address - only use explicitly marked defaults
             const defaultShipFrom = availableAddresses.find(addr => addr.isDefaultShipFrom) ||
-                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
-                availableAddresses.find(addr => addr.addressType === 'pickup');
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup');
 
-            // Find default ship to address  
+            // Find default ship to address - only use explicitly marked defaults
             const defaultShipTo = availableAddresses.find(addr => addr.isDefaultShipTo) ||
                 availableAddresses.find(addr => addr.isDefault && addr.addressType === 'destination');
 
@@ -4545,13 +4544,32 @@ const QuickShip = ({
                 defaultShipFrom: defaultShipFrom ? {
                     id: defaultShipFrom.id,
                     companyName: defaultShipFrom.companyName,
-                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom
+                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom,
+                    isDefault: defaultShipFrom.isDefault,
+                    addressType: defaultShipFrom.addressType,
+                    // Show why this address was selected
+                    selectedBecause: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' :
+                        (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
                 } : null,
                 defaultShipTo: defaultShipTo ? {
                     id: defaultShipTo.id,
                     companyName: defaultShipTo.companyName,
-                    isDefaultShipTo: defaultShipTo.isDefaultShipTo
-                } : null
+                    isDefaultShipTo: defaultShipTo.isDefaultShipTo,
+                    isDefault: defaultShipTo.isDefault,
+                    addressType: defaultShipTo.addressType,
+                    // Show why this address was selected
+                    selectedBecause: defaultShipTo.isDefaultShipTo ? 'isDefaultShipTo=true' :
+                        (defaultShipTo.isDefault && defaultShipTo.addressType === 'destination') ? 'isDefault=true + addressType=destination' : 'unknown'
+                } : null,
+                // Show all addresses to see their flags
+                allAddressFlags: availableAddresses.map(addr => ({
+                    id: addr.id,
+                    companyName: addr.companyName,
+                    isDefaultShipFrom: addr.isDefaultShipFrom,
+                    isDefaultShipTo: addr.isDefaultShipTo,
+                    isDefault: addr.isDefault,
+                    addressType: addr.addressType
+                }))
             });
 
             // Auto-select default ship from if available and not already set
@@ -5534,8 +5552,8 @@ const QuickShip = ({
                             />
                         )}
 
-                    {/* Customer Selection for Super Admins, Admins, Company Admins, and Company Staff - Show when company is selected and customers are loaded */}
-                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
+                    {/* Customer Selection for Super Admins, Admins, Company Admins, Company Staff, and Manufacturers - Show when company is selected and customers are loaded */}
+                    {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff' || userRole === 'manufacturer') && (selectedCompanyId || companyIdForAddress) && (selectedCompanyId !== 'all' && companyIdForAddress !== 'all') && (
                         <Box sx={{ mb: 3 }}>
                             <Autocomplete
                                 loading={loadingCustomers}
@@ -5735,16 +5753,19 @@ const QuickShip = ({
                         </Box>
                     )}
 
-                    {/* Show form only when company is selected or user is not admin/super admin */}
+                    {/* Show form only when user has QuickShip permission and company context is available */}
                     {(() => {
-                        const shouldShowForm = (((userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) || (userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && userRole !== 'company_staff' && companyIdForAddress));
+                        const hasQuickShipPermission = hasPermission(userRole, PERMISSIONS.USE_QUICKSHIP);
+                        const hasCompanyContext = (companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId;
+                        const shouldShowForm = hasQuickShipPermission && hasCompanyContext;
+
                         console.log('🔍 QuickShip Form Visibility Debug:', {
                             userRole,
                             companyIdForAddress,
                             selectedCompanyId,
-                            shouldShowForm,
-                            'adminCondition': (userRole === 'superadmin' || userRole === 'admin' || userRole === 'user' || userRole === 'company_staff') && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId),
-                            'regularUserCondition': userRole !== 'superadmin' && userRole !== 'admin' && userRole !== 'user' && userRole !== 'company_staff' && companyIdForAddress
+                            hasQuickShipPermission,
+                            hasCompanyContext,
+                            shouldShowForm
                         });
                         return shouldShowForm;
                     })() && (
@@ -6445,7 +6466,7 @@ const QuickShip = ({
                                             {!shipFromAddress ? (
                                                 <Autocomplete
                                                     fullWidth
-                                                    options={availableAddresses}
+                                                    options={hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) ? availableAddresses : []}
                                                     getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
                                                     value={shipFromAddress}
                                                     onChange={(event, newValue) => handleAddressSelect(newValue, 'from')}
@@ -6455,7 +6476,7 @@ const QuickShip = ({
                                                         <TextField
                                                             {...params}
                                                             label="Select Ship From Address"
-                                                            placeholder="Search addresses..."
+                                                            placeholder={hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) ? "Search addresses..." : "Create new address only"}
                                                             size="small"
                                                             required
                                                             disabled={currentView === 'addaddress'}
@@ -6800,7 +6821,7 @@ const QuickShip = ({
                                             {!shipToAddress ? (
                                                 <Autocomplete
                                                     fullWidth
-                                                    options={availableAddresses}
+                                                    options={hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) ? availableAddresses : []}
                                                     getOptionLabel={(option) => `${option.companyName} - ${formatAddressForDisplay(option)}`}
                                                     value={shipToAddress}
                                                     onChange={(event, newValue) => handleAddressSelect(newValue, 'to')}
@@ -6810,7 +6831,7 @@ const QuickShip = ({
                                                         <TextField
                                                             {...params}
                                                             label="Select Ship To Address"
-                                                            placeholder="Search addresses..."
+                                                            placeholder={hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) ? "Search addresses..." : "Create new address only"}
                                                             size="small"
                                                             required
                                                             disabled={currentView === 'addaddress'}

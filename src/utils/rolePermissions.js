@@ -70,6 +70,7 @@ export const PERMISSIONS = {
   EDIT_CUSTOMERS: 'edit_customers',
   DELETE_CUSTOMERS: 'delete_customers',
   VIEW_ALL_CUSTOMERS: 'view_all_customers',
+  SET_DEFAULT_ADDRESSES: 'set_default_addresses', // NEW: Ability to set default shipfrom/shipto addresses
   
   // Address Book Management
   VIEW_ADDRESSES: 'view_addresses',
@@ -165,6 +166,10 @@ export const PERMISSIONS = {
   SELECT_SHIP_FROM: 'select_ship_from', // NEW: Ship from address selection
   SELECT_SHIP_TO: 'select_ship_to', // NEW: Ship to address selection
   
+  // Address Dropdown Visibility Controls
+  VIEW_SHIPFROM_ADDRESSES: 'view_shipfrom_addresses', // NEW: View ShipFrom address dropdown in shipment forms
+  VIEW_SHIPTO_ADDRESSES: 'view_shipto_addresses', // NEW: View ShipTo address dropdown in shipment forms
+  
   // QuickShip Action Controls
   USE_SWITCH_TO_LIVE_RATES: 'use_switch_to_live_rates', // NEW: Switch to live rates button
   USE_SHIP_LATER: 'use_ship_later', // NEW: Ship later / save draft functionality
@@ -253,6 +258,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: true,
     [PERMISSIONS.DELETE_CUSTOMERS]: true,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
+    [PERMISSIONS.SET_DEFAULT_ADDRESSES]: true,
     
     // Address Book Management
     [PERMISSIONS.VIEW_ADDRESSES]: true,
@@ -455,6 +461,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.SELECT_SHIP_FROM]: true,
     [PERMISSIONS.SELECT_SHIP_TO]: true,
     
+    // Address Dropdown Visibility - FULL ACCESS for admins
+    [PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: true,
+    
     // QuickShip Action Controls - FULL ACCESS for admins
     [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
     [PERMISSIONS.USE_SHIP_LATER]: true,
@@ -525,6 +535,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: true,
     [PERMISSIONS.DELETE_CUSTOMERS]: true,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    [PERMISSIONS.SET_DEFAULT_ADDRESSES]: true,
     
     // Address Book Management - Only their company's addresses
     [PERMISSIONS.VIEW_ADDRESSES]: true,
@@ -602,6 +613,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.SELECT_SHIP_FROM]: true,
     [PERMISSIONS.SELECT_SHIP_TO]: true,
     
+    // Address Dropdown Visibility - FULL ACCESS for company admins
+    [PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: true,
+    
     // QuickShip Action Controls - FULL ACCESS for company admins
     [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
     [PERMISSIONS.USE_SHIP_LATER]: true,
@@ -670,6 +685,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: false,
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: true,
+    [PERMISSIONS.SET_DEFAULT_ADDRESSES]: false, // Accounting doesn't need to set defaults
     
     // Address Book Management - View only for billing context
     [PERMISSIONS.VIEW_ADDRESSES]: true,
@@ -747,6 +763,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.SELECT_SHIP_FROM]: true,
     [PERMISSIONS.SELECT_SHIP_TO]: true,
     
+    // Address Dropdown Visibility - FULL ACCESS for accounting
+    [PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: true,
+    [PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: true,
+    
     // QuickShip Action Controls - FULL ACCESS for accounting
     [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
     [PERMISSIONS.USE_SHIP_LATER]: true,
@@ -816,6 +836,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: false,
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    [PERMISSIONS.SET_DEFAULT_ADDRESSES]: false, // Company staff cannot set defaults
     
     // Address Book Management - View and create only
     [PERMISSIONS.VIEW_ADDRESSES]: true,
@@ -893,6 +914,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.SELECT_SHIP_FROM]: true,
     [PERMISSIONS.SELECT_SHIP_TO]: true,
     
+    // Address Dropdown Visibility - RESTRICTED for company staff
+    [PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: true, // Can view but with limitations
+    [PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: true, // Can view but with limitations
+    
     // QuickShip Action Controls - FULL ACCESS for company staff
     [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: true,
     [PERMISSIONS.USE_SHIP_LATER]: true,
@@ -963,6 +988,7 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.EDIT_CUSTOMERS]: false,
     [PERMISSIONS.DELETE_CUSTOMERS]: false,
     [PERMISSIONS.VIEW_ALL_CUSTOMERS]: false,
+    [PERMISSIONS.SET_DEFAULT_ADDRESSES]: false, // Manufacturers cannot set defaults
     
     // Address Book Management - LIMITED: Basic address management
     [PERMISSIONS.VIEW_ADDRESSES]: true, // Can view their own addresses
@@ -1054,6 +1080,10 @@ export const ROLE_PERMISSIONS = {
     [PERMISSIONS.SELECT_QUICKSHIP_CARRIER]: false,
     [PERMISSIONS.SELECT_SHIP_FROM]: false,
     [PERMISSIONS.SELECT_SHIP_TO]: false,
+    
+    // Address Dropdown Visibility - RESTRICTED: No address dropdown access
+    [PERMISSIONS.VIEW_SHIPFROM_ADDRESSES]: false,
+    [PERMISSIONS.VIEW_SHIPTO_ADDRESSES]: false,
     
     // QuickShip Action Controls - RESTRICTED: No QuickShip actions
     [PERMISSIONS.USE_SWITCH_TO_LIVE_RATES]: false,
@@ -1248,7 +1278,7 @@ export const ROUTE_PERMISSIONS = {
   '/admin/billing/payment-terms': [PERMISSIONS.MANAGE_PAYMENT_TERMS],
   
   // System Management
-  // '/admin/role-permissions': [PERMISSIONS.VIEW_ADMIN_DASHBOARD], // TEMPORARILY DISABLED FOR TESTING
+  '/admin/role-permissions': [PERMISSIONS.MANAGE_ROLES], // Role permissions management
   '/admin/settings': [PERMISSIONS.MANAGE_SETTINGS],
   '/admin/configuration': [PERMISSIONS.MANAGE_SETTINGS],
   

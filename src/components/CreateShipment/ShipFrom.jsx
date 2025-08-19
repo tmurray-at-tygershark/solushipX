@@ -5,6 +5,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import {
     Skeleton,
@@ -41,7 +42,7 @@ import './ShipFrom.css';
 import { getCountryFlag } from '../Shipments/utils/shipmentHelpers';
 
 const ShipFrom = ({ onNext, onPrevious }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
     const { formData, updateFormSection } = useShipmentForm();
     const [shipFromAddresses, setShipFromAddresses] = useState([]);
@@ -444,7 +445,7 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                         </Box>
                     ) : (
                         <Box>
-                            {filteredAddresses.length > 0 ? (
+                            {hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) && filteredAddresses.length > 0 ? (
                                 filteredAddresses.map((address) => {
                                     const addressId = address.id;
                                     const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
@@ -570,6 +571,21 @@ const ShipFrom = ({ onNext, onPrevious }) => {
                                         </Card>
                                     );
                                 })
+                            ) : !hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) ? (
+                                <Box sx={{ textAlign: 'center', py: 4 }}>
+                                    <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>
+                                        You can create a new pickup location for your company.
+                                    </Typography>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setShowAddAddressForm(true)}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        Add Pickup Location
+                                    </Button>
+                                </Box>
                             ) : (
                                 <Box sx={{ textAlign: 'center', py: 4 }}>
                                     <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>

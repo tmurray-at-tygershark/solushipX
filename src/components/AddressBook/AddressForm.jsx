@@ -45,10 +45,11 @@ import { doc, setDoc, getDoc, addDoc, collection, Timestamp, query, where, getDo
 import { db } from '../../firebase';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 
 const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, initialData = {}, companyId = null, customerId = null }) => {
     const { companyIdForAddress } = useCompany();
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
 
     // Form state
     const [formData, setFormData] = useState({
@@ -1436,8 +1437,8 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                                     />
                                 </Grid>
 
-                                {/* Default Address Settings - Only show for customer addresses */}
-                                {formData.addressClass === 'customer' && selectedCustomerId && (
+                                {/* Default Address Settings - Only show for customer addresses and with permission */}
+                                {formData.addressClass === 'customer' && selectedCustomerId && hasPermission(userRole, PERMISSIONS.SET_DEFAULT_ADDRESSES) && (
                                     <Grid item xs={12}>
                                         <Box sx={{
                                             mt: 2,

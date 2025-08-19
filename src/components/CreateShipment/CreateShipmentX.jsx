@@ -673,19 +673,21 @@ const CreateShipmentX = (props) => {
 
             // Auto-populate default addresses for NEW shipments only when customer is selected
             if (effectiveCustomerId && effectiveCustomerId !== 'all' && effectiveCustomerId !== null && !isEditingDraft && !activeDraftId && !editMode) {
-                // Find default ship from address
+                // Find default ship from address - only use explicitly marked defaults
                 const defaultShipFrom = addresses.find(addr => addr.isDefaultShipFrom) ||
-                    addresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
-                    addresses.find(addr => addr.addressType === 'pickup');
+                    addresses.find(addr => addr.isDefault && addr.addressType === 'pickup');
 
-                // Find default ship to address  
+                // Find default ship to address - only use explicitly marked defaults
                 const defaultShipTo = addresses.find(addr => addr.isDefaultShipTo) ||
-                    addresses.find(addr => addr.isDefault && addr.addressType === 'destination') ||
-                    addresses.find(addr => addr.addressType === 'destination');
+                    addresses.find(addr => addr.isDefault && addr.addressType === 'destination');
 
                 // Auto-select default ship from if available and not already set
                 if (defaultShipFrom && !shipFromAddress) {
-                    console.log('📍 CreateShipmentX: Auto-selecting default ship from address:', defaultShipFrom);
+                    console.log('📍 CreateShipmentX: Auto-selecting default ship from address:', {
+                        address: defaultShipFrom,
+                        reason: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' : 
+                               (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
+                    });
                     handleAddressSelect(defaultShipFrom, 'from');
                 }
 
@@ -885,13 +887,13 @@ const CreateShipmentX = (props) => {
             isEditingDraft,
             editMode: !!prePopulatedData,
             loadingAddresses,
-            allConditionsMet: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null && 
+            allConditionsMet: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null &&
                 availableAddresses?.length > 0 && !isEditingDraft && !prePopulatedData && !loadingAddresses
         });
 
         // Only auto-select for NEW shipments when a customer is selected and addresses are loaded
         // Works for both user interaction and programmatic customer selection
-        if (selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null && 
+        if (selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null &&
             availableAddresses?.length > 0 && !isEditingDraft && !prePopulatedData && !loadingAddresses) {
 
             console.log('🎯 CreateShipmentX: Checking for default addresses...', {
@@ -907,12 +909,11 @@ const CreateShipmentX = (props) => {
                 }))
             });
 
-            // Find default ship from address
+            // Find default ship from address - only use explicitly marked defaults
             const defaultShipFrom = availableAddresses.find(addr => addr.isDefaultShipFrom) ||
-                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
-                availableAddresses.find(addr => addr.addressType === 'pickup');
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup');
 
-            // Find default ship to address  
+            // Find default ship to address - only use explicitly marked defaults
             const defaultShipTo = availableAddresses.find(addr => addr.isDefaultShipTo) ||
                 availableAddresses.find(addr => addr.isDefault && addr.addressType === 'destination');
 
@@ -920,13 +921,32 @@ const CreateShipmentX = (props) => {
                 defaultShipFrom: defaultShipFrom ? {
                     id: defaultShipFrom.id,
                     companyName: defaultShipFrom.companyName,
-                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom
+                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom,
+                    isDefault: defaultShipFrom.isDefault,
+                    addressType: defaultShipFrom.addressType,
+                    // Show why this address was selected
+                    selectedBecause: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' : 
+                                   (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
                 } : null,
                 defaultShipTo: defaultShipTo ? {
                     id: defaultShipTo.id,
                     companyName: defaultShipTo.companyName,
-                    isDefaultShipTo: defaultShipTo.isDefaultShipTo
-                } : null
+                    isDefaultShipTo: defaultShipTo.isDefaultShipTo,
+                    isDefault: defaultShipTo.isDefault,
+                    addressType: defaultShipTo.addressType,
+                    // Show why this address was selected
+                    selectedBecause: defaultShipTo.isDefaultShipTo ? 'isDefaultShipTo=true' : 
+                                   (defaultShipTo.isDefault && defaultShipTo.addressType === 'destination') ? 'isDefault=true + addressType=destination' : 'unknown'
+                } : null,
+                // Show all addresses to see their flags
+                allAddressFlags: availableAddresses.map(addr => ({
+                    id: addr.id,
+                    companyName: addr.companyName,
+                    isDefaultShipFrom: addr.isDefaultShipFrom,
+                    isDefaultShipTo: addr.isDefaultShipTo,
+                    isDefault: addr.isDefault,
+                    addressType: addr.addressType
+                }))
             });
 
             // Auto-select default ship from if available and not already set
@@ -4152,15 +4172,22 @@ const CreateShipmentX = (props) => {
                         </Box>
                     )}
 
-                    {/* Show rest of form only when company is selected or user is not super admin */}
+                    {/* Show rest of form only when user has shipment creation permission and company context is available */}
                     {(() => {
-                        const shouldShowForm =
-                            // Super admin: needs company selected
-                            (userRole === 'superadmin' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) ||
-                            // Manufacturer: needs company selected 
-                            (userRole === 'manufacturer' && ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId)) ||
-                            // Regular users: needs company context
-                            (userRole !== 'superadmin' && userRole !== 'manufacturer' && companyData?.companyID);
+                        const hasCreatePermission = hasPermission(userRole, PERMISSIONS.CREATE_SHIPMENTS);
+                        const hasCompanyContext =
+                            ((companyIdForAddress && companyIdForAddress !== 'all') || selectedCompanyId) ||
+                            companyData?.companyID;
+                        const shouldShowForm = hasCreatePermission && hasCompanyContext;
+
+                        console.log('🔍 CreateShipmentX Form Visibility Debug:', {
+                            userRole,
+                            companyIdForAddress,
+                            selectedCompanyId,
+                            hasCreatePermission,
+                            hasCompanyContext,
+                            shouldShowForm
+                        });
 
                         return shouldShowForm;
                     })() && (

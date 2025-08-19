@@ -3,6 +3,7 @@ import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import {
     Skeleton,
     Card,
@@ -54,7 +55,7 @@ const emptyAddress = () => ({
 });
 
 const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const { formData, updateFormSection } = useShipmentForm();
 
     const [customers, setCustomers] = useState([]);
@@ -681,7 +682,7 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
                         </Box>
                     ) : (
                         <Box>
-                            {filteredAddresses.length > 0 ? (
+                            {hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) && filteredAddresses.length > 0 ? (
                                 filteredAddresses.map((address) => {
                                     const addressId = address.id;
                                     const isSelected = String(addressId) === String(selectedAddressId) && selectedAddressId !== null;
@@ -795,6 +796,20 @@ const QuickShipTo = forwardRef(({ onNext, onOpenAddCustomer = null }, ref) => {
                                         </Card>
                                     );
                                 })
+                            ) : !hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) ? (
+                                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f9fafb', border: '1px dashed #d1d5db' }}>
+                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                        You can create a new destination address.
+                                        <Button
+                                            variant="text"
+                                            size="small"
+                                            onClick={handleOpenAddressDialog}
+                                            sx={{ fontSize: '12px', p: 0, minWidth: 'auto', ml: 0.5 }}
+                                        >
+                                            Add a new address
+                                        </Button>
+                                    </Typography>
+                                </Paper>
                             ) : (
                                 <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f9fafb', border: '1px dashed #d1d5db' }}>
                                     <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>

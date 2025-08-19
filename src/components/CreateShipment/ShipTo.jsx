@@ -3,6 +3,7 @@ import { doc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import {
     Skeleton,
     Card,
@@ -52,7 +53,7 @@ const emptyAddress = () => ({
 });
 
 const ShipTo = ({ onNext, onPrevious }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const { formData, updateFormSection } = useShipmentForm();
     const { enqueueSnackbar } = useSnackbar();
 
@@ -878,7 +879,7 @@ const ShipTo = ({ onNext, onPrevious }) => {
                             </Box>
                         ) : (
                             <Box>
-                                {filteredAddresses.length > 0 ? (
+                                {hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) && filteredAddresses.length > 0 ? (
                                     filteredAddresses.map((address) => {
                                         const addressId = address.id;
                                         const isSelected = addressId === selectedAddressId && selectedAddressId !== null;
@@ -1007,6 +1008,21 @@ const ShipTo = ({ onNext, onPrevious }) => {
                                             </Card>
                                         );
                                     })
+                                ) : !hasPermission(userRole, PERMISSIONS.VIEW_SHIPTO_ADDRESSES) ? (
+                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                        <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>
+                                            You can create a new delivery address for this customer.
+                                        </Typography>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            startIcon={<AddIcon />}
+                                            onClick={handleOpenAddressDialog}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            Add Delivery Location
+                                        </Button>
+                                    </Box>
                                 ) : (
                                     <Box sx={{ textAlign: 'center', py: 4 }}>
                                         <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: '12px' }}>

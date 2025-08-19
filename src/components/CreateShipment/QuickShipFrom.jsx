@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompany } from '../../contexts/CompanyContext';
 import { useShipmentForm } from '../../contexts/ShipmentFormContext';
+import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import { getStateOptions, getStateLabel } from '../../utils/stateUtils';
 import {
     Skeleton,
@@ -35,7 +36,7 @@ import {
 import { getCountryFlag } from '../Shipments/utils/shipmentHelpers';
 
 const QuickShipFrom = ({ onNext }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, userRole } = useAuth();
     const { companyData, companyIdForAddress, loading: companyLoading } = useCompany();
     const { formData, updateFormSection } = useShipmentForm();
     const [shipFromAddresses, setShipFromAddresses] = useState([]);
@@ -418,7 +419,7 @@ const QuickShipFrom = ({ onNext }) => {
                                         Choose a pickup location...
                                     </MenuItem>
                                 )}
-                                {shipFromAddresses.map((address) => (
+                                {hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) && shipFromAddresses.map((address) => (
                                     <MenuItem key={address.id} value={address.id} sx={{ fontSize: '12px' }}>
                                         <Box sx={{ width: '100%' }}>
                                             <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, color: '#1f2937' }}>
@@ -447,6 +448,11 @@ const QuickShipFrom = ({ onNext }) => {
                                         </Box>
                                     </MenuItem>
                                 ))}
+                                {!hasPermission(userRole, PERMISSIONS.VIEW_SHIPFROM_ADDRESSES) && (
+                                    <MenuItem disabled sx={{ fontSize: '12px', fontStyle: 'italic', color: '#9ca3af' }}>
+                                        You can only create new pickup addresses
+                                    </MenuItem>
+                                )}
                             </Select>
                         </FormControl>
                         {!showAddAddressForm && (
