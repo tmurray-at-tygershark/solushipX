@@ -236,7 +236,10 @@ const QuickShipFrom = ({ onNext }) => {
                         }
                     }
                 } else if (fetchedAddresses.length > 0) {
-                    const defaultAddressDoc = fetchedAddresses.find(addr => addr.isDefault) || fetchedAddresses[0];
+                    // Prioritize new default flag for ShipFrom, then legacy default, then first address
+                    const defaultAddressDoc = fetchedAddresses.find(addr => addr.isDefaultShipFrom) ||
+                        fetchedAddresses.find(addr => addr.isDefault) ||
+                        fetchedAddresses[0];
                     if (defaultAddressDoc) {
                         const defaultSelectedOrigin = mapAddressBookToShipFrom(defaultAddressDoc, companyData);
                         updateFormSection('shipFrom', defaultSelectedOrigin);

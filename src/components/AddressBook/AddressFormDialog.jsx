@@ -75,6 +75,8 @@ const AddressFormDialog = ({
                     onSuccess={handleSuccess}
                     isModal={true}
                     initialData={formInitialData}
+                    customerId={customerId}
+                    companyId={companyId}
                 />
             </DialogContent>
         </Dialog>

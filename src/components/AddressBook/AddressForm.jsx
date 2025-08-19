@@ -67,6 +67,8 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
         specialInstructions: '',
         status: 'active',
         isResidential: false,
+        // Address classification - default to customer
+        addressClass: 'customer',
         // Enhanced hours structure
         useCustomHours: false,
         defaultHours: {
@@ -82,6 +84,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
             saturday: { open: '', close: '', closed: false },
             sunday: { open: '', close: '', closed: false }
         },
+        // Default address flags
+        isDefaultShipFrom: false,
+        isDefaultShipTo: false,
         // Include initial data for customer-specific fields
         ...initialData
     });
@@ -165,9 +170,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
 
     // Initialize customer selection from props
     useEffect(() => {
-        if (customerId && !isEditing) {
+        if (customerId) {
             setSelectedCustomerId(customerId);
-            console.log('[AddressForm] Initialized customer from props:', customerId);
+            console.log('[AddressForm] Initialized customer from props:', customerId, 'isEditing:', isEditing);
         }
     }, [customerId, isEditing]);
 
@@ -270,6 +275,11 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                     specialInstructions: data.specialInstructions || '',
                     status: data.status || 'active',
                     isResidential: data.isResidential || false,
+                    // Load address classification from database
+                    addressClass: data.addressClass || 'customer', // Default to customer if not set
+                    // Load default address flags
+                    isDefaultShipFrom: data.isDefaultShipFrom || false,
+                    isDefaultShipTo: data.isDefaultShipTo || false,
                     ...hoursData
                 });
 
@@ -558,6 +568,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 postalCode: formData.postalCode,
                 openHours: formData.defaultHours.open,
                 closeHours: formData.defaultHours.close,
+                // Default address flags for customer addresses
+                isDefaultShipFrom: formData.addressClass === 'customer' ? formData.isDefaultShipFrom : false,
+                isDefaultShipTo: formData.addressClass === 'customer' ? formData.isDefaultShipTo : false,
                 companyID: companyId || companyIdForAddress,
                 createdBy: currentUser?.uid || 'system',
                 updatedAt: Timestamp.now(),
@@ -592,6 +605,57 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 specialInstructionsLength: addressData.specialInstructions ? addressData.specialInstructions.length : 0
             });
 
+            // If setting as default, clear other defaults first
+            if (addressData.isDefaultShipFrom || addressData.isDefaultShipTo) {
+                try {
+                    // Clear existing defaults for this customer
+                    const existingDefaultsQuery = query(
+                        collection(db, 'addressBook'),
+                        where('addressClass', '==', 'customer'),
+                        where('addressClassID', '==', selectedCustomerId),
+                        where('status', '==', 'active')
+                    );
+
+                    const defaultsSnapshot = await getDocs(existingDefaultsQuery);
+                    const batch = [];
+
+                    defaultsSnapshot.docs.forEach(docSnapshot => {
+                        const existingData = docSnapshot.data();
+                        let needsUpdate = false;
+                        const updates = {};
+
+                        // Clear shipFrom default if we're setting a new one
+                        if (addressData.isDefaultShipFrom && existingData.isDefaultShipFrom && docSnapshot.id !== addressId) {
+                            updates.isDefaultShipFrom = false;
+                            needsUpdate = true;
+                        }
+
+                        // Clear shipTo default if we're setting a new one
+                        if (addressData.isDefaultShipTo && existingData.isDefaultShipTo && docSnapshot.id !== addressId) {
+                            updates.isDefaultShipTo = false;
+                            needsUpdate = true;
+                        }
+
+                        if (needsUpdate) {
+                            batch.push({
+                                ref: doc(db, 'addressBook', docSnapshot.id),
+                                updates: { ...updates, updatedAt: Timestamp.now() }
+                            });
+                        }
+                    });
+
+                    // Execute batch updates to clear existing defaults
+                    for (const update of batch) {
+                        await setDoc(update.ref, update.updates, { merge: true });
+                    }
+
+                    console.log(`📍 Cleared ${batch.length} existing default addresses for customer ${selectedCustomerId}`);
+                } catch (error) {
+                    console.error('Error clearing existing defaults:', error);
+                    // Continue with saving - don't fail the entire operation
+                }
+            }
+
             let docRef;
             if (isEditing) {
                 docRef = doc(db, 'addressBook', addressId);
@@ -599,6 +663,8 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 console.log(`✅ Address updated successfully:`, {
                     addressId,
                     specialInstructionsInSavedData: addressData.specialInstructions,
+                    isDefaultShipFrom: addressData.isDefaultShipFrom,
+                    isDefaultShipTo: addressData.isDefaultShipTo,
                     mergeUsed: true
                 });
             } else {
@@ -606,7 +672,9 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                 docRef = await addDoc(collection(db, 'addressBook'), addressData);
                 console.log(`✅ Address created successfully:`, {
                     newAddressId: docRef.id,
-                    specialInstructionsInSavedData: addressData.specialInstructions
+                    specialInstructionsInSavedData: addressData.specialInstructions,
+                    isDefaultShipFrom: addressData.isDefaultShipFrom,
+                    isDefaultShipTo: addressData.isDefaultShipTo
                 });
             }
 
@@ -1367,6 +1435,91 @@ const AddressForm = ({ addressId = null, onCancel, onSuccess, isModal = false, i
                                         }}
                                     />
                                 </Grid>
+
+                                {/* Default Address Settings - Only show for customer addresses */}
+                                {formData.addressClass === 'customer' && selectedCustomerId && (
+                                    <Grid item xs={12}>
+                                        <Box sx={{
+                                            mt: 2,
+                                            p: 2,
+                                            border: '1px solid #e5e7eb',
+                                            borderRadius: 1,
+                                            bgcolor: '#f8fafc'
+                                        }}>
+                                            <Typography variant="subtitle2" sx={{
+                                                fontSize: '13px',
+                                                fontWeight: 600,
+                                                mb: 2,
+                                                color: '#374151'
+                                            }}>
+                                                Default Address Settings
+                                            </Typography>
+                                            <Typography variant="body2" sx={{
+                                                fontSize: '11px',
+                                                color: '#6b7280',
+                                                mb: 2
+                                            }}>
+                                                Setting as default will automatically populate this address when creating new shipments for this customer.
+                                            </Typography>
+                                            <Grid container spacing={2}>
+                                                <Grid item xs={12} sm={6}>
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Switch
+                                                                checked={formData.isDefaultShipFrom}
+                                                                onChange={(e) => handleInputChange('isDefaultShipFrom', e.target.checked)}
+                                                                size="small"
+                                                                sx={{
+                                                                    '& .MuiSwitch-switchBase.Mui-checked': {
+                                                                        color: '#059669',
+                                                                    },
+                                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                                        backgroundColor: '#059669',
+                                                                    },
+                                                                }}
+                                                            />
+                                                        }
+                                                        label="Set as Default Ship From"
+                                                        sx={{
+                                                            '& .MuiFormControlLabel-label': {
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                color: '#374151'
+                                                            }
+                                                        }}
+                                                    />
+                                                </Grid>
+                                                <Grid item xs={12} sm={6}>
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Switch
+                                                                checked={formData.isDefaultShipTo}
+                                                                onChange={(e) => handleInputChange('isDefaultShipTo', e.target.checked)}
+                                                                size="small"
+                                                                sx={{
+                                                                    '& .MuiSwitch-switchBase.Mui-checked': {
+                                                                        color: '#2563eb',
+                                                                    },
+                                                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                                                        backgroundColor: '#2563eb',
+                                                                    },
+                                                                }}
+                                                            />
+                                                        }
+                                                        label="Set as Default Ship To"
+                                                        sx={{
+                                                            '& .MuiFormControlLabel-label': {
+                                                                fontSize: '12px',
+                                                                fontWeight: 500,
+                                                                color: '#374151'
+                                                            }
+                                                        }}
+                                                    />
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    </Grid>
+                                )}
 
                                 {/* Business Hours Section */}
                                 <Grid item xs={12}>

@@ -286,11 +286,22 @@ const ShipTo = ({ onNext, onPrevious }) => {
                 contactPhone: addr.contactPhone || addr.phone || primaryContact.phone || '',
                 contactEmail: addr.contactEmail || addr.email || primaryContact.email || '',
                 specialInstructions: addr.specialInstructions || '',
-                isDefault: addr.isDefault || false
+                isDefault: addr.isDefault || false, // Legacy support
+                isDefaultShipTo: addr.isDefaultShipTo || false
             }));
 
-            // Sort with default addresses first
-            formattedAddresses.sort((a, b) => (a.isDefault === b.isDefault) ? 0 : a.isDefault ? -1 : 1);
+            // Sort with default addresses first - prioritize new default flags
+            formattedAddresses.sort((a, b) => {
+                // First priority: isDefaultShipTo
+                if (a.isDefaultShipTo !== b.isDefaultShipTo) {
+                    return a.isDefaultShipTo ? -1 : 1;
+                }
+                // Second priority: legacy isDefault
+                if (a.isDefault !== b.isDefault) {
+                    return a.isDefault ? -1 : 1;
+                }
+                return 0;
+            });
 
             console.log("ShipTo: Formatted addresses:", formattedAddresses);
             setCustomerAddresses(formattedAddresses);
@@ -325,8 +336,10 @@ const ShipTo = ({ onNext, onPrevious }) => {
             }
 
             if (!addressToSelectObject && formattedAddresses.length > 0) {
-                // Fall back to default or first address
-                addressToSelectObject = formattedAddresses.find(addr => addr.isDefault) || formattedAddresses[0];
+                // Prioritize new default flag for ShipTo, then legacy default, then first address
+                addressToSelectObject = formattedAddresses.find(addr => addr.isDefaultShipTo) ||
+                    formattedAddresses.find(addr => addr.isDefault) ||
+                    formattedAddresses[0];
                 console.log("ShipTo: Using default/first address:", addressToSelectObject);
             }
 

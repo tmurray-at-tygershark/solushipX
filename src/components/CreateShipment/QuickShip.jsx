@@ -635,20 +635,14 @@ const QuickShip = ({
                     customerID: c.customerID,
                     name: c.name,
                     companyID: c.companyID
-                })),
-                message: 'Showing first 5 customers only. Looking for ID: 26cn6rKYoQe3h6E0AuHu'
+                }))
             });
 
-            // Check if the specific customer we're looking for exists
-            const targetCustomer = customers.find(c =>
-                c.id === '26cn6rKYoQe3h6E0AuHu' ||
-                c.customerID === '26cn6rKYoQe3h6E0AuHu'
-            );
-            if (targetCustomer) {
-                console.log('✅ Found target customer in loaded list:', targetCustomer);
-            } else {
-                console.log('❌ Target customer NOT in loaded list for company:', companyId);
-            }
+            // Debug: Check customer loading results
+            console.log('✅ Customers loaded successfully for company:', companyId, {
+                customerCount: customers.length,
+                firstCustomer: customers[0]?.companyName || 'N/A'
+            });
 
             setAvailableCustomers(customers);
             // Don't reset customer selection - keep current selection if valid
@@ -4504,6 +4498,96 @@ const QuickShip = ({
         }
     }, [selectedCustomerId, loadAddressesForCompany]); // Reload when customer changes
 
+    // Auto-select default addresses when addresses are loaded for a customer
+    // This works for BOTH user interaction AND programmatic selection
+    useEffect(() => {
+        console.log('🔍 QuickShip: Auto-selection useEffect triggered with conditions:', {
+            selectedCustomerId,
+            selectedCustomerIdValid: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null,
+            availableAddressesCount: availableAddresses.length,
+            hasAddresses: availableAddresses.length > 0,
+            draftId,
+            editMode,
+            notDraft: !draftId,
+            notEditMode: !editMode,
+            loadingAddresses,
+            allConditionsMet: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null &&
+                availableAddresses.length > 0 && !draftId && !editMode && !loadingAddresses
+        });
+
+        // Only auto-select for NEW shipments when a customer is selected and addresses are loaded
+        // Works for both user interaction and programmatic customer selection
+        if (selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null &&
+            availableAddresses.length > 0 && !draftId && !editMode && !loadingAddresses) {
+
+            console.log('🎯 QuickShip: Checking for default addresses...', {
+                selectedCustomerId,
+                availableAddressCount: availableAddresses.length,
+                hasShipFrom: !!shipFromAddress,
+                hasShipTo: !!shipToAddress,
+                sampleAddresses: availableAddresses.slice(0, 2).map(addr => ({
+                    id: addr.id,
+                    isDefaultShipFrom: addr.isDefaultShipFrom,
+                    isDefaultShipTo: addr.isDefaultShipTo,
+                    addressClassID: addr.addressClassID
+                }))
+            });
+            // Find default ship from address
+            const defaultShipFrom = availableAddresses.find(addr => addr.isDefaultShipFrom) ||
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
+                availableAddresses.find(addr => addr.addressType === 'pickup');
+
+            // Find default ship to address  
+            const defaultShipTo = availableAddresses.find(addr => addr.isDefaultShipTo) ||
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'destination');
+
+            console.log('🔍 QuickShip: Default address search results:', {
+                defaultShipFrom: defaultShipFrom ? {
+                    id: defaultShipFrom.id,
+                    companyName: defaultShipFrom.companyName,
+                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom
+                } : null,
+                defaultShipTo: defaultShipTo ? {
+                    id: defaultShipTo.id,
+                    companyName: defaultShipTo.companyName,
+                    isDefaultShipTo: defaultShipTo.isDefaultShipTo
+                } : null
+            });
+
+            // Auto-select default ship from if available and not already set
+            if (defaultShipFrom && !shipFromAddress) {
+                console.log('🎯 QuickShip: Auto-selecting default ship from address:', defaultShipFrom);
+                handleAddressSelect(defaultShipFrom, 'from');
+            }
+
+            // Auto-select default ship to if available and not already set
+            if (defaultShipTo && !shipToAddress) {
+                console.log('🎯 QuickShip: Auto-selecting default ship to address:', defaultShipTo);
+                handleAddressSelect(defaultShipTo, 'to');
+            }
+        }
+    }, [selectedCustomerId, availableAddresses, shipFromAddress, shipToAddress, draftId, editMode, loadingAddresses, handleAddressSelect]);
+
+    // Auto-select customer if there's only one available (matches CreateShipmentX logic)
+    useEffect(() => {
+        if (availableCustomers.length === 1 && !selectedCustomerId && !loadingCustomers) {
+            const singleCustomer = availableCustomers[0];
+            const customerId = singleCustomer.customerID || singleCustomer.id;
+            console.log('🎯 QuickShip: Auto-selecting single customer:', {
+                customer: singleCustomer.name,
+                customerId,
+                programmaticSelection: true
+            });
+            setSelectedCustomerId(customerId);
+
+            // Update form data immediately
+            updateFormSection('shipmentInfo', {
+                selectedCustomerId: customerId,
+                selectedCustomer: singleCustomer
+            });
+        }
+    }, [availableCustomers, selectedCustomerId, loadingCustomers, updateFormSection]);
+
     // REMOVED: Customer filter effect that was causing infinite loops
     // The customer filter now works without needing to reload addresses from the server
     // since filtering happens on the client-side in the components
@@ -5462,14 +5546,28 @@ const QuickShip = ({
                                 }}
                                 value={customerAutocompleteValue}
                                 onChange={(event, newValue) => {
-                                    // Prefer customerID over id for consistency with how data is queried
+                                    // CRITICAL FIX: Use business customer ID for address filtering, not Firestore document ID
                                     const newCustomerId = newValue ? (newValue.customerID || newValue.id) : null;
                                     setSelectedCustomerId(newCustomerId);
+
+                                    console.log('🎯 Customer selected:', {
+                                        customer: newValue,
+                                        documentId: newValue?.id,
+                                        businessCustomerId: newValue?.customerID,
+                                        usingForFiltering: newCustomerId
+                                    });
 
                                     // Reset the manual clear flag when a customer is selected
                                     if (newCustomerId) {
                                         setCustomerManuallyCleared(false);
                                     }
+
+                                    // CRITICAL: Save customer selection to form data immediately
+                                    updateFormSection('shipmentInfo', {
+                                        ...shipmentInfo,
+                                        selectedCustomerId: newCustomerId,
+                                        selectedCustomer: newValue
+                                    });
                                 }}
                                 loadingText="Loading customers..."
                                 isOptionEqualToValue={(option, value) => {
@@ -8204,21 +8302,6 @@ const QuickShip = ({
                                                                     {isSavingDraft ? 'Saving...' : 'Ship Later'}
                                                                 </Button>
                                                             )}
-                                                            {hasPermission(userRole, PERMISSIONS.USE_BOOK_SHIPMENT) && (
-                                                                <Button
-                                                                    variant="contained"
-                                                                    color="primary"
-                                                                    onClick={handleBookShipment}
-                                                                    disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
-                                                                    sx={{
-                                                                        fontSize: '12px',
-                                                                        textTransform: 'none',
-                                                                        minWidth: '120px'
-                                                                    }}
-                                                                >
-                                                                    {isBooking ? 'Booking...' : 'Book Shipment'}
-                                                                </Button>
-                                                            )}
 
                                                             {/* Submit for Review Button - Show when user has review permission (can show alongside Ship Later) */}
                                                             {hasPermission(userRole, PERMISSIONS.REVIEW_SHIPMENTS) && (
@@ -8241,6 +8324,22 @@ const QuickShip = ({
                                                                     }}
                                                                 >
                                                                     {isSubmittingForReview ? 'Submitting...' : 'Submit for Review'}
+                                                                </Button>
+                                                            )}
+
+                                                            {hasPermission(userRole, PERMISSIONS.USE_BOOK_SHIPMENT) && (
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={handleBookShipment}
+                                                                    disabled={isSavingDraft || isDraftLoading || isBooking || !selectedCarrier || !shipFromAddress || !shipToAddress || packages.length === 0}
+                                                                    sx={{
+                                                                        fontSize: '12px',
+                                                                        textTransform: 'none',
+                                                                        minWidth: '120px'
+                                                                    }}
+                                                                >
+                                                                    {isBooking ? 'Booking...' : 'Book Shipment'}
                                                                 </Button>
                                                             )}
                                                         </>

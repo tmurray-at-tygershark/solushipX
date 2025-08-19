@@ -670,6 +670,31 @@ const CreateShipmentX = (props) => {
             });
 
             setAvailableAddresses(addresses);
+
+            // Auto-populate default addresses for NEW shipments only when customer is selected
+            if (effectiveCustomerId && effectiveCustomerId !== 'all' && effectiveCustomerId !== null && !isEditingDraft && !activeDraftId && !editMode) {
+                // Find default ship from address
+                const defaultShipFrom = addresses.find(addr => addr.isDefaultShipFrom) ||
+                    addresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
+                    addresses.find(addr => addr.addressType === 'pickup');
+
+                // Find default ship to address  
+                const defaultShipTo = addresses.find(addr => addr.isDefaultShipTo) ||
+                    addresses.find(addr => addr.isDefault && addr.addressType === 'destination') ||
+                    addresses.find(addr => addr.addressType === 'destination');
+
+                // Auto-select default ship from if available and not already set
+                if (defaultShipFrom && !shipFromAddress) {
+                    console.log('📍 CreateShipmentX: Auto-selecting default ship from address:', defaultShipFrom);
+                    handleAddressSelect(defaultShipFrom, 'from');
+                }
+
+                // Auto-select default ship to if available and not already set
+                if (defaultShipTo && !shipToAddress) {
+                    console.log('📍 CreateShipmentX: Auto-selecting default ship to address:', defaultShipTo);
+                    handleAddressSelect(defaultShipTo, 'to');
+                }
+            }
         } catch (error) {
             console.error('Error loading addresses:', error);
             setAvailableAddresses([]);
@@ -840,13 +865,83 @@ const CreateShipmentX = (props) => {
         if (availableCustomers.length === 1 && !selectedCustomerId) {
             const singleCustomer = availableCustomers[0];
             const customerId = singleCustomer.customerID || singleCustomer.id;
-            console.log('🎯 Auto-selecting single customer:', {
+            console.log('🎯 CreateShipmentX: Auto-selecting single customer:', {
                 customer: singleCustomer.name,
-                customerId
+                customerId,
+                programmaticSelection: true
             });
             setSelectedCustomerId(customerId);
         }
     }, [availableCustomers, selectedCustomerId]);
+
+    // Auto-select default addresses when addresses are loaded for a customer
+    // This works for BOTH user interaction AND programmatic selection
+    useEffect(() => {
+        console.log('🔍 CreateShipmentX: Auto-selection useEffect triggered with conditions:', {
+            selectedCustomerId,
+            selectedCustomerIdValid: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null,
+            availableAddressesCount: availableAddresses?.length || 0,
+            hasAddresses: availableAddresses?.length > 0,
+            isEditingDraft,
+            editMode: !!prePopulatedData,
+            loadingAddresses,
+            allConditionsMet: selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null && 
+                availableAddresses?.length > 0 && !isEditingDraft && !prePopulatedData && !loadingAddresses
+        });
+
+        // Only auto-select for NEW shipments when a customer is selected and addresses are loaded
+        // Works for both user interaction and programmatic customer selection
+        if (selectedCustomerId && selectedCustomerId !== 'all' && selectedCustomerId !== null && 
+            availableAddresses?.length > 0 && !isEditingDraft && !prePopulatedData && !loadingAddresses) {
+
+            console.log('🎯 CreateShipmentX: Checking for default addresses...', {
+                selectedCustomerId,
+                availableAddressCount: availableAddresses.length,
+                hasShipFrom: !!shipFromAddress,
+                hasShipTo: !!shipToAddress,
+                sampleAddresses: availableAddresses.slice(0, 2).map(addr => ({
+                    id: addr.id,
+                    isDefaultShipFrom: addr.isDefaultShipFrom,
+                    isDefaultShipTo: addr.isDefaultShipTo,
+                    addressClassID: addr.addressClassID
+                }))
+            });
+
+            // Find default ship from address
+            const defaultShipFrom = availableAddresses.find(addr => addr.isDefaultShipFrom) ||
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'pickup') ||
+                availableAddresses.find(addr => addr.addressType === 'pickup');
+
+            // Find default ship to address  
+            const defaultShipTo = availableAddresses.find(addr => addr.isDefaultShipTo) ||
+                availableAddresses.find(addr => addr.isDefault && addr.addressType === 'destination');
+
+            console.log('🔍 CreateShipmentX: Default address search results:', {
+                defaultShipFrom: defaultShipFrom ? {
+                    id: defaultShipFrom.id,
+                    companyName: defaultShipFrom.companyName,
+                    isDefaultShipFrom: defaultShipFrom.isDefaultShipFrom
+                } : null,
+                defaultShipTo: defaultShipTo ? {
+                    id: defaultShipTo.id,
+                    companyName: defaultShipTo.companyName,
+                    isDefaultShipTo: defaultShipTo.isDefaultShipTo
+                } : null
+            });
+
+            // Auto-select default ship from if available and not already set
+            if (defaultShipFrom && !shipFromAddress) {
+                console.log('🎯 CreateShipmentX: Auto-selecting default ship from address:', defaultShipFrom);
+                setShipFromAddress(defaultShipFrom);
+            }
+
+            // Auto-select default ship to if available and not already set
+            if (defaultShipTo && !shipToAddress) {
+                console.log('🎯 CreateShipmentX: Auto-selecting default ship to address:', defaultShipTo);
+                setShipToAddress(defaultShipTo);
+            }
+        }
+    }, [selectedCustomerId, availableAddresses, shipFromAddress, shipToAddress, isEditingDraft, prePopulatedData, loadingAddresses]);
 
     // Get company eligible carriers using enhanced system
     const getCompanyEligibleCarriers = useCallback(async (shipmentData) => {
