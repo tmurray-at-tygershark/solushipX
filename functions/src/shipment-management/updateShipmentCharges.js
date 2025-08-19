@@ -168,26 +168,53 @@ async function updateChargesForDocument(shipmentDoc, charges, userId, userEmail)
             commissionable: charge.commissionable || false
         }));
         
-        // Clear conflicting fields for QuickShip to prevent data inconsistency
+        // 🧹 CRITICAL: Clear ALL conflicting fields for QuickShip to prevent data duplication
         updateData.chargesBreakdown = admin.firestore.FieldValue.delete();
         updateData.updatedCharges = admin.firestore.FieldValue.delete();
+        updateData.charges = admin.firestore.FieldValue.delete(); // Clear legacy charges
+        // Clear selectedRate charges to prevent duplication
+        if (shipmentData.selectedRate) {
+            updateData['selectedRate.charges'] = admin.firestore.FieldValue.delete();
+        }
+        // Clear dual rate system charges to prevent duplication
+        if (shipmentData.actualRates) {
+            updateData['actualRates.charges'] = admin.firestore.FieldValue.delete();
+        }
+        if (shipmentData.markupRates) {
+            updateData['markupRates.charges'] = admin.firestore.FieldValue.delete();
+        }
         
-        logger.info('Updated manualRates for QuickShip (cleared other charge fields):', { 
+        logger.info('Updated manualRates for QuickShip (cleared ALL other charge fields):', { 
             manualRatesCount: updateData.manualRates.length,
-            rates: updateData.manualRates 
+            clearedFields: ['chargesBreakdown', 'updatedCharges', 'charges', 'selectedRate.charges', 'actualRates.charges', 'markupRates.charges']
         });
     } else {
-        // For regular shipments: Use chargesBreakdown and updatedCharges
-        updateData.chargesBreakdown = validatedCharges.map((charge, index) => ({
-            ...charge,
-            id: charge.id || `${shipmentData.id}_breakdown_${index}` // Ensure IDs are preserved/created
-        }));
+        // For regular shipments: ONLY use updatedCharges (single source of truth)
         updateData.updatedCharges = validatedCharges.map((charge, index) => ({
             ...charge,
             id: charge.id || `${shipmentData.id}_updated_${index}` // Ensure IDs are preserved/created
         }));
         
-        logger.info('Updated chargesBreakdown and updatedCharges for regular shipment');
+        // 🧹 CRITICAL: Clear ALL conflicting fields for regular shipments to prevent data duplication
+        updateData.manualRates = admin.firestore.FieldValue.delete();
+        updateData.chargesBreakdown = admin.firestore.FieldValue.delete(); // We only need updatedCharges
+        updateData.charges = admin.firestore.FieldValue.delete(); // Clear legacy charges
+        // Clear selectedRate charges to prevent duplication
+        if (shipmentData.selectedRate) {
+            updateData['selectedRate.charges'] = admin.firestore.FieldValue.delete();
+        }
+        // Clear dual rate system charges to prevent duplication
+        if (shipmentData.actualRates) {
+            updateData['actualRates.charges'] = admin.firestore.FieldValue.delete();
+        }
+        if (shipmentData.markupRates) {
+            updateData['markupRates.charges'] = admin.firestore.FieldValue.delete();
+        }
+        
+        logger.info('Updated updatedCharges for regular shipment (cleared ALL other charge fields):', {
+            updatedChargesCount: updateData.updatedCharges.length,
+            clearedFields: ['manualRates', 'chargesBreakdown', 'charges', 'selectedRate.charges', 'actualRates.charges', 'markupRates.charges']
+        });
     }
 
     // For regular shipments, update billingDetails if it exists

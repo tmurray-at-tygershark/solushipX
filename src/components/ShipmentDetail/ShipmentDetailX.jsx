@@ -1351,14 +1351,13 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                         const totalActualCost = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCost) || 0), 0);
                         const totalActualCharge = validCharges.reduce((sum, charge) => sum + (parseFloat(charge.actualCharge) || 0), 0);
 
-                        // 🔧 CRITICAL FIX: Update manualRates for QuickShip shipments (rateDataManager source of truth)
+                        // 🔧 CRITICAL FIX: Single source of truth for charge data to prevent duplication
                         const isQuickShip = prevShipment.creationMethod === 'quickship';
 
-                        // Update the shipment with new charge data
+                        // Update the shipment with new charge data - SINGLE FIELD ONLY
                         const updatedShipment = {
                             ...prevShipment,
-                            // DON'T update rateBreakdown - let rateDataManager be the single source of truth
-                            // 🚀 QuickShip: Update manualRates (rateDataManager priority field)
+                            // 🚀 QuickShip: ONLY update manualRates, clear all other charge fields
                             ...(isQuickShip && {
                                 manualRates: validCharges.map(charge => ({
                                     id: charge.id,
@@ -1374,9 +1373,42 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                                     invoiceNumber: charge.invoiceNumber || '-',
                                     ediNumber: charge.ediNumber || '-',
                                     commissionable: charge.commissionable || false
-                                }))
+                                })),
+                                // 🧹 CRITICAL: Clear conflicting fields to prevent duplication
+                                updatedCharges: null,
+                                chargesBreakdown: null,
+                                charges: null,
+                                // Clear selectedRate charges to prevent duplication
+                                ...(prevShipment.selectedRate && {
+                                    selectedRate: {
+                                        ...prevShipment.selectedRate,
+                                        charges: null, // Clear to prevent duplication
+                                        totalCharges: totalQuotedCharge,
+                                        ...(totalQuotedCharge > 0 && {
+                                            cost: totalQuotedCost,
+                                            price: totalQuotedCharge,
+                                            totalCost: totalQuotedCost,
+                                            totalPrice: totalQuotedCharge
+                                        })
+                                    }
+                                }),
+                                // Clear dual rate system charges to prevent duplication
+                                ...(prevShipment.actualRates && {
+                                    actualRates: {
+                                        ...prevShipment.actualRates,
+                                        charges: null,
+                                        totalCharges: totalActualCost
+                                    }
+                                }),
+                                ...(prevShipment.markupRates && {
+                                    markupRates: {
+                                        ...prevShipment.markupRates,
+                                        charges: null,
+                                        totalCharges: totalActualCharge
+                                    }
+                                })
                             }),
-                            // 🚀 Regular shipments: Update updatedCharges (rateDataManager priority field)
+                            // 🚀 Regular shipments: ONLY update updatedCharges, clear all other charge fields
                             ...(!isQuickShip && {
                                 updatedCharges: validCharges.map(charge => ({
                                     id: charge.id,
@@ -1390,41 +1422,41 @@ const ShipmentDetailX = ({ shipmentId: propShipmentId, onBackToTable, isAdmin: p
                                     ediNumber: charge.ediNumber || '-',
                                     commissionable: charge.commissionable || false,
                                     currency: charge.currency || 'CAD'
-                                }))
+                                })),
+                                // 🧹 CRITICAL: Clear conflicting fields to prevent duplication  
+                                manualRates: null,
+                                chargesBreakdown: null,
+                                charges: null,
+                                // Clear selectedRate charges to prevent duplication
+                                ...(prevShipment.selectedRate && {
+                                    selectedRate: {
+                                        ...prevShipment.selectedRate,
+                                        charges: null, // Clear to prevent duplication
+                                        totalCharges: totalQuotedCharge,
+                                        ...(totalQuotedCharge > 0 && {
+                                            cost: totalQuotedCost,
+                                            price: totalQuotedCharge,
+                                            totalCost: totalQuotedCost,
+                                            totalPrice: totalQuotedCharge
+                                        })
+                                    }
+                                }),
+                                // Clear dual rate system charges to prevent duplication
+                                ...(prevShipment.actualRates && {
+                                    actualRates: {
+                                        ...prevShipment.actualRates,
+                                        charges: null,
+                                        totalCharges: totalActualCost
+                                    }
+                                }),
+                                ...(prevShipment.markupRates && {
+                                    markupRates: {
+                                        ...prevShipment.markupRates,
+                                        charges: null,
+                                        totalCharges: totalActualCharge
+                                    }
+                                })
                             }),
-                            // Update selectedRate if it exists
-                            ...(prevShipment.selectedRate && {
-                                selectedRate: {
-                                    ...prevShipment.selectedRate,
-                                    charges: validCharges,
-                                    totalCharges: totalQuotedCharge,
-                                    // Update rate totals if they exist
-                                    ...(totalQuotedCharge > 0 && {
-                                        cost: totalQuotedCost,
-                                        price: totalQuotedCharge,
-                                        totalCost: totalQuotedCost,
-                                        totalPrice: totalQuotedCharge
-                                    })
-                                }
-                            }),
-                            // Update actualRates if it exists (for dual rate system)
-                            ...(prevShipment.actualRates && {
-                                actualRates: {
-                                    ...prevShipment.actualRates,
-                                    charges: validCharges,
-                                    totalCharges: totalActualCost
-                                }
-                            }),
-                            // Update markupRates if it exists (for dual rate system)
-                            ...(prevShipment.markupRates && {
-                                markupRates: {
-                                    ...prevShipment.markupRates,
-                                    charges: validCharges,
-                                    totalCharges: totalActualCharge
-                                }
-                            }),
-                            // Update any legacy charge fields
-                            ...(prevShipment.charges && { charges: validCharges }),
                             // Update timestamp to track when charges were last modified
                             lastChargeUpdate: new Date().toISOString(),
                             chargesLastModified: new Date().toISOString(),
