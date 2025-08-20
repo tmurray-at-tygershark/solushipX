@@ -42,7 +42,7 @@ exports.emailBulkInvoices = onRequest(
         try {
             console.log('Starting bulk invoice email generation...');
 
-            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, filters = {} } = req.body;
+            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, invoiceNumberOverride = null, filters = {} } = req.body;
             
             if (!companyId) {
                 return res.status(400).json({ error: 'Company ID required' });
@@ -72,6 +72,7 @@ exports.emailBulkInvoices = onRequest(
                 companyId,
                 invoiceMode,
                 invoiceIssueDate,
+                invoiceNumberOverride,
                 numberingOptions: { isOfficialSend: true }
             });
 

@@ -44,7 +44,7 @@ exports.previewBulkInvoices = onRequest(
         try {
             console.log('Starting invoice preview generation...');
 
-            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, filters = {} } = req.body;
+            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, invoiceNumberOverride = null, filters = {} } = req.body;
             
             if (!companyId) {
                 return res.status(400).json({ error: 'Company ID required' });
@@ -135,6 +135,7 @@ exports.previewBulkInvoices = onRequest(
                 companyId,
                 invoiceMode,
                 invoiceIssueDate,
+                invoiceNumberOverride,
                 numberingOptions: { useOfficialForTest: true }
             });
 

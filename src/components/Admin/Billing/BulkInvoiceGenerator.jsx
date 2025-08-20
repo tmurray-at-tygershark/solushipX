@@ -414,7 +414,10 @@ const BulkInvoiceGenerator = () => {
             }
 
             const result = await response.json();
-            enqueueSnackbar(`Successfully emailed ${result.invoicesGenerated || 0} invoices.`, { variant: 'success' });
+            const emailedCount = (typeof result.successCount === 'number')
+                ? result.successCount
+                : (typeof result.invoicesGenerated === 'number' ? result.invoicesGenerated : 0);
+            enqueueSnackbar(`Successfully emailed ${emailedCount} invoice${emailedCount === 1 ? '' : 's'}.`, { variant: 'success' });
             setOfficialEmailDialogOpen(false);
         } catch (err) {
             console.error('Official email error:', err);
