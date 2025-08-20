@@ -31,7 +31,9 @@ import {
     TableHead,
     TableRow,
     Tabs,
-    Tab
+    Tab,
+    FormControlLabel,
+    Switch
 } from '@mui/material';
 import {
     Download as DownloadIcon,
@@ -181,6 +183,13 @@ const BulkInvoiceGenerator = () => {
     const [testEmailTo, setTestEmailTo] = useState([]); // No default email
     const [testEmailCc, setTestEmailCc] = useState([]); // CC emails
     const [testEmailBcc, setTestEmailBcc] = useState([]); // BCC emails
+    const [useOfficialNumbers, setUseOfficialNumbers] = useState(true);
+    // Official send dialog state
+    const [officialEmailDialogOpen, setOfficialEmailDialogOpen] = useState(false);
+    const [officialEmailTo, setOfficialEmailTo] = useState([]);
+    const [officialEmailCc, setOfficialEmailCc] = useState([]);
+    const [officialEmailBcc, setOfficialEmailBcc] = useState([]);
+    const [officialEmailLoading, setOfficialEmailLoading] = useState(false);
 
     // Status options for filtering
     const statusOptions = [];
@@ -257,82 +266,8 @@ const BulkInvoiceGenerator = () => {
 
     // ✅ NEW: EMAIL INVOICES FUNCTIONALITY
     const handleEmailInvoices = async () => {
-        if (!selectedCompany) {
-            enqueueSnackbar('Please select a company', { variant: 'warning' });
-            return;
-        }
-
-        try {
-            setEmailLoading(true);
-            setGenerationProgress(10);
-
-            if (!selectedCustomer) {
-                enqueueSnackbar('Please select a customer', { variant: 'warning' });
-                return;
-            }
-
-            const filterParams = {
-                companyId: selectedCompany.companyID,
-                companyName: selectedCompany.name,
-                invoiceMode: invoiceMode,
-                emailMode: true, // ✅ NEW: Enable email mode
-                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
-                invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
-                filters: {
-                    dateFrom: null,
-                    dateTo: null,
-                    status: null,
-                    customers: [selectedCustomer.customerID],
-                    shipmentIds
-                }
-            };
-
-            enqueueSnackbar(`Generating and emailing invoices for ${selectedCompany.name}...`, {
-                variant: 'info',
-                autoHideDuration: 3000
-            });
-
-            setGenerationProgress(25);
-
-            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/emailBulkInvoices', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(filterParams)
-            });
-
-            setGenerationProgress(75);
-
-            if (!response.ok) {
-                let errorMessage = 'Failed to email invoices';
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.error || errorMessage;
-                } catch (parseError) {
-                    console.warn('Could not parse error response:', parseError);
-                }
-                throw new Error(errorMessage);
-            }
-
-            const emailResult = await response.json();
-            setGenerationProgress(100);
-
-            enqueueSnackbar(`Successfully emailed ${emailResult.successCount} invoices! ${emailResult.errorCount > 0 ? `${emailResult.errorCount} failed to send.` : ''}`, {
-                variant: 'success',
-                autoHideDuration: 8000
-            });
-
-        } catch (error) {
-            console.error('Email invoices error:', error);
-            enqueueSnackbar(`Failed to email invoices: ${error.message}`, {
-                variant: 'error',
-                autoHideDuration: 8000
-            });
-        } finally {
-            setEmailLoading(false);
-            setGenerationProgress(0);
-        }
+        // Replaced by official send dialog. Left for backward compatibility if needed.
+        setOfficialEmailDialogOpen(true);
     };
 
     // ✅ NEW: OPEN TEST EMAIL DIALOG
@@ -382,6 +317,9 @@ const BulkInvoiceGenerator = () => {
                     status: null,
                     customers: [selectedCustomer.customerID],
                     shipmentIds
+                },
+                testOptions: {
+                    useOfficialInvoiceNumbers: useOfficialNumbers
                 }
             };
 
@@ -425,6 +363,70 @@ const BulkInvoiceGenerator = () => {
             });
         } finally {
             setTestEmailLoading(false);
+        }
+    };
+
+    // Official send handler (uses same structure as test but without testMode and with real numbers)
+    const handleSendOfficialEmail = async () => {
+        if (!selectedCompany) {
+            enqueueSnackbar('Please select a company', { variant: 'warning' });
+            return;
+        }
+        if (!selectedCustomer) {
+            enqueueSnackbar('Please select a customer', { variant: 'warning' });
+            return;
+        }
+        if (officialEmailTo.length === 0) {
+            enqueueSnackbar('Please enter at least one recipient in the "To" field', { variant: 'warning' });
+            return;
+        }
+
+        try {
+            setOfficialEmailLoading(true);
+
+            const filterParams = {
+                companyId: selectedCompany.companyID,
+                companyName: selectedCompany.name,
+                invoiceMode: invoiceMode,
+                officialMode: true,
+                testEmails: {
+                    to: officialEmailTo,
+                    cc: officialEmailCc,
+                    bcc: officialEmailBcc
+                },
+                invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null,
+                invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null,
+                filters: {
+                    dateFrom: null,
+                    dateTo: null,
+                    status: null,
+                    customers: [selectedCustomer.customerID],
+                    shipmentIds
+                }
+            };
+
+            enqueueSnackbar(`Sending invoices using official numbers for ${selectedCompany.name}...`, { variant: 'info' });
+
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/sendTestInvoiceEmail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(filterParams)
+            });
+
+            if (!response.ok) {
+                let message = 'Failed to send invoices';
+                try { const err = await response.json(); message = err.error || message; } catch { }
+                throw new Error(message);
+            }
+
+            const result = await response.json();
+            enqueueSnackbar(`Successfully emailed ${result.invoicesGenerated || 0} invoices.`, { variant: 'success' });
+            setOfficialEmailDialogOpen(false);
+        } catch (err) {
+            console.error('Official email error:', err);
+            enqueueSnackbar(err.message, { variant: 'error' });
+        } finally {
+            setOfficialEmailLoading(false);
         }
     };
 
@@ -1055,7 +1057,7 @@ const BulkInvoiceGenerator = () => {
                             {previewLoading ? 'Generating Preview...' : 'Preview Invoices'}
                         </Button>
 
-                        {/* Send Invoices Button (renamed from Send Test Email action) */}
+                        {/* Send As Test (opens dialog) */}
                         <Button
                             variant="outlined"
                             startIcon={<SendIcon />}
@@ -1068,7 +1070,22 @@ const BulkInvoiceGenerator = () => {
                                 '&:hover': { borderColor: '#d97706', backgroundColor: '#fffbeb' }
                             }}
                         >
-                            Send Invoices
+                            Send As Test
+                        </Button>
+
+                        {/* Official Send Invoices */}
+                        <Button
+                            variant="contained"
+                            startIcon={emailLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
+                            onClick={() => setOfficialEmailDialogOpen(true)}
+                            disabled={emailLoading || !selectedCompany}
+                            sx={{
+                                fontSize: '12px',
+                                backgroundColor: '#059669',
+                                '&:hover': { backgroundColor: '#047857' }
+                            }}
+                        >
+                            {emailLoading ? 'Sending Invoices...' : 'Send Invoices'}
                         </Button>
 
                         {/* Original ZIP Download Button */}
@@ -1258,11 +1275,11 @@ const BulkInvoiceGenerator = () => {
                 fullWidth
             >
                 <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                    Send Invoices
+                    Send As Test
                 </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 3 }}>
-                        Enter email addresses to send test invoice emails. Press Enter after typing each email address to add it.
+                        Enter one or more email addresses to receive test invoices. Press Enter after typing each email address to add it.
                     </Typography>
 
                     <EmailChipInput
@@ -1274,22 +1291,16 @@ const BulkInvoiceGenerator = () => {
                         required
                     />
 
-                    <EmailChipInput
-                        label="CC:"
-                        placeholder="Enter CC email address and press Enter"
-                        emails={testEmailCc}
-                        onChange={setTestEmailCc}
-                        helperText="Press Enter after typing each email address (optional)"
-                    />
-
-                    <EmailChipInput
-                        label="BCC:"
-                        placeholder="Enter BCC email address and press Enter"
-                        emails={testEmailBcc}
-                        onChange={setTestEmailBcc}
-                        helperText="Press Enter after typing each email address (optional)"
-                    />
-
+                    {/* CC/BCC hidden for test mode as requested */}
+                    <Box sx={{ mt: 2 }}>
+                        <FormControlLabel
+                            control={<Switch size="small" checked={useOfficialNumbers} onChange={(e) => setUseOfficialNumbers(e.target.checked)} />}
+                            label={<Typography sx={{ fontSize: '12px', color: '#374151' }}>Use official invoice numbers for test sends (reserves numbers)</Typography>}
+                        />
+                        <Typography sx={{ fontSize: '11px', color: '#6b7280', ml: 5 }}>
+                            When enabled, the same invoice numbers will be used and reserved for the official send.
+                        </Typography>
+                    </Box>
 
                 </DialogContent>
                 <DialogActions>
@@ -1310,7 +1321,62 @@ const BulkInvoiceGenerator = () => {
                             '&:hover': { backgroundColor: '#059669' }
                         }}
                     >
-                        {testEmailLoading ? 'Sending...' : 'Send Invoices'}
+                        {testEmailLoading ? 'Sending...' : 'Send As Test'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            {/* ✅ NEW: OFFICIAL EMAIL DIALOG */}
+            <Dialog
+                open={officialEmailDialogOpen}
+                onClose={() => setOfficialEmailDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                    Send Invoices
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 3 }}>
+                        Enter recipients for the official invoice emails. Press Enter after typing each email address to add it.
+                    </Typography>
+
+                    <EmailChipInput
+                        label="To: *"
+                        placeholder="Enter email address and press Enter"
+                        emails={officialEmailTo}
+                        onChange={setOfficialEmailTo}
+                        helperText="Press Enter after typing each email address"
+                        required
+                    />
+
+                    <EmailChipInput
+                        label="CC:"
+                        placeholder="Enter CC email address and press Enter"
+                        emails={officialEmailCc}
+                        onChange={setOfficialEmailCc}
+                        helperText="Press Enter after typing each email address (optional)"
+                    />
+
+                    <EmailChipInput
+                        label="BCC:"
+                        placeholder="Enter BCC email address and press Enter"
+                        emails={officialEmailBcc}
+                        onChange={setOfficialEmailBcc}
+                        helperText="Press Enter after typing each email address (optional)"
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOfficialEmailDialogOpen(false)} sx={{ fontSize: '12px' }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={officialEmailLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
+                        onClick={handleSendOfficialEmail}
+                        disabled={officialEmailLoading || officialEmailTo.length === 0}
+                        sx={{ fontSize: '12px' }}
+                    >
+                        {officialEmailLoading ? 'Sending...' : 'Send Invoices'}
                     </Button>
                 </DialogActions>
             </Dialog>

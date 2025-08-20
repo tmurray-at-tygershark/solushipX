@@ -61,7 +61,7 @@ exports.sendTestInvoiceEmail = onRequest(
         try {
             console.log('Starting invoice email generation...');
 
-            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, invoiceNumberOverride = null, testEmails = { to: ['tyler@tygershark.com'], cc: [], bcc: [] }, filters = {} } = req.body;
+            const { companyId, companyName, invoiceMode = 'separate', invoiceIssueDate = null, invoiceNumberOverride = null, testEmails = { to: ['tyler@tygershark.com'], cc: [], bcc: [] }, filters = {}, officialMode = false, testOptions = {} } = req.body;
             
             if (!companyId) {
                 return res.status(400).json({ error: 'Company ID required' });
@@ -69,6 +69,11 @@ exports.sendTestInvoiceEmail = onRequest(
 
             console.log(`Generating invoice email for company: ${companyName || companyId}`);
             console.log(`Email recipients - To: ${testEmails.to.join(', ')}, CC: ${testEmails.cc.join(', ')}, BCC: ${testEmails.bcc.join(', ')}`);
+            if (officialMode) {
+                console.log('Official mode enabled - using real invoice numbers and reserving numbers');
+            } else if (testOptions?.useOfficialInvoiceNumbers) {
+                console.log('Test mode with official numbers enabled - reserving numbers for official send');
+            }
             console.log(`Invoice mode: ${invoiceMode}`);
             console.log(`Invoice number override: ${invoiceNumberOverride || 'None (will auto-generate)'}`);
 
