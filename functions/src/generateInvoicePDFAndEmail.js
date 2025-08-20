@@ -59,6 +59,22 @@ async function getNextInvoiceNumber() {
     }
 }
 
+// Peek next invoice number without reserving (no counter update)
+async function getPeekInvoiceNumber() {
+    const invoiceCounterRef = db.collection('system').doc('invoiceCounter');
+    try {
+        const docSnap = await invoiceCounterRef.get();
+        const currentNumber = docSnap.exists ? (docSnap.data().currentNumber || 1000000) : 1000000;
+        const nextNumber = currentNumber + 1;
+        const formattedNumber = nextNumber.toString().padStart(7, '0');
+        return formattedNumber;
+    } catch (error) {
+        console.error('Error peeking sequential invoice number:', error);
+        const fallbackNumber = (1000000 + Date.now() % 9000000).toString();
+        return fallbackNumber;
+    }
+}
+
 // Configure SendGrid with fallback to Firebase config
 const functions = require('firebase-functions');
 const sendgridApiKey = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.api_key;
@@ -673,62 +689,83 @@ async function generateInvoicePDF(invoiceData, companyInfo, customerBillingInfo 
             // Customer billing information with complete address (increased spacing)
             // Use customer billing info if provided, otherwise fall back to companyInfo (for backward compatibility)
             const billToInfo = customerBillingInfo || companyInfo;
-            
+
+            // Track start to enforce a minimum section height
+            const billToStartY = currentY;
+
+            // Company name (or customer company)
             doc.fillColor(colors.text)
                .fontSize(7.5)
                .font('Helvetica-Bold')
                .text(billToInfo.companyName || billToInfo.name || invoiceData.companyName, leftCol, currentY);
 
-            currentY += 12; // Increased from 8 to 12
+            currentY += 10;
             doc.fontSize(6.5)
                .font('Helvetica');
+
+            // Optional contact name line
+            const contactLine = (billToInfo.name && billToInfo.name !== billToInfo.companyName) ? billToInfo.name : '';
+            if (contactLine) {
+                doc.text(contactLine, leftCol, currentY);
+                currentY += 9;
+            }
 
             // Use actual billing address if available, otherwise main address
             const billingAddr = billToInfo.billingAddress || billToInfo.address || {};
             const mainAddr = billToInfo.address || {};
-            
-            // ✅ FIXED: Combine street and suite on one line with comma
-            const street = billingAddr.street || billingAddr.address1 || mainAddr.street;
-            const addressLine2 = billingAddr.address2 || billingAddr.addressLine2;
-            
+
+            // Resolve address fields with robust fallbacks
+            const street = billingAddr.address1 || billingAddr.addressLine1 || billingAddr.street || mainAddr.address1 || mainAddr.addressLine1 || mainAddr.street;
+            const addressLine2 = billingAddr.address2 || billingAddr.addressLine2 || mainAddr.address2 || mainAddr.addressLine2;
+            const city = billingAddr.city || mainAddr.city;
+            const state = billingAddr.stateProv || billingAddr.state || billingAddr.province || mainAddr.stateProv || mainAddr.state || mainAddr.province;
+            const postal = billingAddr.postalCode || billingAddr.zipPostal || billingAddr.postal || billingAddr.zip || mainAddr.postalCode || mainAddr.zipPostal || mainAddr.postal || mainAddr.zip;
+            const country = billingAddr.country || mainAddr.country;
+
+            // Street + line2
             if (street) {
                 if (addressLine2) {
                     doc.text(`${street}, ${addressLine2}`, leftCol, currentY);
                 } else {
                     doc.text(street, leftCol, currentY);
                 }
-                currentY += 10;
+                currentY += 9;
             }
 
-            const city = billingAddr.city || mainAddr.city;
-            const state = billingAddr.state || billingAddr.stateProv || mainAddr.state;
-            const postal = billingAddr.postalCode || billingAddr.zipPostal || mainAddr.postalCode;
-            const country = billingAddr.country || mainAddr.country;
-            
-            // ✅ FIXED: Combine city, state, postal, country on one line with UPPERCASE postal codes
-            if (city && state && postal) {
-                const countryName = country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country;
-                const postalUpper = postal.toString().toUpperCase(); // ✅ NEW: Convert postal code to uppercase
-                console.log('🔤 PDF Generation: Converting postal code to uppercase:', postal, '→', postalUpper);
-                if (countryName) {
-                    doc.text(`${city}, ${state} ${postalUpper} ${countryName}`, leftCol, currentY);
-            } else {
-                    doc.text(`${city}, ${state} ${postalUpper}`, leftCol, currentY);
+            // City/State/Postal/Country on one line
+            if (city || state || postal || country) {
+                const postalUpper = postal ? String(postal).toUpperCase() : '';
+                const parts = [];
+                if (city) parts.push(city);
+                if (state) parts.push(state);
+                if (postalUpper) parts.push(postalUpper);
+                const countryName = country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : (country || '');
+                if (countryName) parts.push(countryName);
+                if (parts.length > 0) {
+                    doc.text(parts.join(', '), leftCol, currentY);
+                    currentY += 9;
                 }
-                currentY += 10;
             }
 
             // Phone and email from billing or main contact
             const phone = billToInfo.billingPhone || billToInfo.phone || billToInfo.mainContact?.phone;
             if (phone) {
                 doc.text(`Phone: ${phone}`, leftCol, currentY);
-                currentY += 10;
+                currentY += 9;
             }
 
             const email = billToInfo.billingEmail || billToInfo.email || billToInfo.mainContact?.email;
             if (email) {
                 doc.text(`Email: ${email}`, leftCol, currentY);
-                currentY += 10;
+                currentY += 9;
+            }
+
+            // Enforce minimum BILL TO height so layout stays consistent
+            // Expected full block: name (10) + contact (9) + street (9) + city/state/postal/country (9) + phone (9) + email (9) ≈ 55-60px
+            const minBillToHeight = 60;
+            const usedBillToHeight = currentY - billToStartY;
+            if (usedBillToHeight < minBillToHeight) {
+                currentY = billToStartY + minBillToHeight;
             }
 
             // Summary information (right side - simplified, moved closer)
@@ -1570,6 +1607,7 @@ module.exports = {
     generateInvoicePDFAndEmailHelper,
     generateInvoicePDF, // Export the PDF generation function for testing
     getNextInvoiceNumber, // ✅ NEW: Export sequential invoice numbering function
+    getPeekInvoiceNumber,
     generateInvoiceEmailHTML,
     generateInvoiceEmailText
 }; 

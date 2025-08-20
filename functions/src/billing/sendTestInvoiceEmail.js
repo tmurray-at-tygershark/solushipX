@@ -31,11 +31,7 @@ const {
 } = require('./bulkInvoiceGenerator');
 
 // Import email template functions from the real invoice email system
-const { 
-    generateInvoicePDF,
-    generateInvoiceEmailHTML,
-    generateInvoiceEmailText
-} = require('../generateInvoicePDFAndEmail');
+const orchestrator = require('./invoiceOrchestrator');
 
 /**
  * Send Invoice Email - Generates real invoices from actual shipments and sends them to specified email for validation.
@@ -90,116 +86,34 @@ exports.sendTestInvoiceEmail = onRequest(
 
             console.log(`Found ${shipments.length} actual shipments for invoice generation`);
 
-            // 2. GENERATE INVOICES BASED ON MODE (EXACT SAME AS ZIP GENERATOR)
-            let invoicesGenerated = 0;
-            const allInvoicePDFs = []; // Store all PDFs for single email
+            // 2. BUILD → GENERATE → DELIVER (modular path for TEST)
+            const { invoiceDatas, currency, companyInfo } = await orchestrator.buildInvoiceDatas({
+                shipments,
+                companyId,
+                invoiceMode,
+                invoiceIssueDate,
+                invoiceNumberOverride,
+                numberingOptions: { useOfficialForTest: !!testOptions?.useOfficialInvoiceNumbers }
+            });
 
-            // DETECT CURRENCY (EXACT SAME AS ZIP GENERATOR)
-            const currency = detectSimpleCurrency(shipments);
-            
-            if (invoiceMode === 'separate') {
-                // SEPARATE MODE: Generate ALL individual invoices (EXACT SAME AS ZIP GENERATOR)
-                console.log('Using SEPARATE invoice mode - generating ALL individual invoices');
-                
-                // Group shipments by customer (EXACT SAME AS ZIP GENERATOR)
-                const customerGroups = {};
-                for (const shipment of shipments) {
-                    const customerName = await getActualCustomerName(shipment, companyId);
-                    if (!customerGroups[customerName]) {
-                        customerGroups[customerName] = [];
-                    }
-                    customerGroups[customerName].push(shipment);
-                }
+            const attachments = await orchestrator.generatePDFs({ invoiceDatas, companyInfo });
 
-                // Generate invoices for each customer (EXACT SAME AS ZIP GENERATOR)
-                let globalInvoiceSequence = 1; // Track sequence across all invoices
-                for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
-                    for (const shipment of customerShipments) {
-                        try {
-                            // Get company info for invoice generation (logo, AR contact, etc.)
-                            const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
-                            
-                            // Get customer billing information for BILL TO section
-                            const customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
-                            
-                            // Calculate total invoices to determine if we need sequence numbers
-                            const totalInvoices = Object.values(customerGroups).reduce((total, shipments) => total + shipments.length, 0);
-                            const sequenceNumber = (invoiceNumberOverride && totalInvoices > 1) ? globalInvoiceSequence : null;
-                            
-                            const realInvoiceData = await createInvoiceDataForShipment(shipment, companyId, customerName, currency, customerBillingInfo, invoiceIssueDate, invoiceNumberOverride, sequenceNumber);
-                            
-                            globalInvoiceSequence++; // Increment for next invoice
-                            
-                            const pdfBuffer = await generateInvoicePDF(realInvoiceData, invoiceCompanyInfo, customerBillingInfo);
-                            
-                            allInvoicePDFs.push({
-                                content: pdfBuffer.toString('base64'),
-                                filename: `Invoice_${realInvoiceData.invoiceNumber}.pdf`,
-                                type: 'application/pdf',
-                                disposition: 'attachment',
-                                invoiceData: realInvoiceData // Store for email template
-                            });
-                            
-                            invoicesGenerated++;
-                            console.log(`Successfully generated invoice PDF for shipment ${shipment.shipmentID || shipment.id}`);
-                        } catch (error) {
-                            console.error(`Failed to generate invoice for shipment ${shipment.shipmentID || shipment.id}:`, error);
-                        }
-                    }
-                }
-            } else {
-                // COMBINED MODE: Generate one combined invoice (EXACT SAME AS ZIP GENERATOR)
-                console.log('Using COMBINED invoice mode - generating combined invoice');
-                
-                try {
-                    const customerName = await getActualCustomerName(shipments[0], companyId);
-                    
-                    // Get company info for invoice generation (logo, AR contact, etc.)
-                    const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
-                    
-                    // Get customer billing info from first shipment (same for all shipments from same customer)
-                    const customerBillingInfo = await getCustomerBillingInfo(shipments[0], companyId);
-                    
-                    const realCombinedInvoiceData = await createCombinedInvoiceDataForCustomer(customerName, shipments, companyId, currency, customerBillingInfo, invoiceIssueDate, invoiceNumberOverride);
-                    
-                    const pdfBuffer = await generateInvoicePDF(realCombinedInvoiceData, invoiceCompanyInfo, customerBillingInfo);
-                    
-                    allInvoicePDFs.push({
-                        content: pdfBuffer.toString('base64'),
-                        filename: `Combined_Invoice_${realCombinedInvoiceData.invoiceNumber}.pdf`,
-                        type: 'application/pdf',
-                        disposition: 'attachment',
-                        invoiceData: realCombinedInvoiceData // Store for email template
-                    });
-                    
-                    invoicesGenerated = 1;
-                    console.log(`Successfully generated combined invoice PDF for ${shipments.length} shipments`);
-                } catch (error) {
-                    console.error('Failed to generate combined invoice:', error);
-                }
+            if (attachments.length > 0) {
+                await orchestrator.deliverInvoices({
+                    companyId,
+                    recipients: testEmails,
+                    attachments,
+                    invoiceMode
+                });
             }
-
-            // 3. SEND SINGLE EMAIL WITH ALL INVOICES ATTACHED (EXACT SAME TEMPLATE AS CUSTOMER EMAILS)
-            if (allInvoicePDFs.length > 0) {
-                try {
-                    await sendTestEmailWithAllInvoices(allInvoicePDFs, companyId, testEmails, invoiceMode, invoicesGenerated);
-                    console.log(`Successfully sent invoice email with ${allInvoicePDFs.length} invoice PDFs attached`);
-                } catch (error) {
-                    console.error('Failed to send invoice email:', error);
-                    throw error;
-                }
-            }
-
-            const totalRecipients = testEmails.to.length + testEmails.cc.length + testEmails.bcc.length;
-            console.log(`Test email generation completed: ${invoicesGenerated} invoices sent to ${totalRecipients} recipients`);
 
             res.json({
                 success: true,
-                invoicesGenerated: invoicesGenerated,
+                invoicesGenerated: attachments.length,
                 testEmails: testEmails,
                 sampleShipments: shipments.length,
                 invoiceMode: invoiceMode,
-                message: `Successfully sent ${invoicesGenerated} test invoice${invoicesGenerated > 1 ? 's' : ''} to ${totalRecipients} recipient${totalRecipients > 1 ? 's' : ''}`
+                message: `Successfully sent ${attachments.length} test invoice${attachments.length !== 1 ? 's' : ''}`
             });
 
         } catch (error) {

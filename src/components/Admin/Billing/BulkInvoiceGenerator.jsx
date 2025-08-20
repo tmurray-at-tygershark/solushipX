@@ -29,11 +29,7 @@ import {
     TableCell,
     TableContainer,
     TableHead,
-    TableRow,
-    Tabs,
-    Tab,
-    FormControlLabel,
-    Switch
+    TableRow
 } from '@mui/material';
 import {
     Download as DownloadIcon,
@@ -176,14 +172,13 @@ const BulkInvoiceGenerator = () => {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [emailLoading, setEmailLoading] = useState(false);
     const [testEmailLoading, setTestEmailLoading] = useState(false);
-    const [previewTab, setPreviewTab] = useState(0);
+    // Removed summary tab; always show PDF previews
 
     // ✅ NEW: TEST EMAIL DIALOG
     const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
     const [testEmailTo, setTestEmailTo] = useState([]); // No default email
     const [testEmailCc, setTestEmailCc] = useState([]); // CC emails
     const [testEmailBcc, setTestEmailBcc] = useState([]); // BCC emails
-    const [useOfficialNumbers, setUseOfficialNumbers] = useState(true);
     // Official send dialog state
     const [officialEmailDialogOpen, setOfficialEmailDialogOpen] = useState(false);
     const [officialEmailTo, setOfficialEmailTo] = useState([]);
@@ -319,7 +314,7 @@ const BulkInvoiceGenerator = () => {
                     shipmentIds
                 },
                 testOptions: {
-                    useOfficialInvoiceNumbers: useOfficialNumbers
+                    useOfficialInvoiceNumbers: true
                 }
             };
 
@@ -388,8 +383,7 @@ const BulkInvoiceGenerator = () => {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
                 invoiceMode: invoiceMode,
-                officialMode: true,
-                testEmails: {
+                emailRecipients: {
                     to: officialEmailTo,
                     cc: officialEmailCc,
                     bcc: officialEmailBcc
@@ -407,7 +401,7 @@ const BulkInvoiceGenerator = () => {
 
             enqueueSnackbar(`Sending invoices using official numbers for ${selectedCompany.name}...`, { variant: 'info' });
 
-            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/sendTestInvoiceEmail', {
+            const response = await fetch('https://us-central1-solushipx.cloudfunctions.net/emailBulkInvoices', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(filterParams)
@@ -1105,34 +1099,6 @@ const BulkInvoiceGenerator = () => {
                     </Box>
 
                     <Divider sx={{ mb: 3 }} />
-
-                    {/* ENHANCED SUMMARY INFO */}
-                    <Box sx={{ mt: 3 }}>
-
-                        {selectedCompany && (
-                            <Box sx={{ p: 2, backgroundColor: '#f0f9ff', borderRadius: 1, border: '1px solid #bae6fd' }}>
-                                <Typography sx={{ fontSize: '11px', color: '#374151', fontWeight: 600, mb: 1 }}>
-                                    Current Selection:
-                                </Typography>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                    {/* Date and status summaries removed */}
-                                    <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                        Company: {selectedCompany.name} ({selectedCompany.companyID})
-                                    </Typography>
-                                    {selectedCustomer && (
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Customer: {selectedCustomer.name} ({selectedCustomer.customerID})
-                                        </Typography>
-                                    )}
-                                    {shipmentIds.length > 0 && (
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Specific Shipments: {shipmentIds.length} IDs specified
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </Box>
-                        )}
-                    </Box>
                 </Paper>
             </Box>
 
@@ -1149,63 +1115,22 @@ const BulkInvoiceGenerator = () => {
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                             <CircularProgress />
                         </Box>
-                    ) : previewData ? (
-                        <Tabs value={previewTab} onChange={(event, newValue) => setPreviewTab(newValue)}>
-                            <Tab label="Summary" />
-                            <Tab label="PDF Previews" />
-                        </Tabs>
-                    ) : (
+                    ) : !previewData ? (
                         <Alert severity="info">No preview data available.</Alert>
-                    )}
-
-                    {previewData && previewTab === 0 && (
+                    ) : (
                         <Box sx={{ mt: 3 }}>
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                Preview Summary
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                This is a preview of the invoices that would be generated for your selected filters.
-                                The actual ZIP file will contain the full, detailed invoices.
-                            </Typography>
-                            <Box sx={{ mt: 2 }}>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                    Total Shipments: {previewData.totalShipments}
-                                </Typography>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                    Total Invoices: {previewData.totalInvoices}
-                                </Typography>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                    Total Line Items: {previewData.totalLineItems}
-                                </Typography>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                    Total Amount: {previewData.totalAmount.toLocaleString()}
-                                </Typography>
-                            </Box>
-                        </Box>
-                    )}
-
-                    {previewData && previewTab === 1 && (
-                        <Box sx={{ mt: 3 }}>
-                            <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                                PDF Invoice Previews
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
-                                These are actual generated PDF invoices that preview what will be sent to customers.
-                                Click on any invoice to view the full PDF.
-                            </Typography>
-
-                            {previewData.sampleInvoices.map((invoice, index) => (
-                                <Paper key={index} sx={{ p: 2, mb: 2, border: '1px solid #e5e7eb' }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                        <Box>
-                                            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                                {invoice.invoiceId}
-                                            </Typography>
-                                            <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                                                {invoice.customerName} • {invoice.shipmentId} • ${invoice.totalAmount.toLocaleString()}
-                                            </Typography>
-                                        </Box>
-                                        {invoice.pdfBase64 ? (
+                            {previewData.combinedPdfBase64 ? (
+                                <>
+                                    <Paper sx={{ p: 2, mb: 2, border: '1px solid #e5e7eb' }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                            <Box>
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                    {previewData.combinedFileName || 'Invoices-Preview.pdf'}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                    {`${previewData.totalInvoices || 0} invoices • ${previewData.totalShipments || 0} shipments`}
+                                                </Typography>
+                                            </Box>
                                             <Button
                                                 variant="outlined"
                                                 size="small"
@@ -1213,49 +1138,90 @@ const BulkInvoiceGenerator = () => {
                                                 onClick={() => {
                                                     const pdfWindow = window.open('', '_blank');
                                                     pdfWindow.document.write(`
-                                                         <html>
-                                                             <head><title>${invoice.fileName}</title></head>
-                                                             <body style="margin:0;">
-                                                                 <iframe src="data:application/pdf;base64,${invoice.pdfBase64}" 
-                                                                         style="width:100%; height:100vh; border:none;">
-                                                                 </iframe>
-                                                             </body>
-                                                         </html>
-                                                     `);
+                                                        <html>
+                                                            <head><title>${previewData.combinedFileName || 'Invoices-Preview.pdf'}</title></head>
+                                                            <body style="margin:0;">
+                                                                <iframe src="data:application/pdf;base64,${previewData.combinedPdfBase64}"
+                                                                        style="width:100%; height:100vh; border:none;"></iframe>
+                                                            </body>
+                                                        </html>
+                                                    `);
                                                     pdfWindow.document.close();
                                                 }}
                                                 sx={{ fontSize: '11px' }}
                                             >
-                                                View PDF
+                                                View in Tab
                                             </Button>
-                                        ) : (
-                                            <Chip
-                                                label={invoice.error || 'PDF Generation Failed'}
-                                                color="error"
-                                                size="small"
-                                                sx={{ fontSize: '10px' }}
-                                            />
-                                        )}
-                                    </Box>
-
-                                    {invoice.pdfBase64 && (
+                                        </Box>
                                         <Box sx={{
                                             border: '1px solid #d1d5db',
                                             borderRadius: 1,
                                             overflow: 'hidden',
-                                            height: '400px'
+                                            height: '500px'
                                         }}>
                                             <iframe
-                                                src={`data:application/pdf;base64,${invoice.pdfBase64}`}
+                                                src={`data:application/pdf;base64,${previewData.combinedPdfBase64}`}
                                                 width="100%"
                                                 height="100%"
                                                 style={{ border: 'none' }}
-                                                title={`Invoice Preview - ${invoice.invoiceId}`}
+                                                title={`Combined Invoice Preview`}
                                             />
                                         </Box>
-                                    )}
-                                </Paper>
-                            ))}
+                                    </Paper>
+                                </>
+                            ) : (
+                                <>
+                                    <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
+                                        PDF Invoice Previews
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
+                                        These are actual generated PDF invoices that preview what will be sent to customers. Click to open in a new tab.
+                                    </Typography>
+                                    {previewData.sampleInvoices.map((invoice, index) => (
+                                        <Paper key={index} sx={{ p: 2, mb: 2, border: '1px solid #e5e7eb' }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                <Box>
+                                                    <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                                                        {invoice.invoiceId}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        {invoice.customerName} • {invoice.shipmentId} • ${invoice.totalAmount.toLocaleString()}
+                                                    </Typography>
+                                                </Box>
+                                                {invoice.pdfBase64 ? (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        startIcon={<PreviewIcon />}
+                                                        onClick={() => {
+                                                            const pdfWindow = window.open('', '_blank');
+                                                            pdfWindow.document.write(`
+                                                                <html>
+                                                                    <head><title>${invoice.fileName}</title></head>
+                                                                    <body style="margin:0;">
+                                                                        <iframe src="data:application/pdf;base64,${invoice.pdfBase64}" style="width:100%; height:100vh; border:none;"></iframe>
+                                                                    </body>
+                                                                </html>
+                                                            `);
+                                                            pdfWindow.document.close();
+                                                        }}
+                                                        sx={{ fontSize: '11px' }}
+                                                    >
+                                                        View PDF
+                                                    </Button>
+                                                ) : (
+                                                    <Chip label={invoice.error || 'PDF Generation Failed'} color="error" size="small" sx={{ fontSize: '10px' }} />
+                                                )}
+                                            </Box>
+                                            {invoice.pdfBase64 && (
+                                                <Box sx={{ border: '1px solid #d1d5db', borderRadius: 1, overflow: 'hidden', height: '400px' }}>
+                                                    <iframe src={`data:application/pdf;base64,${invoice.pdfBase64}`} width="100%" height="100%" style={{ border: 'none' }} title={`Invoice Preview - ${invoice.invoiceId}`} />
+                                                </Box>
+                                            )}
+                                        </Paper>
+                                    ))}
+                                </>
+                            )}
                         </Box>
                     )}
                 </DialogContent>
@@ -1291,16 +1257,7 @@ const BulkInvoiceGenerator = () => {
                         required
                     />
 
-                    {/* CC/BCC hidden for test mode as requested */}
-                    <Box sx={{ mt: 2 }}>
-                        <FormControlLabel
-                            control={<Switch size="small" checked={useOfficialNumbers} onChange={(e) => setUseOfficialNumbers(e.target.checked)} />}
-                            label={<Typography sx={{ fontSize: '12px', color: '#374151' }}>Use official invoice numbers for test sends (reserves numbers)</Typography>}
-                        />
-                        <Typography sx={{ fontSize: '11px', color: '#6b7280', ml: 5 }}>
-                            When enabled, the same invoice numbers will be used and reserved for the official send.
-                        </Typography>
-                    </Box>
+                    {/* CC/BCC hidden for test mode; official numbers always reserved */}
 
                 </DialogContent>
                 <DialogActions>

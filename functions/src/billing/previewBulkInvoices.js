@@ -14,9 +14,10 @@ if (!process.env.FUNCTIONS_EMULATOR) {
 
 const db = getFirestore();
 
-// Import the existing invoice generation functions
-const { generateInvoicePDF, getNextInvoiceNumber } = require('../generateInvoicePDFAndEmail');
-const { getSimpleShipmentCharges, getSimpleChargeBreakdown, calculateInvoiceTotals, detectSimpleCurrency, calculateTotalWeight, getActualCustomerName, getCustomerBillingInfo, getInvoiceCompanyInfo, getAllReferenceNumbers } = require('./bulkInvoiceGenerator');
+// Use orchestrator for consistent build/generate across preview/test/official
+const orchestrator = require('./invoiceOrchestrator');
+const { PDFDocument } = require('pdf-lib');
+const { detectSimpleCurrency } = require('./bulkInvoiceGenerator');
 
 /**
  * Preview Bulk Invoices - Generates actual PDF invoices for preview
@@ -128,126 +129,47 @@ exports.previewBulkInvoices = onRequest(
                 console.log(`After customer filtering: ${shipments.length} shipments`);
             }
 
-            // 2. GROUP SHIPMENTS BY CUSTOMER
-            const customerGroups = {};
-            let totalAmount = 0;
-            let invoiceCount = 0;
-            let lineItemCount = 0;
+            // 2. Build exactly like test/official, but PEEK invoice numbers (no reservation)
+            const { invoiceDatas, companyInfo } = await orchestrator.buildInvoiceDatas({
+                shipments,
+                companyId,
+                invoiceMode,
+                invoiceIssueDate,
+                numberingOptions: { useOfficialForTest: true }
+            });
 
-            for (const shipment of shipments) {
-                const customerName = getCustomerName(shipment);
-                if (!customerGroups[customerName]) {
-                    customerGroups[customerName] = [];
+            const attachments = await orchestrator.generatePDFs({ invoiceDatas, companyInfo });
+
+            // Merge into a single combined PDF for easy viewing
+            let combinedPdfBase64 = null;
+            try {
+                const merged = await PDFDocument.create();
+                for (const att of attachments) {
+                    if (!att?.content) continue;
+                    const srcBytes = Buffer.from(att.content, 'base64');
+                    const srcDoc = await PDFDocument.load(srcBytes);
+                    const pages = await merged.copyPages(srcDoc, srcDoc.getPageIndices());
+                    pages.forEach(p => merged.addPage(p));
                 }
-                customerGroups[customerName].push(shipment);
+                const mergedBytes = await merged.save();
+                combinedPdfBase64 = Buffer.from(mergedBytes).toString('base64');
+            } catch (mergeErr) {
+                console.warn('Preview merge error (fallback to individual PDFs):', mergeErr);
             }
 
-            // 3. GENERATE ALL INVOICE PDFS FOR COMPLETE PREVIEW
-            const sampleInvoices = [];
+            const sampleInvoices = attachments.map(att => ({
+                invoiceId: att.invoiceData.invoiceNumber,
+                customerName: att.invoiceData.companyName,
+                shipmentId: att.invoiceData.lineItems.length === 1 ? att.invoiceData.lineItems[0].shipmentId : `${att.invoiceData.lineItems.length} shipments`,
+                totalAmount: att.invoiceData.total,
+                lineItems: att.invoiceData.lineItems.length,
+                pdfBase64: att.content,
+                fileName: att.filename
+            }));
 
-            // Get company info for PDF generation (logo, AR contact, etc.)
-            const invoiceCompanyInfo = await getInvoiceCompanyInfo(companyId);
-            
-            if (invoiceMode === 'separate') {
-                // SEPARATE MODE: One invoice per shipment
-                invoiceCount = shipments.length;
-                lineItemCount = shipments.length;
-
-                // Generate actual PDFs for ALL shipments
-                for (const shipment of shipments) {
-                    try {
-                        // Get customer billing info for BILL TO section
-                        const customerBillingInfo = await getCustomerBillingInfo(shipment, companyId);
-                        
-                        const invoiceData = await createInvoiceDataForShipment(shipment, companyId, invoiceIssueDate);
-                        const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
-                        
-                        const charges = getSimpleShipmentCharges(shipment);
-                        const customerName = getCustomerName(shipment);
-                        const shipmentId = shipment.shipmentID || shipment.id;
-                        
-                        totalAmount += charges;
-                        
-                        sampleInvoices.push({
-                            invoiceId: invoiceData.invoiceNumber,
-                            customerName: customerName,
-                            shipmentId: shipmentId,
-                            totalAmount: charges,
-                            lineItems: 1,
-                            pdfBase64: pdfBuffer.toString('base64'), // ✅ NEW: Include actual PDF
-                            fileName: `Invoice-${invoiceData.invoiceNumber}.pdf`
-                        });
-                    } catch (error) {
-                        console.error(`Failed to generate preview PDF for shipment ${shipment.shipmentID || shipment.id}:`, error);
-                        // Still include in list without PDF
-                        const charges = getSimpleShipmentCharges(shipment);
-                        const customerName = getCustomerName(shipment);
-                        const shipmentId = shipment.shipmentID || shipment.id;
-                        
-                        totalAmount += charges;
-                        
-                        sampleInvoices.push({
-                            invoiceId: `PREVIEW-${companyId}-${shipmentId}`,
-                            customerName: customerName,
-                            shipmentId: shipmentId,
-                            totalAmount: charges,
-                            lineItems: 1,
-                            error: 'Failed to generate PDF preview'
-                        });
-                    }
-                }
-            } else {
-                // COMBINED MODE: One invoice per customer
-                invoiceCount = Object.keys(customerGroups).length;
-                lineItemCount = shipments.length;
-
-                // Generate actual PDFs for ALL customers
-                for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
-                    
-                    try {
-                        // Get customer billing info from first shipment (same for all shipments from same customer)
-                        const customerBillingInfo = await getCustomerBillingInfo(customerShipments[0], companyId);
-                        
-                        const invoiceData = await createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate);
-                        const pdfBuffer = await generateInvoicePDF(invoiceData, invoiceCompanyInfo, customerBillingInfo);
-                        
-                        let customerTotal = 0;
-                        for (const shipment of customerShipments) {
-                            customerTotal += getSimpleShipmentCharges(shipment);
-                        }
-                        
-                        totalAmount += customerTotal;
-                        
-                        sampleInvoices.push({
-                            invoiceId: invoiceData.invoiceNumber,
-                            customerName: customerName,
-                            shipmentId: `${customerShipments.length} shipments`,
-                            totalAmount: customerTotal,
-                            lineItems: customerShipments.length,
-                            pdfBase64: pdfBuffer.toString('base64'), // ✅ NEW: Include actual PDF
-                            fileName: `Invoice-${invoiceData.invoiceNumber}.pdf`
-                        });
-                    } catch (error) {
-                        console.error(`Failed to generate preview PDF for customer ${customerName}:`, error);
-                        // Still include in list without PDF
-                        let customerTotal = 0;
-                        for (const shipment of customerShipments) {
-                            customerTotal += getSimpleShipmentCharges(shipment);
-                        }
-                        
-                        totalAmount += customerTotal;
-                        
-                        sampleInvoices.push({
-                            invoiceId: `PREVIEW-${companyId}-${customerName.replace(/\s+/g, '').toUpperCase()}`,
-                            customerName: customerName,
-                            shipmentId: `${customerShipments.length} shipments`,
-                            totalAmount: customerTotal,
-                            lineItems: customerShipments.length,
-                            error: 'Failed to generate PDF preview'
-                        });
-                    }
-                }
-            }
+            const totalAmount = invoiceDatas.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            const invoiceCount = invoiceDatas.length;
+            const lineItemCount = invoiceDatas.reduce((sum, inv) => sum + inv.lineItems.length, 0);
 
             const previewResult = {
                 success: true,
@@ -255,10 +177,12 @@ exports.previewBulkInvoices = onRequest(
                 totalInvoices: invoiceCount,
                 totalLineItems: lineItemCount,
                 totalAmount: totalAmount,
-                sampleInvoices: sampleInvoices,
-                invoiceMode: invoiceMode,
-                companyName: companyName,
-                filters: filters
+                sampleInvoices,
+                invoiceMode,
+                companyName,
+                filters,
+                combinedPdfBase64,
+                combinedFileName: `Preview_Invoices_${Date.now()}.pdf`
             };
 
             console.log(`Preview generated: ${invoiceCount} invoices for ${shipments.length} shipments, $${totalAmount.toFixed(2)} total`);

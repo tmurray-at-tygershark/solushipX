@@ -2,6 +2,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const logger = require('firebase-functions/logger');
+const orchestrator = require('./invoiceOrchestrator');
 
 // Initialize Firebase Admin (if not already initialized)
 if (!process.env.FUNCTIONS_EMULATOR) {
@@ -65,64 +66,38 @@ exports.emailBulkInvoices = onRequest(
 
             console.log(`Found ${shipments.length} shipments for invoice email generation`);
 
-            // 2. GROUP SHIPMENTS BY CUSTOMER
-            const customerGroups = {};
-            for (const shipment of shipments) {
-                const customerName = getCustomerName(shipment);
-                if (!customerGroups[customerName]) {
-                    customerGroups[customerName] = [];
-                }
-                customerGroups[customerName].push(shipment);
-            }
-
-            console.log(`Processing ${Object.keys(customerGroups).length} customers`);
-
-            // 3. GENERATE AND EMAIL INVOICES BASED ON MODE
-            let successCount = 0;
-            let errorCount = 0;
-
-            if (invoiceMode === 'separate') {
-                // SEPARATE MODE: One email per shipment
-                console.log('Using SEPARATE invoice mode - one email per shipment');
-                
-                for (const shipment of shipments) {
-                    try {
-                        const invoiceData = await createInvoiceDataForShipment(shipment, companyId, invoiceIssueDate);
-                        await generateInvoicePDFAndEmailHelper(invoiceData, companyId, false, null);
-                        successCount++;
-                        console.log(`Successfully emailed invoice for shipment ${shipment.shipmentID || shipment.id}`);
-                    } catch (error) {
-                        console.error(`Failed to email invoice for shipment ${shipment.shipmentID || shipment.id}:`, error);
-                        errorCount++;
-                    }
-                }
-            } else {
-                // COMBINED MODE: One email per customer with multiple line items
-                console.log('Using COMBINED invoice mode - one email per customer');
-                
-                for (const [customerName, customerShipments] of Object.entries(customerGroups)) {
-                    try {
-                        const invoiceData = await createCombinedInvoiceDataForCustomer(customerName, customerShipments, companyId, invoiceIssueDate);
-                        await generateInvoicePDFAndEmailHelper(invoiceData, companyId, false, null);
-                        successCount++;
-                        console.log(`Successfully emailed combined invoice for customer ${customerName} (${customerShipments.length} shipments)`);
-                    } catch (error) {
-                        console.error(`Failed to email combined invoice for customer ${customerName}:`, error);
-                        errorCount++;
-                    }
-                }
-            }
-
-            console.log(`Email generation completed: ${successCount} success, ${errorCount} errors`);
-
-            res.json({
-                success: true,
-                successCount: successCount,
-                errorCount: errorCount,
-                totalShipments: shipments.length,
-                invoiceMode: invoiceMode,
-                message: `Successfully emailed ${successCount} invoices${errorCount > 0 ? `, ${errorCount} failed` : ''}`
+            // 2-4. BUILD → GENERATE → DELIVER (OFFICIAL mode)
+            const { invoiceDatas, companyInfo } = await orchestrator.buildInvoiceDatas({
+                shipments,
+                companyId,
+                invoiceMode,
+                invoiceIssueDate,
+                numberingOptions: { isOfficialSend: true }
             });
+
+            const attachments = await orchestrator.generatePDFs({ invoiceDatas, companyInfo });
+
+            // Official send: deliver to provided recipients if present, otherwise to customer billing via helper
+            const { emailRecipients } = req.body;
+            if (emailRecipients && (emailRecipients.to?.length || emailRecipients.cc?.length || emailRecipients.bcc?.length)) {
+                await orchestrator.deliverInvoices({ companyId, recipients: emailRecipients, attachments, invoiceMode });
+            } else {
+                // Fallback: send each invoice via existing helper (customer delivery)
+                let successCount = 0;
+                let errorCount = 0;
+                for (const inv of invoiceDatas) {
+                    try {
+                        await require('../generateInvoicePDFAndEmail').generateInvoicePDFAndEmailHelper(inv, companyId, false, null);
+                        successCount++;
+                    } catch (e) {
+                        logger.error('Customer delivery failed', e);
+                        errorCount++;
+                    }
+                }
+                return res.json({ success: true, successCount, errorCount, totalShipments: shipments.length, invoiceMode });
+            }
+
+            res.json({ success: true, successCount: attachments.length, errorCount: 0, totalShipments: shipments.length, invoiceMode });
 
         } catch (error) {
             console.error('Error in bulk invoice email generation:', error);
