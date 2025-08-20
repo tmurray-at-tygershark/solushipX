@@ -403,6 +403,8 @@ const { previewBulkInvoices } = require('./src/billing/previewBulkInvoices');
 const { emailBulkInvoices } = require('./src/billing/emailBulkInvoices');
 const { sendTestInvoiceEmail } = require('./src/billing/sendTestInvoiceEmail');
 const { getInvoiceRecipients } = require('./src/billing/getInvoiceRecipients');
+const { preflightInvoiceReview } = require('./src/billing/preflightInvoiceReview');
+const { markShipmentsReadyToInvoice } = require('./src/billing/markShipmentsReadyToInvoice');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -428,6 +430,8 @@ exports.previewBulkInvoices = previewBulkInvoices;
 exports.emailBulkInvoices = emailBulkInvoices;
 exports.sendTestInvoiceEmail = sendTestInvoiceEmail;
 exports.getInvoiceRecipients = getInvoiceRecipients;
+exports.preflightInvoiceReview = preflightInvoiceReview;
+exports.markShipmentsReadyToInvoice = markShipmentsReadyToInvoice;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;

@@ -193,6 +193,15 @@ const BulkInvoiceGenerator = () => {
     const [officialEmailLoading, setOfficialEmailLoading] = useState(false);
     const [officialRecipientsLoading, setOfficialRecipientsLoading] = useState(false);
 
+    // ✅ NEW: PREFLIGHT STATES
+    const [preflightStatuses, setPreflightStatuses] = useState({}); // { [id]: { status: 'pending'|'ok'|'error', reasons: string[] } }
+    const [preflightLoading, setPreflightLoading] = useState(false);
+    const [issuesDialogOpen, setIssuesDialogOpen] = useState(false);
+
+    const hasErrors = shipmentIds.some(id => preflightStatuses[id]?.status === 'error');
+    const hasPending = shipmentIds.some(id => !preflightStatuses[id] || preflightStatuses[id]?.status === 'pending');
+    const canProceed = shipmentIds.length > 0 && !hasErrors && !hasPending;
+
     // Status options for filtering
     const statusOptions = [];
 
@@ -433,6 +442,67 @@ const BulkInvoiceGenerator = () => {
             setOfficialEmailLoading(false);
         }
     };
+
+    // ✅ Run preflight for specific IDs
+    const runPreflightForIds = useCallback(async (idsToCheck) => {
+        if (!selectedCompany || idsToCheck.length === 0) return;
+        try {
+            setPreflightLoading(true);
+            const resp = await fetch('https://us-central1-solushipx.cloudfunctions.net/preflightInvoiceReview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companyId: selectedCompany.companyID, shipmentIds: idsToCheck })
+            });
+            if (!resp.ok) throw new Error('Preflight failed');
+            const data = await resp.json();
+            const next = { ...preflightStatuses };
+            const passing = [];
+            (data?.results || []).forEach(r => {
+                next[r.shipmentIdInput] = {
+                    status: r.pass ? 'ok' : 'error',
+                    reasons: r.reasons || []
+                };
+                if (r.pass) passing.push(r.shipmentIdInput);
+            });
+            setPreflightStatuses(next);
+            // Auto-mark passing shipments as Ready To Invoice
+            if (passing.length > 0) {
+                try {
+                    await fetch('https://us-central1-solushipx.cloudfunctions.net/markShipmentsReadyToInvoice', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ companyId: selectedCompany.companyID, shipmentIds: passing })
+                    });
+                } catch (e) {
+                    // non-blocking
+                    console.warn('markShipmentsReadyToInvoice failed', e);
+                }
+            }
+        } catch (e) {
+            console.warn('Preflight error', e);
+        } finally {
+            setPreflightLoading(false);
+        }
+    }, [selectedCompany, preflightStatuses]);
+
+    // Retry single shipment
+    const handleRetryPreflight = useCallback(async (id) => {
+        // set pending for this id
+        setPreflightStatuses(prev => ({ ...prev, [id]: { status: 'pending', reasons: [] } }));
+        await runPreflightForIds([id]);
+    }, [runPreflightForIds]);
+
+    // ✅ When shipmentIds change, initialize new ones to pending and preflight them
+    useEffect(() => {
+        if (shipmentIds.length === 0) return;
+        const unknown = shipmentIds.filter(id => !preflightStatuses[id]);
+        if (unknown.length > 0) {
+            const init = { ...preflightStatuses };
+            unknown.forEach(id => { init[id] = { status: 'pending', reasons: [] }; });
+            setPreflightStatuses(init);
+            runPreflightForIds(unknown);
+        }
+    }, [shipmentIds]);
 
     // COMPANY LOADING - Fixed Implementation based on GlobalShipmentList.jsx
     const loadCompanies = useCallback(async () => {
@@ -697,6 +767,23 @@ const BulkInvoiceGenerator = () => {
     // Date change handler removed with date filters
     const handleDateChange = () => { };
 
+    // ✅ Human-readable reason mapper
+    const formatPreflightReason = useCallback((code) => {
+        const map = {
+            NOT_FOUND: 'Shipment could not be found in the system.',
+            STATUS_EXCEPTION: 'Shipment is in exception status and cannot be invoiced.',
+            STATUS_CANCELLED_OR_VOIDED: 'Shipment is cancelled or voided.',
+            STATUS_DRAFT_OR_PENDING_REVIEW: 'Shipment is a draft or pending review.',
+            ALREADY_INVOICED: 'Shipment has already been invoiced.',
+            CHARGES_PARSE_ERROR: 'Charges could not be read. Please review shipment charges.',
+            NO_POSITIVE_CHARGE: 'No positive charge detected. Ensure at least one line item has an actual charge > $0.',
+            MISSING_ACTUAL_CHARGE_FIELD: 'One or more charges are missing the “actual charge” field.',
+            BILLTO_INCOMPLETE: 'Customer BILL TO details are incomplete (address or email missing).',
+            BILLTO_LOOKUP_FAILED: 'Could not fetch customer BILL TO details.'
+        };
+        return map[code] || code;
+    }, []);
+
     return (
         <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Box sx={{ p: 3 }}>
@@ -857,25 +944,8 @@ const BulkInvoiceGenerator = () => {
                                                 size="small"
                                                 value={shipmentInput}
                                                 onChange={(e) => setShipmentInput(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        const raw = shipmentInput.trim();
-                                                        if (!raw) return;
-                                                        // Allow multiple IDs separated by commas, semicolons or newlines
-                                                        const ids = parseShipmentIds(raw);
-                                                        if (ids.length > 0) {
-                                                            const existing = new Set(shipmentIds);
-                                                            const merged = [...shipmentIds];
-                                                            ids.forEach(id => { if (id && !existing.has(id)) { existing.add(id); merged.push(id); } });
-                                                            setShipmentIds(merged);
-                                                        }
-                                                        setShipmentInput('');
-                                                    }
-                                                }}
                                                 onPaste={(e) => {
-                                                    // Support pasting multiple IDs to create chips
-                                                    const text = e.clipboardData?.getData('text') || '';
+                                                    const text = e.clipboardData.getData('text');
                                                     if (!text) return;
                                                     e.preventDefault();
                                                     const ids = parseShipmentIds(text);
@@ -887,6 +957,21 @@ const BulkInvoiceGenerator = () => {
                                                     }
                                                     setShipmentInput('');
                                                 }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        const raw = shipmentInput;
+                                                        if (!raw) return;
+                                                        e.preventDefault();
+                                                        const ids = parseShipmentIds(raw);
+                                                        if (ids.length > 0) {
+                                                            const existing = new Set(shipmentIds);
+                                                            const merged = [...shipmentIds];
+                                                            ids.forEach(id => { if (id && !existing.has(id)) { existing.add(id); merged.push(id); } });
+                                                            setShipmentIds(merged);
+                                                        }
+                                                        setShipmentInput('');
+                                                    }
+                                                }}
                                                 sx={{
                                                     '& .MuiInputBase-input': { fontSize: '12px' },
                                                     '& .MuiInputLabel-root': { fontSize: '12px' }
@@ -894,10 +979,36 @@ const BulkInvoiceGenerator = () => {
                                                 helperText={shipmentIds.length > 0 ? `${shipmentIds.length} shipments added` : 'Press Enter to add each shipment or paste multiple IDs'}
                                             />
                                             {shipmentIds.length > 0 && (
-                                                <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                                    {shipmentIds.map(id => (
-                                                        <Chip key={id} label={id} size="small" onDelete={() => setShipmentIds(shipmentIds.filter(s => s !== id))} sx={{ fontSize: '11px' }} />
-                                                    ))}
+                                                <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    {shipmentIds.map(id => {
+                                                        const st = preflightStatuses[id]?.status || 'pending';
+                                                        const isError = st === 'error';
+                                                        const isOk = st === 'ok';
+                                                        const bg = isError ? '#ef4444' : isOk ? '#10b981' : '#e5e7eb';
+                                                        const color = isError || isOk ? '#ffffff' : '#374151';
+                                                        return (
+                                                            <Chip
+                                                                key={id}
+                                                                label={id}
+                                                                onDelete={() => {
+                                                                    setShipmentIds(shipmentIds.filter(s => s !== id));
+                                                                    const next = { ...preflightStatuses };
+                                                                    delete next[id];
+                                                                    setPreflightStatuses(next);
+                                                                }}
+                                                                size="small"
+                                                                sx={{ fontSize: '11px', backgroundColor: bg, color }}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {hasErrors && (
+                                                        <Button size="small" variant="outlined" onClick={() => setIssuesDialogOpen(true)} sx={{ ml: 1, fontSize: '11px' }}>
+                                                            View Issues
+                                                        </Button>
+                                                    )}
+                                                    {preflightLoading && (
+                                                        <Typography sx={{ fontSize: '11px', color: '#6b7280', ml: 1 }}>Validating…</Typography>
+                                                    )}
                                                 </Box>
                                             )}
                                         </Grid>
@@ -1050,7 +1161,7 @@ const BulkInvoiceGenerator = () => {
                             variant="outlined"
                             startIcon={previewLoading ? <CircularProgress size={16} color="inherit" /> : <PreviewIcon />}
                             onClick={handlePreviewInvoices}
-                            disabled={previewLoading || !selectedCompany}
+                            disabled={previewLoading || !selectedCompany || !canProceed}
                             sx={{
                                 fontSize: '12px',
                                 borderColor: '#7c3aed',
@@ -1066,7 +1177,7 @@ const BulkInvoiceGenerator = () => {
                             variant="outlined"
                             startIcon={<SendIcon />}
                             onClick={handleOpenTestEmailDialog}
-                            disabled={!selectedCompany}
+                            disabled={!selectedCompany || !canProceed}
                             sx={{
                                 fontSize: '12px',
                                 borderColor: '#f59e0b',
@@ -1142,7 +1253,7 @@ const BulkInvoiceGenerator = () => {
                                     setOfficialRecipientsLoading(false);
                                 }
                             }}
-                            disabled={emailLoading || !selectedCompany}
+                            disabled={emailLoading || !selectedCompany || !canProceed}
                             sx={{
                                 fontSize: '12px',
                                 backgroundColor: '#059669',
@@ -1418,6 +1529,58 @@ const BulkInvoiceGenerator = () => {
                     >
                         {officialEmailLoading ? 'Sending...' : 'Send Invoices'}
                     </Button>
+                </DialogActions>
+            </Dialog>
+            {/* Issues Dialog */}
+            <Dialog open={issuesDialogOpen} onClose={() => setIssuesDialogOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>Preflight Issues</DialogTitle>
+                <DialogContent>
+                    {shipmentIds.filter(id => preflightStatuses[id]?.status === 'error').length === 0 ? (
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>No issues found.</Typography>
+                    ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                            {shipmentIds.filter(id => preflightStatuses[id]?.status === 'error').map(id => (
+                                <Paper key={id} sx={{ p: 1.5, border: '1px solid #fee2e2', backgroundColor: '#fef2f2' }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#991b1b' }}>{id}</Typography>
+                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                            <Button
+                                                size="small"
+                                                variant="outlined"
+                                                color="error"
+                                                onClick={() => {
+                                                    setShipmentIds(shipmentIds.filter(s => s !== id));
+                                                    const next = { ...preflightStatuses };
+                                                    delete next[id];
+                                                    setPreflightStatuses(next);
+                                                }}
+                                                sx={{ fontSize: '11px' }}
+                                            >
+                                                Remove
+                                            </Button>
+                                            <Button
+                                                size="small"
+                                                variant="contained"
+                                                onClick={() => handleRetryPreflight(id)}
+                                                disabled={preflightLoading}
+                                                sx={{ fontSize: '11px' }}
+                                            >
+                                                {preflightLoading ? 'Retrying…' : 'Retry'}
+                                            </Button>
+                                        </Box>
+                                    </Box>
+                                    <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                        {(preflightStatuses[id]?.reasons || []).map((r, idx) => (
+                                            <Typography key={idx} sx={{ fontSize: '11px', color: '#991b1b' }}>• {formatPreflightReason(r)}</Typography>
+                                        ))}
+                                    </Box>
+                                </Paper>
+                            ))}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setIssuesDialogOpen(false)} sx={{ fontSize: '12px' }}>Close</Button>
                 </DialogActions>
             </Dialog>
         </LocalizationProvider>
