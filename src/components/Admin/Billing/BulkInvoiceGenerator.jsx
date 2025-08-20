@@ -59,7 +59,7 @@ import { collection, query, where, getDocs, orderBy, getDoc, doc } from 'firebas
 import { db } from '../../../firebase';
 
 // ✅ NEW: EmailChipInput Component for dynamic email input
-const EmailChipInput = ({ label, placeholder, emails, onChange, helperText, required = false }) => {
+const EmailChipInput = ({ label, placeholder, emails, onChange, helperText, required = false, loading = false }) => {
     const [inputValue, setInputValue] = useState('');
 
     const handleKeyPress = (e) => {
@@ -82,9 +82,14 @@ const EmailChipInput = ({ label, placeholder, emails, onChange, helperText, requ
 
     return (
         <Box sx={{ mb: 3 }}>
-            <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                {label}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+                    {label}
+                </Typography>
+                {loading && (
+                    <CircularProgress size={14} sx={{ color: '#6b7280' }} />
+                )}
+            </Box>
 
             {/* Email Chips Display */}
             {emails.length > 0 && (
@@ -118,6 +123,7 @@ const EmailChipInput = ({ label, placeholder, emails, onChange, helperText, requ
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
                 helperText={helperText}
+                disabled={loading}
                 sx={{
                     '& .MuiInputBase-input': { fontSize: '12px' },
                     '& .MuiFormHelperText-root': { fontSize: '11px' }
@@ -185,6 +191,7 @@ const BulkInvoiceGenerator = () => {
     const [officialEmailCc, setOfficialEmailCc] = useState([]);
     const [officialEmailBcc, setOfficialEmailBcc] = useState([]);
     const [officialEmailLoading, setOfficialEmailLoading] = useState(false);
+    const [officialRecipientsLoading, setOfficialRecipientsLoading] = useState(false);
 
     // Status options for filtering
     const statusOptions = [];
@@ -1074,7 +1081,67 @@ const BulkInvoiceGenerator = () => {
                         <Button
                             variant="contained"
                             startIcon={emailLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
-                            onClick={() => setOfficialEmailDialogOpen(true)}
+                            onClick={async () => {
+                                setOfficialEmailDialogOpen(true);
+                                try {
+                                    if (!selectedCompany || !selectedCustomer) return;
+                                    setOfficialRecipientsLoading(true);
+                                    const filterParams = {
+                                        companyId: selectedCompany.companyID,
+                                        invoiceMode,
+                                        invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null,
+                                        invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null,
+                                        filters: {
+                                            customers: [selectedCustomer.customerID],
+                                            shipmentIds
+                                        }
+                                    };
+                                    const resp = await fetch('https://us-central1-solushipx.cloudfunctions.net/getInvoiceRecipients', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(filterParams)
+                                    });
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        if (Array.isArray(data?.recipients?.to) && data.recipients.to.length > 0) {
+                                            setOfficialEmailTo(data.recipients.to);
+                                        }
+                                    } else {
+                                        // Fallback: derive from selectedCustomer fields
+                                        const candidates = [
+                                            selectedCustomer?.billingEmail,
+                                            selectedCustomer?.mainContactEmail,
+                                            ...(Array.isArray(selectedCustomer?.billingEmails) ? selectedCustomer.billingEmails : [])
+                                        ].filter(Boolean);
+                                        const split = candidates
+                                            .flatMap(val => String(val).split(/[;,]/))
+                                            .map(s => s.trim())
+                                            .filter(Boolean);
+                                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                        const dedup = Array.from(new Set(split.filter(e => emailRegex.test(e))));
+                                        if (dedup.length > 0) setOfficialEmailTo(dedup);
+                                    }
+                                } catch (e) {
+                                    console.warn('Prefill recipients failed:', e);
+                                    // Fallback on error as well
+                                    try {
+                                        const candidates = [
+                                            selectedCustomer?.billingEmail,
+                                            selectedCustomer?.mainContactEmail,
+                                            ...(Array.isArray(selectedCustomer?.billingEmails) ? selectedCustomer.billingEmails : [])
+                                        ].filter(Boolean);
+                                        const split = candidates
+                                            .flatMap(val => String(val).split(/[;,]/))
+                                            .map(s => s.trim())
+                                            .filter(Boolean);
+                                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                        const dedup = Array.from(new Set(split.filter(e => emailRegex.test(e))));
+                                        if (dedup.length > 0) setOfficialEmailTo(dedup);
+                                    } catch (_) { }
+                                } finally {
+                                    setOfficialRecipientsLoading(false);
+                                }
+                            }}
                             disabled={emailLoading || !selectedCompany}
                             sx={{
                                 fontSize: '12px',
@@ -1288,7 +1355,13 @@ const BulkInvoiceGenerator = () => {
             {/* ✅ NEW: OFFICIAL EMAIL DIALOG */}
             <Dialog
                 open={officialEmailDialogOpen}
-                onClose={() => setOfficialEmailDialogOpen(false)}
+                onClose={() => {
+                    setOfficialEmailDialogOpen(false);
+                    // Clear emails on close
+                    setOfficialEmailTo([]);
+                    setOfficialEmailCc([]);
+                    setOfficialEmailBcc([]);
+                }}
                 maxWidth="sm"
                 fullWidth
             >
@@ -1306,6 +1379,7 @@ const BulkInvoiceGenerator = () => {
                         emails={officialEmailTo}
                         onChange={setOfficialEmailTo}
                         helperText="Press Enter after typing each email address"
+                        loading={officialRecipientsLoading}
                         required
                     />
 
@@ -1326,7 +1400,13 @@ const BulkInvoiceGenerator = () => {
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setOfficialEmailDialogOpen(false)} sx={{ fontSize: '12px' }}>
+                    <Button onClick={() => {
+                        setOfficialEmailDialogOpen(false);
+                        // Clear emails on close
+                        setOfficialEmailTo([]);
+                        setOfficialEmailCc([]);
+                        setOfficialEmailBcc([]);
+                    }} sx={{ fontSize: '12px' }}>
                         Cancel
                     </Button>
                     <Button

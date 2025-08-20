@@ -141,6 +141,26 @@ exports.previewBulkInvoices = onRequest(
 
             const attachments = await orchestrator.generatePDFs({ invoiceDatas, companyInfo });
 
+            // Derive recipients from BILL TO of built invoices
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const splitEmails = (v) => Array.isArray(v)
+                ? v
+                : String(v || '')
+                    .split(/[;,]/)
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            const recipSet = new Set();
+            for (const inv of invoiceDatas) {
+                const billTo = inv.billTo || {};
+                const candidates = [
+                    ...splitEmails(billTo.billingEmail),
+                    ...splitEmails(billTo.email),
+                    ...splitEmails(billTo?.billingInfo?.email)
+                ];
+                candidates.forEach(e => { if (emailRegex.test(e)) recipSet.add(e.toLowerCase()); });
+            }
+            const recipients = { to: Array.from(recipSet) };
+
             // Merge into a single combined PDF for easy viewing
             let combinedPdfBase64 = null;
             try {
@@ -183,7 +203,8 @@ exports.previewBulkInvoices = onRequest(
                 companyName,
                 filters,
                 combinedPdfBase64,
-                combinedFileName: `Preview_Invoices_${Date.now()}.pdf`
+                combinedFileName: `Preview_Invoices_${Date.now()}.pdf`,
+                recipients
             };
 
             console.log(`Preview generated: ${invoiceCount} invoices for ${shipments.length} shipments, $${totalAmount.toFixed(2)} total`);

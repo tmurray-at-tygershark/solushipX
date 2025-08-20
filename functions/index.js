@@ -402,6 +402,7 @@ const { generateBulkInvoices } = require('./src/billing/bulkInvoiceGenerator');
 const { previewBulkInvoices } = require('./src/billing/previewBulkInvoices');
 const { emailBulkInvoices } = require('./src/billing/emailBulkInvoices');
 const { sendTestInvoiceEmail } = require('./src/billing/sendTestInvoiceEmail');
+const { getInvoiceRecipients } = require('./src/billing/getInvoiceRecipients');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -426,6 +427,7 @@ exports.generateBulkInvoices = generateBulkInvoices;
 exports.previewBulkInvoices = previewBulkInvoices;
 exports.emailBulkInvoices = emailBulkInvoices;
 exports.sendTestInvoiceEmail = sendTestInvoiceEmail;
+exports.getInvoiceRecipients = getInvoiceRecipients;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;

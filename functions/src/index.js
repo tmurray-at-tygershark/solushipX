@@ -78,6 +78,8 @@ const { sendTestReportNotification } = require('./sendTestReportNotification');
 
 // Import invoice generation function
 const { generateInvoicePDFAndEmail } = require('./generateInvoicePDFAndEmail');
+// Import invoice recipient helper
+const { getInvoiceRecipients } = require('./billing/getInvoiceRecipients');
 
 // Import file upload functions
 const fileUploadFunctions = require('./fileUpload');
@@ -340,6 +342,10 @@ console.log('LOG-MAIN-INDEX: exports.sendTestReportNotification defined.');
 // Export invoice generation function
 exports.generateInvoicePDFAndEmail = generateInvoicePDFAndEmail;
 console.log('LOG-MAIN-INDEX: exports.generateInvoicePDFAndEmail defined.');
+
+// Export invoice recipients endpoint
+exports.getInvoiceRecipients = getInvoiceRecipients;
+console.log('LOG-MAIN-INDEX: exports.getInvoiceRecipients defined.');
 
 // Export file upload functions
 if (fileUploadFunctions && fileUploadFunctions.uploadFile) {
