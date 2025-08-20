@@ -137,10 +137,8 @@ const BulkInvoiceGenerator = () => {
     const [loading, setLoading] = useState(false);
 
     // 0. TOP-LEVEL FILTERS (Above Company Selection)
-    const [dateRange, setDateRange] = useState({
-        from: null,
-        to: null
-    });
+    // Removed date range and status filters per request
+    const [dateRange, setDateRange] = useState({ from: null, to: null });
     const [statusFilter, setStatusFilter] = useState('all');
 
     // 1. COMPANY SELECTION
@@ -148,14 +146,15 @@ const BulkInvoiceGenerator = () => {
     const [selectedCompany, setSelectedCompany] = useState(null);
     const [loadingCompanies, setLoadingCompanies] = useState(false);
 
-    // 2. CUSTOMER FILTERING
+    // 2. CUSTOMER FILTERING (single required)
     const [customers, setCustomers] = useState([]);
-    const [selectedCustomers, setSelectedCustomers] = useState([]);
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     // 3. SHIPMENT ID TARGETING
-    const [shipmentIds, setShipmentIds] = useState('');
-    const [shipmentIdMode, setShipmentIdMode] = useState('all'); // 'all', 'specific'
+    // Switch to chip-based entry for shipment IDs and remove 'all' mode
+    const [shipmentIds, setShipmentIds] = useState([]); // array of IDs
+    const [shipmentInput, setShipmentInput] = useState(''); // controlled input for entry
 
     // 4. UI STATE
     const [filtersExpanded, setFiltersExpanded] = useState(true);
@@ -184,18 +183,7 @@ const BulkInvoiceGenerator = () => {
     const [testEmailBcc, setTestEmailBcc] = useState([]); // BCC emails
 
     // Status options for filtering
-    const statusOptions = [
-        { value: 'all', label: 'All Statuses' },
-        { value: 'pending', label: 'Pending' },
-        { value: 'booked', label: 'Booked' },
-        { value: 'in_transit', label: 'In Transit' },
-        { value: 'delivered', label: 'Delivered' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
-        { value: 'on_hold', label: 'On Hold' },
-        { value: 'delayed', label: 'Delayed' },
-        { value: 'exception', label: 'Exception' }
-    ];
+    const statusOptions = [];
 
     // ✅ NEW: PREVIEW INVOICES FUNCTIONALITY
     const handlePreviewInvoices = async () => {
@@ -207,6 +195,11 @@ const BulkInvoiceGenerator = () => {
         try {
             setPreviewLoading(true);
 
+            if (!selectedCustomer) {
+                enqueueSnackbar('Please select a customer', { variant: 'warning' });
+                return;
+            }
+
             const filterParams = {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
@@ -215,11 +208,11 @@ const BulkInvoiceGenerator = () => {
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
-                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
-                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
-                    status: statusFilter !== 'all' ? statusFilter : null,
-                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
-                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                    dateFrom: null,
+                    dateTo: null,
+                    status: null,
+                    customers: [selectedCustomer.customerID],
+                    shipmentIds: shipmentIds
                 }
             };
 
@@ -273,6 +266,11 @@ const BulkInvoiceGenerator = () => {
             setEmailLoading(true);
             setGenerationProgress(10);
 
+            if (!selectedCustomer) {
+                enqueueSnackbar('Please select a customer', { variant: 'warning' });
+                return;
+            }
+
             const filterParams = {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
@@ -281,11 +279,11 @@ const BulkInvoiceGenerator = () => {
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
-                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
-                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
-                    status: statusFilter !== 'all' ? statusFilter : null,
-                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
-                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                    dateFrom: null,
+                    dateTo: null,
+                    status: null,
+                    customers: [selectedCustomer.customerID],
+                    shipmentIds
                 }
             };
 
@@ -361,6 +359,11 @@ const BulkInvoiceGenerator = () => {
         try {
             setTestEmailLoading(true);
 
+            if (!selectedCustomer) {
+                enqueueSnackbar('Please select a customer', { variant: 'warning' });
+                return;
+            }
+
             const filterParams = {
                 companyId: selectedCompany.companyID,
                 companyName: selectedCompany.name,
@@ -374,11 +377,11 @@ const BulkInvoiceGenerator = () => {
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 invoiceNumberOverride: invoiceNumberOverride?.trim() ? invoiceNumberOverride.trim() : null, // ✅ NEW: Override invoice #
                 filters: {
-                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
-                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
-                    status: statusFilter !== 'all' ? statusFilter : null,
-                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
-                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                    dateFrom: null,
+                    dateTo: null,
+                    status: null,
+                    customers: [selectedCustomer.customerID],
+                    shipmentIds
                 }
             };
 
@@ -495,7 +498,7 @@ const BulkInvoiceGenerator = () => {
     const loadCustomersForCompany = useCallback(async (companyId) => {
         if (!companyId) {
             setCustomers([]);
-            setSelectedCustomers([]);
+            setSelectedCustomer(null);
             return;
         }
 
@@ -519,7 +522,7 @@ const BulkInvoiceGenerator = () => {
 
             console.log(`Loaded ${customersData.length} customers for company ${companyId}`);
             setCustomers(customersData);
-            setSelectedCustomers([]); // Reset customer selection when company changes
+            setSelectedCustomer(null); // Reset customer selection when company changes
 
         } catch (error) {
             console.error('Error loading customers:', error);
@@ -536,7 +539,7 @@ const BulkInvoiceGenerator = () => {
             loadCustomersForCompany(newValue.companyID);
         } else {
             setCustomers([]);
-            setSelectedCustomers([]);
+            setSelectedCustomer(null);
         }
     };
 
@@ -570,30 +573,22 @@ const BulkInvoiceGenerator = () => {
                 invoiceMode: invoiceMode, // ✅ NEW: Pass invoice generation mode to backend
                 invoiceIssueDate: invoiceIssueDate ? invoiceIssueDate.format('YYYY-MM-DD') : null, // ✅ NEW: Custom invoice date
                 filters: {
-                    // Date filters
-                    dateFrom: dateRange.from ? dateRange.from.format('YYYY-MM-DD') : null,
-                    dateTo: dateRange.to ? dateRange.to.format('YYYY-MM-DD') : null,
-                    // Status filter
-                    status: statusFilter !== 'all' ? statusFilter : null,
-                    // Customer filters
-                    customers: selectedCustomers.length > 0 ? selectedCustomers.map(c => c.customerID) : null,
-                    // Shipment ID filters
-                    shipmentIds: shipmentIdMode === 'specific' ? parseShipmentIds(shipmentIds) : null
+                    // Filters simplified per request
+                    dateFrom: null,
+                    dateTo: null,
+                    status: null,
+                    customers: selectedCustomer ? [selectedCustomer.customerID] : null,
+                    shipmentIds
                 }
             };
 
             const filterSummary = [];
-            if (dateRange.from || dateRange.to) {
-                filterSummary.push(`date range`);
+            // Date and status summaries removed per request
+            if (selectedCustomer) {
+                filterSummary.push(`1 customer`);
             }
-            if (statusFilter !== 'all') {
-                filterSummary.push(`status: ${statusFilter}`);
-            }
-            if (selectedCustomers.length > 0) {
-                filterSummary.push(`${selectedCustomers.length} customers`);
-            }
-            if (shipmentIdMode === 'specific') {
-                filterSummary.push(`${parseShipmentIds(shipmentIds).length} shipment IDs`);
+            if (shipmentIds.length > 0) {
+                filterSummary.push(`${shipmentIds.length} shipment IDs`);
             }
 
             const filterText = filterSummary.length > 0 ? ` with ${filterSummary.join(', ')}` : '';
@@ -651,17 +646,12 @@ const BulkInvoiceGenerator = () => {
             const timestamp = Date.now();
             const filenameParts = [selectedCompany.companyID, 'Invoices'];
 
-            if (dateRange.from || dateRange.to) {
-                filenameParts.push('DateFiltered');
+            // Date and status removed from filename per request
+            if (selectedCustomer) {
+                filenameParts.push(`1customer`);
             }
-            if (statusFilter !== 'all') {
-                filenameParts.push(statusFilter);
-            }
-            if (selectedCustomers.length > 0) {
-                filenameParts.push(`${selectedCustomers.length}customers`);
-            }
-            if (shipmentIdMode === 'specific') {
-                filenameParts.push(`${parseShipmentIds(shipmentIds).length}shipments`);
+            if (shipmentIds.length > 0) {
+                filenameParts.push(`${shipmentIds.length}shipments`);
             }
 
             filenameParts.push(timestamp.toString());
@@ -698,13 +688,8 @@ const BulkInvoiceGenerator = () => {
         }
     }, [user, userRole, authLoading, loadCompanies]);
 
-    // Handle date changes
-    const handleDateChange = (field, newValue) => {
-        setDateRange(prev => ({
-            ...prev,
-            [field]: newValue
-        }));
-    };
+    // Date change handler removed with date filters
+    const handleDateChange = () => { };
 
     return (
         <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -712,98 +697,11 @@ const BulkInvoiceGenerator = () => {
                 <Paper sx={{ p: 3, border: '1px solid #e5e7eb' }}>
                     <Box sx={{ mb: 3 }}>
                         <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, color: '#374151', mb: 1 }}>
-                            Auto Invoice Generator
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Generate ZIP files with individual invoices organized by customer folders, with comprehensive filtering
+                            Manual Invoice Generation
                         </Typography>
                     </Box>
 
-                    {/* TOP-LEVEL FILTERS */}
-                    <Paper sx={{ p: 3, mb: 3, backgroundColor: '#fefbff', border: '1px solid #e1bee7' }}>
-                        <Grid container spacing={3}>
-                            {/* DATE RANGE FILTER */}
-                            <Grid item xs={12} md={6}>
-                                <Grid container spacing={2}>
-                                    <Grid item xs={6}>
-                                        <DatePicker
-                                            label="From Date"
-                                            value={dateRange.from}
-                                            onChange={(newValue) => handleDateChange('from', newValue)}
-                                            slotProps={{
-                                                textField: {
-                                                    size: 'small',
-                                                    sx: {
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }
-                                                }
-                                            }}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={6}>
-                                        <DatePicker
-                                            label="To Date"
-                                            value={dateRange.to}
-                                            onChange={(newValue) => handleDateChange('to', newValue)}
-                                            slotProps={{
-                                                textField: {
-                                                    size: 'small',
-                                                    sx: {
-                                                        '& .MuiInputBase-input': { fontSize: '12px' },
-                                                        '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                    }
-                                                }
-                                            }}
-                                        />
-                                    </Grid>
-                                </Grid>
-                                {(dateRange.from || dateRange.to) && (
-                                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Chip
-                                            label={`${dateRange.from ? dateRange.from.format('MMM DD') : 'Any'} → ${dateRange.to ? dateRange.to.format('MMM DD') : 'Any'}`}
-                                            size="small"
-                                            color="primary"
-                                            variant="outlined"
-                                            onDelete={() => setDateRange({ from: null, to: null })}
-                                            sx={{ fontSize: '11px' }}
-                                        />
-                                    </Box>
-                                )}
-                            </Grid>
-
-                            {/* STATUS FILTER */}
-                            <Grid item xs={12} md={6}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel sx={{ fontSize: '12px' }}>Status Filter</InputLabel>
-                                    <Select
-                                        value={statusFilter}
-                                        onChange={(e) => setStatusFilter(e.target.value)}
-                                        label="Status Filter"
-                                        sx={{ fontSize: '12px' }}
-                                    >
-                                        {statusOptions.map(option => (
-                                            <MenuItem key={option.value} value={option.value} sx={{ fontSize: '12px' }}>
-                                                {option.label}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                                {statusFilter !== 'all' && (
-                                    <Box sx={{ mt: 1 }}>
-                                        <Chip
-                                            label={statusOptions.find(s => s.value === statusFilter)?.label}
-                                            size="small"
-                                            color="secondary"
-                                            variant="outlined"
-                                            onDelete={() => setStatusFilter('all')}
-                                            sx={{ fontSize: '11px' }}
-                                        />
-                                    </Box>
-                                )}
-                            </Grid>
-                        </Grid>
-                    </Paper>
+                    {/* TOP-LEVEL FILTERS REMOVED */}
 
                     {/* COMPANY SELECTION - ALWAYS VISIBLE */}
                     <Box sx={{ mb: 3 }}>
@@ -878,154 +776,128 @@ const BulkInvoiceGenerator = () => {
                     {/* ADVANCED FILTERS SECTION */}
                     {selectedCompany && (
                         <>
-                            <Box sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 1,
-                                mb: 2,
-                                cursor: 'pointer',
-                                p: 1,
-                                borderRadius: 1,
-                                '&:hover': { backgroundColor: '#f8fafc' }
-                            }} onClick={() => setFiltersExpanded(!filtersExpanded)}>
-                                <FilterIcon sx={{ fontSize: 16, color: '#7c3aed' }} />
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-                                    Advanced Filters
-                                </Typography>
-                                {filtersExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                            </Box>
-
-                            <Collapse in={filtersExpanded}>
-                                <Paper sx={{ p: 3, mb: 3, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
-                                    <Grid container spacing={3}>
-                                        {/* CUSTOMER FILTER */}
-                                        <Grid item xs={12} md={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
-                                                Customer Filter
-                                            </Typography>
-                                            <Autocomplete
-                                                multiple
-                                                value={selectedCustomers}
-                                                onChange={(event, newValue) => setSelectedCustomers(newValue)}
-                                                options={customers}
-                                                getOptionLabel={(option) => option.name || option.customerID}
-                                                isOptionEqualToValue={(option, value) => option.customerID === value?.customerID}
-                                                loading={loadingCustomers}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Select Customers (optional)"
-                                                        placeholder={selectedCompany ? "Leave empty for all customers" : "Select company first"}
-                                                        size="small"
-                                                        sx={{
-                                                            '& .MuiInputBase-input': { fontSize: '12px' },
-                                                            '& .MuiInputLabel-root': { fontSize: '12px' }
-                                                        }}
-                                                    />
-                                                )}
-                                                renderOption={(props, option) => (
-                                                    <Box component="li" {...props} sx={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 1.5,
-                                                        p: 1,
-                                                        '&:hover': { backgroundColor: '#f3f4f6' }
-                                                    }}>
-                                                        <Avatar
-                                                            src={option.logoUrl}
-                                                            sx={{
-                                                                width: 28,
-                                                                height: 28,
-                                                                border: '1px solid #d1d5db',
-                                                                bgcolor: '#059669'
-                                                            }}
-                                                        >
-                                                            <PersonIcon sx={{ fontSize: 14, color: 'white' }} />
-                                                        </Avatar>
-                                                        <Box>
-                                                            <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                                {option.name}
-                                                            </Typography>
-                                                            <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
-                                                                {option.customerID}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                )}
-                                                renderTags={(value, getTagProps) =>
-                                                    value.map((option, index) => (
-                                                        <Chip
-                                                            key={option.customerID}
-                                                            label={option.name}
-                                                            size="small"
-                                                            {...getTagProps({ index })}
-                                                            sx={{ fontSize: '11px' }}
-                                                        />
-                                                    ))
-                                                }
-                                                disabled={!selectedCompany || loading}
-                                                noOptionsText={loadingCustomers ? "Loading customers..." : "No customers found"}
-                                            />
-                                        </Grid>
-
-                                        {/* SHIPMENT ID FILTER */}
-                                        <Grid item xs={12} md={6}>
-                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
-                                                Shipment ID Filter
-                                            </Typography>
-
-                                            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                                                <InputLabel sx={{ fontSize: '12px' }}>Filter Mode</InputLabel>
-                                                <Select
-                                                    value={shipmentIdMode}
-                                                    onChange={(e) => setShipmentIdMode(e.target.value)}
-                                                    label="Filter Mode"
-                                                    sx={{ fontSize: '12px' }}
-                                                >
-                                                    <MenuItem value="all" sx={{ fontSize: '12px' }}>
-                                                        All Shipments
-                                                    </MenuItem>
-                                                    <MenuItem value="specific" sx={{ fontSize: '12px' }}>
-                                                        Specific Shipment IDs
-                                                    </MenuItem>
-                                                </Select>
-                                            </FormControl>
-
-                                            {shipmentIdMode === 'specific' && (
+                            {/* Title bar removed as redundant */}
+                            <Paper sx={{ p: 3, mb: 3, backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                                <Grid container spacing={3}>
+                                    {/* CUSTOMER FILTER (single required) */}
+                                    <Grid item xs={12}>
+                                        <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                            Choose Customer
+                                        </Typography>
+                                        <Autocomplete
+                                            value={selectedCustomer}
+                                            onChange={(event, newValue) => setSelectedCustomer(newValue)}
+                                            options={customers}
+                                            getOptionLabel={(option) => option.name || option.customerID}
+                                            isOptionEqualToValue={(option, value) => option.customerID === value?.customerID}
+                                            loading={loadingCustomers}
+                                            renderInput={(params) => (
                                                 <TextField
-                                                    fullWidth
-                                                    multiline
-                                                    rows={4}
-                                                    value={shipmentIds}
-                                                    onChange={(e) => setShipmentIds(e.target.value)}
-                                                    label="Shipment IDs"
-                                                    placeholder="Enter shipment IDs separated by commas or new lines:
-IC-CUSTOMER-123
-IC-CUSTOMER-456
-IC-CUSTOMER-789"
+                                                    {...params}
+                                                    label="Select Customer"
+                                                    placeholder={selectedCompany ? "Search customer by name or ID" : "Select company first"}
                                                     size="small"
+                                                    required
                                                     sx={{
                                                         '& .MuiInputBase-input': { fontSize: '12px' },
                                                         '& .MuiInputLabel-root': { fontSize: '12px' }
                                                     }}
-                                                    InputProps={{
-                                                        endAdornment: shipmentIds && (
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => setShipmentIds('')}
-                                                                sx={{ position: 'absolute', top: 8, right: 8 }}
-                                                            >
-                                                                <ClearIcon sx={{ fontSize: 16 }} />
-                                                            </IconButton>
-                                                        )
-                                                    }}
-                                                    helperText={shipmentIds ? `${parseShipmentIds(shipmentIds).length} shipment IDs entered` : "One ID per line or comma-separated"}
                                                 />
                                             )}
-                                        </Grid>
+                                            renderOption={(props, option) => (
+                                                <Box component="li" {...props} sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 1.5,
+                                                    p: 1,
+                                                    '&:hover': { backgroundColor: '#f3f4f6' }
+                                                }}>
+                                                    <Avatar
+                                                        src={option.logoUrl}
+                                                        sx={{
+                                                            width: 28,
+                                                            height: 28,
+                                                            border: '1px solid #d1d5db',
+                                                            bgcolor: '#059669'
+                                                        }}
+                                                    >
+                                                        <PersonIcon sx={{ fontSize: 14, color: 'white' }} />
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography sx={{ fontSize: '12px', fontWeight: 500 }}>
+                                                            {option.name}
+                                                        </Typography>
+                                                        <Typography sx={{ fontSize: '10px', color: '#6b7280' }}>
+                                                            {option.customerID}
+                                                        </Typography>
+                                                    </Box>
+                                                </Box>
+                                            )}
+                                            disabled={!selectedCompany || loading}
+                                            noOptionsText={loadingCustomers ? "Loading customers..." : "No customers found"}
+                                        />
                                     </Grid>
-                                </Paper>
-                            </Collapse>
+
+                                    {/* SHIPMENT ID FILTER - chips only (visible after customer selected) */}
+                                    {selectedCustomer && (
+                                        <Grid item xs={12}>
+                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#374151', mb: 2 }}>
+                                                Enter Shipment IDs
+                                            </Typography>
+                                            <TextField
+                                                fullWidth
+                                                label="Enter a shipment ID and press Enter"
+                                                placeholder="IC-CUSTOMER-123"
+                                                size="small"
+                                                value={shipmentInput}
+                                                onChange={(e) => setShipmentInput(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        const raw = shipmentInput.trim();
+                                                        if (!raw) return;
+                                                        // Allow multiple IDs separated by commas, semicolons or newlines
+                                                        const ids = parseShipmentIds(raw);
+                                                        if (ids.length > 0) {
+                                                            const existing = new Set(shipmentIds);
+                                                            const merged = [...shipmentIds];
+                                                            ids.forEach(id => { if (id && !existing.has(id)) { existing.add(id); merged.push(id); } });
+                                                            setShipmentIds(merged);
+                                                        }
+                                                        setShipmentInput('');
+                                                    }
+                                                }}
+                                                onPaste={(e) => {
+                                                    // Support pasting multiple IDs to create chips
+                                                    const text = e.clipboardData?.getData('text') || '';
+                                                    if (!text) return;
+                                                    e.preventDefault();
+                                                    const ids = parseShipmentIds(text);
+                                                    if (ids.length > 0) {
+                                                        const existing = new Set(shipmentIds);
+                                                        const merged = [...shipmentIds];
+                                                        ids.forEach(id => { if (id && !existing.has(id)) { existing.add(id); merged.push(id); } });
+                                                        setShipmentIds(merged);
+                                                    }
+                                                    setShipmentInput('');
+                                                }}
+                                                sx={{
+                                                    '& .MuiInputBase-input': { fontSize: '12px' },
+                                                    '& .MuiInputLabel-root': { fontSize: '12px' }
+                                                }}
+                                                helperText={shipmentIds.length > 0 ? `${shipmentIds.length} shipments added` : 'Press Enter to add each shipment or paste multiple IDs'}
+                                            />
+                                            {shipmentIds.length > 0 && (
+                                                <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                    {shipmentIds.map(id => (
+                                                        <Chip key={id} label={id} size="small" onDelete={() => setShipmentIds(shipmentIds.filter(s => s !== id))} sx={{ fontSize: '11px' }} />
+                                                    ))}
+                                                </Box>
+                                            )}
+                                        </Grid>
+                                    )}
+                                </Grid>
+                            </Paper>
                         </>
                     )}
 
@@ -1034,9 +906,7 @@ IC-CUSTOMER-789"
                         <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Invoice Generation Method
                         </Typography>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
-                            Choose how invoices should be generated for your selected shipments
-                        </Typography>
+                        {/* Helper copy removed per request */}
 
                         <FormControl fullWidth size="small">
                             <InputLabel sx={{ fontSize: '12px' }}>Invoice Method</InputLabel>
@@ -1069,18 +939,7 @@ IC-CUSTOMER-789"
                             </Select>
                         </FormControl>
 
-                        {/* Visual indicator of current selection */}
-                        <Box sx={{ mt: 2, p: 2, backgroundColor: invoiceMode === 'combined' ? '#f0f9ff' : '#f8fafc', borderRadius: 1, border: '1px solid ' + (invoiceMode === 'combined' ? '#bae6fd' : '#e5e7eb') }}>
-                            <Typography sx={{ fontSize: '11px', fontWeight: 600, color: '#374151' }}>
-                                {invoiceMode === 'combined' ? '🔗 Combined Mode:' : '📄 Separate Mode:'}
-                            </Typography>
-                            <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                {invoiceMode === 'combined'
-                                    ? 'Customer "Temspec" with 3 shipments → 1 invoice (INV-ICAL-TEMSPEC-20250124) with 3 line items'
-                                    : 'Customer "Temspec" with 3 shipments → 3 separate invoices (INV-ICAL-21DNH6, INV-ICAL-22ABC7, INV-ICAL-23XYZ8)'
-                                }
-                            </Typography>
-                        </Box>
+                        {/* Visual indicator removed per request */}
                     </Paper>
 
                     {/* INVOICE CUSTOMIZATION */}
@@ -1088,9 +947,7 @@ IC-CUSTOMER-789"
                         <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#374151', mb: 2 }}>
                             Invoice Customization
                         </Typography>
-                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 3 }}>
-                            Set custom invoice generation preferences
-                        </Typography>
+                        {/* Helper copy removed per request */}
 
                         <Grid container spacing={3}>
                             <Grid item xs={12} md={6}>
@@ -1180,7 +1037,7 @@ IC-CUSTOMER-789"
                         </Box>
                     )}
 
-                    {/* ACTION BUTTONS - Enhanced with Preview, Email & Test Functionality */}
+                    {/* ACTION BUTTONS */}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 3 }}>
                         {/* ✅ NEW: Preview Button */}
                         <Button
@@ -1198,22 +1055,7 @@ IC-CUSTOMER-789"
                             {previewLoading ? 'Generating Preview...' : 'Preview Invoices'}
                         </Button>
 
-                        {/* ✅ NEW: Email Invoices Button */}
-                        <Button
-                            variant="contained"
-                            startIcon={emailLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
-                            onClick={handleEmailInvoices}
-                            disabled={emailLoading || !selectedCompany}
-                            sx={{
-                                fontSize: '12px',
-                                backgroundColor: '#059669',
-                                '&:hover': { backgroundColor: '#047857' }
-                            }}
-                        >
-                            {emailLoading ? 'Sending Emails...' : 'Email Invoices'}
-                        </Button>
-
-                        {/* ✅ NEW: Test Email Button */}
+                        {/* Send Invoices Button (renamed from Send Test Email action) */}
                         <Button
                             variant="outlined"
                             startIcon={<SendIcon />}
@@ -1226,7 +1068,7 @@ IC-CUSTOMER-789"
                                 '&:hover': { borderColor: '#d97706', backgroundColor: '#fffbeb' }
                             }}
                         >
-                            Send Test Email
+                            Send Invoices
                         </Button>
 
                         {/* Original ZIP Download Button */}
@@ -1256,32 +1098,18 @@ IC-CUSTOMER-789"
                                     Current Selection:
                                 </Typography>
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                    {(dateRange.from || dateRange.to) && (
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Date Range: {dateRange.from ? dateRange.from.format('MMM DD, YYYY') : 'Any'} → {dateRange.to ? dateRange.to.format('MMM DD, YYYY') : 'Any'}
-                                        </Typography>
-                                    )}
-                                    {statusFilter !== 'all' && (
-                                        <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Status: {statusOptions.find(s => s.value === statusFilter)?.label}
-                                        </Typography>
-                                    )}
+                                    {/* Date and status summaries removed */}
                                     <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
                                         Company: {selectedCompany.name} ({selectedCompany.companyID})
                                     </Typography>
-                                    {selectedCustomers.length > 0 && (
+                                    {selectedCustomer && (
                                         <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Customers: {selectedCustomers.map(c => c.name).join(', ')}
+                                            Customer: {selectedCustomer.name} ({selectedCustomer.customerID})
                                         </Typography>
                                     )}
-                                    {shipmentIdMode === 'specific' && shipmentIds && (
+                                    {shipmentIds.length > 0 && (
                                         <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>
-                                            Specific Shipments: {parseShipmentIds(shipmentIds).length} IDs specified
-                                        </Typography>
-                                    )}
-                                    {!dateRange.from && !dateRange.to && statusFilter === 'all' && selectedCustomers.length === 0 && shipmentIdMode === 'all' && (
-                                        <Typography sx={{ fontSize: '11px', color: '#059669' }}>
-                                            All shipments for {selectedCompany.name}
+                                            Specific Shipments: {shipmentIds.length} IDs specified
                                         </Typography>
                                     )}
                                 </Box>
@@ -1418,19 +1246,7 @@ IC-CUSTOMER-789"
                     <Button onClick={() => setPreviewOpen(false)} color="primary">
                         Close
                     </Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<EmailIcon />}
-                        onClick={handleEmailInvoices}
-                        disabled={emailLoading || !selectedCompany}
-                        sx={{
-                            fontSize: '12px',
-                            backgroundColor: '#7c3aed',
-                            '&:hover': { backgroundColor: '#6d28d9' }
-                        }}
-                    >
-                        {emailLoading ? 'Sending Invoices...' : 'Email Invoices'}
-                    </Button>
+                    {/* Remove Email Invoices button from preview dialog */}
                 </DialogActions>
             </Dialog>
 
@@ -1442,7 +1258,7 @@ IC-CUSTOMER-789"
                 fullWidth
             >
                 <DialogTitle sx={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
-                    Send Test Invoice Email
+                    Send Invoices
                 </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 3 }}>
@@ -1494,7 +1310,7 @@ IC-CUSTOMER-789"
                             '&:hover': { backgroundColor: '#059669' }
                         }}
                     >
-                        {testEmailLoading ? 'Sending...' : 'Send Test Email'}
+                        {testEmailLoading ? 'Sending...' : 'Send Invoices'}
                     </Button>
                 </DialogActions>
             </Dialog>

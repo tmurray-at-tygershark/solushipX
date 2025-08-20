@@ -2316,7 +2316,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     <Tab label="AP Processing" value="ap-processing" />
                     <Tab label="Charges" value="charges" />
                     <Tab label="Generate Invoices" value="generate" />
-                    <Tab label="Auto-Invoice Gen" value="bulk" />
+                    <Tab label="Manual Invoice Gen" value="bulk" />
                     <Tab label="Business Invoicing" value="business" />
                     <Tab label="Payment Terms" value="payment-terms" />
                     <Tab label="Received Payments" value="payments" />
