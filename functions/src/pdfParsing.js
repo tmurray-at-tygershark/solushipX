@@ -799,13 +799,7 @@ async function combineMultiModalAnalysis(analyses) {
     ]);
     
     // Enhance confidence scoring with multi-modal validation
-    const enhancedConfidence = calculateMultiModalConfidence({
-        textQuality: textAnalysis.extractionQuality || 0.8,
-        visualQuality: layoutAnalysis.layoutMetrics?.readability || 0.8,
-        logoClarity: logoAnalysis.documentBranding?.visualQuality || 0.8,
-        tableStructure: tableAnalysis.tableMetrics?.dataQuality || 0.8,
-        formatStandardization: formatAnalysis.formatCharacteristics?.standardization || 0.8
-    });
+    const enhancedConfidence = calculateMultiModalConfidence(qualityMetrics);
     
     // Combine extracted data with visual validation
     const enrichedData = enrichDataWithVisualIntelligence(textAnalysis, {
@@ -1019,6 +1013,8 @@ const processPdfFile = onCall(async (request) => {
                 structuredOutput: true,
                 carrierTemplates: true,
                 autoExtract: true,
+                // Enable specialized AP-processing behaviors when explicitly requested by client
+                apMode: settings.apMode === true,
                 ...settings
             },
             startTime: admin.firestore.FieldValue.serverTimestamp(),
@@ -1031,6 +1027,18 @@ const processPdfFile = onCall(async (request) => {
         });
 
         try {
+            // Optional Step 0 (AP Mode): Classify pages by document type for AP-specific workflows
+            let apPageClassification = null;
+            if (settings.apMode === true) {
+                try {
+                    apPageClassification = await classifyPagesWithAI(uploadUrl, fileName);
+                    await updateProcessingStep(uploadDoc.id, 'page_classification', 'completed', apPageClassification);
+                } catch (e) {
+                    console.warn('Page classification failed (non-fatal):', e.message);
+                    await updateProcessingStep(uploadDoc.id, 'page_classification', 'failed', { error: e.message });
+                }
+            }
+
             // Step 1: Download and analyze PDF
             const pdfAnalysis = await analyzePdfFile(uploadUrl);
             await updateProcessingStep(uploadDoc.id, 'pdf_analysis', 'completed', pdfAnalysis);
@@ -1093,7 +1101,9 @@ const processPdfFile = onCall(async (request) => {
             
             // Step 5: Intelligent shipment matching with carrier filtering
             console.log('Step 5: Starting intelligent carrier-filtered shipment matching...');
-            const matchingResults = await performIntelligentMatching(validatedData, request.auth.uid, carrierInfo);
+            // In AP mode, leverage page classification (if available) to prefer identifiers
+            // from pages labeled as invoice, ignoring BOL/confirmation for cost lines
+            let matchingResults = await performIntelligentMatching(validatedData, request.auth.uid, carrierInfo);
             await updateProcessingStep(uploadDoc.id, 'shipment_matching', 'completed', {
                 totalShipments: matchingResults.stats?.totalShipments || 0,
                 matchedShipments: matchingResults.stats?.autoApplicable || 0,
@@ -1125,7 +1135,8 @@ const processPdfFile = onCall(async (request) => {
                     ocrEnabled: false,
                     performance: 'native-pdf-processing',
                     matchingEnabled: true,
-                    matchingStats: matchingResults.stats
+                    matchingStats: matchingResults.stats,
+                    ...(settings.apMode === true && apPageClassification ? { pageClassification: apPageClassification } : {})
                 }
             };
 
@@ -4488,6 +4499,44 @@ Return ONLY a JSON object with this structure:
 }
 
 /**
+ * Classify pages by document type for AP workflows.
+ * Returns a lightweight summary if per-page classification is not possible.
+ */
+async function classifyPagesWithAI(pdfUrl, fileName) {
+    try {
+        // Reuse Vertex AI to request page-level types when feasible.
+        const request = {
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: `Classify each page of this PDF by type (invoice | bol | confirmation | other). If unsure, mark as unknown. Return JSON: { pages: [{ index: 1, type: "invoice" }], multiDocument: true/false }` },
+                        { inlineData: { mimeType: 'application/pdf', data: (await axios.get(pdfUrl, { responseType: 'arraybuffer' })).data.toString('base64') } }
+                    ]
+                }
+            ]
+        };
+
+        const generativeModel = vertex_ai.getGenerativeModel({ model });
+        const response = await generativeModel.generateContent(request);
+        const text = response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        try {
+            const parsed = JSON.parse(text.trim());
+            if (Array.isArray(parsed?.pages)) {
+                return parsed;
+            }
+        } catch (_) {
+            // fallthrough
+        }
+        // Fallback minimal result
+        return { pages: [{ index: 1, type: 'unknown' }], multiDocument: false };
+    } catch (err) {
+        console.warn('classifyPagesWithAI failed:', err.message);
+        return { pages: [{ index: 1, type: 'unknown' }], multiDocument: false, error: err.message };
+    }
+}
+
+/**
  * Intelligent Shipment Matching for AP Processing
  * Matches extracted invoice data to existing shipments
  */
@@ -4716,18 +4765,21 @@ function generateOcrVariations(shipmentId) {
     
     // Common OCR character confusions
     const ocrMappings = {
-        '0': ['O', '0'],  // Zero vs Letter O
-        'O': ['0', 'O'],  // Letter O vs Zero
-        '1': ['I', '1'],  // One vs Letter I
-        'I': ['1', 'I'],  // Letter I vs One
-        '5': ['S', '5'],  // Five vs Letter S
-        'S': ['5', 'S'],  // Letter S vs Five
-        '8': ['B', '8'],  // Eight vs Letter B
-        'B': ['8', 'B'],  // Letter B vs Eight
-        '6': ['G', '6'],  // Six vs Letter G
-        'G': ['6', 'G'],  // Letter G vs Six
-        '2': ['Z', '2'],  // Two vs Letter Z
-        'Z': ['2', 'Z']   // Letter Z vs Two
+        '0': ['O', '0', 'Q'],  // Zero vs O vs Q
+        'O': ['0', 'O', 'Q'],
+        'Q': ['0', 'O', 'Q'],
+        '1': ['I', '1', 'l'],  // One vs I vs lowercase L
+        'I': ['1', 'I', 'l'],
+        'l': ['1', 'I', 'l'],
+        '5': ['S', '5'],       // Five vs S
+        'S': ['5', 'S'],
+        '8': ['B', '8'],       // Eight vs B
+        'B': ['8', 'B'],
+        '6': ['G', '6'],       // Six vs G
+        'G': ['6', 'G'],
+        '2': ['Z', '2'],       // Two vs Z
+        'Z': ['2', 'Z'],
+        'D': ['0', 'D']        // D vs 0 occasional confusion
     };
     
     // Generate single-character variations

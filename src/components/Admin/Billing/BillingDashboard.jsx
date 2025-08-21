@@ -111,6 +111,7 @@ import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import GenerateInvoicesPage from './GenerateInvoicesPage';
 import BulkInvoiceGenerator from './BulkInvoiceGenerator';
 import APProcessing from './APProcessing';
+import CarrierInvoiceTraining from './CarrierInvoiceTraining';
 
 const BillingDashboard = ({ initialTab = 'overview' }) => {
     const { currentUser, userRole } = useAuth();
@@ -2321,6 +2322,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     <Tab label="Payment Terms" value="payment-terms" />
                     <Tab label="Received Payments" value="payments" />
                     <Tab label="Sales Commissions" value="commissions" />
+                    <Tab label="Invoice Training" value="invoice-training" />
                 </Tabs>
             </Box>
 
@@ -2607,6 +2609,10 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
             {activeTab === 'commissions' && (
                 <SalesCommissionsTab />
+            )}
+
+            {activeTab === 'invoice-training' && (
+                <CarrierInvoiceTraining />
             )}
 
             <Dialog

@@ -405,6 +405,11 @@ const { sendTestInvoiceEmail } = require('./src/billing/sendTestInvoiceEmail');
 const { getInvoiceRecipients } = require('./src/billing/getInvoiceRecipients');
 const { preflightInvoiceReview } = require('./src/billing/preflightInvoiceReview');
 const { markShipmentsReadyToInvoice } = require('./src/billing/markShipmentsReadyToInvoice');
+// AP matching helpers
+const { searchShipmentsForMatching } = require('./src/ap/searchShipmentsForMatching');
+const { processApUpload, processApReconcile } = require('./src/ap/apOrchestrator');
+const { migrateCarrierTemplates } = require('./src/ap/migrateCarrierTemplates');
+const trainingApi = require('./src/ap/trainingApi');
 const { 
     getChargeTypes, 
     createChargeType, 
@@ -432,6 +437,20 @@ exports.sendTestInvoiceEmail = sendTestInvoiceEmail;
 exports.getInvoiceRecipients = getInvoiceRecipients;
 exports.preflightInvoiceReview = preflightInvoiceReview;
 exports.markShipmentsReadyToInvoice = markShipmentsReadyToInvoice;
+exports.searchShipmentsForMatching = searchShipmentsForMatching;
+exports.processApUpload = processApUpload;
+exports.processApReconcile = processApReconcile;
+exports.migrateCarrierTemplates = migrateCarrierTemplates;
+exports.uploadTrainingSamples = trainingApi.uploadTrainingSamples;
+exports.extractTrainingFeatures = trainingApi.extractTrainingFeatures;
+exports.upsertCarrierTemplate = trainingApi.upsertCarrierTemplate;
+exports.getBestTemplateForPdf = trainingApi.getBestTemplateForPdf;
+exports.recordExtractionFeedback = trainingApi.recordExtractionFeedback;
+exports.listTrainingSamples = trainingApi.listTrainingSamples;
+exports.listCarrierTemplates = trainingApi.listCarrierTemplates;
+exports.listTrainedCarriers = trainingApi.listTrainedCarriers;
+exports.getTrainingSummary = trainingApi.getTrainingSummary;
+exports.updateCarrierTemplateMetadata = trainingApi.updateCarrierTemplateMetadata;
 
 // Charge Type Management Functions
 exports.getChargeTypes = getChargeTypes;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     Box,
     Grid,
@@ -771,7 +771,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
                     'No Match';
 
                 return [
-                    row.shipmentId,
+                    (row.matchResult?.bestMatch?.shipment?.shipmentID || row.matchedShipmentId || row.shipmentId),
                     row.carrier,
                     row.shipDate,
                     row.weight,
@@ -978,7 +978,9 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
                                         size="small"
                                     />
                                 </TableCell>
-                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '120px !important', width: '120px !important' }} style={{ fontSize: '11px' }}>{row.shipmentId}</TableCell>
+                                <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '120px !important', width: '120px !important' }} style={{ fontSize: '11px' }}>
+                                    {row.matchResult?.bestMatch?.shipment?.shipmentID || row.matchedShipmentId || row.shipmentId}
+                                </TableCell>
                                 <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '140px !important', width: '140px !important' }} style={{ fontSize: '11px' }}>{row.carrier}</TableCell>
                                 <TableCell sx={{ verticalAlign: 'top', textAlign: 'left', maxWidth: '80px !important', width: '80px !important' }} style={{ fontSize: '11px' }}>{formatDate(row.shipDate)}</TableCell>
                                 <TableCell sx={{ fontSize: '11px', verticalAlign: 'top', textAlign: 'left' }}>
@@ -1253,6 +1255,20 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
                     </Box>
                 )}
 
+                {/* AP Page Classification (if available) */}
+                {pdfResults && pdfResults.metadata && pdfResults.metadata.pageClassification && Array.isArray(pdfResults.metadata.pageClassification.pages) && (
+                    <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e5e7eb' }}>
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600, mb: 1 }}>
+                            Document Pages
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            {pdfResults.metadata.pageClassification.pages.map((p) => (
+                                <Chip key={p.index} size="small" label={`Pg ${p.index}: ${p.type}`} sx={{ fontSize: '10px' }} />
+                            ))}
+                        </Box>
+                    </Box>
+                )}
+
                 {/* Action Menu */}
                 <Menu
                     anchorEl={actionMenuAnchor}
@@ -1519,6 +1535,61 @@ const APProcessing = () => {
             features: ['tracking', 'addresses']
         }
     ];
+
+    // Dynamically trained invoice carriers (from training system)
+    const [trainedInvoiceCarriers, setTrainedInvoiceCarriers] = useState([]);
+
+    useEffect(() => {
+        // Load trained carriers to augment dropdown options
+        (async () => {
+            try {
+                const listTrained = httpsCallable(functions, 'listTrainedCarriers');
+                const res = await listTrained({});
+                if (res.data?.success) {
+                    setTrainedInvoiceCarriers(res.data.items || []);
+                }
+            } catch (e) {
+                // non-blocking
+            }
+        })();
+    }, [functions]);
+
+    // Merge static carrier list with trained carriers for dropdown selection only
+    const invoiceCarrierOptions = useMemo(() => {
+        const base = carrierTemplates.filter(c => c.supported).map(c => ({ id: c.id, name: c.name }));
+        const map = new Map(base.map(c => [c.id, c]));
+        (trainedInvoiceCarriers || []).forEach(row => {
+            const id = row?.carrierId;
+            if (!id) return;
+            const name = row?.name || id;
+            map.set(id, { id, name });
+        });
+        // Keep Auto-Detect option at top via special id
+        return [{ id: 'auto-detect', name: 'Auto-Detect' }, ...Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))];
+    }, [carrierTemplates, trainedInvoiceCarriers]);
+
+    // Enriched options for the pretty dropdown (icons, descriptions, chips)
+    const processingCarrierOptions = useMemo(() => {
+        return invoiceCarrierOptions.map(opt => {
+            if (opt.id === 'auto-detect') {
+                return {
+                    id: 'auto-detect',
+                    name: '🧠 Multi-Modal AI Detection',
+                    intelligent: true,
+                    description: 'Advanced visual + text analysis with logo detection and intelligent table parsing',
+                    logoURL: null,
+                    supported: true,
+                    trained: false,
+                };
+            }
+            const match = carrierTemplates.find(c => c.id === opt.id);
+            if (match) {
+                return { id: match.id, name: match.name, intelligent: !!match.intelligent, description: match.description, logoURL: match.logoURL, supported: !!match.supported, trained: false };
+            }
+            // Trained-only carrier (not part of static list)
+            return { id: opt.id, name: opt.name, intelligent: false, description: `ID: ${opt.id}`, logoURL: null, supported: true, trained: true };
+        });
+    }, [invoiceCarrierOptions, carrierTemplates]);
 
     useEffect(() => {
         loadSettings();
@@ -2132,7 +2203,9 @@ const APProcessing = () => {
                 carrier,
                 settings: {
                     ...pdfParsingSettings,
-                    includeRawText: false
+                    includeRawText: false,
+                    // Signal AP-specific parsing behavior to backend
+                    apMode: true
                 }
             }).then((result) => {
                 // Success callback
@@ -3704,82 +3777,81 @@ const APProcessing = () => {
                                         <MenuItem value="" sx={{ fontSize: '12px' }}>
                                             <em>None (for EDI files)</em>
                                         </MenuItem>
-                                        {carrierTemplates
-                                            .filter(carrier => carrier.supported)
-                                            .map(carrier => (
-                                                <MenuItem
-                                                    key={carrier.id}
-                                                    value={carrier.id}
-                                                    sx={{
-                                                        fontSize: '12px',
-                                                        py: 1.5,
-                                                        backgroundColor: carrier.intelligent ? '#f0f9ff' : 'transparent',
-                                                        borderLeft: carrier.intelligent ? '3px solid #0ea5e9' : 'none',
-                                                        '&:hover': {
-                                                            backgroundColor: carrier.intelligent ? '#e0f2fe' : '#f9fafb'
-                                                        }
-                                                    }}
-                                                >
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                                                        {/* Carrier Logo/Icon */}
-                                                        <Avatar
-                                                            src={carrier.logoURL}
+                                        {processingCarrierOptions.map(carrier => (
+                                            <MenuItem
+                                                key={carrier.id}
+                                                value={carrier.id}
+                                                sx={{
+                                                    fontSize: '12px',
+                                                    py: 1.5,
+                                                    backgroundColor: carrier.intelligent ? '#f0f9ff' : 'transparent',
+                                                    borderLeft: carrier.intelligent ? '3px solid #0ea5e9' : 'none',
+                                                    '&:hover': {
+                                                        backgroundColor: carrier.intelligent ? '#e0f2fe' : '#f9fafb'
+                                                    }
+                                                }}
+                                            >
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                                                    {/* Carrier Logo/Icon */}
+                                                    <Avatar
+                                                        src={carrier.logoURL || undefined}
+                                                        sx={{
+                                                            width: 24,
+                                                            height: 24,
+                                                            border: '1px solid #e5e7eb',
+                                                            bgcolor: carrier.intelligent ? '#0ea5e9' : '#f8fafc',
+                                                            color: carrier.intelligent ? 'white' : '#6b7280'
+                                                        }}
+                                                    >
+                                                        {carrier.intelligent ? (
+                                                            <AiIcon sx={{ fontSize: 14, color: 'white' }} />
+                                                        ) : (
+                                                            <LocalShippingIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                                                        )}
+                                                    </Avatar>
+
+                                                    {/* Carrier Details */}
+                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                        <Typography
                                                             sx={{
-                                                                width: 24,
-                                                                height: 24,
-                                                                border: '1px solid #e5e7eb',
-                                                                bgcolor: carrier.intelligent ? '#0ea5e9' : '#f8fafc',
-                                                                color: carrier.intelligent ? 'white' : '#6b7280'
+                                                                fontWeight: 600,
+                                                                fontSize: '12px',
+                                                                color: carrier.intelligent ? '#0ea5e9' : '#374151',
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
                                                             }}
                                                         >
-                                                            {carrier.intelligent ? (
-                                                                <AiIcon sx={{ fontSize: 14, color: 'white' }} />
-                                                            ) : (
-                                                                <LocalShippingIcon sx={{ fontSize: 14, color: '#6b7280' }} />
-                                                            )}
-                                                        </Avatar>
-
-                                                        {/* Carrier Details */}
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Typography
-                                                                sx={{
-                                                                    fontWeight: 600,
-                                                                    fontSize: '12px',
-                                                                    color: carrier.intelligent ? '#0ea5e9' : '#374151',
-                                                                    whiteSpace: 'nowrap',
-                                                                    overflow: 'hidden',
-                                                                    textOverflow: 'ellipsis'
-                                                                }}
-                                                            >
-                                                                {carrier.name}
-                                                            </Typography>
-                                                            <Typography
-                                                                sx={{
-                                                                    fontSize: '10px',
-                                                                    color: '#6b7280',
-                                                                    whiteSpace: 'nowrap',
-                                                                    overflow: 'hidden',
-                                                                    textOverflow: 'ellipsis'
-                                                                }}
-                                                            >
-                                                                {carrier.intelligent ? carrier.description : `ID: ${carrier.id}`}
-                                                            </Typography>
-                                                        </Box>
-
-                                                        {/* Status Chip */}
-                                                        <Chip
-                                                            label={carrier.intelligent ? 'RECOMMENDED' : (carrier.supported ? 'Supported' : 'Not Supported')}
-                                                            size="small"
-                                                            color={carrier.intelligent ? 'primary' : (carrier.supported ? 'success' : 'default')}
+                                                            {carrier.name}
+                                                        </Typography>
+                                                        <Typography
                                                             sx={{
-                                                                height: 18,
-                                                                fontSize: '9px',
-                                                                fontWeight: 500
+                                                                fontSize: '10px',
+                                                                color: '#6b7280',
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis'
                                                             }}
-                                                        />
+                                                        >
+                                                            {carrier.intelligent ? carrier.description : (carrier.description || `ID: ${carrier.id}`)}
+                                                        </Typography>
                                                     </Box>
-                                                </MenuItem>
-                                            ))}
+
+                                                    {/* Status Chip */}
+                                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                                        {carrier.intelligent && (
+                                                            <Chip size="small" color="primary" label="RECOMMENDED" sx={{ height: 18, fontSize: '9px', fontWeight: 500 }} />
+                                                        )}
+                                                        {carrier.trained && (
+                                                            <Chip size="small" color="primary" label="Trained" sx={{ height: 18, fontSize: '9px', fontWeight: 500 }} />
+                                                        )}
+                                                        {!carrier.intelligent && !carrier.trained && (
+                                                            <Chip size="small" color={carrier.supported ? 'success' : 'default'} label={carrier.supported ? 'Supported' : 'Not Supported'} sx={{ height: 18, fontSize: '9px', fontWeight: 500 }} />
+                                                        )}
+                                                    </Box>
+                                                </Box>
+                                            </MenuItem>
+                                        ))}
                                     </Select>
                                     <FormHelperText sx={{ fontSize: '11px' }}>
                                         Advanced multi-modal analysis combines visual + text processing with logo detection, table intelligence, and layout analysis for superior accuracy on complex multi-document PDFs.
@@ -3953,7 +4025,7 @@ const APProcessing = () => {
                                         <TableRow>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>File</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Carrier</TableCell>
-                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Carrier Invoice#</TableCell>
+                                            <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>EDI/Invoice #</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Records</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Pages</TableCell>
                                             <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>Uploaded</TableCell>
@@ -4019,7 +4091,7 @@ const APProcessing = () => {
                                                     {upload.carrier || upload.detectedCarrier || 'N/A'}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {upload.carrierInvoiceNumber || upload.invoiceNumber || 'N/A'}
+                                                    {upload.invoiceNumber || upload.carrierInvoiceNumber || upload.metadata?.ediNumber || 'N/A'}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     {upload.recordCount || 0}
@@ -4429,13 +4501,11 @@ const APProcessing = () => {
                                                 <MenuItem value="" sx={{ fontSize: '12px' }}>
                                                     <em>None (for EDI files)</em>
                                                 </MenuItem>
-                                                {carrierTemplates
-                                                    .filter(carrier => carrier.supported)
-                                                    .map(carrier => (
-                                                        <MenuItem key={carrier.id} value={carrier.id} sx={{ fontSize: '12px' }}>
-                                                            {carrier.name}
-                                                        </MenuItem>
-                                                    ))}
+                                                {invoiceCarrierOptions.map(c => (
+                                                    <MenuItem key={c.id} value={c.id} sx={{ fontSize: '12px' }}>
+                                                        {c.name}
+                                                    </MenuItem>
+                                                ))}
                                             </Select>
                                             <FormHelperText sx={{ fontSize: '11px' }}>
                                                 Select the carrier before uploading PDF invoices.
@@ -4607,7 +4677,9 @@ const APProcessing = () => {
                                 <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', flexWrap: 'wrap' }}>
                                     <Box>
                                         <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Shipment ID</Typography>
-                                        <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>{selectedShipmentDetail.shipmentId}</Typography>
+                                        <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>
+                                            {selectedShipmentDetail.matchResult?.bestMatch?.shipment?.shipmentID || selectedShipmentDetail.matchedShipmentId || selectedShipmentDetail.shipmentId}
+                                        </Typography>
                                     </Box>
                                     <Box>
                                         <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>Tracking Number</Typography>
