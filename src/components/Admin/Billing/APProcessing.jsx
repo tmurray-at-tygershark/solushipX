@@ -100,6 +100,7 @@ import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
 import { httpsCallable, getFunctions } from 'firebase/functions';
+import { getRateData, saveRateData } from '../../../utils/rateDataManager';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import PdfViewerDialog from '../../Shipments/components/PdfViewerDialog';
@@ -567,6 +568,50 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
             return `${length}×${width}×${height} ${unit || 'in'}`;
         }
         return '';
+    };
+
+    // Build stacked comparison rows including all key fields
+    const buildComparisonRows = (detail) => {
+        const invoiceCharges = (detail?.charges || []).map(ch => ({
+            code: ch.code || 'FRT',
+            name: ch.name || ch.description || 'Charge',
+            currency: ch.currency || detail?.currency || 'CAD',
+            invoiceAmount: Number(ch.amount || 0)
+        }));
+        const systemCharges = (detail?.systemRateData?.charges || []).map(c => ({
+            code: c.code || 'FRT',
+            name: c.name || 'Charge',
+            currency: c.currency || detail?.currency || 'CAD',
+            quotedCost: c.quotedCost != null ? Number(c.quotedCost) : 0,
+            quotedCharge: c.quotedCharge != null ? Number(c.quotedCharge) : 0,
+            actualCost: c.actualCost != null ? Number(c.actualCost) : (c.cost != null ? Number(c.cost) : 0),
+            actualCharge: c.actualCharge != null ? Number(c.actualCharge) : (c.charge != null ? Number(c.charge) : 0)
+        }));
+
+        // Align by code+name key for comparison
+        const map = new Map();
+        systemCharges.forEach(s => {
+            const key = `${s.code}|${s.name}`;
+            map.set(key, { ...s });
+        });
+        invoiceCharges.forEach(i => {
+            const key = `${i.code}|${i.name}`;
+            const row = map.get(key) || { code: i.code, name: i.name, currency: i.currency };
+            row.invoiceAmount = i.invoiceAmount;
+            map.set(key, row);
+        });
+
+        return Array.from(map.values()).map(r => ({
+            code: r.code,
+            name: r.name,
+            currency: r.currency,
+            invoiceAmount: r.invoiceAmount || 0,
+            systemQuotedCost: r.quotedCost || 0,
+            systemQuotedCharge: r.quotedCharge || 0,
+            systemActualCost: r.actualCost || 0,
+            systemActualCharge: r.actualCharge || 0,
+            varianceCost: (r.invoiceAmount || 0) - (r.actualCost || 0)
+        }));
     };
 
     const normalizeCharges = (charges) => {
@@ -1296,7 +1341,7 @@ const PdfResultsTable = ({ pdfResults, onClose, onViewShipmentDetail, onOpenPdfV
     );
 };
 
-const APProcessing = () => {
+const ARProcessing = () => {
     const { currentUser } = useAuth();
     const { companyIdForAddress } = useCompany();
     const { enqueueSnackbar } = useSnackbar();
@@ -1408,6 +1453,7 @@ const APProcessing = () => {
     const [matchingInProgress, setMatchingInProgress] = useState(false);
     const [matchingResult, setMatchingResult] = useState(null);
     const [savingCharges, setSavingCharges] = useState(false);
+    const [compareTab, setCompareTab] = useState('extracted');
 
     // PDF Viewer Dialog State
     const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
@@ -1419,6 +1465,67 @@ const APProcessing = () => {
         setCurrentPdfUrl(pdfUrl);
         setCurrentPdfTitle(title);
         setPdfViewerOpen(true);
+    };
+
+    // Resolve a shipment identifier to a Firestore document ID
+    const resolveShipmentDocId = async (identifier) => {
+        if (!identifier) return null;
+        try {
+            // Try direct doc ID
+            const direct = await getDoc(doc(db, 'shipments', identifier));
+            if (direct.exists()) return direct.id;
+
+            // Try by business shipmentID field
+            const q = query(collection(db, 'shipments'), where('shipmentID', '==', identifier));
+            const qs = await getDocs(q);
+            if (!qs.empty) return qs.docs[0].id;
+        } catch (e) {
+            console.warn('resolveShipmentDocId error:', e);
+        }
+        return null;
+    };
+
+    // Build stacked comparison rows for the Compare tab
+    const buildComparisonRows = (detail) => {
+        if (!detail) return [];
+        const invoiceCharges = (detail.charges || []).map(ch => ({
+            code: ch.code || 'FRT',
+            name: ch.name || ch.description || 'Charge',
+            currency: ch.currency || detail.currency || 'CAD',
+            invoiceAmount: Number(ch.amount || 0)
+        }));
+        const systemCharges = (detail.systemRateData?.charges || []).map(c => ({
+            code: c.code || 'FRT',
+            name: c.name || 'Charge',
+            currency: c.currency || detail.currency || 'CAD',
+            quotedCost: c.quotedCost != null ? Number(c.quotedCost) : 0,
+            quotedCharge: c.quotedCharge != null ? Number(c.quotedCharge) : 0,
+            actualCost: c.actualCost != null ? Number(c.actualCost) : (c.cost != null ? Number(c.cost) : 0),
+            actualCharge: c.actualCharge != null ? Number(c.actualCharge) : (c.charge != null ? Number(c.charge) : 0)
+        }));
+
+        const map = new Map();
+        systemCharges.forEach(s => {
+            map.set(`${s.code}|${s.name}`, { ...s });
+        });
+        invoiceCharges.forEach(i => {
+            const key = `${i.code}|${i.name}`;
+            const row = map.get(key) || { code: i.code, name: i.name, currency: i.currency };
+            row.invoiceAmount = i.invoiceAmount;
+            map.set(key, row);
+        });
+
+        return Array.from(map.values()).map(r => ({
+            code: r.code,
+            name: r.name,
+            currency: r.currency,
+            invoiceAmount: r.invoiceAmount || 0,
+            systemQuotedCost: r.quotedCost || 0,
+            systemQuotedCharge: r.quotedCharge || 0,
+            systemActualCost: r.actualCost || 0,
+            systemActualCharge: r.actualCharge || 0,
+            varianceCost: (r.invoiceAmount || 0) - (r.actualCost || 0)
+        }));
     };
 
     // Debug: Log carrier state changes
@@ -1599,7 +1706,7 @@ const APProcessing = () => {
 
     // Setup real-time listeners for PDF uploads
     const setupRealtimeListeners = () => {
-        console.log('🔥 Setting up real-time listeners for AP Processing');
+        console.log('🔥 Setting up real-time listeners for AR Processing');
 
         // Listen to PDF uploads with real-time updates
         const pdfQuery = query(
@@ -2652,9 +2759,24 @@ const APProcessing = () => {
         setActiveTab('overview'); // Return to overview main screen
     };
 
-    const handleViewShipmentDetail = (shipment) => {
+    const handleViewShipmentDetail = async (shipment) => {
         console.log('Opening shipment detail for:', shipment);
-        setSelectedShipmentDetail(shipment);
+        // Hydrate with matched shipment's current charges if available
+        let hydrated = { ...shipment };
+        try {
+            const matchedDocId = shipment.matchResult?.bestMatch?.shipment?.id;
+            const matchedBusinessId = shipment.matchResult?.bestMatch?.shipment?.shipmentID || shipment.matchedShipmentId;
+            if (matchedDocId) {
+                const systemRates = await getRateData(matchedDocId);
+                hydrated.systemRateData = systemRates; // includes standardized charges, totals, carrier/service
+                hydrated.systemShipmentId = matchedBusinessId;
+                hydrated.systemShipmentDocId = matchedDocId;
+            }
+        } catch (e) {
+            console.warn('Failed to load system rate data for matched shipment:', e);
+        }
+        setSelectedShipmentDetail(hydrated);
+        setCompareTab('extracted');
         setShipmentDetailDialog(true);
     };
 
@@ -2957,16 +3079,48 @@ const APProcessing = () => {
                 const updateActualCostsFunc = httpsCallable(functions, 'updateActualCosts');
                 const processAPApprovalFunc = httpsCallable(functions, 'processAPApproval');
 
-                // 🔧 FIXED: Use trackingNumber as the shipment ID (that's what shows in the table)
-                const shipmentIds = matchedShipments.map(shipment => {
-                    const shipmentId = shipment.id || shipment.shipmentId || shipment.trackingNumber;
-                    console.log('✅ Using shipment ID for approval:', shipmentId, 'from shipment:', {
-                        id: shipment.id,
-                        shipmentId: shipment.shipmentId,
-                        trackingNumber: shipment.trackingNumber
-                    });
-                    return shipmentId;
-                }).filter(Boolean); // Remove any null values
+                // Prefer matched Firestore doc ID, then business shipmentID, then tracking
+                const shipmentIdsRaw = matchedShipments.map(shipment => {
+                    const chosen = [
+                        shipment.matchResult?.bestMatch?.shipment?.id,
+                        shipment.matchResult?.bestMatch?.shipment?.docId,
+                        shipment.matchResult?.bestMatch?.shipmentRef?.id,
+                        shipment.matchResult?.bestMatch?.id,
+                        shipment.matchResult?.bestMatch?.shipment?.shipmentID,
+                        shipment.matchedShipmentId,
+                        shipment.shipmentId,
+                        shipment.shipmentID,
+                        shipment.references?.other,
+                        shipment.references?.customerRef,
+                        shipment.trackingNumber,
+                        shipment.id
+                    ].find(v => typeof v === 'string' && v.length >= 3);
+                    console.log('✅ Using shipment identifier for approval:', chosen, 'from shipment:', shipment);
+                    return chosen;
+                }).filter(Boolean);
+
+                // Resolve to Firestore doc IDs
+                const shipmentIds = [];
+                for (const ident of shipmentIdsRaw) {
+                    const docId = await resolveShipmentDocId(ident);
+                    if (docId) shipmentIds.push(docId);
+                }
+
+                // Final fallback: use currently viewed shipment in dialog
+                if (shipmentIds.length === 0 && selectedShipmentDetail) {
+                    const fallbackIdent = [
+                        selectedShipmentDetail.systemShipmentDocId,
+                        selectedShipmentDetail.matchResult?.bestMatch?.shipment?.id,
+                        selectedShipmentDetail.matchResult?.bestMatch?.shipment?.shipmentID,
+                        selectedShipmentDetail.matchedShipmentId,
+                        selectedShipmentDetail.shipmentId,
+                        selectedShipmentDetail.references?.other,
+                        selectedShipmentDetail.references?.customerRef
+                    ].find(v => typeof v === 'string' && v.length >= 3);
+                    const docId = await resolveShipmentDocId(fallbackIdent);
+                    if (docId) shipmentIds.push(docId);
+                    console.log('🔧 Fallback resolved shipment ID:', docId, 'from identifier:', fallbackIdent);
+                }
 
                 console.log('📋 Extracted shipment IDs for approval:', shipmentIds);
 
@@ -3034,6 +3188,37 @@ const APProcessing = () => {
 
                 enqueueSnackbar(`✅ Processed carrier invoice costs for ${successfulUpdates} shipment(s). Creating charges...`, { variant: 'success' });
 
+                // If no variance per Compare view, set Actual = Quoted for each system charge
+                try {
+                    for (const [index, shipment] of matchedShipments.entries()) {
+                        const shipmentId = shipmentIds[index];
+                        // Load system rates to check variance against extracted charges
+                        const sys = await getRateData(shipmentId);
+                        const invoiceSum = Number(shipment.totalAmount || 0);
+                        const systemActual = Number(sys.totals?.cost || 0);
+                        const variance = Math.abs(invoiceSum - systemActual);
+                        if (variance < 0.005) {
+                            // Set actual = quoted
+                            const user = currentUser || { email: 'ap@system' };
+                            await saveRateData(shipmentId, {
+                                ...sys,
+                                charges: (sys.charges || []).map(c => ({
+                                    ...c,
+                                    actualCost: c.quotedCost != null ? c.quotedCost : c.cost,
+                                    actualCharge: c.quotedCharge != null ? c.quotedCharge : c.charge
+                                })),
+                                totals: {
+                                    cost: sys.totals?.charge || sys.totals?.cost || 0,
+                                    charge: sys.totals?.charge || 0,
+                                    currency: sys.totals?.currency || 'CAD'
+                                }
+                            }, user);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Unable to set Actual=Quoted for balanced shipments:', e);
+                }
+
                 // 🔧 REMOVED: Actual costs update - this will happen in final approval step
                 enqueueSnackbar(`Processing AP approval for ${shipmentIds.length} shipment(s)...`, { variant: 'info' });
 
@@ -3043,8 +3228,8 @@ const APProcessing = () => {
                     carrierInvoiceRef: selectedUpload.fileName,
                     overrideExceptions: overrideExceptions,
                     approvalNotes: overrideExceptions ?
-                        `AP Processing approval with exception override - Upload: ${selectedUpload.fileName}` :
-                        `AP Processing approval - Upload: ${selectedUpload.fileName}`,
+                        `AR Processing approval with exception override - Upload: ${selectedUpload.fileName}` :
+                        `AR Processing approval - Upload: ${selectedUpload.fileName}`,
                     // Include the actual cost data directly to avoid the cloud function error
                     shipmentsWithCosts: matchedShipments.map((shipment, index) => ({
                         shipmentId: shipmentIds[index],
@@ -3103,6 +3288,23 @@ const APProcessing = () => {
                     // AP processing should only handle charge processing, not upload status tracking
 
                     console.log(`✅ AP approval completed for upload ${selectedUpload.id}`);
+
+                    // Update shipment invoiceStatus: 'draft' if balanced, else 'exception'
+                    try {
+                        for (const [index, shipment] of matchedShipments.entries()) {
+                            const shipmentId = shipmentIds[index];
+                            const sys = await getRateData(shipmentId);
+                            const invoiceSum = Number(shipment.totalAmount || 0);
+                            const systemActual = Number(sys.totals?.cost || 0);
+                            const newStatus = Math.abs(invoiceSum - systemActual) < 0.005 ? 'draft' : 'exception';
+                            await updateDoc(doc(db, 'shipments', shipmentId), {
+                                invoiceStatus: newStatus,
+                                invoiceStatusUpdatedAt: serverTimestamp()
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('Failed to update invoiceStatus after approval:', e);
+                    }
                 } else {
                     enqueueSnackbar(`❌ AP approval failed: ${result.data.error}`, { variant: 'error' });
                 }
@@ -3133,7 +3335,7 @@ const APProcessing = () => {
                 apStatus: 'rejected',
                 rejectedAt: new Date(),
                 rejectedBy: currentUser.email,
-                rejectionReason: 'Manual rejection from AP Processing review'
+                rejectionReason: 'Manual rejection from AR Processing review'
             };
 
             const uploadRef = doc(db, 'apUploads', selectedUpload.id);
@@ -3150,6 +3352,32 @@ const APProcessing = () => {
         } catch (error) {
             console.error('❌ AP rejection error:', error);
             enqueueSnackbar(`Failed to reject AP results: ${error.message}`, { variant: 'error' });
+        }
+    };
+
+    // Mark the current matched shipment as exception and persist invoiceStatus
+    const handleMarkException = async () => {
+        try {
+            // Update local dialog row state
+            setSelectedShipmentDetail(prev => prev ? { ...prev, apStatus: 'exception' } : prev);
+
+            // Update parent upload table row state
+            setSelectedUpload(prev => prev ? { ...prev, apStatus: 'exception' } : prev);
+
+            // Persist on matched shipment (invoiceStatus = exception)
+            const matchedDocId = selectedShipmentDetail?.systemShipmentDocId || selectedShipmentDetail?.matchResult?.bestMatch?.shipment?.id;
+            if (matchedDocId) {
+                await updateDoc(doc(db, 'shipments', matchedDocId), {
+                    invoiceStatus: 'exception',
+                    invoiceStatusUpdatedAt: serverTimestamp()
+                });
+            }
+
+            enqueueSnackbar('Marked as exception', { variant: 'warning' });
+            handleCloseShipmentDetail();
+        } catch (e) {
+            console.error('Mark exception failed:', e);
+            enqueueSnackbar(`Failed to mark exception: ${e.message}`, { variant: 'error' });
         }
     };
 
@@ -3628,9 +3856,9 @@ const APProcessing = () => {
             {/* Header */}
             <Box sx={{ px: 3, py: 2, mb: 3, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
                 <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, fontSize: '22px' }}>
-                    AP Processing
+                    AR Processing
                 </Typography>
-                <AdminBreadcrumb currentPage="AP Processing" />
+                <AdminBreadcrumb currentPage="AR Processing" />
                 <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '12px' }}>
                     Unified accounts payable processing with EDI automation and PDF parsing
                 </Typography>
@@ -4654,7 +4882,7 @@ const APProcessing = () => {
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Typography variant="h6" sx={{ fontSize: '18px', fontWeight: 600 }}>
-                            AP Processing - Shipment Review
+                            AR Processing - Shipment Review
                         </Typography>
                         {selectedShipmentDetail && renderApprovalStatus(selectedShipmentDetail)}
                     </Box>
@@ -4837,26 +5065,121 @@ const APProcessing = () => {
                                     </Stack>
                                 </Grid>
 
-                                {/* Right Panel - Charges Editor */}
+                                {/* Right Panel - Tabs: Extracted vs Compare */}
                                 <Grid item xs={12} md={6} sx={{
                                     overflow: 'auto',
                                     p: 3,
                                     backgroundColor: '#fafbfc'
                                 }}>
-                                    <EnhancedChargesEditor
-                                        charges={selectedShipmentDetail.charges || []}
-                                        currency={selectedShipmentDetail.currency || 'CAD'}
-                                        totalAmount={selectedShipmentDetail.totalAmount || 0}
-                                        onChargesUpdate={(updatedCharges) => {
-                                            const newTotal = updatedCharges.reduce((sum, charge) => sum + charge.amount, 0);
-                                            setSelectedShipmentDetail({
-                                                ...selectedShipmentDetail,
-                                                charges: updatedCharges,
-                                                totalAmount: newTotal,
-                                                currency: selectedShipmentDetail.currency || 'CAD'
-                                            });
-                                        }}
-                                    />
+                                    <Box>
+                                        <Tabs value={compareTab} onChange={(_, v) => setCompareTab(v)} sx={{ minHeight: 34 }}>
+                                            <Tab label="Extracted" value="extracted" sx={{ fontSize: '12px', minHeight: 34 }} />
+                                            <Tab label="Compare & Apply" value="compare" sx={{ fontSize: '12px', minHeight: 34 }} />
+                                        </Tabs>
+                                        {compareTab === 'extracted' && (
+                                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 2, mt: 2 }}>
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>Invoice Charges (extracted)</Typography>
+                                                <EnhancedChargesEditor
+                                                    charges={selectedShipmentDetail.charges || []}
+                                                    currency={selectedShipmentDetail.currency || 'CAD'}
+                                                    totalAmount={selectedShipmentDetail.totalAmount || 0}
+                                                    onChargesUpdate={(updatedCharges) => {
+                                                        const newTotal = updatedCharges.reduce((sum, charge) => sum + charge.amount, 0);
+                                                        setSelectedShipmentDetail({
+                                                            ...selectedShipmentDetail,
+                                                            charges: updatedCharges,
+                                                            totalAmount: newTotal,
+                                                            currency: selectedShipmentDetail.currency || 'CAD'
+                                                        });
+                                                    }}
+                                                />
+                                            </Paper>
+                                        )}
+                                        {compareTab === 'compare' && (
+                                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', p: 2, mt: 2 }}>
+                                                <Typography sx={{ fontSize: '14px', fontWeight: 600, mb: 1 }}>Charge Comparison</Typography>
+                                                <Table size="small">
+                                                    <TableHead>
+                                                        <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Code</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Charge Name</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Currency</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Invoice Amount</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>System Quoted Cost</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>System Quoted Charge</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>System Actual Cost</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>System Actual Charge</TableCell>
+                                                            <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>Variance (Inv vs Actual Cost)</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {buildComparisonRows(selectedShipmentDetail).map((r, idx) => (
+                                                            <TableRow key={idx}>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{r.code}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{r.name}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{r.currency}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(r.invoiceAmount, r.currency)}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(r.systemQuotedCost, r.currency)}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(r.systemQuotedCharge, r.currency)}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(r.systemActualCost, r.currency)}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px' }}>{formatCurrency(r.systemActualCharge, r.currency)}</TableCell>
+                                                                <TableCell sx={{ fontSize: '11px', color: Math.abs(r.varianceCost) > 0.009 ? '#b45309' : '#065f46' }}>
+                                                                    {formatCurrency(r.varianceCost, r.currency)}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
+                                                        Total Variance: {formatCurrency((selectedShipmentDetail.totalAmount || 0) - (selectedShipmentDetail.systemRateData?.totals?.cost || 0), selectedShipmentDetail.currency || 'CAD')}
+                                                    </Typography>
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        onClick={async () => {
+                                                            try {
+                                                                const matchedDocId = selectedShipmentDetail.systemShipmentDocId;
+                                                                if (!matchedDocId) {
+                                                                    enqueueSnackbar('No matched shipment to apply to', { variant: 'warning' });
+                                                                    return;
+                                                                }
+                                                                const rateData = {
+                                                                    charges: (selectedShipmentDetail.charges || []).map((ch, idx) => ({
+                                                                        id: ch.id || `inv_${idx}`,
+                                                                        code: ch.code || 'FRT',
+                                                                        name: ch.name || ch.description || 'Charge',
+                                                                        category: ch.category || 'other',
+                                                                        cost: Number(ch.amount || 0),
+                                                                        charge: Number(ch.amount || 0),
+                                                                        currency: ch.currency || selectedShipmentDetail.currency || 'CAD',
+                                                                        invoiceNumber: selectedUpload?.invoiceNumber || selectedUpload?.carrierInvoiceNumber || selectedUpload?.metadata?.ediNumber || '-',
+                                                                        ediNumber: selectedUpload?.metadata?.ediNumber || '-'
+                                                                    })),
+                                                                    totals: {
+                                                                        cost: Number(selectedShipmentDetail.totalAmount || 0),
+                                                                        charge: Number(selectedShipmentDetail.totalAmount || 0),
+                                                                        currency: selectedShipmentDetail.currency || 'CAD'
+                                                                    },
+                                                                    carrier: { name: selectedShipmentDetail.carrier || '' },
+                                                                    service: { name: selectedShipmentDetail.service || '' }
+                                                                };
+                                                                const user = currentUser || { email: 'ap@system' };
+                                                                await saveRateData(matchedDocId, rateData, user);
+                                                                enqueueSnackbar('Applied invoice charges to shipment (actual costs updated)', { variant: 'success' });
+                                                            } catch (e) {
+                                                                console.error(e);
+                                                                enqueueSnackbar(`Failed to apply charges: ${e.message}`, { variant: 'error' });
+                                                            }
+                                                        }}
+                                                        sx={{ fontSize: '12px' }}
+                                                    >
+                                                        Apply Invoice Charges to Shipment
+                                                    </Button>
+                                                </Box>
+                                            </Paper>
+                                        )}
+                                    </Box>
                                 </Grid>
                             </Grid>
                         </Box>
@@ -4890,17 +5213,7 @@ const APProcessing = () => {
                         <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => {
-                                // Mark as exception without approving
-                                handleSaveCharges().then(() => {
-                                    setSelectedShipmentDetail({
-                                        ...selectedShipmentDetail,
-                                        apStatus: 'exception'
-                                    });
-                                    enqueueSnackbar('Marked as exception', { variant: 'warning' });
-                                    handleCloseShipmentDetail();
-                                });
-                            }}
+                            onClick={handleMarkException}
                             sx={{
                                 fontSize: '12px',
                                 borderColor: '#dc2626',
@@ -4916,10 +5229,7 @@ const APProcessing = () => {
                         <Button
                             variant="contained"
                             size="small"
-                            onClick={() => {
-                                handleApproveAPResults(false);
-                                handleCloseShipmentDetail();
-                            }}
+                            onClick={() => handleApproveAPResults(false)}
                             sx={{
                                 fontSize: '12px',
                                 backgroundColor: '#3b82f6',
@@ -4973,4 +5283,4 @@ const APProcessing = () => {
     );
 };
 
-export default APProcessing; 
+export default ARProcessing; 

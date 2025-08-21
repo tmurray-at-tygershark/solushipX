@@ -110,7 +110,7 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import GenerateInvoicesPage from './GenerateInvoicesPage';
 import BulkInvoiceGenerator from './BulkInvoiceGenerator';
-import APProcessing from './APProcessing';
+import ARProcessing from './APProcessing';
 import CarrierInvoiceTraining from './CarrierInvoiceTraining';
 
 const BillingDashboard = ({ initialTab = 'overview' }) => {
@@ -211,8 +211,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
         if (path.includes('/admin/billing/payment-terms')) {
             setActiveTab('payment-terms');
-        } else if (path.includes('/admin/billing/ap-processing')) {
-            setActiveTab('ap-processing');
+        } else if (path.includes('/admin/billing/ar-processing')) {
+            setActiveTab('ar-processing');
         } else if (path.includes('/admin/billing/generate')) {
             // Handle generate tab properly
             setActiveTab('generate');
@@ -1050,8 +1050,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             case 'invoices':
                 navigate('/admin/billing');
                 break;
-            case 'ap-processing':
-                navigate('/admin/billing/ap-processing');
+            case 'ar-processing':
+                navigate('/admin/billing/ar-processing');
                 break;
             case 'generate':
                 navigate('/admin/billing/generate');
@@ -2314,7 +2314,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 >
                     <Tab label="Overview" value="overview" />
                     <Tab label="Invoices" value="invoices" />
-                    <Tab label="AP Processing" value="ap-processing" />
+                    <Tab label="AR Processing" value="ar-processing" />
                     <Tab label="Charges" value="charges" />
                     <Tab label="Generate Invoices" value="generate" />
                     <Tab label="Manual Invoice Gen" value="bulk" />
@@ -2569,8 +2569,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 <InvoiceManagement />
             )}
 
-            {activeTab === 'ap-processing' && (
-                <APProcessing />
+            {activeTab === 'ar-processing' && (
+                <ARProcessing />
             )}
 
             {activeTab === 'payment-terms' && (
