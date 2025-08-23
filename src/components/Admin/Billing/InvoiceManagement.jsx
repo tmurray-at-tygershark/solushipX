@@ -20,28 +20,23 @@ import {
     Button,
     Stack,
     Divider,
-    CircularProgress,
+    Skeleton,
     Alert,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
     FormControl,
     InputLabel,
     Select,
     MenuItem,
-    Tooltip
+    Tooltip,
+    Autocomplete,
+    Avatar,
+    Menu
 } from '@mui/material';
 import {
     Search as SearchIcon,
     Clear as ClearIcon,
-    Receipt as ReceiptIcon,
     Download as DownloadIcon,
     Email as EmailIcon,
     Visibility as VisibilityIcon,
-    AccountBalance as AccountBalanceIcon,
-    TrendingUp as TrendingUpIcon,
-    Assignment as AssignmentIcon,
     FilterList as FilterListIcon,
     GetApp as GetAppIcon,
     Add as AddIcon,
@@ -61,6 +56,8 @@ import { functions } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCompany } from '../../../contexts/CompanyContext';
 import InvoiceForm from './InvoiceForm';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { getCircleLogo } from '../../../utils/logoUtils';
 
 const InvoiceManagement = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -74,8 +71,11 @@ const InvoiceManagement = () => {
     const [filteredInvoices, setFilteredInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [selectedInvoice, setSelectedInvoice] = useState(null);
-    const [detailsOpen, setDetailsOpen] = useState(false);
+    // Removed legacy details dialog states; using InvoiceForm overlay for details/edit
+    const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+    const [menuInvoice, setMenuInvoice] = useState(null);
+    const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(null);
+    const [selectedCustomerFilter, setSelectedCustomerFilter] = useState(null);
     const [metrics, setMetrics] = useState({
         totalInvoices: 0,
         totalOutstanding: 0,
@@ -86,13 +86,59 @@ const InvoiceManagement = () => {
     // Manual invoice creation states
     const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
     const [editingInvoiceId, setEditingInvoiceId] = useState(null);
+    const [companiesMap, setCompaniesMap] = useState({});
+    const [customersByCompany, setCustomersByCompany] = useState({});
+    const [customersMap, setCustomersMap] = useState({}); // key: customerId → customer doc
+    const [loadingCompanies, setLoadingCompanies] = useState(false);
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
 
     useEffect(() => {
         // Only fetch if we have a userRole and auth is loaded
         if (userRole && currentUser) {
             fetchInvoices();
+            loadCompaniesDirectory();
         }
     }, [userRole, connectedCompanies, currentUser]);
+
+    const loadCompaniesDirectory = async () => {
+        try {
+            if (loadingCompanies) return;
+            setLoadingCompanies(true);
+            const snap = await getDocs(collection(db, 'companies'));
+            const map = {};
+            snap.forEach(d => {
+                const data = { id: d.id, ...d.data() };
+                const key = data.companyID || data.id;
+                if (key) map[key] = data;
+            });
+            setCompaniesMap(map);
+        } catch (e) {
+            console.warn('Failed to load companies directory', e);
+        } finally {
+            setLoadingCompanies(false);
+        }
+    };
+
+    useEffect(() => {
+        const loadCustomers = async (companyId) => {
+            try {
+                if (!companyId || customersByCompany[companyId] || loadingCustomers) return;
+                setLoadingCustomers(true);
+                const q = query(collection(db, 'customers'), where('companyID', '==', companyId));
+                const snap = await getDocs(q);
+                const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                setCustomersByCompany(prev => ({ ...prev, [companyId]: list }));
+            } catch (e) {
+                console.warn('Failed to load customers for company', companyId, e);
+            } finally {
+                setLoadingCustomers(false);
+            }
+        };
+
+        if (selectedCompanyFilter?.id) {
+            loadCustomers(selectedCompanyFilter.id);
+        }
+    }, [selectedCompanyFilter, customersByCompany, loadingCustomers]);
 
     // Helper functions for shipment data processing
     const getShipmentCurrency = (shipment) => {
@@ -121,223 +167,103 @@ const InvoiceManagement = () => {
             setLoading(true);
             setError(null);
 
-            // Super admin can proceed without connected companies, regular admin needs them
-            if (userRole !== 'superadmin' && (!connectedCompanies || connectedCompanies.length === 0)) {
-                setLoading(false);
-                return;
-            }
+            // 1) Try to load actual invoices from 'invoices' collection first
+            const invoicesSnap = await getDocs(query(collection(db, 'invoices'), orderBy('createdAt', 'desc')));
+            const invoicesFromCollection = invoicesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            console.log('🔍 Fetching invoice data from shipments with charges containing invoice numbers for', userRole, 'with', connectedCompanies?.length || 0, 'companies');
-
-            let shipmentsSnapshot;
-
-            if (userRole === 'superadmin') {
-                // Super admin: Fetch ALL shipments and filter client-side 
-                shipmentsSnapshot = await getDocs(query(
-                    collection(db, 'shipments'),
-                    orderBy('createdAt', 'desc')
-                ));
-            } else {
-                // Regular admin: Filter by connected companies
-                const companyIDs = (connectedCompanies || []).map(company => company.companyID).filter(Boolean);
-
-                if (companyIDs.length > 0) {
-                    // Handle Firestore 'in' query limit of 10
-                    if (companyIDs.length <= 10) {
-                        shipmentsSnapshot = await getDocs(query(
-                            collection(db, 'shipments'),
-                            where('companyID', 'in', companyIDs),
-                            orderBy('createdAt', 'desc')
-                        ));
-                    } else {
-                        // For more than 10 companies, batch the queries
-                        const batches = [];
-                        for (let i = 0; i < companyIDs.length; i += 10) {
-                            const batch = companyIDs.slice(i, i + 10);
-                            batches.push(
-                                getDocs(query(
-                                    collection(db, 'shipments'),
-                                    where('companyID', 'in', batch),
-                                    orderBy('createdAt', 'desc')
-                                ))
-                            );
-                        }
-
-                        const results = await Promise.all(batches);
-                        const allDocs = results.flatMap(result => result.docs);
-                        shipmentsSnapshot = { docs: allDocs };
-                    }
-                } else {
-                    shipmentsSnapshot = { docs: [] };
-                }
-            }
-
-            const shipmentsData = shipmentsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-
-            // Extract charges with invoice numbers from shipments
-            const chargesWithInvoices = [];
-
-            shipmentsData.forEach(shipment => {
-                const shipmentId = shipment.shipmentID || shipment.id;
-                let charges = [];
-
-                // Check different charge storage locations based on shipment type
-                if (shipment.creationMethod === 'quickship') {
-                    // QuickShip: Check manualRates
-                    charges = shipment.manualRates || [];
-                } else {
-                    // Regular shipments: Check updatedCharges, chargesBreakdown, or selectedRate.billingDetails
-                    charges = shipment.updatedCharges ||
-                        shipment.chargesBreakdown ||
-                        shipment.selectedRate?.billingDetails ||
-                        [];
-                }
-
-                // Extract charges that have valid invoice numbers
-                charges.forEach(charge => {
-                    const invoiceNumber = charge.invoiceNumber;
-                    if (invoiceNumber &&
-                        invoiceNumber !== '' &&
-                        invoiceNumber !== '-' &&
-                        invoiceNumber.trim() !== '') {
-
-                        chargesWithInvoices.push({
-                            invoiceNumber: invoiceNumber,
-                            shipmentID: shipmentId,
-                            shipmentDocId: shipment.id,
-                            companyID: shipment.companyID,
-                            customerName: shipment.shipTo?.companyName || shipment.shipTo?.company || 'Unknown Customer',
-                            amount: parseFloat(charge.actualCharge || charge.quotedCharge || charge.charge || charge.amount || 0),
-                            currency: shipment.currency || charge.currency || 'CAD',
-                            createdAt: shipment.createdAt,
-                            shipmentData: shipment,
-                            chargeData: charge
-                        });
-                    }
-                });
-            });
-
-            console.log('📊 Extracted charges with invoice numbers:', {
-                totalShipments: shipmentsData.length,
-                chargesWithInvoices: chargesWithInvoices.length
-            });
-
-            // Group charges by invoice number to create actual invoices
-            const invoiceGroups = {};
-
-            chargesWithInvoices.forEach(charge => {
-                const invoiceNumber = charge.invoiceNumber;
-                if (!invoiceGroups[invoiceNumber]) {
-                    invoiceGroups[invoiceNumber] = {
-                        invoiceNumber: invoiceNumber,
-                        charges: [],
-                        shipmentIds: [],
-                        total: 0,
-                        currency: charge.currency,
-                        companyName: charge.customerName,
-                        companyID: charge.companyID,
-                        status: 'invoiced', // Default status since they have invoice numbers
-                        issueDate: charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date(),
-                        createdAt: charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date(),
-                        dueDate: null // TODO: Calculate based on payment terms
+            let invoiceData = [];
+            if (invoicesFromCollection.length > 0) {
+                invoiceData = invoicesFromCollection.map(inv => {
+                    const issueDate = inv.issueDate?.toDate ? inv.issueDate.toDate() : (inv.issueDate ? new Date(inv.issueDate) : null);
+                    const dueDate = inv.dueDate?.toDate ? inv.dueDate.toDate() : (inv.dueDate ? new Date(inv.dueDate) : null);
+                    const createdAt = inv.createdAt?.toDate ? inv.createdAt.toDate() : (inv.createdAt ? new Date(inv.createdAt) : issueDate || new Date());
+                    return {
+                        id: inv.id,
+                        invoiceNumber: inv.invoiceNumber,
+                        companyName: inv.companyName,
+                        companyId: inv.companyId || inv.companyID || inv.company?.id || inv.company?.companyID,
+                        companyCode: inv.companyCode || inv.company?.code || '',
+                        companyLogo: inv.companyLogo || inv.companyLogoUrl || inv.company?.logo || inv.company?.logoUrl || '',
+                        customerName: inv.customerName || inv.customer?.name || '',
+                        customerId: inv.customerId || inv.customer?.id || inv.customerID,
+                        customerLogo: inv.customerLogo || inv.customer?.logo || inv.customer?.logoUrl || '',
+                        fileUrl: inv.fileUrl || inv.pdfUrl || '',
+                        status: inv.paymentStatus || inv.status || 'outstanding',
+                        total: Number(inv.total || 0),
+                        subtotal: Number(inv.subtotal || 0),
+                        tax: Number(inv.tax || 0),
+                        currency: inv.currency || 'CAD',
+                        issueDate,
+                        dueDate,
+                        createdAt,
+                        paymentTerms: inv.paymentTerms || 'NET 30',
+                        shipmentCount: Array.isArray(inv.shipmentIds) ? inv.shipmentIds.length : (inv.shipments?.length || 0),
+                        shipmentIds: inv.shipmentIds || [],
+                        lineItems: inv.items || [],
+                        carrierInvoiceUrls: inv.carrierInvoiceUrls || []
                     };
-                }
-
-                invoiceGroups[invoiceNumber].charges.push(charge);
-                invoiceGroups[invoiceNumber].shipmentIds.push(charge.shipmentID);
-                invoiceGroups[invoiceNumber].total += charge.amount;
-
-                // Use the most recent date if multiple charges exist
-                const chargeDate = charge.createdAt ? (charge.createdAt.toDate ? charge.createdAt.toDate() : new Date(charge.createdAt)) : new Date();
-                if (chargeDate > invoiceGroups[invoiceNumber].createdAt) {
-                    invoiceGroups[invoiceNumber].createdAt = chargeDate;
-                    invoiceGroups[invoiceNumber].issueDate = chargeDate;
-                }
-            });
-
-            // Convert grouped data to invoice array
-            const invoiceData = Object.values(invoiceGroups).map(invoice => {
-                // Calculate subtotal and tax breakdown from charges
-                let subtotal = 0;
-                let tax = 0;
-
-                invoice.charges.forEach(charge => {
-                    // Assume most charges are subtotal unless they're identified as tax
-                    const chargeAmount = charge.amount || 0;
-                    const chargeCode = charge.chargeData?.code || '';
-                    const chargeDescription = charge.chargeData?.description || '';
-
-                    // Simple tax detection (can be enhanced)
-                    if (chargeCode.includes('TAX') || chargeCode.includes('GST') || chargeCode.includes('HST') ||
-                        chargeCode.includes('PST') || chargeCode.includes('QST') || chargeCode.includes('QGST') ||
-                        chargeDescription.toLowerCase().includes('tax')) {
-                        tax += chargeAmount;
-                    } else {
-                        subtotal += chargeAmount;
-                    }
                 });
-
-                // Create line items from charges (group by shipment)
-                const lineItemsMap = {};
-                invoice.charges.forEach(charge => {
-                    const shipmentId = charge.shipmentID;
-                    if (!lineItemsMap[shipmentId]) {
-                        lineItemsMap[shipmentId] = {
-                            shipmentId: shipmentId,
-                            description: `Shipment ${shipmentId}`,
-                            carrier: 'Integrated Carriers', // Default carrier
-                            amount: 0,
-                            charges: []
-                        };
-                    }
-                    lineItemsMap[shipmentId].amount += charge.amount;
-                    lineItemsMap[shipmentId].charges.push(charge);
-                });
-
-                const lineItems = Object.values(lineItemsMap);
-
-                return {
-                    id: `invoice_${invoice.invoiceNumber}`,
-                    invoiceNumber: invoice.invoiceNumber,
-                    companyName: invoice.companyName,
-                    status: invoice.status,
-                    total: parseFloat(invoice.total.toFixed(2)),
-                    subtotal: parseFloat(subtotal.toFixed(2)),
-                    tax: parseFloat(tax.toFixed(2)),
-                    currency: invoice.currency,
-                    issueDate: invoice.issueDate,
-                    dueDate: invoice.dueDate,
-                    createdAt: invoice.createdAt,
-                    paymentTerms: 'NET 30', // Default payment terms
-                    shipmentCount: invoice.shipmentIds.length,
-                    shipmentIds: [...new Set(invoice.shipmentIds)], // Remove duplicates
-                    lineItems: lineItems,
-                    charges: invoice.charges
-                };
-            });
+            } else {
+                // No fallback: show a blank table until invoices exist or are manually added
+                invoiceData = [];
+            }
 
             // Sort by creation date (newest first)
-            invoiceData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            invoiceData.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
             setInvoices(invoiceData);
             setFilteredInvoices(invoiceData);
             calculateMetrics(invoiceData);
 
-            console.log('📊 Invoice data extracted from shipments:', {
-                invoices: invoiceData.length,
-                totalShipments: shipmentsData.length,
-                chargesWithInvoices: chargesWithInvoices.length,
-                uniqueInvoiceNumbers: Object.keys(invoiceGroups).length
-            });
+            // Hydrate customers directory for avatars
+            const uniqueCustomerIds = Array.from(new Set(
+                invoiceData.map(inv => inv.customerId).filter(Boolean)
+            ));
+            if (uniqueCustomerIds.length > 0) {
+                await loadCustomersDirectoryByIds(uniqueCustomerIds);
+            }
 
         } catch (err) {
             console.error('Error fetching invoice data from shipments:', err);
             setError('Failed to load invoice data: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Load customer docs by IDs in batches of 10 to respect Firestore 'in' limit
+    const loadCustomersDirectoryByIds = async (ids) => {
+        try {
+            const batchSize = 10;
+            const loaded = {};
+            for (let i = 0; i < ids.length; i += batchSize) {
+                const batchIds = ids.slice(i, i + batchSize);
+                const q = query(collection(db, 'customers'), where('customerID', 'in', batchIds));
+                const snapByBusinessId = await getDocs(q).catch(() => ({ empty: true, docs: [] }));
+                if (!snapByBusinessId.empty) {
+                    snapByBusinessId.docs.forEach(d => {
+                        loaded[d.data().customerID] = { id: d.id, ...d.data() };
+                    });
+                }
+
+                // Also try doc IDs for any remaining ones
+                const remaining = batchIds.filter(id => !loaded[id]);
+                for (const rid of remaining) {
+                    try {
+                        const docRef = doc(db, 'customers', rid);
+                        const docSnap = await getDocs(query(collection(db, 'customers'), where('id', '==', rid))).catch(() => ({ empty: true }));
+                        // Fallback to direct getDoc when available
+                        // Skipping direct getDoc to keep imports minimal in this module
+                        if (!docSnap.empty) {
+                            const d = docSnap.docs[0];
+                            loaded[rid] = { id: d.id, ...d.data() };
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            }
+            setCustomersMap(prev => ({ ...prev, ...loaded }));
+        } catch (e) {
+            console.warn('Failed to hydrate customers directory', e);
         }
     };
 
@@ -562,8 +488,7 @@ const InvoiceManagement = () => {
     };
 
     const handleInvoiceClick = (invoice) => {
-        setSelectedInvoice(invoice);
-        setDetailsOpen(true);
+        handleEditInvoice(invoice);
     };
 
     // 🔄 ENHANCED: Support for additional invoice statuses
@@ -659,6 +584,16 @@ const InvoiceManagement = () => {
             );
         }
 
+        // Company filter
+        if (selectedCompanyFilter && selectedCompanyFilter.id) {
+            filtered = filtered.filter(inv => (inv.companyId || inv.companyID) === selectedCompanyFilter.id);
+        }
+
+        // Customer filter
+        if (selectedCustomerFilter && selectedCustomerFilter.id) {
+            filtered = filtered.filter(inv => inv.customerId === selectedCustomerFilter.id || inv.customerName === selectedCustomerFilter.name);
+        }
+
         // Status filter
         if (statusFilter && statusFilter !== 'all') {
             if (statusFilter === 'overdue') {
@@ -670,12 +605,71 @@ const InvoiceManagement = () => {
 
         setFilteredInvoices(filtered);
         setPage(0); // Reset to first page when filters change
-    }, [invoices, searchQuery, statusFilter]);
+    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter]);
 
     if (loading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-                <CircularProgress />
+            <Box sx={{ width: '100%' }}>
+                <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
+                    {Array.from({ length: 4 }).map((_, idx) => (
+                        <Grid item xs={12} md={3} key={idx}>
+                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Skeleton variant="text" width={120} height={16} />
+                                    <Skeleton variant="rectangular" width="60%" height={28} style={{ margin: '8px 0' }} />
+                                    <Skeleton variant="text" width={100} height={14} />
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+
+                <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', mx: 2 }}>
+                    <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Skeleton variant="text" width={140} height={24} />
+                            <Stack direction="row" spacing={2}>
+                                <Skeleton variant="rectangular" width={90} height={28} />
+                                <Skeleton variant="rectangular" width={120} height={28} />
+                            </Stack>
+                        </Box>
+                        <Grid container spacing={2} alignItems="center">
+                            {[0, 1, 2].map((k) => (
+                                <Grid item xs={12} md={4} key={k}>
+                                    <Skeleton variant="rectangular" height={40} />
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </Box>
+
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                                    {['Invoice #', 'File', 'Company', 'Customer', 'Date Sent', 'Due Date', 'Total', 'Payment Status', 'Actions'].map((h, idx) => (
+                                        <TableCell key={idx} sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>
+                                            <Skeleton variant="text" height={14} />
+                                        </TableCell>
+                                    ))}
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {Array.from({ length: 8 }).map((_, rIdx) => (
+                                    <TableRow key={rIdx}>
+                                        {Array.from({ length: 9 }).map((_, cIdx) => (
+                                            <TableCell key={cIdx}>
+                                                <Skeleton variant="text" height={14} />
+                                            </TableCell>
+                                        ))}
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                        <Skeleton variant="rectangular" width={200} height={28} />
+                    </Box>
+                </Paper>
             </Box>
         );
     }
@@ -690,24 +684,7 @@ const InvoiceManagement = () => {
 
     return (
         <Box sx={{ width: '100%' }}>
-            {/* Info Alert */}
-            <Alert
-                severity="info"
-                sx={{
-                    mb: 3,
-                    mx: 2,
-                    backgroundColor: '#eff6ff',
-                    border: '1px solid #bfdbfe',
-                    '& .MuiAlert-message': { fontSize: '12px' }
-                }}
-            >
-                <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                    Invoice Management - Actual Invoice Records
-                </Typography>
-                <Typography variant="body2" sx={{ fontSize: '11px', color: '#6b7280', mt: 0.5 }}>
-                    Displaying invoices extracted from shipment charges. Each row represents a unique invoice number which may contain multiple shipments.
-                </Typography>
-            </Alert>
+            {/* Info Alert removed per requirements */}
 
             {/* Metrics Cards */}
             <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
@@ -719,12 +696,9 @@ const InvoiceManagement = () => {
                     >
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
                             <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <AssignmentIcon sx={{ color: '#6b46c1', mr: 1 }} />
-                                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280' }}>
-                                        Total Invoices
-                                    </Typography>
-                                </Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
+                                    Total Invoices
+                                </Typography>
                                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
                                     {metrics.totalInvoices}
                                 </Typography>
@@ -744,12 +718,9 @@ const InvoiceManagement = () => {
                     >
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
                             <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <AccountBalanceIcon sx={{ color: '#dc2626', mr: 1 }} />
-                                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280' }}>
-                                        Outstanding
-                                    </Typography>
-                                </Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
+                                    Outstanding
+                                </Typography>
                                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
                                     ${metrics.totalOutstanding.toLocaleString()}
                                 </Typography>
@@ -769,12 +740,9 @@ const InvoiceManagement = () => {
                     >
                         <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
                             <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <TrendingUpIcon sx={{ color: '#16a34a', mr: 1 }} />
-                                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280' }}>
-                                        Total Paid
-                                    </Typography>
-                                </Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
+                                    Total Paid
+                                </Typography>
                                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
                                     ${metrics.totalPaid.toLocaleString()}
                                 </Typography>
@@ -801,12 +769,9 @@ const InvoiceManagement = () => {
                             }}
                         >
                             <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                    <ReceiptIcon sx={{ color: '#ef4444', mr: 1 }} />
-                                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280' }}>
-                                        Overdue
-                                    </Typography>
-                                </Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', mb: 2 }}>
+                                    Overdue
+                                </Typography>
                                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
                                     ${metrics.overdue.toLocaleString()}
                                 </Typography>
@@ -824,7 +789,7 @@ const InvoiceManagement = () => {
                 <Box sx={{ p: 3, borderBottom: '1px solid #e5e7eb' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                         <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '18px', color: '#111827' }}>
-                            Invoice Management
+                            Invoices
                         </Typography>
                         <Stack direction="row" spacing={2}>
                             <Button
@@ -842,13 +807,13 @@ const InvoiceManagement = () => {
                                 sx={{ fontSize: '12px' }}
                                 onClick={handleCreateManualInvoice}
                             >
-                                Create Manual Invoice
+                                Add Invoice
                             </Button>
                         </Stack>
                     </Box>
 
                     <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={8}>
+                        <Grid item xs={12} md={4}>
                             <TextField
                                 fullWidth
                                 size="small"
@@ -875,25 +840,72 @@ const InvoiceManagement = () => {
                             />
                         </Grid>
                         <Grid item xs={12} md={4}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel>Status Filter</InputLabel>
-                                <Select
-                                    value={statusFilter}
-                                    onChange={handleStatusFilterChange}
-                                    label="Status Filter"
-                                >
-                                    <MenuItem value="all">All Invoices</MenuItem>
-                                    <MenuItem value="uninvoiced">Uninvoiced</MenuItem>
-                                    <MenuItem value="draft">Draft</MenuItem>
-                                    <MenuItem value="invoiced">Invoiced</MenuItem>
-                                    <MenuItem value="sent">Sent</MenuItem>
-                                    <MenuItem value="viewed">Viewed</MenuItem>
-                                    <MenuItem value="partial_payment">Partial Payment</MenuItem>
-                                    <MenuItem value="paid">Paid</MenuItem>
-                                    <MenuItem value="overdue">Overdue</MenuItem>
-                                    <MenuItem value="cancelled">Cancelled</MenuItem>
-                                </Select>
-                            </FormControl>
+                            <Autocomplete
+                                options={Array.from(new Map(invoices.map(i => {
+                                    const key = i.companyId || i.companyID || i.companyCode;
+                                    const byKey = key ? companiesMap[key] : null;
+                                    // Fallback: try to find company by name or code
+                                    const byName = !byKey && i.companyName
+                                        ? Object.values(companiesMap).find(c => (c.name || c.companyName) === i.companyName)
+                                        : null;
+                                    const byCode = !byKey && i.companyCode
+                                        ? Object.values(companiesMap).find(c => c.companyID === i.companyCode || c.code === i.companyCode)
+                                        : null;
+                                    const companyDoc = byKey || byName || byCode || null;
+                                    const logo = companyDoc ? getCircleLogo(companyDoc) : (i.companyLogo || '');
+                                    return [key || i.companyName || Math.random().toString(36).slice(2), {
+                                        id: key || (companyDoc?.companyID || companyDoc?.id) || i.companyName,
+                                        name: i.companyName,
+                                        code: i.companyCode,
+                                        logo
+                                    }];
+                                })).values())}
+                                getOptionLabel={(opt) => opt?.name || ''}
+                                value={selectedCompanyFilter}
+                                onChange={(e, val) => setSelectedCompanyFilter(val)}
+                                renderOption={(props, option) => (
+                                    <li {...props}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }} src={option.logo || ''} />
+                                            <Box>
+                                                <Typography sx={{ fontSize: '12px' }}>{option?.name}</Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#6b7280' }}>{option?.code}</Typography>
+                                            </Box>
+                                        </Box>
+                                    </li>
+                                )}
+                                renderInput={(params) => (
+                                    <TextField {...params} size="small" placeholder="Filter by company" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
+                                )}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={4}>
+                            <Autocomplete
+                                options={(selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id])
+                                    ? customersByCompany[selectedCompanyFilter.id].map(c => ({
+                                        id: c.id,
+                                        name: c.name || c.companyName,
+                                        logo: c.logo || c.logoUrl || c.logoURL || c.customerLogo || ''
+                                    }))
+                                    : Array.from(new Map(invoices.map(i => [
+                                        i.customerId || i.customer?.id,
+                                        { id: i.customerId || i.customer?.id, name: i.customerName || i.customer?.name, logo: (customersMap[i.customerId || i.customer?.id]?.logo || customersMap[i.customerId || i.customer?.id]?.logoUrl || i.customerLogo || '') }
+                                    ])).values())}
+                                getOptionLabel={(opt) => opt?.name || ''}
+                                value={selectedCustomerFilter}
+                                onChange={(e, val) => setSelectedCustomerFilter(val)}
+                                renderOption={(props, option) => (
+                                    <li {...props}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Avatar sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }} src={option.logo || ''} />
+                                            <Typography sx={{ fontSize: '12px' }}>{option?.name}</Typography>
+                                        </Box>
+                                    </li>
+                                )}
+                                renderInput={(params) => (
+                                    <TextField {...params} size="small" placeholder="Filter by customer" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
+                                )}
+                            />
                         </Grid>
                     </Grid>
                 </Box>
@@ -903,12 +915,13 @@ const InvoiceManagement = () => {
                         <TableHead>
                             <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice #</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>File</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Company</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Customer</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Shipments</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice Date</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Date Sent</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Due Date</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Amount</TableCell>
-                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Invoice Status</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Total</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Payment Status</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#374151' }}>Actions</TableCell>
                             </TableRow>
                         </TableHead>
@@ -916,7 +929,6 @@ const InvoiceManagement = () => {
                             {filteredInvoices.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={8} align="center" sx={{ py: 4, color: '#6b7280' }}>
-                                        <ReceiptIcon sx={{ fontSize: 48, color: '#d1d5db', mb: 2 }} />
                                         <Typography variant="body1">No invoices found</Typography>
                                     </TableCell>
                                 </TableRow>
@@ -932,38 +944,67 @@ const InvoiceManagement = () => {
                                                 key={invoice.id}
                                                 hover
                                                 sx={{
-                                                    cursor: 'pointer',
                                                     backgroundColor: overdue ? '#fef2f2' : 'inherit'
                                                 }}
-                                                onClick={() => handleInvoiceClick(invoice)}
                                             >
                                                 <TableCell sx={{ fontSize: '12px', fontWeight: 500 }}>
-                                                    {invoice.invoiceNumber}
+                                                    <Button size="small" sx={{ fontSize: '12px', textTransform: 'none', p: 0 }} onClick={(e) => { e.stopPropagation(); handleEditInvoice(invoice); }}>
+                                                        {invoice.invoiceNumber}
+                                                    </Button>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {invoice.companyName}
+                                                    {invoice.fileUrl ? (
+                                                        <Button size="small" href={invoice.fileUrl} target="_blank" rel="noopener" startIcon={<DownloadIcon />} sx={{ fontSize: '11px' }}>
+                                                            PDF
+                                                        </Button>
+                                                    ) : 'N/A'}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Chip
-                                                        label={`${invoice.shipmentCount} shipment${invoice.shipmentCount !== 1 ? 's' : ''}`}
-                                                        size="small"
-                                                        variant="outlined"
-                                                        sx={{
-                                                            fontSize: '11px',
-                                                            height: '22px',
-                                                            borderColor: '#e5e7eb',
-                                                            color: '#374151'
-                                                        }}
-                                                    />
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Avatar
+                                                            sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
+                                                            src={(() => {
+                                                                const companyKey = invoice.companyId || invoice.companyID || invoice.companyCode;
+                                                                if (companyKey && companiesMap[companyKey]) {
+                                                                    return getCircleLogo(companiesMap[companyKey]);
+                                                                }
+                                                                const foundByName = Object.values(companiesMap).find(c => (c.name || c.companyName) === invoice.companyName);
+                                                                if (foundByName) return getCircleLogo(foundByName);
+                                                                return invoice.companyLogo || '';
+                                                            })()}
+                                                        />
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            {invoice.companyName || 'N/A'} {invoice.companyCode ? `(${invoice.companyCode})` : ''}
+                                                        </Typography>
+                                                    </Box>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {formatDate(invoice.issueDate)}
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                        <Avatar
+                                                            sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
+                                                            src={(() => {
+                                                                const cid = invoice.customerId || invoice.customer?.id;
+                                                                // Prefer hydrated directory
+                                                                if (cid && customersMap[cid]) {
+                                                                    return customersMap[cid].logo || customersMap[cid].logoUrl || '';
+                                                                }
+                                                                // Then prefer scoped list when company filter is selected
+                                                                if (selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id]) {
+                                                                    const found = customersByCompany[selectedCompanyFilter.id].find(c => c.id === cid);
+                                                                    if (found) return found.logo || found.logoUrl || '';
+                                                                }
+                                                                return invoice.customerLogo || '';
+                                                            })()}
+                                                        />
+                                                        <Typography sx={{ fontSize: '12px' }}>
+                                                            {invoice.customerName || 'N/A'}
+                                                        </Typography>
+                                                    </Box>
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>
-                                                    {formatDate(invoice.dueDate)}
-                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{formatDate(invoice.issueDate)}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>{formatDate(invoice.dueDate)}</TableCell>
                                                 <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                    ${invoice.total.toFixed(2)}
+                                                    {invoice.currency || 'CAD'}${Number((invoice.total != null ? invoice.total : (invoice.subtotal || 0) + (invoice.tax || 0)) || 0).toFixed(2)}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Chip
@@ -979,89 +1020,9 @@ const InvoiceManagement = () => {
                                                     />
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                                                        <Tooltip title="View Details">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleInvoiceClick(invoice);
-                                                                }}
-                                                            >
-                                                                <VisibilityIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        <Tooltip title="Download PDF">
-                                                            <IconButton size="small">
-                                                                <DownloadIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        <Tooltip title="Regenerate PDF">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleRegenerateInvoice(invoice);
-                                                                }}
-                                                                sx={{ color: '#3b82f6' }}
-                                                            >
-                                                                <RefreshIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        <Tooltip title="Resend Email">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleResendInvoiceEmail(invoice);
-                                                                }}
-                                                                sx={{ color: '#10b981' }}
-                                                            >
-                                                                <SendIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        {/* 🔄 NEW: Status-based action buttons */}
-                                                        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-                                                            <Tooltip title="Mark as Paid">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleMarkAsPaid(invoice);
-                                                                    }}
-                                                                    sx={{ color: '#059669' }}
-                                                                >
-                                                                    <AttachMoneyIcon sx={{ fontSize: '16px' }} />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                        )}
-                                                        {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
-                                                            <Tooltip title="Cancel Invoice">
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleCancelInvoice(invoice);
-                                                                    }}
-                                                                    sx={{ color: '#dc2626' }}
-                                                                >
-                                                                    <CancelIcon sx={{ fontSize: '16px' }} />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                        )}
-                                                        <Tooltip title="Regenerate & Resend">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleRegenerateAndResend(invoice);
-                                                                }}
-                                                                sx={{ color: '#8b5cf6' }}
-                                                            >
-                                                                <PdfIcon sx={{ fontSize: '16px' }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    </Stack>
+                                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuAnchorEl(e.currentTarget); setMenuInvoice(invoice); }}>
+                                                        <MoreVertIcon sx={{ fontSize: '16px' }} />
+                                                    </IconButton>
                                                 </TableCell>
                                             </TableRow>
                                         );
@@ -1070,6 +1031,18 @@ const InvoiceManagement = () => {
                         </TableBody>
                     </Table>
                 </TableContainer>
+
+                {/* Row actions menu */}
+                <Menu
+                    anchorEl={menuAnchorEl}
+                    open={Boolean(menuAnchorEl)}
+                    onClose={() => { setMenuAnchorEl(null); setMenuInvoice(null); }}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
+                    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleCancelInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Void</MenuItem>
+                </Menu>
 
                 <TablePagination
                     component="div"
@@ -1088,130 +1061,7 @@ const InvoiceManagement = () => {
                 />
             </Paper>
 
-            {/* Invoice Details Dialog */}
-            <Dialog
-                open={detailsOpen}
-                onClose={() => setDetailsOpen(false)}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h6">
-                            Invoice {selectedInvoice?.invoiceNumber}
-                        </Typography>
-                        <IconButton onClick={() => setDetailsOpen(false)} size="small">
-                            <ClearIcon />
-                        </IconButton>
-                    </Box>
-                </DialogTitle>
-                <DialogContent>
-                    {selectedInvoice && (
-                        <Box>
-                            <Grid container spacing={2} sx={{ mb: 3 }}>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Company</Typography>
-                                    <Typography variant="body1">{selectedInvoice.companyName}</Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Total Amount</Typography>
-                                    <Typography variant="h6">${selectedInvoice.total.toFixed(2)}</Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Issue Date</Typography>
-                                    <Typography variant="body1">{formatDate(selectedInvoice.issueDate)}</Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Due Date</Typography>
-                                    <Typography variant="body1">{formatDate(selectedInvoice.dueDate)}</Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Payment Terms</Typography>
-                                    <Typography variant="body1">{selectedInvoice.paymentTerms}</Typography>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                                    <Chip
-                                        label={isOverdue(selectedInvoice) ? 'overdue' : selectedInvoice.status}
-                                        size="small"
-                                        sx={{
-                                            bgcolor: getStatusColor(isOverdue(selectedInvoice) ? 'overdue' : selectedInvoice.status).bgcolor,
-                                            color: getStatusColor(isOverdue(selectedInvoice) ? 'overdue' : selectedInvoice.status).color,
-                                            textTransform: 'capitalize'
-                                        }}
-                                    />
-                                </Grid>
-                            </Grid>
-
-                            <Divider sx={{ my: 2 }} />
-
-                            <Typography variant="h6" sx={{ mb: 2 }}>
-                                Line Items ({selectedInvoice.lineItems?.length || 0} shipments)
-                            </Typography>
-
-                            <TableContainer component={Paper} variant="outlined">
-                                <Table size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Shipment ID</TableCell>
-                                            <TableCell>Description</TableCell>
-                                            <TableCell>Carrier</TableCell>
-                                            <TableCell align="right">Amount</TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {selectedInvoice.lineItems?.map((item, index) => (
-                                            <TableRow key={index}>
-                                                <TableCell sx={{ fontSize: '12px' }}>{item.shipmentId}</TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>{item.description}</TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>{item.carrier}</TableCell>
-                                                <TableCell align="right" sx={{ fontSize: '12px' }}>
-                                                    ${item.amount.toFixed(2)}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                        <TableRow>
-                                            <TableCell colSpan={3} sx={{ fontWeight: 600 }}>Subtotal</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 600 }}>
-                                                ${selectedInvoice.subtotal.toFixed(2)}
-                                            </TableCell>
-                                        </TableRow>
-                                        <TableRow>
-                                            <TableCell colSpan={3} sx={{ fontWeight: 600 }}>Tax</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 600 }}>
-                                                ${selectedInvoice.tax.toFixed(2)}
-                                            </TableCell>
-                                        </TableRow>
-                                        <TableRow>
-                                            <TableCell colSpan={3} sx={{ fontWeight: 700, fontSize: '14px' }}>Total</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: '14px' }}>
-                                                ${selectedInvoice.total.toFixed(2)}
-                                            </TableCell>
-                                        </TableRow>
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                        </Box>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    {selectedInvoice && selectedInvoice.status !== 'paid' && (
-                        <Button
-                            variant="contained"
-                            color="success"
-                            onClick={() => {
-                                handleStatusUpdate(selectedInvoice.id, 'paid');
-                                setDetailsOpen(false);
-                            }}
-                        >
-                            Mark as Paid
-                        </Button>
-                    )}
-                    <Button onClick={() => setDetailsOpen(false)}>
-                        Close
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            {/* Legacy dialog removed; clicking invoice number or menu now opens InvoiceForm overlay */}
 
             {/* Manual Invoice Form Dialog */}
             {createInvoiceOpen && (

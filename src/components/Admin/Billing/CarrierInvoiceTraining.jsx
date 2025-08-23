@@ -391,7 +391,7 @@ export default function CarrierInvoiceTraining() {
                                         if (!smp) return;
                                         const fn = httpsCallable(functions, 'processPdfFile');
                                         await fn({ fileName: smp.fileName || `${smp.exampleId}.pdf`, uploadUrl: smp.downloadURL, carrier: carrierId, settings: { apMode: true } });
-                                        enqueueSnackbar('Preview parsing started. Check AR Processing for results.', { variant: 'info' });
+                                        enqueueSnackbar('Preview parsing started. Check AP Processing for results.', { variant: 'info' });
                                     } catch (e) {
                                         enqueueSnackbar(e.message, { variant: 'error' });
                                     }

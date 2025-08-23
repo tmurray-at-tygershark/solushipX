@@ -98,7 +98,7 @@ import EDIResults from './EDIResults';
 import EDIMapping from './EDIMapping';
 import PaymentTerms from './PaymentTerms';
 import InvoiceManagement from './InvoiceManagement';
-import ChargesTab from './ChargesTab';
+// ChargesTab removed per latest requirements
 import AdminBreadcrumb from '../AdminBreadcrumb';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -108,9 +108,9 @@ import { formatDateTimeForBilling } from '../../../utils/dateUtils';
 
 // Import Sales Commission Module
 import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
-import GenerateInvoicesPage from './GenerateInvoicesPage';
+// GenerateInvoicesPage removed per latest requirements
 import BulkInvoiceGenerator from './BulkInvoiceGenerator';
-import ARProcessing from './APProcessing';
+import APProcessing from './APProcessing';
 import CarrierInvoiceTraining from './CarrierInvoiceTraining';
 
 const BillingDashboard = ({ initialTab = 'overview' }) => {
@@ -211,8 +211,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
 
         if (path.includes('/admin/billing/payment-terms')) {
             setActiveTab('payment-terms');
-        } else if (path.includes('/admin/billing/ar-processing')) {
-            setActiveTab('ar-processing');
+        } else if (path.includes('/admin/billing/ap-processing')) {
+            setActiveTab('ap-processing');
         } else if (path.includes('/admin/billing/generate')) {
             // Handle generate tab properly
             setActiveTab('generate');
@@ -1050,8 +1050,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             case 'invoices':
                 navigate('/admin/billing');
                 break;
-            case 'ar-processing':
-                navigate('/admin/billing/ar-processing');
+            case 'ap-processing':
+                navigate('/admin/billing/ap-processing');
                 break;
             case 'generate':
                 navigate('/admin/billing/generate');
@@ -2314,9 +2314,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 >
                     <Tab label="Overview" value="overview" />
                     <Tab label="Invoices" value="invoices" />
-                    <Tab label="AR Processing" value="ar-processing" />
-                    <Tab label="Charges" value="charges" />
-                    <Tab label="Generate Invoices" value="generate" />
+                    <Tab label="AP Processing" value="ap-processing" />
+                    {/* Removed Charges and Generate tabs */}
                     <Tab label="Manual Invoice Gen" value="bulk" />
                     <Tab label="Business Invoicing" value="business" />
                     <Tab label="Payment Terms" value="payment-terms" />
@@ -2326,7 +2325,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 </Tabs>
             </Box>
 
-            {activeTab === 'charges' && <ChargesTab />}
+            {/* Charges tab content removed */}
 
             {activeTab === 'overview' && (
                 <>
@@ -2569,17 +2568,15 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                 <InvoiceManagement />
             )}
 
-            {activeTab === 'ar-processing' && (
-                <ARProcessing />
+            {activeTab === 'ap-processing' && (
+                <APProcessing />
             )}
 
             {activeTab === 'payment-terms' && (
                 <PaymentTerms />
             )}
 
-            {activeTab === 'generate' && (
-                <GenerateInvoicesPage />
-            )}
+            {/* Generate tab content removed */}
 
             {activeTab === 'bulk' && (
                 <BulkInvoiceGenerator />
