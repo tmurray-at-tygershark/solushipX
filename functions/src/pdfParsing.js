@@ -1003,7 +1003,11 @@ const processPdfFile = onCall(async (request) => {
             fileName,
             uploadUrl,
             batchId,
-            processingStatus: 'processing',
+            processingStatus: 'initializing',
+            currentStep: 'setup',
+            stepProgress: 0,
+            totalSteps: 6, // PDF Analysis, OCR, AI Processing, Data Extraction, Company Lookup, Finalization
+            stepDescription: 'Initializing PDF processing...',
             uploadDate: admin.firestore.FieldValue.serverTimestamp(),
             userId: request.auth.uid,
             settings: {
@@ -1022,11 +1026,53 @@ const processPdfFile = onCall(async (request) => {
             metadata: {
                 fileSize: null,
                 pageCount: null,
-                processingVersion: '2.1'
+                processingVersion: '2.2',
+                estimatedDuration: '30-60 seconds'
             }
         });
 
+        // Helper function to update processing status in real-time
+        const updateProcessingStatus = async (step, progress, description, additionalData = {}) => {
+            try {
+                const updateData = {
+                    processingStatus: 'processing',
+                    currentStep: step,
+                    stepProgress: progress,
+                    stepDescription: description,
+                    lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+                    ...additionalData
+                };
+                
+                await uploadDoc.update(updateData);
+                console.log(`📊 Status Update: ${step} (${progress}%) - ${description}`);
+                
+                // Also update invoice document if in AP mode
+                if (settings?.apMode === true && fileName) {
+                    try {
+                        const invoiceRef = db.collection('invoices').doc(fileName);
+                        const invoiceDoc = await invoiceRef.get();
+                        if (invoiceDoc.exists) {
+                            await invoiceRef.update({
+                                status: 'processing',
+                                processingStep: step,
+                                processingProgress: progress,
+                                processingDescription: description,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    } catch (invoiceUpdateErr) {
+                        console.warn('Invoice status update failed:', invoiceUpdateErr.message);
+                    }
+                }
+            } catch (err) {
+                console.warn('Status update failed:', err.message);
+            }
+        };
+
         try {
+            // Step 1: PDF Analysis
+            await updateProcessingStatus('pdf_analysis', 15, 'Analyzing PDF structure and extracting pages...');
+            
             // Optional Step 0 (AP Mode): Classify pages by document type for AP-specific workflows
             let apPageClassification = null;
             if (settings.apMode === true) {
@@ -1044,6 +1090,7 @@ const processPdfFile = onCall(async (request) => {
             await updateProcessingStep(uploadDoc.id, 'pdf_analysis', 'completed', pdfAnalysis);
 
             // Step 2: Enhanced carrier detection with intelligent multi-document parsing
+            await updateProcessingStatus('carrier_detection', 30, 'Detecting carrier and analyzing document structure...');
             console.log('Step 2: Enhanced carrier detection...');
             let carrierInfo;
             
@@ -1068,6 +1115,7 @@ const processPdfFile = onCall(async (request) => {
             await updateProcessingStep(uploadDoc.id, 'carrier_detection', 'completed', carrierInfo);
             
             // Step 3: Multi-Modal Analysis
+            await updateProcessingStatus('ai_analysis', 50, 'Performing AI analysis and data extraction...');
             console.log('Step 3: Enhanced Multi-Modal Analysis with AI Vision...');
             
             // Use multi-modal analysis if enabled, fallback to text-only
@@ -1099,7 +1147,8 @@ const processPdfFile = onCall(async (request) => {
                 validationScore: validatedData.validation?.confidence || 1.0
             });
             
-            // Step 5: Intelligent shipment matching with carrier filtering
+            // Step 5: Intelligent shipment matching with carrier filtering  
+            await updateProcessingStatus('shipment_matching', 70, 'Matching invoice data with shipment records...');
             console.log('Step 5: Starting intelligent carrier-filtered shipment matching...');
             // In AP mode, leverage page classification (if available) to prefer identifiers
             // from pages labeled as invoice, ignoring BOL/confirmation for cost lines
@@ -1176,7 +1225,52 @@ const processPdfFile = onCall(async (request) => {
 
             // Update processing statistics
             await updateProcessingStatistics(carrierInfo.id, processedData.recordCount);
+            
+            // Step 6: Finalization and data persistence
+            await updateProcessingStatus('finalization', 90, 'Finalizing processing and saving results...');
+            
+            // Persist/update an invoice record for AP backfill so UI reflects completed parsing
+            try {
+                if (settings?.apMode === true || settings?.extractForBackfill === true) {
+                    await persistBackfilledInvoice({
+                        uploadId: uploadDoc.id,
+                        uploadUrl,
+                        fileName,
+                        extractedInvoiceNumber,
+                        processedData,
+                        userId: request.auth.uid,
+                        settings
+                    });
+                }
+            } catch (persistErr) {
+                console.warn('Non-fatal backfill persist error:', persistErr?.message || persistErr);
+                // Mark the invoice as error status if backfill fails
+                try {
+                    if (fileName) {
+                        const errorRef = await db.collection('invoices').doc(fileName).get();
+                        if (errorRef.exists) {
+                            await errorRef.ref.update({
+                                status: 'error',
+                                paymentStatus: 'error',
+                                error: persistErr?.message || 'Processing failed',
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                } catch (updateErr) {
+                    console.warn('Failed to update error status:', updateErr?.message);
+                }
+            }
 
+            // Final status update - mark as completed
+            await updateProcessingStatus('completed', 100, 'Processing completed successfully!', {
+                processingStatus: 'completed',
+                endTime: admin.firestore.FieldValue.serverTimestamp(),
+                processingTime: Date.now() - startTime,
+                recordCount: processedData.recordCount || 0,
+                invoiceNumber: extractedInvoiceNumber || 'N/A'
+            });
+            
             console.log('Enhanced PDF processing completed successfully');
             
             // Return full processed data for frontend display
@@ -1201,15 +1295,37 @@ const processPdfFile = onCall(async (request) => {
             if (uploadDoc) {
                 await uploadDoc.update({
                     processingStatus: 'failed',
+                    currentStep: 'error',
+                    stepProgress: 0,
+                    stepDescription: `Processing failed: ${processingError.message}`,
                     error: processingError.message,
                     endTime: admin.firestore.FieldValue.serverTimestamp(),
-                    processingTime: Date.now() - startTime
+                    processingTime: Date.now() - startTime,
+                    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
                 });
                 
                 await updateProcessingStep(uploadDoc.id, 'processing_error', 'failed', {
                     error: processingError.message,
                     stack: processingError.stack
                 });
+            }
+            
+            // For invoice backfill mode, also mark the invoice as error
+            if ((settings?.apMode === true || settings?.extractForBackfill === true) && fileName) {
+                try {
+                    const errorRef = await db.collection('invoices').doc(fileName).get();
+                    if (errorRef.exists) {
+                        await errorRef.ref.update({
+                            status: 'error',
+                            paymentStatus: 'error',
+                            error: processingError.message,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log(`❌ Marked invoice as error: ${fileName}`);
+                    }
+                } catch (updateErr) {
+                    console.warn('Failed to update invoice error status:', updateErr?.message);
+                }
             }
             
             throw processingError;
@@ -2160,6 +2276,12 @@ async function parsePdfDirectlyWithGemini(pdfUrl, carrierInfo, settings) {
 
         const carrierSpecificInstructions = getCarrierSpecificInstructions(carrierInfo);
         
+        // Choose the appropriate prompt based on processing mode
+        const isInvoiceBackfillMode = settings?.extractForBackfill === true || settings?.apMode === true;
+        const promptText = isInvoiceBackfillMode ? 
+            generateInvoiceBackfillPrompt(carrierInfo, carrierSpecificInstructions) :
+            generateShipmentExtractionPrompt(carrierInfo, carrierSpecificInstructions);
+
         // Send PDF directly to Gemini
         const request = {
             contents: [
@@ -2167,75 +2289,7 @@ async function parsePdfDirectlyWithGemini(pdfUrl, carrierInfo, settings) {
                     role: 'user',
                     parts: [
                         {
-                            text: `Extract ALL shipping data from this ${carrierInfo.name} document and return ONLY valid JSON:
-
-${carrierSpecificInstructions}
-
-Return JSON with this exact structure:
-{
-    "shipments": [
-        {
-            "trackingNumber": "string",
-            "shipmentDate": "YYYY-MM-DD",
-            "serviceType": "string",
-            "weight": {
-                "value": number,
-                "unit": "LB or KG"
-            },
-            "dimensions": {
-                "length": number,
-                "width": number,
-                "height": number,
-                "unit": "IN or CM"
-            },
-            "from": {
-                "company": "string",
-                "name": "string", 
-                "address": "string",
-                "city": "string",
-                "province": "string",
-                "postalCode": "string",
-                "country": "string",
-                "phone": "string"
-            },
-            "to": {
-                "company": "string",
-                "name": "string",
-                "address": "string", 
-                "city": "string",
-                "province": "string",
-                "postalCode": "string",
-                "country": "string",
-                "phone": "string"
-            },
-            "charges": [
-                {
-                    "description": "string",
-                    "amount": number,
-                    "currency": "CAD or USD"
-                }
-            ],
-            "totalAmount": number,
-            "currency": "CAD or USD",
-            "references": {
-                "customerRef": "string",
-                "invoiceRef": "string",
-                "manifestRef": "string",
-                "other": ["string"]
-            }
-        }
-    ],
-    "metadata": {
-        "documentType": "invoice|bol|manifest",
-        "documentNumber": "string",
-        "documentDate": "YYYY-MM-DD",
-        "totalShipments": number,
-        "totalAmount": number,
-        "currency": "CAD or USD"
-    }
-}
-
-Important: Extract ALL shipments from ALL pages of the document.`
+                            text: promptText
                         },
                         {
                             inlineData: {
@@ -5108,9 +5162,24 @@ async function tryDateAmountMatch(potentialMatches, invoiceShipment, connectedCo
         const shipmentDate = new Date(invoiceShipment.shipmentDate);
         const amount = invoiceShipment.totalAmount;
         
+        // Validate the date before creating timestamps
+        if (isNaN(shipmentDate.getTime())) {
+            console.warn('Invalid shipment date for date/amount matching:', invoiceShipment.shipmentDate);
+            return [];
+        }
+        
         // Search within ±3 days of the shipment date
-        const startDate = admin.firestore.Timestamp.fromDate(new Date(shipmentDate.getTime() - 3 * 24 * 60 * 60 * 1000));
-        const endDate = admin.firestore.Timestamp.fromDate(new Date(shipmentDate.getTime() + 3 * 24 * 60 * 60 * 1000));
+        const startTime = shipmentDate.getTime() - 3 * 24 * 60 * 60 * 1000;
+        const endTime = shipmentDate.getTime() + 3 * 24 * 60 * 60 * 1000;
+        
+        // Validate timestamp values are integers
+        if (!Number.isInteger(startTime) || !Number.isInteger(endTime)) {
+            console.warn('Invalid timestamp values for date/amount matching:', { startTime, endTime });
+            return [];
+        }
+        
+        const startDate = admin.firestore.Timestamp.fromDate(new Date(startTime));
+        const endDate = admin.firestore.Timestamp.fromDate(new Date(endTime));
         
         const shipmentQuery = db.collection('shipments')
             .where('bookedAt', '>=', startDate)
@@ -5403,6 +5472,457 @@ function extractInvoiceNumber(validatedData, carrierInfo) {
         console.error('Error extracting invoice number:', error);
         return null;
     }
+}
+
+// Create or update backfilled invoice record in Firestore for AP processing
+async function persistBackfilledInvoice({ uploadId, uploadUrl, fileName, extractedInvoiceNumber, processedData, userId, settings }) {
+    try {
+        console.log(`🔄 Starting invoice persistence for ${fileName}`);
+        
+        // Validate required parameters
+        if (!uploadUrl || !fileName) {
+            throw new Error('Missing required parameters: uploadUrl and fileName are required');
+        }
+        const structured = processedData?.structuredData || {};
+        const meta = structured?.metadata || {};
+        const shipments = Array.isArray(structured?.shipments) ? structured.shipments : [];
+        const matches = Array.isArray(processedData?.matchingResults?.matches) ? processedData.matchingResults.matches : [];
+
+        // Helper: derive shipment IDs from best matches or visible table content (ICAL-XXXXXX pattern)
+        const deriveShipmentIds = () => {
+            const ids = new Set();
+            
+            // Strategy 1: From matched shipments (AP mode)
+            for (const m of matches) {
+                const bid = m?.bestMatch?.shipment?.shipmentID || m?.bestMatch?.shipment?.id || null;
+                if (bid && /^ICAL-[A-Z0-9]{6}$/i.test(bid)) ids.add(bid.toUpperCase());
+            }
+            
+            // Strategy 2: From structured shipments (invoice backfill mode - prioritize shipmentId field)
+            shipments.forEach(s => {
+                // First check the shipmentId field (new format from enhanced prompt)
+                if (s.shipmentId && /^ICAL-[A-Z0-9]{6}$/i.test(s.shipmentId)) {
+                    ids.add(s.shipmentId.toUpperCase());
+                    return; // Found it, skip other checks for this shipment
+                }
+                
+                // Fallback to other fields
+                const sid = s.SHIPMENT_ID || s.id || s.trackingNumber || '';
+                const found = String(sid).match(/(ICAL-[A-Z0-9]{6})/i);
+                if (found) ids.add(found[1].toUpperCase());
+                
+                // Also scan detail strings
+                const detailStr = [s.description, s.details, s.notes, JSON.stringify(s.references || {})].join(' ');
+                const all = detailStr.match(/ICAL-[A-Z0-9]{6}/gi);
+                if (all) all.forEach(v => ids.add(v.toUpperCase()));
+            });
+            
+            // Strategy 3: Scan raw extracted text for shipment IDs (fallback)
+            if (ids.size === 0 && structured.extractedText) {
+                const rawMatches = structured.extractedText.match(/ICAL-[A-Z0-9]{6}/gi);
+                if (rawMatches) rawMatches.forEach(v => ids.add(v.toUpperCase()));
+            }
+            
+            return Array.from(ids);
+        };
+
+        const total = Number(meta.totalAmount || shipments.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0) || 0);
+        const currency = meta.currency || shipments[0]?.currency || 'CAD';
+        const issueDateIso = meta.issueDate || meta.documentDate || new Date().toISOString().slice(0, 10);
+        // Extract Due Date strictly from invoice header (no computed fallback)
+        const dueDateIso = meta.dueDate || null;
+
+        // Build shipment IDs from robust extractor
+        const shipmentIds = deriveShipmentIds();
+        console.log(`📦 Extracted shipment IDs: ${JSON.stringify(shipmentIds)}`);
+
+        // Look up company/customer using shipmentID field (not document ID)
+        let companyId = null, companyName = '', companyCode = '', companyLogo = '';
+        let customerId = null, customerName = '', customerLogo = '';
+        if (shipmentIds.length > 0) {
+            try {
+                // Try each shipment ID until we find one that exists (including OCR variations)
+                let foundShipment = null;
+                for (const shipmentId of shipmentIds) {
+                    console.log(`🔍 Looking up company/customer for shipment ID: ${shipmentId}`);
+                    
+                    // First try the exact shipment ID
+                    let q = db.collection('shipments').where('shipmentID', '==', shipmentId).limit(1);
+                    let shipSnap = await q.get();
+                    if (!shipSnap.empty) {
+                        foundShipment = shipSnap.docs[0].data();
+                        console.log(`📋 Found shipment data for ${shipmentId} - companyID: ${foundShipment.companyID || foundShipment.companyId}, customerID: ${foundShipment.customerID || foundShipment.customerId}`);
+                        break;
+                    } else {
+                        console.warn(`❌ No shipment found with shipmentID: ${shipmentId}`);
+                        
+                        // Try OCR variations if exact match fails
+                        if (shipmentId.includes('ICAL-')) {
+                            const ocrVariations = generateOcrVariations(shipmentId);
+                            console.log(`🔄 Trying OCR variations for ${shipmentId}: ${ocrVariations.slice(0, 5).join(', ')}...`);
+                            
+                            for (const variation of ocrVariations) {
+                                const varQ = db.collection('shipments').where('shipmentID', '==', variation).limit(1);
+                                const varSnap = await varQ.get();
+                                if (!varSnap.empty) {
+                                    foundShipment = varSnap.docs[0].data();
+                                    console.log(`✅ Found shipment with OCR variation ${variation} (original: ${shipmentId}) - companyID: ${foundShipment.companyID || foundShipment.companyId}, customerID: ${foundShipment.customerID || foundShipment.customerId}`);
+                                    break;
+                                }
+                            }
+                            if (foundShipment) break;
+                        }
+                    }
+                }
+                
+                if (foundShipment) {
+                    companyId = foundShipment.companyID || foundShipment.companyId || null;
+                    
+                    // 🎯 APPLY SAME CUSTOMER IDENTIFICATION LOGIC AS ShipmentTableRow.jsx
+                    // Priority order for customer ID extraction (matching shipment table logic exactly)
+                    customerId = foundShipment.customerId ||
+                                foundShipment.customerID ||
+                                foundShipment.customer?.id ||
+                                foundShipment.shipFrom?.customerID ||
+                                foundShipment.shipFrom?.customerId ||
+                                foundShipment.shipFrom?.addressClassID ||
+                                null;
+                    
+                    console.log(`🎯 Customer ID extracted using ShipmentTableRow priority logic:`, {
+                        shipmentId: foundShipment.shipmentID,
+                        customerId: foundShipment.customerId,
+                        customerID: foundShipment.customerID,
+                        customerObjectId: foundShipment.customer?.id,
+                        shipFromCustomerID: foundShipment.shipFrom?.customerID,
+                        shipFromCustomerId: foundShipment.shipFrom?.customerId,
+                        shipFromAddressClassID: foundShipment.shipFrom?.addressClassID,
+                        resolvedCustomerId: customerId
+                    });
+                    
+                    // company lookup by companyID field
+                    if (companyId) {
+                        const cs = await db.collection('companies').where('companyID', '==', companyId).limit(1).get();
+                        if (!cs.empty) {
+                            const cval = cs.docs[0].data();
+                            companyName = cval.name || cval.companyDisplayName || '';
+                            companyCode = cval.companyID || '';
+                            companyLogo = cval.logos?.circle || cval.logos?.light || cval.logoUrl || '';
+                            console.log(`🏢 Found company: ${companyName} (${companyCode})`);
+                        } else {
+                            console.warn(`❌ No company found with companyID: ${companyId}`);
+                        }
+                    }
+                    // 🎯 CUSTOMER LOOKUP WITH DUAL STRATEGY (matching ShipmentTableRow.jsx exactly)
+                    if (customerId) {
+                        let customerData = null;
+
+                        // First: Try to find by customerID field (business ID like "EMENPR")
+                        const customerQuery = db.collection('customers').where('customerID', '==', customerId).limit(1);
+                        const customerSnapshot = await customerQuery.get();
+
+                        if (!customerSnapshot.empty) {
+                            const customerDocFromQuery = customerSnapshot.docs[0];
+                            customerData = { id: customerDocFromQuery.id, ...customerDocFromQuery.data() };
+                            console.log(`✅ Found customer by customerID field: ${customerId} -> ${customerData.name || customerData.companyName}`);
+                        } else {
+                            // Second: Try to find by document ID (for cases like "EHFJtVsUe5XRaBuejQBC")
+                            try {
+                                const customerDocRef = db.collection('customers').doc(customerId);
+                                const customerDoc = await customerDocRef.get();
+
+                                if (customerDoc.exists) {
+                                    customerData = { id: customerDoc.id, ...customerDoc.data() };
+                                    console.log(`✅ Found customer by document ID: ${customerId} -> ${customerData.name || customerData.companyName}`);
+                                }
+                            } catch (docError) {
+                                // Not a valid document ID, that's fine
+                                console.log(`📋 Customer ID ${customerId} is not a valid document ID`);
+                            }
+                        }
+
+                        if (customerData) {
+                            customerName = customerData.name || customerData.companyName || '';
+                            customerLogo = customerData.logo || customerData.logoUrl || customerData.customerLogo || '';
+                            console.log(`👤 Found customer using dual lookup: ${customerName}`);
+                        } else {
+                            console.warn(`❌ No customer found with ID: ${customerId} using dual lookup strategy`);
+                        }
+                    }
+                } else {
+                    console.warn(`❌ No shipments found for any of the extracted IDs: ${JSON.stringify(shipmentIds)}`);
+                    // If no shipments found, try to extract company/customer from the bill-to section
+                    if (meta.billToCompany) {
+                        companyName = meta.billToCompany;
+                        console.log(`💡 Using company name from bill-to section: ${companyName}`);
+                    }
+                }
+            } catch (lookupErr) {
+                console.error('Lookup company/customer failed:', lookupErr.message);
+            }
+        } else {
+            console.warn('❌ No shipment IDs found for company/customer lookup');
+        }
+
+        // Prefer deterministic placeholder id if present
+        let targetRef = null;
+        if (fileName) {
+            const byId = await db.collection('invoices').doc(fileName).get();
+            if (byId.exists) targetRef = byId.ref;
+        }
+        if (!targetRef) {
+            const snap = await db.collection('invoices')
+                .where('fileUrl', '==', uploadUrl)
+                .orderBy('createdAt', 'desc')
+                .limit(1)
+                .get();
+            if (!snap.empty) targetRef = snap.docs[0].ref;
+        }
+
+        // Safely convert dates to proper Date objects for Firestore
+        const safeDate = (dateStr) => {
+            if (!dateStr) return null;
+            try {
+                const date = new Date(dateStr);
+                return isNaN(date.getTime()) ? null : date;
+            } catch (e) {
+                console.warn('Invalid date:', dateStr, e.message);
+                return null;
+            }
+        };
+
+        const payload = {
+            invoiceNumber: extractedInvoiceNumber || meta.invoiceNumber || meta.documentNumber || '',
+            issueDate: safeDate(issueDateIso),
+            dueDate: safeDate(dueDateIso),
+            paymentTerms: meta.paymentTerms || 'Net 30',
+            status: 'outstanding', // Processing completed successfully 
+            paymentStatus: 'outstanding',
+            total: Number(total) || 0,
+            currency: String(currency || 'CAD'),
+            companyId: companyId || null,
+            companyCode: companyCode || '',
+            companyName: companyName || '',
+            companyLogo: companyLogo || '',
+            customerId: customerId || null,
+            customerName: customerName || '',
+            customerLogo: customerLogo || '',
+            shipmentIds: Array.isArray(shipmentIds) ? shipmentIds : [],
+            fileUrl: String(uploadUrl || ''),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedBy: String(userId || ''),
+            apBackfill: { 
+                uploadId: String(uploadId || ''), 
+                fileName: String(fileName || ''), 
+                matchingStats: processedData?.matchingResults?.stats || null,
+                extractedData: {
+                    billToCompany: String(meta.billToCompany || ''),
+                    billToAddress: String(meta.billToAddress || ''),
+                    totalShipments: Number(shipmentIds.length || 0),
+                    processingMode: 'invoice_backfill'
+                }
+            }
+        };
+
+        if (targetRef) {
+            // Check current status to preserve processing state briefly
+            const currentDoc = await targetRef.get();
+            const currentStatus = currentDoc.exists ? currentDoc.data().status : null;
+            
+            const finalStatus = currentStatus === 'processing' ? 
+                'processing' : // Keep processing status temporarily
+                ((Number(total) || 0) > 0 ? 'outstanding' : 'completed');
+            
+            await targetRef.update({
+                ...payload,
+                status: finalStatus
+            });
+            console.log(`✅ Updated existing invoice placeholder: ${targetRef.id} (status: ${finalStatus})`);
+            
+            // If we kept processing status, schedule a delayed update to final status
+            if (finalStatus === 'processing') {
+                setTimeout(async () => {
+                    try {
+                        await targetRef.update({
+                            status: (Number(total) || 0) > 0 ? 'outstanding' : 'completed'
+                        });
+                        console.log(`⏰ Delayed status update for ${targetRef.id} to final status`);
+                    } catch (delayedErr) {
+                        console.warn('Delayed status update failed:', delayedErr.message);
+                    }
+                }, 2000); // 2 second delay to show processing status
+            }
+        } else {
+            const newDoc = await db.collection('invoices').add({
+                ...payload,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                backfillSource: 'ap_processing'
+            });
+            console.log(`✅ Created new invoice record: ${newDoc.id}`);
+        }
+    } catch (e) {
+        console.error('persistBackfilledInvoice error:', {
+            message: e?.message || e,
+            code: e?.code,
+            details: e?.details,
+            fileName: fileName,
+            uploadUrl: uploadUrl,
+            stack: e?.stack
+        });
+        
+        // Try to mark the document as error if possible
+        try {
+            if (fileName) {
+                const errorRef = await db.collection('invoices').doc(fileName).get();
+                if (errorRef.exists) {
+                    await errorRef.ref.update({
+                        status: 'error',
+                        paymentStatus: 'error',
+                        error: `Processing failed: ${e?.message || 'Unknown error'}`,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log(`❌ Marked invoice ${fileName} as error due to persistence failure`);
+                }
+            }
+        } catch (markError) {
+            console.warn('Failed to mark invoice as error:', markError?.message);
+        }
+        
+        // Re-throw for upstream handling
+        throw e;
+    }
+}
+
+// Generate specialized prompt for invoice backfill processing
+function generateInvoiceBackfillPrompt(carrierInfo, carrierSpecificInstructions) {
+    return `Extract ALL invoice data from this ${carrierInfo.name} document and return ONLY valid JSON.
+
+CRITICAL REQUIREMENTS FOR INVOICE BACKFILL:
+1. Focus on INVOICE-LEVEL data extraction, not individual shipment details
+2. Extract the INVOICE NUMBER from the top header section (usually in the format like "1001017")
+3. Extract the ISSUE DATE from the top-right header block
+4. Extract the DUE DATE from the top-right header block (look for "Due Date:" specifically)
+5. Extract the TOTAL AMOUNT from the invoice total/summary section
+6. Extract ALL SHIPMENT IDs from the FIRST COLUMN of the shipments table (e.g., ICAL-22O9JN, ICAL-XXXXXX format)
+7. Extract company and customer billing information from "BILL TO" section
+
+${carrierSpecificInstructions}
+
+Return JSON with this EXACT structure for invoice backfill:
+{
+    "metadata": {
+        "documentType": "invoice",
+        "documentNumber": "string (invoice number from header)",
+        "invoiceNumber": "string (same as documentNumber)",
+        "documentDate": "YYYY-MM-DD (issue date from top-right)",
+        "issueDate": "YYYY-MM-DD (issue date from top-right)",
+        "dueDate": "YYYY-MM-DD (due date from top-right header, NOT calculated)",
+        "totalAmount": number,
+        "currency": "CAD or USD",
+        "billToCompany": "string (from BILL TO section)",
+        "billToAddress": "string (full billing address)"
+    },
+    "shipments": [
+        {
+            "shipmentId": "string (from FIRST column of table, e.g., ICAL-22O9JN)",
+            "trackingNumber": "string (same as shipmentId)",
+            "description": "string (shipment description)",
+            "charges": [
+                {
+                    "description": "string (e.g., Freight, Fuel Surcharge)",
+                    "amount": number,
+                    "currency": "CAD or USD"
+                }
+            ],
+            "totalAmount": number,
+            "currency": "CAD or USD"
+        }
+    ],
+    "extractedText": "string (all raw text from document for debugging)"
+}
+
+CRITICAL EXTRACTION RULES:
+- ALWAYS extract the Due Date directly from the invoice header "Due Date:" field
+- NEVER calculate or derive the due date from payment terms
+- Shipment IDs are ALWAYS in the FIRST column of the shipments table
+- Look for the pattern ICAL-XXXXXX or similar customer prefix patterns
+- Extract the actual invoice number from the header, not reference numbers
+- Focus on the "BILL TO" section for company/customer information
+- Extract ALL shipments listed in the table, not just the first one
+
+Important: This is for INVOICE BACKFILL - prioritize invoice-level data over shipment details.`;
+}
+
+// Generate standard prompt for shipment extraction processing
+function generateShipmentExtractionPrompt(carrierInfo, carrierSpecificInstructions) {
+    return `Extract ALL shipping data from this ${carrierInfo.name} document and return ONLY valid JSON:
+
+${carrierSpecificInstructions}
+
+Return JSON with this exact structure:
+{
+    "shipments": [
+        {
+            "trackingNumber": "string",
+            "shipmentDate": "YYYY-MM-DD",
+            "serviceType": "string",
+            "weight": {
+                "value": number,
+                "unit": "LB or KG"
+            },
+            "dimensions": {
+                "length": number,
+                "width": number,
+                "height": number,
+                "unit": "IN or CM"
+            },
+            "from": {
+                "company": "string",
+                "name": "string", 
+                "address": "string",
+                "city": "string",
+                "province": "string",
+                "postalCode": "string",
+                "country": "string",
+                "phone": "string"
+            },
+            "to": {
+                "company": "string",
+                "name": "string",
+                "address": "string", 
+                "city": "string",
+                "province": "string",
+                "postalCode": "string",
+                "country": "string",
+                "phone": "string"
+            },
+            "charges": [
+                {
+                    "description": "string",
+                    "amount": number,
+                    "currency": "CAD or USD"
+                }
+            ],
+            "totalAmount": number,
+            "currency": "CAD or USD",
+            "references": {
+                "customerRef": "string",
+                "invoiceRef": "string",
+                "manifestRef": "string",
+                "other": ["string"]
+            }
+        }
+    ],
+    "metadata": {
+        "documentType": "invoice|bol|manifest",
+        "documentNumber": "string",
+        "documentDate": "YYYY-MM-DD",
+        "totalShipments": number,
+        "totalAmount": number,
+        "currency": "CAD or USD"
+    }
+}
+
+Important: Extract ALL shipments from ALL pages of the document.`;
 }
 
 module.exports = {

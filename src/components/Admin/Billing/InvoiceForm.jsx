@@ -104,19 +104,25 @@ const InvoiceForm = ({ invoiceId, onClose, onSuccess }) => {
     const fetchCustomers = async (companyId) => {
         try {
             if (!companyId) { setCustomers([]); return; }
+            console.log('🔍 Fetching customers for companyId:', companyId);
+
             const customersRef = collection(db, 'customers');
             let q1 = query(customersRef, where('companyID', '==', companyId));
             let qs = await getDocs(q1);
             let data = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+            console.log('📋 Found customers by companyID:', data.length, data.map(c => `${c.name || c.companyName} (${c.customerID || c.id})`));
+
             // Fallback: if no results, try resolving docId → business companyID
             if (data.length === 0) {
                 try {
                     const compDoc = await getDoc(doc(db, 'companies', companyId));
                     const businessId = compDoc.exists() ? (compDoc.data().companyID || compDoc.id) : null;
+                    console.log('🔄 Trying fallback with businessId:', businessId);
                     if (businessId && businessId !== companyId) {
                         const q2 = query(customersRef, where('companyID', '==', businessId));
                         const qs2 = await getDocs(q2);
                         data = qs2.docs.map(d => ({ id: d.id, ...d.data() }));
+                        console.log('📋 Found customers by businessId:', data.length, data.map(c => `${c.name || c.companyName} (${c.customerID || c.id})`));
                     }
                 } catch (_) { /* ignore */ }
             }
@@ -134,15 +140,25 @@ const InvoiceForm = ({ invoiceId, onClose, onSuccess }) => {
             if (invoiceDoc.exists()) {
                 const data = invoiceDoc.data();
                 const companyId = data.companyId || data.companyID || '';
+
+                // 🎯 CRITICAL: Set form data first
                 setFormData({
                     ...data,
-                    total: String(data.total ?? ''),
+                    total: data.total != null ? Number(data.total).toFixed(2) : '',
                     issueDate: data.issueDate?.toDate ? data.issueDate.toDate().toISOString().split('T')[0] : data.issueDate,
                     dueDate: data.dueDate?.toDate ? data.dueDate.toDate().toISOString().split('T')[0] : data.dueDate,
+                    companyId: companyId,
+                    customerId: data.customerId || data.customerID || '',
+                    customerName: data.customerName || '',
+                    companyName: data.companyName || ''
                 });
+
+                // 🎯 CRITICAL: Load customers for the company AFTER setting form data
                 if (companyId) {
+                    console.log('📋 Loading customers for company:', companyId, 'and will select customer:', data.customerId || data.customerID);
                     await fetchCustomers(companyId);
                 }
+
                 if (data.fileUrl) {
                     setPreviewSrc(data.fileUrl);
                 }
@@ -233,7 +249,38 @@ const InvoiceForm = ({ invoiceId, onClose, onSuccess }) => {
     };
 
     const selectedCompany = companies.find(c => c.id === formData.companyId || c.companyID === formData.companyId);
-    const selectedCustomer = customers.find(c => (c.customerID || c.id) === formData.customerId);
+
+    // 🎯 ENHANCED: More robust customer matching with debugging
+    const selectedCustomer = (() => {
+        if (!formData.customerId) return null;
+
+        // Try multiple matching strategies
+        let customer = customers.find(c => c.customerID === formData.customerId);
+        if (customer) {
+            console.log('✅ Found customer by customerID:', customer.name || customer.companyName);
+            return customer;
+        }
+
+        customer = customers.find(c => c.id === formData.customerId);
+        if (customer) {
+            console.log('✅ Found customer by document ID:', customer.name || customer.companyName);
+            return customer;
+        }
+
+        // Try by name as fallback
+        customer = customers.find(c => (c.name || c.companyName) === formData.customerName);
+        if (customer) {
+            console.log('✅ Found customer by name:', customer.name || customer.companyName);
+            return customer;
+        }
+
+        console.warn('❌ Could not find customer in dropdown:', {
+            targetCustomerId: formData.customerId,
+            targetCustomerName: formData.customerName,
+            availableCustomers: customers.map(c => ({ id: c.id, customerID: c.customerID, name: c.name || c.companyName }))
+        });
+        return null;
+    })();
 
     return (
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#f8fafc' }}>

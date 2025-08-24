@@ -6,6 +6,7 @@ import {
     Grid,
     Card,
     CardContent,
+    CircularProgress,
     Table,
     TableBody,
     TableCell,
@@ -48,7 +49,7 @@ import {
     AttachMoney as AttachMoneyIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
-import { collection, getDocs, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, doc, updateDoc, addDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useSnackbar } from 'notistack';
 import { httpsCallable } from 'firebase/functions';
@@ -58,6 +59,7 @@ import { useCompany } from '../../../contexts/CompanyContext';
 import InvoiceForm from './InvoiceForm';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { getCircleLogo } from '../../../utils/logoUtils';
+import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 
 const InvoiceManagement = () => {
     const { enqueueSnackbar } = useSnackbar();
@@ -91,6 +93,8 @@ const InvoiceManagement = () => {
     const [customersMap, setCustomersMap] = useState({}); // key: customerId → customer doc
     const [loadingCompanies, setLoadingCompanies] = useState(false);
     const [loadingCustomers, setLoadingCustomers] = useState(false);
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [selectedUploadFiles, setSelectedUploadFiles] = useState([]);
 
     useEffect(() => {
         // Only fetch if we have a userRole and auth is loaded
@@ -162,6 +166,37 @@ const InvoiceManagement = () => {
         }
     };
 
+    const mapInvoiceRecord = (inv) => {
+        const issueDate = inv.issueDate?.toDate ? inv.issueDate.toDate() : (inv.issueDate ? new Date(inv.issueDate) : null);
+        const dueDate = inv.dueDate?.toDate ? inv.dueDate.toDate() : (inv.dueDate ? new Date(inv.dueDate) : null);
+        const createdAt = inv.createdAt?.toDate ? inv.createdAt.toDate() : (inv.createdAt ? new Date(inv.createdAt) : issueDate || new Date());
+        return {
+            id: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            companyName: inv.companyName,
+            companyId: inv.companyId || inv.companyID || inv.company?.id || inv.company?.companyID,
+            companyCode: inv.companyCode || inv.company?.code || '',
+            companyLogo: inv.companyLogo || inv.companyLogoUrl || inv.company?.logo || inv.company?.logoUrl || '',
+            customerName: inv.customerName || inv.customer?.name || '',
+            customerId: inv.customerId || inv.customer?.id || inv.customerID,
+            customerLogo: inv.customerLogo || inv.customer?.logo || inv.customer?.logoUrl || '',
+            fileUrl: inv.fileUrl || inv.pdfUrl || '',
+            status: inv.paymentStatus || inv.status || 'outstanding',
+            total: Number(inv.total || 0),
+            subtotal: Number(inv.subtotal || 0),
+            tax: Number(inv.tax || 0),
+            currency: inv.currency || 'CAD',
+            issueDate,
+            dueDate,
+            createdAt,
+            paymentTerms: inv.paymentTerms || 'NET 30',
+            shipmentCount: Array.isArray(inv.shipmentIds) ? inv.shipmentIds.length : (inv.shipments?.length || 0),
+            shipmentIds: inv.shipmentIds || [],
+            lineItems: inv.items || [],
+            carrierInvoiceUrls: inv.carrierInvoiceUrls || []
+        };
+    };
+
     const fetchInvoices = async () => {
         try {
             setLoading(true);
@@ -173,36 +208,7 @@ const InvoiceManagement = () => {
 
             let invoiceData = [];
             if (invoicesFromCollection.length > 0) {
-                invoiceData = invoicesFromCollection.map(inv => {
-                    const issueDate = inv.issueDate?.toDate ? inv.issueDate.toDate() : (inv.issueDate ? new Date(inv.issueDate) : null);
-                    const dueDate = inv.dueDate?.toDate ? inv.dueDate.toDate() : (inv.dueDate ? new Date(inv.dueDate) : null);
-                    const createdAt = inv.createdAt?.toDate ? inv.createdAt.toDate() : (inv.createdAt ? new Date(inv.createdAt) : issueDate || new Date());
-                    return {
-                        id: inv.id,
-                        invoiceNumber: inv.invoiceNumber,
-                        companyName: inv.companyName,
-                        companyId: inv.companyId || inv.companyID || inv.company?.id || inv.company?.companyID,
-                        companyCode: inv.companyCode || inv.company?.code || '',
-                        companyLogo: inv.companyLogo || inv.companyLogoUrl || inv.company?.logo || inv.company?.logoUrl || '',
-                        customerName: inv.customerName || inv.customer?.name || '',
-                        customerId: inv.customerId || inv.customer?.id || inv.customerID,
-                        customerLogo: inv.customerLogo || inv.customer?.logo || inv.customer?.logoUrl || '',
-                        fileUrl: inv.fileUrl || inv.pdfUrl || '',
-                        status: inv.paymentStatus || inv.status || 'outstanding',
-                        total: Number(inv.total || 0),
-                        subtotal: Number(inv.subtotal || 0),
-                        tax: Number(inv.tax || 0),
-                        currency: inv.currency || 'CAD',
-                        issueDate,
-                        dueDate,
-                        createdAt,
-                        paymentTerms: inv.paymentTerms || 'NET 30',
-                        shipmentCount: Array.isArray(inv.shipmentIds) ? inv.shipmentIds.length : (inv.shipments?.length || 0),
-                        shipmentIds: inv.shipmentIds || [],
-                        lineItems: inv.items || [],
-                        carrierInvoiceUrls: inv.carrierInvoiceUrls || []
-                    };
-                });
+                invoiceData = invoicesFromCollection.map(inv => mapInvoiceRecord(inv));
             } else {
                 // No fallback: show a blank table until invoices exist or are manually added
                 invoiceData = [];
@@ -230,6 +236,16 @@ const InvoiceManagement = () => {
             setLoading(false);
         }
     };
+
+    // Live updates for invoices (processing → populated)
+    useEffect(() => {
+        const qRef = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
+        const unsub = onSnapshot(qRef, (snap) => {
+            const data = snap.docs.map(d => mapInvoiceRecord({ id: d.id, ...d.data() }));
+            setInvoices(data);
+        });
+        return () => unsub();
+    }, []);
 
     // Load customer docs by IDs in batches of 10 to respect Firestore 'in' limit
     const loadCustomersDirectoryByIds = async (ids) => {
@@ -293,31 +309,22 @@ const InvoiceManagement = () => {
         setMetrics(metrics);
     };
 
-    // 🔄 ENHANCED: Update shipment invoice status directly
+    // 🔄 ENHANCED: Update invoice document status (not shipments)
     const handleStatusUpdate = async (invoiceId, newStatus, paymentDetails = null, notes = '') => {
         try {
             enqueueSnackbar(`Updating invoice status to ${newStatus}...`, { variant: 'info' });
 
-            // Update the shipment's invoice status directly
-            const shipmentRef = doc(db, 'shipments', invoiceId);
-            await updateDoc(shipmentRef, {
-                invoiceStatus: newStatus,
+            // Update invoice document in collection
+            const invRef = doc(db, 'invoices', invoiceId);
+            await updateDoc(invRef, {
+                status: newStatus,
+                paymentStatus: newStatus === 'paid' ? 'paid' : (newStatus === 'cancelled' || newStatus === 'void') ? 'cancelled' : 'outstanding',
                 updatedAt: new Date(),
                 ...(paymentDetails && { paymentDetails }),
                 ...(notes && { statusNotes: notes })
             });
 
-            // Find the invoice in our current list to get the shipment ID for display
-            const invoice = invoices.find(inv => inv.id === invoiceId);
-            const shipmentId = invoice?.shipmentId || invoiceId;
-
-            enqueueSnackbar(
-                `Shipment ${shipmentId} invoice status updated to ${newStatus}`,
-                { variant: 'success' }
-            );
-
-            // Refresh invoice list to show updated data
-            fetchInvoices();
+            enqueueSnackbar(`Invoice ${invoiceId} updated to ${newStatus}`, { variant: 'success' });
 
         } catch (error) {
             console.error('Error updating invoice status:', error);
@@ -350,6 +357,19 @@ const InvoiceManagement = () => {
         } catch (error) {
             console.error('Error cancelling invoice:', error);
             enqueueSnackbar('Failed to cancel invoice: ' + error.message, { variant: 'error' });
+        }
+    };
+
+    // 🗑️ NEW: Permanently delete a voided invoice
+    const handleDeleteInvoice = async (invoice) => {
+        try {
+            await deleteDoc(doc(db, 'invoices', invoice.id));
+            enqueueSnackbar('Invoice deleted', { variant: 'success' });
+            setMenuAnchorEl(null);
+            setMenuInvoice(null);
+        } catch (error) {
+            console.error('Error deleting invoice:', error);
+            enqueueSnackbar('Failed to delete invoice: ' + error.message, { variant: 'error' });
         }
     };
 
@@ -514,6 +534,10 @@ const InvoiceManagement = () => {
                 return { color: '#c62828', bgcolor: '#ffebee' };
             case 'draft':
                 return { color: '#616161', bgcolor: '#fafafa' };
+            case 'processing':
+                return { color: '#1976d2', bgcolor: '#e3f2fd' };
+            case 'error':
+                return { color: '#d32f2f', bgcolor: '#ffebee' };
             default:
                 return { color: '#1976d2', bgcolor: '#e3f2fd' };
         }
@@ -547,7 +571,12 @@ const InvoiceManagement = () => {
             return 'N/A';
         }
 
-        return date.toLocaleDateString();
+        // Use UTC date to avoid timezone offset issues
+        // Since dates are stored as dates without time, treat them as UTC to avoid day shifts
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        return `${month}/${day}/${year}`;
     };
 
     const handleCreateManualInvoice = () => {
@@ -570,6 +599,92 @@ const InvoiceManagement = () => {
         setCreateInvoiceOpen(false);
         setEditingInvoiceId(null);
         fetchInvoices(); // Refresh the invoice list
+    };
+
+    const handleInvoiceFilesSelected = (e) => {
+        const files = Array.from(e.target.files || []);
+        setSelectedUploadFiles(files);
+    };
+
+    const handleProcessUploadedInvoices = async () => {
+        try {
+            if (!selectedUploadFiles || selectedUploadFiles.length === 0) return;
+            enqueueSnackbar('Uploading and processing invoices...', { variant: 'info' });
+
+            // Upload each file to Storage using existing bucket logic (use same CORS-safe approach as InvoiceForm)
+            const { app, storage, functions } = await import('../../../firebase');
+            const { getStorage, ref, uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+            const customStorage = getStorage(app, 'gs://solushipx.firebasestorage.app');
+
+            const uploads = await Promise.all(selectedUploadFiles.map(file => new Promise(async (resolve, reject) => {
+                try {
+                    const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                    const storageRef = ref(customStorage, `backfill-invoices/${safeName}`);
+                    const task = uploadBytesResumable(storageRef, file, { contentType: file.type || 'application/octet-stream' });
+                    task.on('state_changed', () => { }, (err) => reject(err), async () => {
+                        const url = await getDownloadURL(task.snapshot.ref);
+                        resolve({ fileName: safeName, url, sourcePath: `backfill-invoices/${safeName}` });
+                    });
+                } catch (e) { reject(e); }
+            })));
+
+            // Insert placeholder invoices with deterministic IDs (uploadId = fileName)
+            const inferInvoiceNumber = (name) => {
+                const m = String(name || '').match(/(?:Invoice[_-]?|Combined_Invoice[_-]?)(\d{5,})/i) || String(name || '').match(/_(\d{5,})\.pdf$/i);
+                return m ? m[1] : '';
+            };
+            for (const u of uploads) {
+                try {
+                    // If a processing placeholder already exists for this exact file URL, skip creating another
+                    const existingSnap = await getDocs(query(collection(db, 'invoices'), where('fileUrl', '==', u.url)));
+                    if (!existingSnap.empty) continue;
+
+                    const placeholderId = u.fileName; // deterministic per upload
+                    const placeholderRef = doc(collection(db, 'invoices'), placeholderId);
+                    await updateDoc(placeholderRef, { __existsCheck: true }).catch(async () => {
+                        const { setDoc, serverTimestamp } = await import('firebase/firestore');
+                        await setDoc(placeholderRef, {
+                            uploadId: placeholderId,
+                            sourcePath: u.sourcePath,
+                            fileUrl: u.url,
+                            invoiceNumber: inferInvoiceNumber(u.fileName),
+                            issueDate: serverTimestamp(),
+                            dueDate: null,
+                            status: 'processing',            // 🎯 KEY: Processing status
+                            paymentStatus: 'processing',     // 🎯 KEY: Processing payment status
+                            currency: 'CAD',
+                            total: 0,                        // 🎯 KEY: Zero total indicates processing
+                            companyId: null,
+                            companyName: '',                 // 🎯 KEY: Empty company name indicates processing
+                            customerId: null,
+                            customerName: '',                // 🎯 KEY: Empty customer name indicates processing
+                            shipmentIds: [],
+                            createdAt: serverTimestamp(),
+                            updatedAt: serverTimestamp(),
+                            backfillSource: 'upload_dialog'
+                        });
+                    });
+                } catch (e) { /* ignore placeholder creation failure */ }
+            }
+
+            // Call backend parser for each uploaded file in AP mode (reuses processPdfFile pipeline)
+            const { httpsCallable } = await import('firebase/functions');
+            const callPdf = httpsCallable(functions, 'processPdfFile', { timeout: 540000 });
+            const callBatch = httpsCallable(functions, 'processPdfBatch', { timeout: 540000 }).catch?.(() => { });
+            // Fire off calls, don't block UI on waiting
+            uploads.forEach(u => {
+                const isZip = /\.zip$/i.test(u.fileName);
+                const payload = { fileName: u.fileName, uploadUrl: u.url, settings: { apMode: true, extractForBackfill: true, includeRawText: true, useProductionOCR: true, tableDetection: true }, placeholderInvoiceId: u.fileName };
+                (isZip ? callBatch : callPdf)(payload).catch(() => { });
+            });
+
+            enqueueSnackbar('Parsing started. You can close this dialog; results will appear shortly.', { variant: 'success' });
+            setUploadDialogOpen(false);
+            setSelectedUploadFiles([]);
+        } catch (e) {
+            console.error('Backfill upload failed', e);
+            enqueueSnackbar('Failed to process invoices. Please try again.', { variant: 'error' });
+        }
     };
 
     useEffect(() => {
@@ -803,6 +918,15 @@ const InvoiceManagement = () => {
                             <Button
                                 variant="outlined"
                                 size="small"
+                                startIcon={<GetAppIcon />}
+                                sx={{ fontSize: '12px' }}
+                                onClick={() => setUploadDialogOpen(true)}
+                            >
+                                Upload Invoices
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                size="small"
                                 startIcon={<AddIcon />}
                                 sx={{ fontSize: '12px' }}
                                 onClick={handleCreateManualInvoice}
@@ -937,7 +1061,11 @@ const InvoiceManagement = () => {
                                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                                     .map((invoice) => {
                                         const overdue = isOverdue(invoice);
-                                        const displayStatus = overdue ? 'overdue' : invoice.status;
+                                        // Determine if invoice is still processing
+                                        const isProcessing = invoice.status === 'processing' || 
+                                                           invoice.paymentStatus === 'processing' ||
+                                                           (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
+                                        const displayStatus = overdue ? 'overdue' : (isProcessing ? 'processing' : invoice.status);
 
                                         return (
                                             <TableRow
@@ -953,69 +1081,105 @@ const InvoiceManagement = () => {
                                                     </Button>
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    {invoice.fileUrl ? (
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
+                                                        </Typography>
+                                                    ) : invoice.fileUrl ? (
                                                         <Button size="small" href={invoice.fileUrl} target="_blank" rel="noopener" startIcon={<DownloadIcon />} sx={{ fontSize: '11px' }}>
                                                             PDF
                                                         </Button>
                                                     ) : 'N/A'}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <Avatar
-                                                            sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
-                                                            src={(() => {
-                                                                const companyKey = invoice.companyId || invoice.companyID || invoice.companyCode;
-                                                                if (companyKey && companiesMap[companyKey]) {
-                                                                    return getCircleLogo(companiesMap[companyKey]);
-                                                                }
-                                                                const foundByName = Object.values(companiesMap).find(c => (c.name || c.companyName) === invoice.companyName);
-                                                                if (foundByName) return getCircleLogo(foundByName);
-                                                                return invoice.companyLogo || '';
-                                                            })()}
-                                                        />
-                                                        <Typography sx={{ fontSize: '12px' }}>
-                                                            {invoice.companyName || 'N/A'} {invoice.companyCode ? `(${invoice.companyCode})` : ''}
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
                                                         </Typography>
-                                                    </Box>
+                                                    ) : (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Avatar
+                                                                sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
+                                                                src={(() => {
+                                                                    const companyKey = invoice.companyId || invoice.companyID || invoice.companyCode;
+                                                                    if (companyKey && companiesMap[companyKey]) {
+                                                                        return getCircleLogo(companiesMap[companyKey]);
+                                                                    }
+                                                                    const foundByName = Object.values(companiesMap).find(c => (c.name || c.companyName) === invoice.companyName);
+                                                                    if (foundByName) return getCircleLogo(foundByName);
+                                                                    return invoice.companyLogo || '';
+                                                                })()}
+                                                            />
+                                                            <Typography sx={{ fontSize: '12px' }}>
+                                                                {invoice.companyName || 'N/A'} {invoice.companyCode ? `(${invoice.companyCode})` : ''}
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <Avatar
-                                                            sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
-                                                            src={(() => {
-                                                                const cid = invoice.customerId || invoice.customer?.id;
-                                                                // Prefer hydrated directory
-                                                                if (cid && customersMap[cid]) {
-                                                                    return customersMap[cid].logo || customersMap[cid].logoUrl || '';
-                                                                }
-                                                                // Then prefer scoped list when company filter is selected
-                                                                if (selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id]) {
-                                                                    const found = customersByCompany[selectedCompanyFilter.id].find(c => c.id === cid);
-                                                                    if (found) return found.logo || found.logoUrl || '';
-                                                                }
-                                                                return invoice.customerLogo || '';
-                                                            })()}
-                                                        />
-                                                        <Typography sx={{ fontSize: '12px' }}>
-                                                            {invoice.customerName || 'N/A'}
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
                                                         </Typography>
-                                                    </Box>
+                                                    ) : (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <Avatar
+                                                                sx={{ width: 20, height: 20, fontSize: '11px', border: '1px solid #e5e7eb' }}
+                                                                src={(() => {
+                                                                    const cid = invoice.customerId || invoice.customer?.id;
+                                                                    // Prefer hydrated directory
+                                                                    if (cid && customersMap[cid]) {
+                                                                        return customersMap[cid].logo || customersMap[cid].logoUrl || '';
+                                                                    }
+                                                                    // Then prefer scoped list when company filter is selected
+                                                                    if (selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id]) {
+                                                                        const found = customersByCompany[selectedCompanyFilter.id].find(c => c.id === cid);
+                                                                        if (found) return found.logo || found.logoUrl || '';
+                                                                    }
+                                                                    return invoice.customerLogo || '';
+                                                                })()}
+                                                            />
+                                                            <Typography sx={{ fontSize: '12px' }}>
+                                                                {invoice.customerName || 'N/A'}
+                                                            </Typography>
+                                                        </Box>
+                                                    )}
                                                 </TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>{formatDate(invoice.issueDate)}</TableCell>
-                                                <TableCell sx={{ fontSize: '12px' }}>{formatDate(invoice.dueDate)}</TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
+                                                        </Typography>
+                                                    ) : formatDate(invoice.issueDate)}
+                                                </TableCell>
+                                                <TableCell sx={{ fontSize: '12px' }}>
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
+                                                        </Typography>
+                                                    ) : formatDate(invoice.dueDate)}
+                                                </TableCell>
                                                 <TableCell sx={{ fontSize: '12px', fontWeight: 600 }}>
-                                                    {invoice.currency || 'CAD'}${Number((invoice.total != null ? invoice.total : (invoice.subtotal || 0) + (invoice.tax || 0)) || 0).toFixed(2)}
+                                                    {isProcessing ? (
+                                                        <Typography sx={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                                            Processing...
+                                                        </Typography>
+                                                    ) : (
+                                                        `$${Number((invoice.total != null ? invoice.total : (invoice.subtotal || 0) + (invoice.tax || 0)) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${invoice.currency || 'CAD'}`
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Chip
                                                         label={displayStatus}
                                                         size="small"
+                                                        icon={displayStatus === 'processing' ? <CircularProgress size={12} /> : undefined}
                                                         sx={{
                                                             fontSize: '11px',
                                                             height: '22px',
                                                             bgcolor: getStatusColor(displayStatus).bgcolor,
                                                             color: getStatusColor(displayStatus).color,
-                                                            textTransform: 'capitalize'
+                                                            textTransform: 'capitalize',
+                                                            '& .MuiChip-icon': { color: getStatusColor(displayStatus).color }
                                                         }}
                                                     />
                                                 </TableCell>
@@ -1027,60 +1191,85 @@ const InvoiceManagement = () => {
                                             </TableRow>
                                         );
                                     })
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                                        )}
+        </TableBody>
+    </Table>
+</TableContainer>
 
-                {/* Row actions menu */}
-                <Menu
-                    anchorEl={menuAnchorEl}
-                    open={Boolean(menuAnchorEl)}
-                    onClose={() => { setMenuAnchorEl(null); setMenuInvoice(null); }}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                >
-                    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
-                    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleCancelInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Void</MenuItem>
-                </Menu>
+{/* Row actions menu */}
+<Menu
+    anchorEl={menuAnchorEl}
+    open={Boolean(menuAnchorEl)}
+    onClose={() => { setMenuAnchorEl(null); setMenuInvoice(null); }}
+    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+>
+    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
+    {menuInvoice && (menuInvoice.status === 'cancelled' || menuInvoice.status === 'void' || menuInvoice.paymentStatus === 'cancelled') ? (
+        <MenuItem onClick={() => { if (menuInvoice) handleDeleteInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Delete</MenuItem>
+    ) : (
+        <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleCancelInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Void</MenuItem>
+    )}
+</Menu>
 
-                <TablePagination
-                    component="div"
-                    count={filteredInvoices.length}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                    rowsPerPageOptions={[10, 25, 50, 100]}
-                    sx={{
-                        borderTop: '1px solid #e5e7eb',
-                        '& .MuiTablePagination-toolbar': {
-                            fontSize: '12px'
-                        }
-                    }}
-                />
-            </Paper>
+<TablePagination
+    component="div"
+    count={filteredInvoices.length}
+    page={page}
+    onPageChange={handleChangePage}
+    rowsPerPage={rowsPerPage}
+    onRowsPerPageChange={handleChangeRowsPerPage}
+    rowsPerPageOptions={[10, 25, 50, 100]}
+    sx={{
+        borderTop: '1px solid #e5e7eb',
+        '& .MuiTablePagination-toolbar': {
+            fontSize: '12px'
+        }
+    }}
+/>
+</Paper>
 
-            {/* Legacy dialog removed; clicking invoice number or menu now opens InvoiceForm overlay */}
+{/* Upload Invoices Dialog */}
+{uploadDialogOpen && (
+    <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Upload Invoices</DialogTitle>
+        <DialogContent dividers>
+            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>Upload PDF files or a ZIP. We will parse shipments and prefill invoice forms.</Typography>
+            <Button variant="outlined" component="label" size="small" sx={{ fontSize: '12px' }}>
+                Select Files
+                <input hidden multiple type="file" accept="application/pdf,application/zip" onChange={handleInvoiceFilesSelected} />
+            </Button>
+            <Stack sx={{ mt: 2 }}>
+                {(selectedUploadFiles || []).map((f, idx) => (
+                    <Typography key={idx} sx={{ fontSize: '12px' }}>{f.name}</Typography>
+                ))}
+            </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+            <Button size="small" sx={{ fontSize: '12px' }} onClick={() => setUploadDialogOpen(false)}>Close</Button>
+            <Button size="small" variant="contained" sx={{ fontSize: '12px' }} onClick={handleProcessUploadedInvoices} disabled={!selectedUploadFiles || selectedUploadFiles.length === 0}>Process</Button>
+        </DialogActions>
+    </Dialog>
+)}
 
-            {/* Manual Invoice Form Dialog */}
-            {createInvoiceOpen && (
-                <Box sx={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    zIndex: 1300,
-                    bgcolor: 'white'
-                }}>
-                    <InvoiceForm
-                        invoiceId={editingInvoiceId}
-                        onClose={handleCloseInvoiceForm}
-                        onSuccess={handleInvoiceSuccess}
-                    />
-                </Box>
-            )}
+{/* Manual Invoice Form Dialog */}
+{createInvoiceOpen && (
+    <Box sx={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1300,
+        bgcolor: 'white'
+    }}>
+        <InvoiceForm
+            invoiceId={editingInvoiceId}
+            onClose={handleCloseInvoiceForm}
+            onSuccess={handleInvoiceSuccess}
+        />
+    </Box>
+)}
         </Box>
     );
 };
