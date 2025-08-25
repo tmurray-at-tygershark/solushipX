@@ -68,17 +68,26 @@ exports.preflightInvoiceReview = onRequest({ cors: true, timeoutSeconds: 300 }, 
       // 1,2: charges checks
       let chargesOk = false;
       let allChargesHaveAmount = true;
+      let actualChargesOk = false;
       try {
         const totalCharges = getSimpleShipmentCharges(shipment);
         const breakdown = getSimpleChargeBreakdown(shipment, totalCharges, 'CAD');
         const amounts = breakdown.map(b => Number(b?.amount ?? 0));
         chargesOk = amounts.some(a => a > 0) || Number(totalCharges) > 0;
         allChargesHaveAmount = breakdown.every(b => b.hasOwnProperty('amount'));
+        
+        // ✅ NEW: Check for actual charges (not just quoted)
+        const actualTotal = shipment.actualRates?.totalCharges ? parseFloat(shipment.actualRates.totalCharges) : 0;
+        const actualChargesArray = shipment.actualRates?.charges || [];
+        const actualAmounts = actualChargesArray.map(c => parseFloat(c.amount) || 0);
+        actualChargesOk = actualTotal > 0 && actualAmounts.some(a => a > 0);
       } catch (e) {
         reasons.push('CHARGES_PARSE_ERROR');
       }
       if (!chargesOk) reasons.push('NO_POSITIVE_CHARGE');
       if (!allChargesHaveAmount) reasons.push('MISSING_ACTUAL_CHARGE_FIELD');
+      // ✅ NEW: Block invoicing if no actual charges set
+      if (!actualChargesOk) reasons.push('NO_ACTUAL_CHARGES_SET');
 
       // 4: BILL TO completeness
       let billToOk = false;

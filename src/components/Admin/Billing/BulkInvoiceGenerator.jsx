@@ -777,7 +777,8 @@ const BulkInvoiceGenerator = () => {
             ALREADY_INVOICED: 'Shipment has already been invoiced.',
             CHARGES_PARSE_ERROR: 'Charges could not be read. Please review shipment charges.',
             NO_POSITIVE_CHARGE: 'No positive charge detected. Ensure at least one line item has an actual charge > $0.',
-            MISSING_ACTUAL_CHARGE_FIELD: 'One or more charges are missing the “actual charge” field.',
+            MISSING_ACTUAL_CHARGE_FIELD: 'One or more charges are missing the "actual charge" field.',
+            NO_ACTUAL_CHARGES_SET: 'Actual charges have not been set. Please set actual charges before invoicing (actual charges should not be "TBD").',
             BILLTO_INCOMPLETE: 'Customer BILL TO details are incomplete (address or email missing).',
             BILLTO_LOOKUP_FAILED: 'Could not fetch customer BILL TO details.'
         };
