@@ -45,7 +45,7 @@ if (SENDGRID_API_KEY) {
 }
 
 // Global email configuration - matching QuickShip exactly
-const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
+const SEND_FROM_EMAIL = 'noreplys@integratedcarriers.com';
 const SEND_FROM_NAME = 'Integrated Carriers';
 
 /**

@@ -1643,37 +1643,47 @@ const ARProcessing = () => {
         }
     ];
 
-    // Dynamically trained invoice carriers (from training system)
-    const [trainedInvoiceCarriers, setTrainedInvoiceCarriers] = useState([]);
+    // Unified training carriers (from enhanced training system)
+    const [unifiedCarriers, setUnifiedCarriers] = useState([]);
 
     useEffect(() => {
-        // Load trained carriers to augment dropdown options
+        // Load unified carriers from the enhanced training system
         (async () => {
             try {
-                const listTrained = httpsCallable(functions, 'listTrainedCarriers');
-                const res = await listTrained({});
+                const getUnifiedCarriers = httpsCallable(functions, 'getUnifiedTrainingCarriers');
+                const res = await getUnifiedCarriers({});
                 if (res.data?.success) {
-                    setTrainedInvoiceCarriers(res.data.items || []);
+                    setUnifiedCarriers(res.data.carriers || []);
+                    console.log(`Loaded ${res.data.totalCount} unified carriers for AP Processing`);
                 }
             } catch (e) {
-                // non-blocking
+                console.warn('Failed to load unified carriers:', e);
+                // non-blocking - fall back to static carriers
             }
         })();
     }, [functions]);
 
-    // Merge static carrier list with trained carriers for dropdown selection only
+    // Merge static carrier list with unified trained carriers for dropdown selection
     const invoiceCarrierOptions = useMemo(() => {
         const base = carrierTemplates.filter(c => c.supported).map(c => ({ id: c.id, name: c.name }));
         const map = new Map(base.map(c => [c.id, c]));
-        (trainedInvoiceCarriers || []).forEach(row => {
-            const id = row?.carrierId;
-            if (!id) return;
-            const name = row?.name || id;
-            map.set(id, { id, name });
+
+        // Add unified training carriers (both managed and static)
+        (unifiedCarriers || []).forEach(carrier => {
+            if (carrier.isActive) {
+                map.set(carrier.id, {
+                    id: carrier.id,
+                    name: carrier.name,
+                    source: carrier.source,
+                    confidence: carrier.confidence,
+                    sampleCount: carrier.sampleCount
+                });
+            }
         });
+
         // Keep Auto-Detect option at top via special id
         return [{ id: 'auto-detect', name: 'Auto-Detect' }, ...Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))];
-    }, [carrierTemplates, trainedInvoiceCarriers]);
+    }, [carrierTemplates, unifiedCarriers]);
 
     // Enriched options for the pretty dropdown (icons, descriptions, chips)
     const processingCarrierOptions = useMemo(() => {
@@ -1693,8 +1703,24 @@ const ARProcessing = () => {
             if (match) {
                 return { id: match.id, name: match.name, intelligent: !!match.intelligent, description: match.description, logoURL: match.logoURL, supported: !!match.supported, trained: false };
             }
-            // Trained-only carrier (not part of static list)
-            return { id: opt.id, name: opt.name, intelligent: false, description: `ID: ${opt.id}`, logoURL: null, supported: true, trained: true };
+
+            // Enhanced trained carrier from unified system
+            const unifiedCarrier = unifiedCarriers.find(c => c.id === opt.id);
+            if (unifiedCarrier) {
+                return {
+                    id: unifiedCarrier.id,
+                    name: unifiedCarrier.name,
+                    intelligent: unifiedCarrier.source === 'managed',
+                    description: `${unifiedCarrier.description || unifiedCarrier.category} • ${unifiedCarrier.sampleCount || 0} samples • ${((unifiedCarrier.confidence || 0) * 100).toFixed(0)}% confidence`,
+                    logoURL: null,
+                    supported: true,
+                    trained: unifiedCarrier.source === 'managed',
+                    source: unifiedCarrier.source
+                };
+            }
+
+            // Fallback for unknown carriers
+            return { id: opt.id, name: opt.name, intelligent: false, description: `ID: ${opt.id}`, logoURL: null, supported: true, trained: false };
         });
     }, [invoiceCarrierOptions, carrierTemplates]);
 
@@ -3415,6 +3441,47 @@ const ARProcessing = () => {
         handleActionMenuClose();
     };
 
+    const handleMenuDeleteUpload = async () => {
+        if (!selectedUploadForAction) return;
+
+        const uploadToDelete = selectedUploadForAction;
+        const uploadId = uploadToDelete.id;
+        const fileName = uploadToDelete.fileName;
+
+        console.log('Attempting to delete upload:', { uploadId, fileName, uploadToDelete });
+
+        // Check if this is a temporary upload (still uploading/processing)
+        if (uploadToDelete._isTemporary || uploadToDelete.processingStatus === 'uploading') {
+            // For temporary uploads, just remove from local state
+            setUploads(prev => prev.filter(upload => upload.id !== uploadId));
+            setFilteredUploads(prev => prev.filter(upload => upload.id !== uploadId));
+            enqueueSnackbar(`Removed "${fileName}" from upload queue`, { variant: 'info' });
+            handleActionMenuClose();
+            return;
+        }
+
+        try {
+            // Call the delete Cloud Function
+            const deleteAPUploadFunc = httpsCallable(functions, 'deleteAPUpload');
+            const result = await deleteAPUploadFunc({ uploadId });
+
+            if (result.data.success) {
+                // Remove from local state immediately
+                setUploads(prev => prev.filter(upload => upload.id !== uploadId));
+                setFilteredUploads(prev => prev.filter(upload => upload.id !== uploadId));
+
+                enqueueSnackbar(`Successfully deleted "${fileName}"`, { variant: 'success' });
+            } else {
+                enqueueSnackbar(result.data.error || 'Failed to delete upload', { variant: 'error' });
+            }
+        } catch (error) {
+            console.error('Error deleting upload:', error);
+            enqueueSnackbar(`Failed to delete upload: ${error.message}`, { variant: 'error' });
+        }
+
+        handleActionMenuClose();
+    };
+
 
 
     // Regular PDF processing handler
@@ -4402,6 +4469,25 @@ const ARProcessing = () => {
                                     />
                                 </MenuItem>
                             )}
+                            <Divider />
+                            <MenuItem
+                                onClick={handleMenuDeleteUpload}
+                                sx={{
+                                    fontSize: '11px',
+                                    color: '#ef4444',
+                                    '&:hover': {
+                                        backgroundColor: '#fef2f2'
+                                    }
+                                }}
+                            >
+                                <ListItemIcon>
+                                    <DeleteIcon fontSize="small" sx={{ color: '#ef4444' }} />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary="Delete Upload"
+                                    primaryTypographyProps={{ fontSize: '11px', color: '#ef4444' }}
+                                />
+                            </MenuItem>
                         </Menu>
                     </Grid>
 

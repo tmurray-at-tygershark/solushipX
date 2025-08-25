@@ -112,6 +112,8 @@ import SalesCommissionsTab from './SalesCommissions/SalesCommissionsTab';
 import BulkInvoiceGenerator from './BulkInvoiceGenerator';
 import APProcessing from './APProcessing';
 import CarrierInvoiceTraining from './CarrierInvoiceTraining';
+import VisualInvoiceTraining from './VisualInvoiceTraining';
+import EnhancedInvoiceTraining from './EnhancedInvoiceTraining';
 
 const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const { currentUser, userRole } = useAuth();
@@ -2366,7 +2368,7 @@ const BillingDashboard = ({ initialTab = 'invoices' }) => {
             )}
 
             {activeTab === 'invoice-training' && (
-                <CarrierInvoiceTraining />
+                <EnhancedInvoiceTraining />
             )}
         </Box>
     );

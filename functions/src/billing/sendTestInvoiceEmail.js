@@ -507,7 +507,7 @@ async function sendTestEmailWithAllInvoices(allInvoicePDFs, companyId, testEmail
             cc: testEmails.cc.length > 0 ? testEmails.cc : undefined,
             bcc: testEmails.bcc.length > 0 ? testEmails.bcc : undefined,
             from: {
-                email: companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || 'soluship@integratedcarriers.com',
+                email: 'soluship@integratedcarriers.com', // Use verified sender for all test emails
                 name: companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'
             },
             subject: `${companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'} - Invoice Notification`,

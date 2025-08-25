@@ -11,7 +11,8 @@ if (!admin.apps.length) {
 const db = getFirestore();
 
 // Constants
-const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
+const SEND_FROM_EMAIL = 'noreplys@integratedcarriers.com';
+const SEND_FROM_NAME = 'SolushipX';
 
 // Get SendGrid API key from environment variables or Firebase config
 const functions = require('firebase-functions');
@@ -1707,7 +1708,8 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
             logger.error('SendGrid error details:', {
                 statusCode: error.code,
                 body: error.response.body,
-                errors: error.response.body?.errors
+                errors: error.response.body?.errors,
+                headers: error.response.headers
             });
             
             // Log the specific error messages
@@ -1716,10 +1718,23 @@ async function sendNotificationEmail(type, companyId, data, notificationId = nul
                     logger.error(`SendGrid error ${index + 1}:`, {
                         message: err.message,
                         field: err.field,
-                        help: err.help
+                        help: err.help,
+                        errorCode: err.error_id
                     });
                 });
             }
+            
+            // Log complete error body as string for debugging
+            logger.error('SendGrid error body (full):', JSON.stringify(error.response.body, null, 2));
+            
+        } else {
+            // Log general error details
+            logger.error('SendGrid general error:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack,
+                name: error.name
+            });
         }
 
         // Log failed attempts for available emails
@@ -2610,7 +2625,7 @@ async function sendEmailWithAttachment(emailData) {
     try {
         const msg = {
             to: emailData.to,
-            from: 'noreply@integratedcarriers.com',
+            from: 'noreplys@integratedcarriers.com',
             subject: emailData.subject,
             html: emailData.html || '',
             text: emailData.text || '',

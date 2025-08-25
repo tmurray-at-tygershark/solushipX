@@ -725,7 +725,7 @@ async function sendReportNotifications(report, emailRecipients, type, reportId) 
             const emailContent = {
                 to: email,
                             from: {
-                email: 'noreply@integratedcarriers.com',
+                email: 'noreplys@integratedcarriers.com',
                 name: 'Integrated Carriers Reports'
             },
                 subject: `Report Ready: ${formatReportType(type)}`,

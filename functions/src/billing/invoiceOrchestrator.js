@@ -273,7 +273,7 @@ async function deliverInvoices({ companyId, recipients, attachments, invoiceMode
     cc: recipients?.cc && recipients.cc.length > 0 ? recipients.cc : undefined,
     bcc: recipients?.bcc && recipients.bcc.length > 0 ? recipients.bcc : undefined,
     from: {
-      email: companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || 'soluship@integratedcarriers.com',
+      email: 'soluship@integratedcarriers.com', // Use verified sender for all test emails
       name: companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'
     },
     subject: `${companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || 'Integrated Carriers'} - Invoice Notification`,
@@ -282,7 +282,39 @@ async function deliverInvoices({ companyId, recipients, attachments, invoiceMode
     attachments: attachments.map(a => ({ content: a.content, filename: a.filename, type: a.type, disposition: a.disposition }))
   };
 
-  await sgMail.send(emailContent);
+  console.log('📧 Email content debug:', {
+    to: emailContent.to,
+    cc: emailContent.cc,
+    bcc: emailContent.bcc,
+    from: emailContent.from,
+    subject: emailContent.subject,
+    attachmentCount: emailContent.attachments.length,
+    attachmentSizes: emailContent.attachments.map(a => ({
+      filename: a.filename,
+      size: a.content ? a.content.length : 0,
+      type: a.type
+    }))
+  });
+
+  try {
+    await sgMail.send(emailContent);
+    console.log('✅ Email sent successfully via SendGrid');
+  } catch (error) {
+    console.error('❌ SendGrid error details:', {
+      code: error.code,
+      message: error.message
+    });
+    if (error.response) {
+      console.error('SendGrid response body:', JSON.stringify(error.response.body, null, 2));
+      console.error('SendGrid response headers:', error.response.headers);
+      if (error.response.body?.errors) {
+        error.response.body.errors.forEach((err, index) => {
+          console.error(`SendGrid error ${index + 1}:`, err);
+        });
+      }
+    }
+    throw error;
+  }
 }
 
 module.exports = {

@@ -685,8 +685,8 @@ const CreateShipmentX = (props) => {
                 if (defaultShipFrom && !shipFromAddress) {
                     console.log('📍 CreateShipmentX: Auto-selecting default ship from address:', {
                         address: defaultShipFrom,
-                        reason: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' : 
-                               (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
+                        reason: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' :
+                            (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
                     });
                     handleAddressSelect(defaultShipFrom, 'from');
                 }
@@ -925,8 +925,8 @@ const CreateShipmentX = (props) => {
                     isDefault: defaultShipFrom.isDefault,
                     addressType: defaultShipFrom.addressType,
                     // Show why this address was selected
-                    selectedBecause: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' : 
-                                   (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
+                    selectedBecause: defaultShipFrom.isDefaultShipFrom ? 'isDefaultShipFrom=true' :
+                        (defaultShipFrom.isDefault && defaultShipFrom.addressType === 'pickup') ? 'isDefault=true + addressType=pickup' : 'unknown'
                 } : null,
                 defaultShipTo: defaultShipTo ? {
                     id: defaultShipTo.id,
@@ -935,8 +935,8 @@ const CreateShipmentX = (props) => {
                     isDefault: defaultShipTo.isDefault,
                     addressType: defaultShipTo.addressType,
                     // Show why this address was selected
-                    selectedBecause: defaultShipTo.isDefaultShipTo ? 'isDefaultShipTo=true' : 
-                                   (defaultShipTo.isDefault && defaultShipTo.addressType === 'destination') ? 'isDefault=true + addressType=destination' : 'unknown'
+                    selectedBecause: defaultShipTo.isDefaultShipTo ? 'isDefaultShipTo=true' :
+                        (defaultShipTo.isDefault && defaultShipTo.addressType === 'destination') ? 'isDefault=true + addressType=destination' : 'unknown'
                 } : null,
                 // Show all addresses to see their flags
                 allAddressFlags: availableAddresses.map(addr => ({

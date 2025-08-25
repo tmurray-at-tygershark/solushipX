@@ -385,6 +385,41 @@ exports.exportPdfResults = exportPdfResults;
 exports.processPdfBatch = processPdfBatch;
 exports.processBulkPdfFile = processBulkPdfFile;
 
+// Export Visual Training functions
+const { analyzeInvoiceWithVision } = require('./src/visualTraining/analyzeInvoiceWithVision');
+const { updateTrainingFromCorrections } = require('./src/visualTraining/updateTrainingFromCorrections');
+const { 
+    createTrainingCarrier,
+    getTrainingCarriers,
+    updateTrainingCarrier,
+    deleteTrainingCarrier,
+    getCarrierDetails,
+    retrainCarrier,
+    getCarrierCategories
+} = require('./src/visualTraining/carrierManagement');
+const {
+    getUnifiedTrainingCarriers,
+    addTrainingSample,
+    processTrainingSample,
+    getTrainingAnalytics
+} = require('./src/visualTraining/unifiedTrainingSystem');
+const { deleteAPUpload } = require('./src/deleteAPUpload');
+
+exports.analyzeInvoiceWithVision = analyzeInvoiceWithVision;
+exports.updateTrainingFromCorrections = updateTrainingFromCorrections;
+exports.createTrainingCarrier = createTrainingCarrier;
+exports.getTrainingCarriers = getTrainingCarriers;
+exports.updateTrainingCarrier = updateTrainingCarrier;
+exports.deleteTrainingCarrier = deleteTrainingCarrier;
+exports.getCarrierDetails = getCarrierDetails;
+exports.retrainCarrier = retrainCarrier;
+exports.getCarrierCategories = getCarrierCategories;
+exports.getUnifiedTrainingCarriers = getUnifiedTrainingCarriers;
+exports.addTrainingSample = addTrainingSample;
+exports.processTrainingSample = processTrainingSample;
+exports.getTrainingAnalytics = getTrainingAnalytics;
+exports.deleteAPUpload = deleteAPUpload;
+
 // AP Processing functions
 const { matchInvoiceToShipment } = require('./src/matchInvoiceToShipment');
 const { createShipmentCharge } = require('./src/createShipmentCharge');
@@ -772,3 +807,7 @@ exports.getHistoryEShipPlus = onRequest(
 // Add the QuickShip email diagnostic function
 const { quickShipEmailDiagnostic } = require('./src/quickShipEmailDiagnostic');
 exports.quickShipEmailDiagnostic = quickShipEmailDiagnostic;
+
+// Test Functions
+const { testSendGridEmail } = require('./src/testSendGridEmail');
+exports.testSendGridEmail = testSendGridEmail;

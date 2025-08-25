@@ -532,7 +532,7 @@ exports.adminInviteUser = onCall({
             const msg = {
                 to: email.trim(),
                 from: {
-                    email: 'noreply@integratedcarriers.com',
+                    email: 'noreplys@integratedcarriers.com',
                     name: 'Integrated Carriers'
                 },
                 subject: 'You\'ve been invited to SolushipX',
@@ -748,7 +748,7 @@ exports.adminResendInvite = onCall({
             const msg = {
                 to: userData.email,
                 from: {
-                    email: 'noreply@integratedcarriers.com',
+                    email: 'noreplys@integratedcarriers.com',
                     name: 'Integrated Carriers'
                 },
                 subject: 'Reminder: Complete Your SolushipX Account Setup',

@@ -320,8 +320,8 @@ async function sendInvoiceEmailDirect(invoiceData, companyInfo, pdfBuffer, testM
             return `${currency} $${formatted}`;
         };
 
-        // Prepare dynamic company email branding
-        const fromEmail = companyInfo?.billingInfo?.accountsReceivable?.email?.[0] || SEND_FROM_EMAIL_FALLBACK;
+        // Use verified sender for all invoice emails
+        const fromEmail = 'soluship@integratedcarriers.com'; // Always use verified sender
         const companyDisplayName = companyInfo?.billingInfo?.companyDisplayName || companyInfo?.name || SEND_FROM_NAME_FALLBACK;
 
         // Email content using SendGrid directly (like QuickShip pattern)

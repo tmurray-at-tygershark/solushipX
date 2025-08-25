@@ -97,7 +97,7 @@ async function sendTestEmail(data) {
     const emailContent = {
         to: data.recipientEmail,
                     from: {
-                email: 'noreply@integratedcarriers.com',
+                email: 'noreplys@integratedcarriers.com',
                 name: 'Integrated Carriers Reports'
             },
         subject: data.subject,

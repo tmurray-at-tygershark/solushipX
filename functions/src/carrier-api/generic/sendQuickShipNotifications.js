@@ -10,7 +10,7 @@ const db = admin.firestore();
 const sgMail = require('@sendgrid/mail');
 
 // Global email configuration - centralized for easy updates
-const SEND_FROM_EMAIL = 'noreply@integratedcarriers.com';
+const SEND_FROM_EMAIL = 'noreplys@integratedcarriers.com';
 const SEND_FROM_NAME = 'Integrated Carriers';
 
 // Get SendGrid API key from environment variables
