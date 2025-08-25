@@ -66,7 +66,7 @@ const InvoiceManagement = () => {
     const { currentUser, userRole } = useAuth();
     const { connectedCompanies } = useCompany();
     const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [rowsPerPage, setRowsPerPage] = useState(50);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [invoices, setInvoices] = useState([]);
@@ -78,6 +78,7 @@ const InvoiceManagement = () => {
     const [menuInvoice, setMenuInvoice] = useState(null);
     const [selectedCompanyFilter, setSelectedCompanyFilter] = useState(null);
     const [selectedCustomerFilter, setSelectedCustomerFilter] = useState(null);
+    const [selectedPaymentStatusFilter, setSelectedPaymentStatusFilter] = useState(null);
     const [metrics, setMetrics] = useState({
         totalInvoices: 0,
         totalOutstanding: 0,
@@ -709,7 +710,23 @@ const InvoiceManagement = () => {
             filtered = filtered.filter(inv => inv.customerId === selectedCustomerFilter.id || inv.customerName === selectedCustomerFilter.name);
         }
 
-        // Status filter
+        // Payment Status filter
+        if (selectedPaymentStatusFilter && selectedPaymentStatusFilter.id && selectedPaymentStatusFilter.id !== 'all') {
+            if (selectedPaymentStatusFilter.id === 'overdue') {
+                filtered = filtered.filter(invoice => isOverdue(invoice));
+            } else {
+                filtered = filtered.filter(invoice => {
+                    const overdue = isOverdue(invoice);
+                    const isProcessing = invoice.status === 'processing' ||
+                        invoice.paymentStatus === 'processing' ||
+                        (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
+                    const displayStatus = overdue ? 'overdue' : (isProcessing ? 'processing' : invoice.status);
+                    return displayStatus === selectedPaymentStatusFilter.id;
+                });
+            }
+        }
+
+        // Status filter (legacy)
         if (statusFilter && statusFilter !== 'all') {
             if (statusFilter === 'overdue') {
                 filtered = filtered.filter(invoice => isOverdue(invoice));
@@ -720,7 +737,7 @@ const InvoiceManagement = () => {
 
         setFilteredInvoices(filtered);
         setPage(0); // Reset to first page when filters change
-    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter]);
+    }, [invoices, searchQuery, statusFilter, selectedCompanyFilter, selectedCustomerFilter, selectedPaymentStatusFilter]);
 
     if (loading) {
         return (
@@ -937,7 +954,7 @@ const InvoiceManagement = () => {
                     </Box>
 
                     <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={3}>
                             <TextField
                                 fullWidth
                                 size="small"
@@ -963,7 +980,7 @@ const InvoiceManagement = () => {
                                 }}
                             />
                         </Grid>
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={3}>
                             <Autocomplete
                                 options={Array.from(new Map(invoices.map(i => {
                                     const key = i.companyId || i.companyID || i.companyCode;
@@ -1003,7 +1020,7 @@ const InvoiceManagement = () => {
                                 )}
                             />
                         </Grid>
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={3}>
                             <Autocomplete
                                 options={(selectedCompanyFilter?.id && customersByCompany[selectedCompanyFilter.id])
                                     ? customersByCompany[selectedCompanyFilter.id].map(c => ({
@@ -1028,6 +1045,30 @@ const InvoiceManagement = () => {
                                 )}
                                 renderInput={(params) => (
                                     <TextField {...params} size="small" placeholder="Filter by customer" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
+                                )}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                            <Autocomplete
+                                options={[
+                                    { id: 'all', label: 'All Statuses' },
+                                    { id: 'outstanding', label: 'Outstanding' },
+                                    { id: 'overdue', label: 'Overdue' },
+                                    { id: 'paid', label: 'Paid' },
+                                    { id: 'processing', label: 'Processing' },
+                                    { id: 'cancelled', label: 'Cancelled' },
+                                    { id: 'void', label: 'Void' }
+                                ]}
+                                getOptionLabel={(option) => option.label}
+                                value={selectedPaymentStatusFilter}
+                                onChange={(e, val) => setSelectedPaymentStatusFilter(val)}
+                                renderInput={(params) => (
+                                    <TextField {...params} size="small" placeholder="Filter by payment status" sx={{ '& .MuiInputBase-input': { fontSize: '12px' } }} />
+                                )}
+                                renderOption={(props, option) => (
+                                    <li {...props}>
+                                        <Typography sx={{ fontSize: '12px' }}>{option.label}</Typography>
+                                    </li>
                                 )}
                             />
                         </Grid>
@@ -1062,9 +1103,9 @@ const InvoiceManagement = () => {
                                     .map((invoice) => {
                                         const overdue = isOverdue(invoice);
                                         // Determine if invoice is still processing
-                                        const isProcessing = invoice.status === 'processing' || 
-                                                           invoice.paymentStatus === 'processing' ||
-                                                           (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
+                                        const isProcessing = invoice.status === 'processing' ||
+                                            invoice.paymentStatus === 'processing' ||
+                                            (invoice.total === 0 && !invoice.companyName && !invoice.customerName);
                                         const displayStatus = overdue ? 'overdue' : (isProcessing ? 'processing' : invoice.status);
 
                                         return (
@@ -1191,85 +1232,85 @@ const InvoiceManagement = () => {
                                             </TableRow>
                                         );
                                     })
-                                        )}
-        </TableBody>
-    </Table>
-</TableContainer>
+                            )}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
 
-{/* Row actions menu */}
-<Menu
-    anchorEl={menuAnchorEl}
-    open={Boolean(menuAnchorEl)}
-    onClose={() => { setMenuAnchorEl(null); setMenuInvoice(null); }}
-    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
->
-    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
-    {menuInvoice && (menuInvoice.status === 'cancelled' || menuInvoice.status === 'void' || menuInvoice.paymentStatus === 'cancelled') ? (
-        <MenuItem onClick={() => { if (menuInvoice) handleDeleteInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Delete</MenuItem>
-    ) : (
-        <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleCancelInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Void</MenuItem>
-    )}
-</Menu>
+                {/* Row actions menu */}
+                <Menu
+                    anchorEl={menuAnchorEl}
+                    open={Boolean(menuAnchorEl)}
+                    onClose={() => { setMenuAnchorEl(null); setMenuInvoice(null); }}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                    <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleEditInvoice(menuInvoice); }} sx={{ fontSize: '12px' }}>View / Edit</MenuItem>
+                    {menuInvoice && (menuInvoice.status === 'cancelled' || menuInvoice.status === 'void' || menuInvoice.paymentStatus === 'cancelled') ? (
+                        <MenuItem onClick={() => { if (menuInvoice) handleDeleteInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Delete</MenuItem>
+                    ) : (
+                        <MenuItem onClick={() => { setMenuAnchorEl(null); if (menuInvoice) handleCancelInvoice(menuInvoice); }} sx={{ fontSize: '12px', color: '#dc2626' }}>Void</MenuItem>
+                    )}
+                </Menu>
 
-<TablePagination
-    component="div"
-    count={filteredInvoices.length}
-    page={page}
-    onPageChange={handleChangePage}
-    rowsPerPage={rowsPerPage}
-    onRowsPerPageChange={handleChangeRowsPerPage}
-    rowsPerPageOptions={[10, 25, 50, 100]}
-    sx={{
-        borderTop: '1px solid #e5e7eb',
-        '& .MuiTablePagination-toolbar': {
-            fontSize: '12px'
-        }
-    }}
-/>
-</Paper>
+                <TablePagination
+                    component="div"
+                    count={filteredInvoices.length}
+                    page={page}
+                    onPageChange={handleChangePage}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={handleChangeRowsPerPage}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    sx={{
+                        borderTop: '1px solid #e5e7eb',
+                        '& .MuiTablePagination-toolbar': {
+                            fontSize: '12px'
+                        }
+                    }}
+                />
+            </Paper>
 
-{/* Upload Invoices Dialog */}
-{uploadDialogOpen && (
-    <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Upload Invoices</DialogTitle>
-        <DialogContent dividers>
-            <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>Upload PDF files or a ZIP. We will parse shipments and prefill invoice forms.</Typography>
-            <Button variant="outlined" component="label" size="small" sx={{ fontSize: '12px' }}>
-                Select Files
-                <input hidden multiple type="file" accept="application/pdf,application/zip" onChange={handleInvoiceFilesSelected} />
-            </Button>
-            <Stack sx={{ mt: 2 }}>
-                {(selectedUploadFiles || []).map((f, idx) => (
-                    <Typography key={idx} sx={{ fontSize: '12px' }}>{f.name}</Typography>
-                ))}
-            </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-            <Button size="small" sx={{ fontSize: '12px' }} onClick={() => setUploadDialogOpen(false)}>Close</Button>
-            <Button size="small" variant="contained" sx={{ fontSize: '12px' }} onClick={handleProcessUploadedInvoices} disabled={!selectedUploadFiles || selectedUploadFiles.length === 0}>Process</Button>
-        </DialogActions>
-    </Dialog>
-)}
+            {/* Upload Invoices Dialog */}
+            {uploadDialogOpen && (
+                <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
+                    <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Upload Invoices</DialogTitle>
+                    <DialogContent dividers>
+                        <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 1 }}>Upload PDF files or a ZIP. We will parse shipments and prefill invoice forms.</Typography>
+                        <Button variant="outlined" component="label" size="small" sx={{ fontSize: '12px' }}>
+                            Select Files
+                            <input hidden multiple type="file" accept="application/pdf,application/zip" onChange={handleInvoiceFilesSelected} />
+                        </Button>
+                        <Stack sx={{ mt: 2 }}>
+                            {(selectedUploadFiles || []).map((f, idx) => (
+                                <Typography key={idx} sx={{ fontSize: '12px' }}>{f.name}</Typography>
+                            ))}
+                        </Stack>
+                    </DialogContent>
+                    <DialogActions sx={{ p: 2 }}>
+                        <Button size="small" sx={{ fontSize: '12px' }} onClick={() => setUploadDialogOpen(false)}>Close</Button>
+                        <Button size="small" variant="contained" sx={{ fontSize: '12px' }} onClick={handleProcessUploadedInvoices} disabled={!selectedUploadFiles || selectedUploadFiles.length === 0}>Process</Button>
+                    </DialogActions>
+                </Dialog>
+            )}
 
-{/* Manual Invoice Form Dialog */}
-{createInvoiceOpen && (
-    <Box sx={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 1300,
-        bgcolor: 'white'
-    }}>
-        <InvoiceForm
-            invoiceId={editingInvoiceId}
-            onClose={handleCloseInvoiceForm}
-            onSuccess={handleInvoiceSuccess}
-        />
-    </Box>
-)}
+            {/* Manual Invoice Form Dialog */}
+            {createInvoiceOpen && (
+                <Box sx={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 1300,
+                    bgcolor: 'white'
+                }}>
+                    <InvoiceForm
+                        invoiceId={editingInvoiceId}
+                        onClose={handleCloseInvoiceForm}
+                        onSuccess={handleInvoiceSuccess}
+                    />
+                </Box>
+            )}
         </Box>
     );
 };

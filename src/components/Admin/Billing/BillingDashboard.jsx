@@ -113,7 +113,7 @@ import BulkInvoiceGenerator from './BulkInvoiceGenerator';
 import APProcessing from './APProcessing';
 import CarrierInvoiceTraining from './CarrierInvoiceTraining';
 
-const BillingDashboard = ({ initialTab = 'overview' }) => {
+const BillingDashboard = ({ initialTab = 'invoices' }) => {
     const { currentUser, userRole } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
@@ -222,8 +222,6 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             setActiveTab('payments');
         } else if (path.includes('/admin/billing/commissions')) {
             setActiveTab('commissions');
-        } else if (path.includes('/admin/billing/overview')) {
-            setActiveTab('overview');
         } else if (path.includes('/admin/billing/charges')) {
             setActiveTab('charges');
         } else if (path.startsWith('/admin/billing') &&
@@ -1041,9 +1039,6 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
     const handleTabChange = (event, newValue) => {
         setActiveTab(newValue);
         switch (newValue) {
-            case 'overview':
-                navigate('/admin/billing/overview');
-                break;
             case 'charges':
                 navigate('/admin/billing/charges');
                 break;
@@ -2312,7 +2307,6 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                         }
                     }}
                 >
-                    <Tab label="Overview" value="overview" />
                     <Tab label="Invoices" value="invoices" />
                     <Tab label="AP Processing" value="ap-processing" />
                     {/* Removed Charges and Generate tabs */}
@@ -2326,243 +2320,6 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             </Box>
 
             {/* Charges tab content removed */}
-
-            {activeTab === 'overview' && (
-                <>
-                    {loading ? (
-                        <>
-                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3, px: 2 }}>
-                                Billing Overview
-                            </Typography>
-                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
-                                {[1, 2, 3, 4].map((item) => (
-                                    <Grid item xs={12} md={3} key={item}>
-                                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                            <CardContent sx={{ p: 3 }}>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                                                    <Skeleton variant="circular" width={32} height={32} />
-                                                    <Box sx={{ textAlign: 'right' }}>
-                                                        <Skeleton width={60} height={16} />
-                                                        <Skeleton width={40} height={12} />
-                                                    </Box>
-                                                </Box>
-                                                <Skeleton width={120} height={40} sx={{ mb: 1 }} />
-                                                <Skeleton width={100} height={16} />
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
-                                {[1, 2].map((item) => (
-                                    <Grid item xs={12} md={6} key={item}>
-                                        <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                            <CardContent sx={{ p: 3 }}>
-                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                                                    <Skeleton variant="circular" width={28} height={28} />
-                                                    <Skeleton width={80} height={16} />
-                                                </Box>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={6}>
-                                                        <Skeleton width={60} height={30} sx={{ mb: 1 }} />
-                                                        <Skeleton width={80} height={14} />
-                                                    </Grid>
-                                                    <Grid item xs={6}>
-                                                        <Skeleton width={60} height={30} sx={{ mb: 1 }} />
-                                                        <Skeleton width={80} height={14} />
-                                                    </Grid>
-                                                </Grid>
-                                            </CardContent>
-                                        </Card>
-                                    </Grid>
-                                ))}
-                            </Grid>
-                            <Paper elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                <Box sx={{ p: 3 }}>
-                                    <Skeleton width={250} height={24} sx={{ mb: 1 }} />
-                                    <Skeleton width={400} height={16} sx={{ mb: 3 }} />
-                                    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                                        <Skeleton width={120} height={40} />
-                                        <Skeleton width={120} height={40} />
-                                        <Skeleton width={100} height={40} />
-                                    </Box>
-                                    {[1, 2, 3, 4, 5].map((row) => (
-                                        <Box key={row} sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                                            <Skeleton width={120} height={20} />
-                                            <Skeleton width={150} height={20} />
-                                            <Skeleton width={200} height={20} />
-                                            <Skeleton width={100} height={20} />
-                                            <Skeleton width={80} height={20} />
-                                            <Skeleton width={80} height={20} />
-                                            <Skeleton width={80} height={20} />
-                                            <Skeleton width={80} height={20} />
-                                            <Skeleton width={80} height={20} />
-                                        </Box>
-                                    ))}
-                                </Box>
-                            </Paper>
-                        </>
-                    ) : (
-                        <>
-                            {/* Enterprise Financial KPIs */}
-                            <Typography variant="h5" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827', mb: 3, px: 2 }}>
-                                Billing Overview
-                            </Typography>
-
-                            {/* Primary KPIs */}
-                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
-                                <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <MoneyIcon sx={{ color: '#0284c7', fontSize: 32 }} />
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="body2" sx={{ color: metrics.revenueGrowth >= 0 ? '#059669' : '#dc2626', fontSize: '11px', fontWeight: 600 }}>
-                                                        {metrics.revenueGrowth >= 0 ? '+' : ''}{metrics.revenueGrowth.toFixed(1)}% MoM
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#0284c7', fontSize: '10px' }}>
-                                                        {connectedCompanies.length} companies
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
-                                                ${(metrics.totalRevenueByCurrency?.USD || 0).toLocaleString()} USD
-                                            </Typography>
-                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
-                                                ${(metrics.totalRevenueByCurrency?.CAD || 0).toLocaleString()} CAD
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
-                                                Total Revenue (YTD)
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                                <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #fefce8 0%, #fef3c7 100%)' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <AccountBalanceIcon sx={{ color: '#d97706', fontSize: 32 }} />
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="body2" sx={{ color: '#d97706', fontSize: '11px', fontWeight: 600 }}>
-                                                        {metrics.profitMargin.toFixed(1)}% Margin
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#d97706', fontSize: '10px' }}>
-                                                        ${metrics.avgTicketSize.toFixed(0)} avg
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
-                                                ${(metrics.uninvoicedChargesByCurrency?.USD || 0).toLocaleString()} USD
-                                            </Typography>
-                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
-                                                ${(metrics.uninvoicedChargesByCurrency?.CAD || 0).toLocaleString()} CAD
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
-                                                Uninvoiced Charges
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                                <Grid item xs={12} md={3}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px', background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <SpeedIcon sx={{ color: '#059669', fontSize: 32 }} />
-                                                <Box sx={{ textAlign: 'right' }}>
-                                                    <Typography variant="body2" sx={{ color: '#059669', fontSize: '11px', fontWeight: 600 }}>
-                                                        {metrics.conversionRate}% Rate
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#059669', fontSize: '10px' }}>
-                                                        Performance
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                            <Typography variant="h4" sx={{ color: '#111827', fontWeight: 700, fontSize: '24px', mb: 0.5 }}>
-                                                ${(metrics.monthlyRevenueByCurrency?.USD || 0).toLocaleString()} USD
-                                            </Typography>
-                                            <Typography variant="h5" sx={{ color: '#374151', fontWeight: 600, fontSize: '18px', mb: 1 }}>
-                                                ${(metrics.monthlyRevenueByCurrency?.CAD || 0).toLocaleString()} CAD
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '12px', fontWeight: 500 }}>
-                                                Monthly Revenue
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-
-                            </Grid>
-
-                            {/* Operational Metrics */}
-                            <Grid container spacing={3} sx={{ mb: 4, px: 2 }}>
-                                <Grid item xs={12} md={6}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <AssessmentIcon sx={{ color: '#6366f1', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#6366f1', fontSize: '11px' }}>
-                                                    Invoice Status
-                                                </Typography>
-                                            </Box>
-                                            <Grid container spacing={2}>
-                                                <Grid item xs={6}>
-                                                    <Typography variant="h5" sx={{ color: '#059669', fontWeight: 700, fontSize: '24px' }}>
-                                                        {metrics.paidInvoices}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
-                                                        Paid Invoices
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    <Typography variant="h5" sx={{ color: '#dc2626', fontWeight: 700, fontSize: '24px' }}>
-                                                        {metrics.pendingInvoices}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
-                                                        Pending Invoices
-                                                    </Typography>
-                                                </Grid>
-                                            </Grid>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Card elevation={0} sx={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
-                                        <CardContent sx={{ p: 3 }}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                                                <TimelineIcon sx={{ color: '#10b981', fontSize: 28 }} />
-                                                <Typography variant="body2" sx={{ color: '#10b981', fontSize: '11px' }}>
-                                                    Financial Health
-                                                </Typography>
-                                            </Box>
-                                            <Grid container spacing={2}>
-                                                <Grid item xs={6}>
-                                                    <Typography variant="h5" sx={{ color: '#7c3aed', fontWeight: 700, fontSize: '24px' }}>
-                                                        {metrics.profitMargin.toFixed(1)}%
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
-                                                        Profit Margin
-                                                    </Typography>
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    <Typography variant="h5" sx={{ color: '#f59e0b', fontWeight: 700, fontSize: '24px' }}>
-                                                        ${(metrics.totalRevenue / Math.max(connectedCompanies.length, 1)).toFixed(0)}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '11px' }}>
-                                                        Revenue per Company
-                                                    </Typography>
-                                                </Grid>
-                                            </Grid>
-                                        </CardContent>
-                                    </Card>
-                                </Grid>
-                            </Grid>
-
-
-
-
-                        </>
-                    )}
-                </>
-            )}
 
             {activeTab === 'invoices' && (
                 <InvoiceManagement />
@@ -2587,7 +2344,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Business Invoicing</Typography>
                     <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Business invoicing functionality will be available here.
+                            Business invoicing features will be available here.
                         </Typography>
                     </Paper>
                 </Box>
@@ -2598,7 +2355,7 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
                     <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600, mb: 2 }}>Received Payments</Typography>
                     <Paper elevation={0} sx={{ p: 3, border: '1px solid #e5e7eb' }}>
                         <Typography sx={{ fontSize: '12px', color: '#6b7280' }}>
-                            Payment tracking functionality will be available here.
+                            Payment tracking features will be available here.
                         </Typography>
                     </Paper>
                 </Box>
@@ -2611,107 +2368,8 @@ const BillingDashboard = ({ initialTab = 'overview' }) => {
             {activeTab === 'invoice-training' && (
                 <CarrierInvoiceTraining />
             )}
-
-            <Dialog
-                open={detailsOpen}
-                onClose={handleCloseDetails}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 600 }}>Invoice Details</Typography>
-                        <IconButton onClick={handleCloseDetails} size="small">
-                            <CloseIcon />
-                        </IconButton>
-                    </Box>
-                </DialogTitle>
-                <DialogContent dividers>
-                    {selectedInvoice && (
-                        <Grid container spacing={3}>
-                            <Grid item xs={12}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                                    <Typography variant="h5" sx={{ fontSize: '18px' }}>{selectedInvoice.number || selectedInvoice.id}</Typography>
-                                    <Chip
-                                        label={selectedInvoice.status}
-                                        size="small"
-                                        sx={{
-                                            color: getStatusColor(selectedInvoice.status).color,
-                                            bgcolor: getStatusColor(selectedInvoice.status).bgcolor,
-                                            fontWeight: 600,
-                                            fontSize: '11px',
-                                            borderRadius: '6px',
-                                        }}
-                                    />
-                                </Box>
-                                <Divider />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Company</Typography>
-                                <Typography variant="body1" sx={{ fontSize: '12px' }}>{selectedInvoice.company || selectedInvoice.companyName}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Invoice Date</Typography>
-                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                    {selectedInvoice.date ? new Date(selectedInvoice.date).toLocaleDateString() : 'N/A'}
-                                </Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Due Date</Typography>
-                                <Typography variant="body1" sx={{ fontSize: '12px' }}>
-                                    {selectedInvoice.dueDate ? new Date(selectedInvoice.dueDate).toLocaleDateString() : 'N/A'}
-                                </Typography>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '11px' }}>Amount</Typography>
-                                <Typography variant="body1" sx={{ fontSize: '12px' }}>${(selectedInvoice.amount || selectedInvoice.total || 0).toFixed(2)}</Typography>
-                            </Grid>
-                        </Grid>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseDetails} size="small" sx={{ fontSize: '12px' }}>Close</Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<DownloadIcon />}
-                        onClick={() => {/* Handle download */ }}
-                        size="small"
-                        sx={{ fontSize: '12px' }}
-                    >
-                        Download Invoice
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-            >
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>View Details</MenuItem>
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Edit Invoice</MenuItem>
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Download PDF</MenuItem>
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Send to Customer</MenuItem>
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Mark as Paid</MenuItem>
-                <MenuItem onClick={handleMenuClose} sx={{ fontSize: '12px' }}>Cancel Invoice</MenuItem>
-            </Menu>
-
-            <Dialog
-                open={ediDialogOpen}
-                onClose={() => setEdiDialogOpen(false)}
-                maxWidth="md"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: '16px', fontWeight: 600 }}>Upload EDI File</DialogTitle>
-                <DialogContent>
-                    <EDIUploader
-                        onUploadComplete={handleEdiUploadComplete}
-                        onClose={() => setEdiDialogOpen(false)}
-                    />
-                </DialogContent>
-            </Dialog>
         </Box>
     );
 };
 
-export default BillingDashboard; 
+export default BillingDashboard;
