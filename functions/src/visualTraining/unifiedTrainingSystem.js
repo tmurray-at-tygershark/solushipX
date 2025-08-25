@@ -2,8 +2,15 @@ const { onCall } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { v4: uuidv4 } = require('uuid');
 
-const db = admin.firestore();
-const bucket = admin.storage().bucket();
+// Lazy initialization of Firebase services
+let db, bucket;
+function initServices() {
+    if (!db) {
+        db = admin.firestore();
+        bucket = admin.storage().bucket();
+    }
+    return { db, bucket };
+}
 
 /**
  * Unified AI Invoice Training System
@@ -31,6 +38,9 @@ exports.getUnifiedTrainingCarriers = onCall({
             throw new Error('Authentication required');
         }
 
+        // Initialize Firebase services
+        const { db } = initServices();
+        
         // Get dynamic training carriers from carrier management
         const trainingCarriersQuery = await db.collection('trainingCarriers')
             .where('active', '==', true)
@@ -180,6 +190,9 @@ exports.addTrainingSample = onCall({
         }
 
         console.log(`Adding training sample for carrier: ${carrierId}, file: ${fileName}`);
+
+        // Initialize Firebase services
+        const { db, bucket } = initServices();
 
         // Generate unique sample ID
         const sampleId = `sample_${Date.now()}_${uuidv4().substring(0, 8)}`;
@@ -354,6 +367,9 @@ exports.getTrainingAnalytics = onCall({
 async function processTrainingSample(carrierId, sampleId, options = {}) {
     try {
         console.log(`Processing training sample: ${carrierId}/${sampleId}`);
+
+        // Initialize Firebase services
+        const { db } = initServices();
 
         // Get sample data
         const sampleRef = db.collection('unifiedTraining')
@@ -541,6 +557,9 @@ Return structured JSON with high confidence scores for each field.
 // Helper function: Update carrier training statistics
 async function updateCarrierTrainingStats(carrierId, action) {
     try {
+        // Initialize Firebase services
+        const { db } = initServices();
+        
         const carrierRef = db.collection('trainingCarriers').doc(carrierId);
         const carrierDoc = await carrierRef.get();
         
@@ -616,10 +635,6 @@ async function shouldStartAutoProcessing(carrierId) {
     }
 }
 
-// Export helper functions for use by other modules
-module.exports = {
-    processTrainingSample,
-    updateCarrierTrainingStats,
-    extractTextWithVision,
-    extractFeaturesWithGemini
-};
+// Note: Firebase functions are exported using exports.functionName = onCall(...)
+// Helper functions for internal use by other modules can be accessed via:
+// const { processTrainingSample, updateCarrierTrainingStats } = require('./unifiedTrainingSystem');

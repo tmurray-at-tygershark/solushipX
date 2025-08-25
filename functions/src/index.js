@@ -526,4 +526,24 @@ if (followUpFunctions && followUpFunctions.processPendingNotifications) {
     console.log('LOG-MAIN-INDEX: exports.processPendingNotifications defined.');
 }
 
+// Import and export unified training system functions
+const {
+    getUnifiedTrainingCarriers,
+    addTrainingSample,
+    processTrainingSample,
+    getTrainingAnalytics
+} = require('./visualTraining/unifiedTrainingSystem');
+
+exports.getUnifiedTrainingCarriers = getUnifiedTrainingCarriers;
+console.log('LOG-MAIN-INDEX: exports.getUnifiedTrainingCarriers defined.');
+
+exports.addTrainingSample = addTrainingSample;
+console.log('LOG-MAIN-INDEX: exports.addTrainingSample defined.');
+
+exports.processTrainingSample = processTrainingSample;
+console.log('LOG-MAIN-INDEX: exports.processTrainingSample defined.');
+
+exports.getTrainingAnalytics = getTrainingAnalytics;
+console.log('LOG-MAIN-INDEX: exports.getTrainingAnalytics defined.');
+
 console.log('LOG-MAIN-INDEX: All exports defined. index.js loading complete.');
