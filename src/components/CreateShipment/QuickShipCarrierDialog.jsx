@@ -17,16 +17,22 @@ import {
     Alert,
     Divider,
     Autocomplete,
-    Avatar
+    Avatar,
+    Chip,
+    Checkbox,
+    ListItemText,
+    OutlinedInput
 } from '@mui/material';
 import {
     Close as CloseIcon,
     CloudUpload as UploadIcon,
     Delete as DeleteIcon,
-    Business as BusinessIcon
+    Business as BusinessIcon,
+    Settings as SettingsIcon,
+    LocalShipping as EquipmentIcon
 } from '@mui/icons-material';
 import { db, functions } from '../../firebase/firebase';
-import { collection, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../contexts/AuthContext';
 import EmailContactsManager from '../common/EmailContactsManager';
@@ -67,6 +73,14 @@ const QuickShipCarrierDialog = ({
     const [selectedCompany, setSelectedCompany] = useState(null);
     const [loadingCompanies, setLoadingCompanies] = useState(false);
 
+    // Service Levels and Equipment Types state
+    const [availableServiceLevels, setAvailableServiceLevels] = useState([]);
+    const [availableEquipmentTypes, setAvailableEquipmentTypes] = useState([]);
+    const [availableAdditionalServices, setAvailableAdditionalServices] = useState([]);
+    const [loadingServiceLevels, setLoadingServiceLevels] = useState(false);
+    const [loadingEquipmentTypes, setLoadingEquipmentTypes] = useState(false);
+    const [loadingAdditionalServices, setLoadingAdditionalServices] = useState(false);
+
     // Form data state
     const [formData, setFormData] = useState({
         name: '',
@@ -79,8 +93,42 @@ const QuickShipCarrierDialog = ({
         contactEmail: '',
         billingEmail: '',
         logo: '',
-        enabled: true
+        enabled: true,
+        // NEW: Service levels and equipment types
+        supportedServiceLevels: [], // Array of service level codes
+        supportedEquipmentTypes: [], // Array of equipment type IDs
+        supportedAdditionalServices: [] // Array of additional service codes
     });
+
+    // Helper function to get equipment categories based on carrier type
+    const getEquipmentCategoriesForCarrierType = (carrierType) => {
+        const mapping = {
+            'freight': ['Truck'], // Freight carriers use truck equipment
+            'courier': ['Courier'], // Courier carriers use courier equipment
+            'air': ['Air'], // Air carriers use air equipment
+            'rail': ['Rail'] // Rail carriers use rail equipment
+        };
+        return mapping[carrierType] || [];
+    };
+
+    // Filter equipment types based on selected carrier type
+    const getFilteredEquipmentTypes = () => {
+        if (!formData.type) return availableEquipmentTypes;
+
+        const allowedCategories = getEquipmentCategoriesForCarrierType(formData.type);
+        return availableEquipmentTypes.filter(equipment =>
+            allowedCategories.includes(equipment.category)
+        );
+    };
+
+    // Filter additional services based on selected carrier type  
+    const getFilteredAdditionalServices = () => {
+        if (!formData.type) return availableAdditionalServices;
+
+        return availableAdditionalServices.filter(service =>
+            service.type === formData.type
+        );
+    };
 
     // Initialize form data when editing
     useEffect(() => {
@@ -122,7 +170,11 @@ const QuickShipCarrierDialog = ({
                 contactEmail: editingCarrier.contactEmail || '',
                 billingEmail: editingCarrier.billingEmail || '',
                 logo: editingCarrier.logo || '',
-                enabled: editingCarrier.enabled !== false
+                enabled: editingCarrier.enabled !== false,
+                // NEW: Service levels and equipment types
+                supportedServiceLevels: Array.isArray(editingCarrier.supportedServiceLevels) ? editingCarrier.supportedServiceLevels : [],
+                supportedEquipmentTypes: Array.isArray(editingCarrier.supportedEquipmentTypes) ? editingCarrier.supportedEquipmentTypes : [],
+                supportedAdditionalServices: Array.isArray(editingCarrier.supportedAdditionalServices) ? editingCarrier.supportedAdditionalServices : []
             });
 
             if (editingCarrier.logo) {
@@ -156,7 +208,11 @@ const QuickShipCarrierDialog = ({
                 contactEmail: '',
                 billingEmail: '',
                 logo: '',
-                enabled: true
+                enabled: true,
+                // NEW: Service levels and equipment types
+                supportedServiceLevels: [],
+                supportedEquipmentTypes: [],
+                supportedAdditionalServices: []
             });
         }
     }, [editingCarrier, editingCarrier?.updatedAt, editingCarrier?.emailContacts]);
@@ -165,8 +221,30 @@ const QuickShipCarrierDialog = ({
     useEffect(() => {
         if (open) {
             loadCompanies();
+            loadServiceLevels();
+            loadEquipmentTypes();
+            loadAdditionalServices();
         }
     }, [open, userRole, connectedCompanies]);
+
+    // Clear incompatible equipment types when carrier type changes
+    useEffect(() => {
+        if (formData.type && Array.isArray(formData.supportedEquipmentTypes) && formData.supportedEquipmentTypes.length > 0) {
+            const allowedCategories = getEquipmentCategoriesForCarrierType(formData.type);
+            const compatibleEquipmentTypes = formData.supportedEquipmentTypes.filter(equipmentId => {
+                const equipment = availableEquipmentTypes.find(e => e.id === equipmentId);
+                return equipment && equipment.category && allowedCategories.includes(equipment.category);
+            });
+
+            // Update if any equipment types were filtered out
+            if (compatibleEquipmentTypes.length !== formData.supportedEquipmentTypes.length) {
+                setFormData(prev => ({
+                    ...prev,
+                    supportedEquipmentTypes: compatibleEquipmentTypes
+                }));
+            }
+        }
+    }, [formData.type, availableEquipmentTypes]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Set selected company when editing and companies are loaded
     useEffect(() => {
@@ -196,6 +274,88 @@ const QuickShipCarrierDialog = ({
             }
         }
     }, [editingCarrier, companies, companyId]);
+
+    // Load service levels
+    const loadServiceLevels = async () => {
+        try {
+            setLoadingServiceLevels(true);
+            console.log('🔧 Loading service levels for QuickShip carrier dialog...');
+
+            const serviceLevelsQuery = query(
+                collection(db, 'serviceLevels'),
+                where('enabled', '==', true),
+                orderBy('type'),
+                orderBy('sortOrder')
+            );
+
+            const snapshot = await getDocs(serviceLevelsQuery);
+            const serviceLevels = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(`✅ Loaded ${serviceLevels.length} service levels:`, serviceLevels);
+            setAvailableServiceLevels(serviceLevels);
+        } catch (error) {
+            console.error('❌ Error loading service levels:', error);
+        } finally {
+            setLoadingServiceLevels(false);
+        }
+    };
+
+    // Load equipment types
+    const loadEquipmentTypes = async () => {
+        try {
+            setLoadingEquipmentTypes(true);
+            console.log('🚛 Loading equipment types for QuickShip carrier dialog...');
+
+            const equipmentQuery = query(
+                collection(db, 'equipmentTypes'),
+                orderBy('category'),
+                orderBy('name')
+            );
+
+            const snapshot = await getDocs(equipmentQuery);
+            const equipmentTypes = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(`✅ Loaded ${equipmentTypes.length} equipment types:`, equipmentTypes);
+            setAvailableEquipmentTypes(equipmentTypes);
+        } catch (error) {
+            console.error('❌ Error loading equipment types:', error);
+        } finally {
+            setLoadingEquipmentTypes(false);
+        }
+    };
+
+    const loadAdditionalServices = async () => {
+        try {
+            setLoadingAdditionalServices(true);
+            console.log('🛠️ Loading additional services for QuickShip carrier dialog...');
+
+            const servicesQuery = query(
+                collection(db, 'shipmentServices'),
+                where('enabled', '==', true),
+                orderBy('type'),
+                orderBy('sortOrder')
+            );
+
+            const snapshot = await getDocs(servicesQuery);
+            const additionalServices = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(`✅ Loaded ${additionalServices.length} additional services:`, additionalServices);
+            setAvailableAdditionalServices(additionalServices);
+        } catch (error) {
+            console.error('❌ Error loading additional services:', error);
+        } finally {
+            setLoadingAdditionalServices(false);
+        }
+    };
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -379,6 +539,10 @@ const QuickShipCarrierDialog = ({
                 enabled: formData.enabled,
                 companyID: selectedCompany.companyID || selectedCompany.id, // Use selected company
                 companyName: selectedCompany.name, // Also store company name for reference
+                // NEW: Service levels and equipment types
+                supportedServiceLevels: Array.isArray(formData.supportedServiceLevels) ? formData.supportedServiceLevels : [],
+                supportedEquipmentTypes: Array.isArray(formData.supportedEquipmentTypes) ? formData.supportedEquipmentTypes : [],
+                supportedAdditionalServices: Array.isArray(formData.supportedAdditionalServices) ? formData.supportedAdditionalServices : [],
                 updatedAt: new Date().toISOString()
             };
 
@@ -759,6 +923,12 @@ const QuickShipCarrierDialog = ({
                                     <MenuItem value="freight" sx={{ fontSize: '12px' }}>
                                         Freight
                                     </MenuItem>
+                                    <MenuItem value="air" sx={{ fontSize: '12px' }}>
+                                        Air
+                                    </MenuItem>
+                                    <MenuItem value="rail" sx={{ fontSize: '12px' }}>
+                                        Rail
+                                    </MenuItem>
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -820,6 +990,265 @@ const QuickShipCarrierDialog = ({
                             </Typography>
                         )}
                     </Box>
+
+                    {/* Supported Service Levels */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        <SettingsIcon sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                        Supported Service Levels
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Select the service levels this carrier supports. These will be available when creating shipments.
+                    </Typography>
+
+                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                        <InputLabel sx={{ fontSize: '12px' }}>Service Levels</InputLabel>
+                        <Select
+                            multiple
+                            value={Array.isArray(formData.supportedServiceLevels) ? formData.supportedServiceLevels : []}
+                            onChange={(e) => handleInputChange('supportedServiceLevels', e.target.value)}
+                            input={<OutlinedInput label="Service Levels" />}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {Array.isArray(selected) ? selected.map((serviceCode) => {
+                                        const serviceLevel = availableServiceLevels.find(s => s.code === serviceCode);
+                                        return (
+                                            <Chip
+                                                key={serviceCode}
+                                                label={serviceLevel ? serviceLevel.label : serviceCode}
+                                                size="small"
+                                                sx={{ fontSize: '11px' }}
+                                            />
+                                        );
+                                    }) : []}
+                                </Box>
+                            )}
+                            MenuProps={{
+                                PaperProps: {
+                                    style: {
+                                        maxHeight: 48 * 4.5 + 8,
+                                        width: 250,
+                                    },
+                                },
+                            }}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {loadingServiceLevels ? (
+                                <MenuItem disabled sx={{ fontSize: '12px' }}>Loading service levels...</MenuItem>
+                            ) : (
+                                availableServiceLevels
+                                    .filter(level => {
+                                        // Map carrier types to service level types
+                                        const serviceTypeMapping = {
+                                            'freight': 'freight',
+                                            'courier': 'courier',
+                                            'air': 'air',
+                                            'rail': 'rail'
+                                        };
+                                        return level.type === serviceTypeMapping[formData.type];
+                                    })
+                                    .map((serviceLevel) => (
+                                        <MenuItem
+                                            key={serviceLevel.code}
+                                            value={serviceLevel.code}
+                                            sx={{ fontSize: '12px' }}
+                                        >
+                                            <Checkbox
+                                                checked={formData.supportedServiceLevels?.includes(serviceLevel.code) || false}
+                                                size="small"
+                                            />
+                                            <ListItemText
+                                                primary={serviceLevel.label}
+                                                secondary={serviceLevel.description}
+                                                primaryTypographyProps={{ fontSize: '12px' }}
+                                                secondaryTypographyProps={{ fontSize: '11px' }}
+                                            />
+                                        </MenuItem>
+                                    ))
+                            )}
+                        </Select>
+                    </FormControl>
+
+                    {/* Supported Equipment Types */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        <EquipmentIcon sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                        Supported Equipment Types
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Select the equipment types this carrier can handle. These will be available when creating shipments.
+                    </Typography>
+
+                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                        <InputLabel sx={{ fontSize: '12px' }}>Equipment Types</InputLabel>
+                        <Select
+                            multiple
+                            value={Array.isArray(formData.supportedEquipmentTypes) ? formData.supportedEquipmentTypes : []}
+                            onChange={(e) => handleInputChange('supportedEquipmentTypes', e.target.value)}
+                            input={<OutlinedInput label="Equipment Types" />}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {Array.isArray(selected) ? selected.map((equipmentId) => {
+                                        const equipment = availableEquipmentTypes.find(e => e.id === equipmentId);
+                                        return (
+                                            <Chip
+                                                key={equipmentId}
+                                                label={equipment ? equipment.name : equipmentId}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '11px',
+                                                    bgcolor: equipment?.category === 'Truck' ? '#fef3c7' :
+                                                        equipment?.category === 'Air' ? '#dbeafe' :
+                                                            equipment?.category === 'Ocean' ? '#d1fae5' :
+                                                                equipment?.category === 'Rail' ? '#fce7f3' :
+                                                                    equipment?.category === 'Courier' ? '#e0f2fe' :
+                                                                        '#f3f4f6',
+                                                    color: equipment?.category === 'Truck' ? '#92400e' :
+                                                        equipment?.category === 'Air' ? '#1e40af' :
+                                                            equipment?.category === 'Ocean' ? '#065f46' :
+                                                                equipment?.category === 'Rail' ? '#be185d' :
+                                                                    equipment?.category === 'Courier' ? '#0277bd' :
+                                                                        '#374151'
+                                                }}
+                                            />
+                                        );
+                                    }) : []}
+                                </Box>
+                            )}
+                            MenuProps={{
+                                PaperProps: {
+                                    style: {
+                                        maxHeight: 48 * 4.5 + 8,
+                                        width: 250,
+                                    },
+                                },
+                            }}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {loadingEquipmentTypes ? (
+                                <MenuItem disabled sx={{ fontSize: '12px' }}>Loading equipment types...</MenuItem>
+                            ) : (
+                                getFilteredEquipmentTypes().map((equipment) => (
+                                    <MenuItem
+                                        key={equipment.id}
+                                        value={equipment.id}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        <Checkbox
+                                            checked={formData.supportedEquipmentTypes?.includes(equipment.id) || false}
+                                            size="small"
+                                        />
+                                        <ListItemText
+                                            primary={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    {equipment.name}
+                                                    <Chip
+                                                        label={equipment.category}
+                                                        size="small"
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            height: 16,
+                                                            bgcolor: equipment.category === 'Truck' ? '#fef3c7' :
+                                                                equipment.category === 'Air' ? '#dbeafe' :
+                                                                    equipment.category === 'Ocean' ? '#d1fae5' :
+                                                                        equipment.category === 'Rail' ? '#fce7f3' :
+                                                                            equipment.category === 'Courier' ? '#e0f2fe' :
+                                                                                '#f3f4f6',
+                                                            color: equipment.category === 'Truck' ? '#92400e' :
+                                                                equipment.category === 'Air' ? '#1e40af' :
+                                                                    equipment.category === 'Ocean' ? '#065f46' :
+                                                                        equipment.category === 'Rail' ? '#be185d' :
+                                                                            equipment.category === 'Courier' ? '#0277bd' :
+                                                                                '#374151'
+                                                        }}
+                                                    />
+                                                </Box>
+                                            }
+                                            secondary={equipment.description}
+                                            primaryTypographyProps={{ fontSize: '12px' }}
+                                            secondaryTypographyProps={{ fontSize: '11px' }}
+                                        />
+                                    </MenuItem>
+                                ))
+                            )}
+                        </Select>
+                    </FormControl>
+
+                    {/* Supported Additional Services */}
+                    <Typography variant="h6" sx={{ fontSize: '14px', fontWeight: 600, mb: 2 }}>
+                        <SettingsIcon sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                        Supported Additional Services
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px', mb: 2 }}>
+                        Select the additional services this carrier supports. These will be available when creating shipments.
+                    </Typography>
+
+                    <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                        <InputLabel sx={{ fontSize: '12px' }}>Additional Services</InputLabel>
+                        <Select
+                            multiple
+                            value={Array.isArray(formData.supportedAdditionalServices) ? formData.supportedAdditionalServices : []}
+                            onChange={(e) => handleInputChange('supportedAdditionalServices', e.target.value)}
+                            input={<OutlinedInput label="Additional Services" />}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {Array.isArray(selected) ? selected.map((serviceCode) => {
+                                        const service = availableAdditionalServices.find(s => s.code === serviceCode);
+                                        return (
+                                            <Chip
+                                                key={serviceCode}
+                                                label={service ? service.label : serviceCode}
+                                                size="small"
+                                                sx={{
+                                                    fontSize: '11px',
+                                                    bgcolor: service?.type === 'courier' ? '#e3f2fd' :
+                                                        service?.type === 'freight' ? '#f3e5f5' :
+                                                            service?.type === 'air' ? '#e8f5e8' :
+                                                                service?.type === 'rail' ? '#fff3e0' :
+                                                                    '#f5f5f5',
+                                                    color: service?.type === 'courier' ? '#1565c0' :
+                                                        service?.type === 'freight' ? '#7b1fa2' :
+                                                            service?.type === 'air' ? '#2e7d32' :
+                                                                service?.type === 'rail' ? '#ef6c00' :
+                                                                    '#424242'
+                                                }}
+                                            />
+                                        );
+                                    }) : []}
+                                </Box>
+                            )}
+                            MenuProps={{
+                                PaperProps: {
+                                    style: {
+                                        maxHeight: 48 * 4.5 + 8,
+                                        width: 250,
+                                    },
+                                },
+                            }}
+                            sx={{ fontSize: '12px' }}
+                        >
+                            {loadingAdditionalServices ? (
+                                <MenuItem disabled sx={{ fontSize: '12px' }}>Loading additional services...</MenuItem>
+                            ) : (
+                                getFilteredAdditionalServices().map((service) => (
+                                    <MenuItem
+                                        key={service.code}
+                                        value={service.code}
+                                        sx={{ fontSize: '12px' }}
+                                    >
+                                        <Checkbox
+                                            checked={formData.supportedAdditionalServices?.includes(service.code) || false}
+                                            size="small"
+                                        />
+                                        <ListItemText
+                                            primary={service.label}
+                                            secondary={service.description}
+                                            primaryTypographyProps={{ fontSize: '12px' }}
+                                            secondaryTypographyProps={{ fontSize: '11px' }}
+                                        />
+                                    </MenuItem>
+                                ))
+                            )}
+                        </Select>
+                    </FormControl>
 
                     <Divider sx={{ my: 3 }} />
 

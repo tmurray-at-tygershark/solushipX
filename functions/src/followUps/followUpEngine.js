@@ -156,14 +156,36 @@ exports.createFollowUpTask = onCall({
     timeoutSeconds: 60,
 }, async (request) => {
     try {
+        logger.info('createFollowUpTask called with data:', { requestData: request.data });
+        
         if (!request.auth) {
             throw new HttpsError('unauthenticated', 'User must be authenticated');
         }
 
-        const { shipmentId, title, description, category, actionTypes, assignedTo, dueDate } = request.data;
+        const { shipmentId, title, description, category, actionTypes, actions, assignedTo, dueDate } = request.data;
         
-        if (!shipmentId || !title || !assignedTo || !dueDate) {
-            throw new HttpsError('invalid-argument', 'Missing required fields');
+        // Handle both 'actions' and 'actionTypes' for backwards compatibility
+        const finalActionTypes = actionTypes || actions || ['email'];
+        
+        // More detailed validation with specific error messages
+        const errors = [];
+        if (!shipmentId) errors.push('shipmentId is required');
+        if (!title) errors.push('title is required');
+        if (!assignedTo) errors.push('assignedTo is required');
+        // Note: dueDate is optional
+        
+        // Log the exact values for debugging
+        logger.info('Validation check:', { 
+            shipmentId: !!shipmentId, 
+            title: !!title, 
+            assignedTo: !!assignedTo, 
+            dueDate: dueDate, 
+            dueDateType: typeof dueDate 
+        });
+        
+        if (errors.length > 0) {
+            logger.error('Validation errors in createFollowUpTask:', { errors, requestData: request.data });
+            throw new HttpsError('invalid-argument', `Missing required fields: ${errors.join(', ')}`);
         }
 
         // Create task document
@@ -177,12 +199,12 @@ exports.createFollowUpTask = onCall({
             title,
             description: description || '',
             category: category || 'manual',
-            actionTypes: actionTypes || ['email'], // Multi-select action types
+            actionTypes: finalActionTypes, // Multi-select action types
             checkpoint: request.data.checkpoint || {},
             assignedTo,
             assignedBy: request.auth.uid,
-            dueDate: new Date(dueDate),
-            scheduledFor: request.data.scheduledFor ? new Date(request.data.scheduledFor) : new Date(dueDate),
+            dueDate: dueDate ? new Date(dueDate) : null,
+            scheduledFor: request.data.scheduledFor ? new Date(request.data.scheduledFor) : (dueDate ? new Date(dueDate) : null),
             estimatedDuration: request.data.estimatedDuration || 30,
             status: 'pending',
             progress: 0,

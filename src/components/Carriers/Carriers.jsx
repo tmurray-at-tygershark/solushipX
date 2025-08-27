@@ -113,6 +113,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
     const [error, setError] = useState(null);
     const [contextError, setContextError] = useState(null);
 
+    // Equipment types for display
+    const [equipmentTypes, setEquipmentTypes] = useState([]);
+
     // Credentials dialog states
     const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
     const [credentials, setCredentials] = useState({
@@ -275,6 +278,36 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
         }
     }, [companyId, companyData]);
 
+    // Load equipment types for display
+    const loadEquipmentTypes = useCallback(async () => {
+        try {
+            console.log('🚛 Loading equipment types for carriers display...');
+            const equipmentQuery = query(
+                collection(db, 'equipmentTypes'),
+                orderBy('category'),
+                orderBy('name')
+            );
+
+            const snapshot = await getDocs(equipmentQuery);
+            const equipment = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(`✅ Loaded ${equipment.length} equipment types for carriers:`, equipment);
+            setEquipmentTypes(equipment);
+        } catch (error) {
+            console.error('❌ Error loading equipment types:', error);
+            setEquipmentTypes([]);
+        }
+    }, []);
+
+    // Helper function to get equipment name by ID
+    const getEquipmentName = useCallback((equipmentId) => {
+        const equipment = equipmentTypes.find(e => e.id === equipmentId);
+        return equipment ? equipment.name : equipmentId;
+    }, [equipmentTypes]);
+
     // Check for context errors after hooks are called
     useEffect(() => {
         try {
@@ -304,7 +337,8 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
             try {
                 await Promise.all([
                     loadConnectedCarriers(),
-                    loadQuickShipCarriers()
+                    loadQuickShipCarriers(),
+                    loadEquipmentTypes()
                 ]);
                 console.log('✅ All carrier data loaded successfully');
             } catch (error) {
@@ -607,6 +641,9 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                             <TableRow sx={{ bgcolor: '#f8fafc' }}>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Carrier</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Type</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Service Levels</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Equipment Types</TableCell>
+                                <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Additional Services</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Contact</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Account Number</TableCell>
                                 <TableCell sx={{ fontWeight: 600, fontSize: '12px' }}>Created</TableCell>
@@ -644,6 +681,117 @@ const Carriers = ({ isModal = false, onClose = null, showCloseButton = false }) 
                                                 fontWeight: 500
                                             }}
                                         />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 150 }}>
+                                            {carrier.supportedServiceLevels && carrier.supportedServiceLevels.length > 0 ? (
+                                                carrier.supportedServiceLevels.slice(0, 3).map((serviceCode) => (
+                                                    <Chip
+                                                        key={serviceCode}
+                                                        label={serviceCode}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            height: 18,
+                                                            bgcolor: '#f8fafc',
+                                                            color: '#6366f1'
+                                                        }}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                                    None
+                                                </Typography>
+                                            )}
+                                            {carrier.supportedServiceLevels && carrier.supportedServiceLevels.length > 3 && (
+                                                <Chip
+                                                    label={`+${carrier.supportedServiceLevels.length - 3}`}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{
+                                                        fontSize: '10px',
+                                                        height: 18,
+                                                        bgcolor: '#f3f4f6',
+                                                        color: '#6b7280'
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 150 }}>
+                                            {carrier.supportedEquipmentTypes && carrier.supportedEquipmentTypes.length > 0 ? (
+                                                carrier.supportedEquipmentTypes.slice(0, 3).map((equipmentId) => (
+                                                    <Chip
+                                                        key={equipmentId}
+                                                        label={getEquipmentName(equipmentId)}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            height: 18,
+                                                            bgcolor: '#f0fdf4',
+                                                            color: '#16a34a'
+                                                        }}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                                    None
+                                                </Typography>
+                                            )}
+                                            {carrier.supportedEquipmentTypes && carrier.supportedEquipmentTypes.length > 3 && (
+                                                <Chip
+                                                    label={`+${carrier.supportedEquipmentTypes.length - 3}`}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{
+                                                        fontSize: '10px',
+                                                        height: 18,
+                                                        bgcolor: '#f3f4f6',
+                                                        color: '#6b7280'
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 150 }}>
+                                            {carrier.supportedAdditionalServices && carrier.supportedAdditionalServices.length > 0 ? (
+                                                carrier.supportedAdditionalServices.slice(0, 3).map((serviceCode) => (
+                                                    <Chip
+                                                        key={serviceCode}
+                                                        label={serviceCode}
+                                                        size="small"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            height: 18,
+                                                            bgcolor: '#fef2f2',
+                                                            color: '#dc2626'
+                                                        }}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                                                    None
+                                                </Typography>
+                                            )}
+                                            {carrier.supportedAdditionalServices && carrier.supportedAdditionalServices.length > 3 && (
+                                                <Chip
+                                                    label={`+${carrier.supportedAdditionalServices.length - 3}`}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{
+                                                        fontSize: '10px',
+                                                        height: 18,
+                                                        bgcolor: '#f3f4f6',
+                                                        color: '#6b7280'
+                                                    }}
+                                                />
+                                            )}
+                                        </Box>
                                     </TableCell>
                                     <TableCell>
                                         <Box>

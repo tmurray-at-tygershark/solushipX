@@ -231,8 +231,8 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
 
         if (sortKey === 'priority') {
             const rank = { urgent: 4, high: 3, medium: 2, low: 1 };
-            const aRank = rank[String(taskA.priority || 'low').toLowerCase()] || 1;
-            const bRank = rank[String(taskB.priority || 'low').toLowerCase()] || 1;
+            const aRank = rank[String(taskA.priority || 'medium').toLowerCase()] || 2;
+            const bRank = rank[String(taskB.priority || 'medium').toLowerCase()] || 2;
             if (aRank < bRank) return -1 * direction;
             if (aRank > bRank) return 1 * direction;
             return 0;
@@ -660,7 +660,7 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                 console.log('[FollowUps] Loaded tasks count:', loadedTasks.length);
                 loadedTasks.slice(0, 50).forEach(t => {
                     const kind = t?.dueDate?.toDate ? 'Timestamp' : typeof t?.dueDate;
-                    console.log('[FollowUps] Task', t.id, 'dueDate raw:', t?.dueDate, 'kind:', kind);
+                    console.log('[FollowUps] Task', t.id, 'priority:', t.priority, 'dueDate raw:', t?.dueDate, 'kind:', kind);
                 });
             } catch { }
             setTasks(loadedTasks);
@@ -1986,18 +1986,18 @@ const FollowUpsDashboard = ({ isModal = false, onClose, scopeShipmentId = null, 
                                                 </TableCell>
                                                 <TableCell sx={{ fontSize: '12px' }}>
                                                     <Chip
-                                                        label={task.priority || 'low'}
+                                                        label={task.priority || 'medium'}
                                                         size="small"
                                                         sx={{
                                                             height: '20px',
                                                             fontSize: '10px',
                                                             textTransform: 'capitalize',
                                                             backgroundColor:
-                                                                task.priority === 'high' ? '#fee2e2' :
-                                                                    task.priority === 'medium' ? '#fef3c7' : '#f0fdf4',
+                                                                (task.priority || 'medium') === 'high' ? '#fee2e2' :
+                                                                    (task.priority || 'medium') === 'medium' ? '#fef3c7' : '#f0fdf4',
                                                             color:
-                                                                task.priority === 'high' ? '#dc2626' :
-                                                                    task.priority === 'medium' ? '#d97706' : '#16a34a'
+                                                                (task.priority || 'medium') === 'high' ? '#dc2626' :
+                                                                    (task.priority || 'medium') === 'medium' ? '#d97706' : '#16a34a'
                                                         }}
                                                     />
                                                 </TableCell>
@@ -3707,12 +3707,19 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
         let dueDateObj = null;
         if (formData.dueDate) {
             const time = formData.dueTime || '09:00';
             const combined = new Date(`${formData.dueDate}T${time}:00`);
-            if (!isNaN(combined.getTime())) dueDateObj = combined;
+            if (!isNaN(combined.getTime())) {
+                dueDateObj = combined;
+            } else {
+                alert('Invalid due date format. Please select a valid date.');
+                return;
+            }
         }
+
         onSave({
             ...formData,
             dueDate: dueDateObj
@@ -4017,11 +4024,10 @@ const CreateTaskForm = ({ onSave, onCancel, staff = [], availableCompanies = [],
                 <Grid item xs={12} md={4}>
                     <TextField
                         fullWidth
-                        label="Due Date"
+                        label="Due Date (Optional)"
                         type="date"
                         value={formData.dueDate}
                         onChange={(e) => handleChange('dueDate', e.target.value)}
-                        required
                         size="small"
                         InputLabelProps={{ shrink: true }}
                         onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()}
